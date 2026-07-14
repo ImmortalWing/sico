@@ -1,0 +1,72 @@
+// 订单状态是封闭集合，新增状态会进入完整匹配和影响分析。
+enum OrderStatus
+  Draft
+  PendingPayment
+  Paid
+  Shipped
+  Cancelled
+end
+
+// 事件描述调用者希望执行的状态变化，不直接修改订单。
+enum OrderEvent
+  Submit
+  Pay
+  Ship
+  Cancel
+end
+
+// 非法转换保留原状态和事件，避免丢失失败上下文。
+enum TransitionError
+  InvalidTransition(status: OrderStatus, event: OrderEvent)
+end
+
+// 唯一状态转换函数；纯函数，无外部能力和隐藏状态修改。
+fn transition(status: OrderStatus, event: OrderEvent) -> Result<OrderStatus, TransitionError>
+  match (status, event)
+    (OrderStatus.Draft, OrderEvent.Submit) =>
+      return ok(OrderStatus.PendingPayment)
+
+    (OrderStatus.Draft, OrderEvent.Cancel) =>
+      return ok(OrderStatus.Cancelled)
+
+    (OrderStatus.PendingPayment, OrderEvent.Pay) =>
+      return ok(OrderStatus.Paid)
+
+    (OrderStatus.PendingPayment, OrderEvent.Cancel) =>
+      return ok(OrderStatus.Cancelled)
+
+    (OrderStatus.Paid, OrderEvent.Ship) =>
+      return ok(OrderStatus.Shipped)
+
+    // 其他 15 种组合全部是有意拒绝的非法转换。
+    _ =>
+      return error(TransitionError.InvalidTransition(status, event))
+  end
+end
+
+// 成功路径作为可执行规格靠近状态转换定义。
+test "draft order can be submitted"
+  expect transition(OrderStatus.Draft, OrderEvent.Submit)
+    == ok(OrderStatus.PendingPayment)
+end
+
+test "pending order can be paid"
+  expect transition(OrderStatus.PendingPayment, OrderEvent.Pay)
+    == ok(OrderStatus.Paid)
+end
+
+test "paid order can be shipped"
+  expect transition(OrderStatus.Paid, OrderEvent.Ship)
+    == ok(OrderStatus.Shipped)
+end
+
+// 终止状态不能继续变化。
+test "shipped order cannot be cancelled"
+  expect transition(OrderStatus.Shipped, OrderEvent.Cancel)
+    == error(TransitionError.InvalidTransition(OrderStatus.Shipped, OrderEvent.Cancel))
+end
+
+test "cancelled order cannot be submitted"
+  expect transition(OrderStatus.Cancelled, OrderEvent.Submit)
+    == error(TransitionError.InvalidTransition(OrderStatus.Cancelled, OrderEvent.Submit))
+end

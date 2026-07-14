@@ -46,3 +46,10 @@ output: "Hello, world!"
 
 - [行为规格](./calculator/SPEC.md)
 - [候选语法 A](./calculator/candidate-a.sico)
+
+## `order-state/`
+
+订单状态机样本，覆盖封闭状态、事件、显式转换、非法路径、状态图和测试语法：
+
+- [行为规格](./order-state/SPEC.md)
+- [候选语法 A](./order-state/candidate-a.sico)
