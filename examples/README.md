@@ -39,3 +39,10 @@ output: "Hello, world!"
 ```
 
 在语法定稿前，需要将该程序改写为其他候选语法，并比较 AI 的生成正确率、阅读 token、错误恢复和单轮修复表现。
+
+## `calculator/`
+
+第一个非平凡代表性程序，覆盖类型、枚举、完整匹配、`Result`、错误传播、列表模式以及控制台能力：
+
+- [行为规格](./calculator/SPEC.md)
+- [候选语法 A](./calculator/candidate-a.sico)

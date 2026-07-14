@@ -1,0 +1,79 @@
+use sico.console
+
+enum Operator
+  Add
+  Subtract
+  Multiply
+  Divide
+end
+
+enum CalculatorError
+  InvalidArguments
+  InvalidNumber(value: Text)
+  UnknownOperator(value: Text)
+  DivisionByZero
+end
+
+fn parse_number(value: Text) -> Result<Number, CalculatorError>
+  match Number.parse(value)
+    ok(number) => return ok(number)
+    error(_) => return error(CalculatorError.InvalidNumber(value))
+  end
+end
+
+fn parse_operator(value: Text) -> Result<Operator, CalculatorError>
+  match value
+    "+" => return ok(Operator.Add)
+    "-" => return ok(Operator.Subtract)
+    "*" => return ok(Operator.Multiply)
+    "/" => return ok(Operator.Divide)
+    other => return error(CalculatorError.UnknownOperator(other))
+  end
+end
+
+fn calculate(left: Number, operator: Operator, right: Number) -> Result<Number, CalculatorError>
+  match operator
+    Operator.Add => return ok(left + right)
+    Operator.Subtract => return ok(left - right)
+    Operator.Multiply => return ok(left * right)
+    Operator.Divide if right == 0 => return error(CalculatorError.DivisionByZero)
+    Operator.Divide => return ok(left / right)
+  end
+end
+
+fn run(arguments: List<Text>) -> Result<Text, CalculatorError>
+  match arguments
+    [left_text, operator_text, right_text] =>
+      let left = try parse_number(left_text)
+      let operator = try parse_operator(operator_text)
+      let right = try parse_number(right_text)
+      let result = try calculate(left, operator, right)
+      return ok(result.to_text())
+
+    _ =>
+      return error(CalculatorError.InvalidArguments)
+  end
+end
+
+fn error_message(problem: CalculatorError) -> Text
+  match problem
+    CalculatorError.InvalidArguments =>
+      return "usage: calculator <left> <operator> <right>"
+
+    CalculatorError.InvalidNumber(value) =>
+      return "invalid number: " + value
+
+    CalculatorError.UnknownOperator(value) =>
+      return "unknown operator: " + value
+
+    CalculatorError.DivisionByZero =>
+      return "division by zero"
+  end
+end
+
+fn main(arguments: List<Text>) -> Unit
+  match run(arguments)
+    ok(output) => console.write_line(output)
+    error(problem) => console.write_error(error_message(problem))
+  end
+end
