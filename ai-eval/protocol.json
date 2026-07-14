@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "protocol_id": "sico-ai-eval-v0",
+  "minimum_model_repetitions": 30,
+  "system_prompt": "You are completing a controlled Sico programming-language evaluation. Follow the supplied syntax guide and task exactly. Do not invent syntax. Return only the requested output, with no Markdown fence, explanation, preface, or trailing commentary.",
+  "categories": {
+    "generation": {
+      "output": "plain Sico source",
+      "scoring": "canonical-source-exact-v0"
+    },
+    "understanding": {
+      "output": "one JSON object",
+      "scoring": "top-level-fields-v0"
+    },
+    "repair": {
+      "output": "plain repaired Sico source",
+      "scoring": "canonical-repair-exact-v0"
+    }
+  },
+  "official_scope": "full",
+  "required_model_metadata": [
+    "provider",
+    "name",
+    "version",
+    "date",
+    "temperature",
+    "top_p",
+    "seed_supported",
+    "seed",
+    "token_accounting",
+    "cost_currency",
+    "cost_total",
+    "rate_limits",
+    "prompt_packet_sha256"
+  ],
+  "failure_classes": [
+    "no-output",
+    "forbidden-code-fence",
+    "canonical-source-mismatch",
+    "canonical-repair-mismatch",
+    "invalid-json",
+    "understanding-missing-field",
+    "understanding-field-mismatch",
+    "understanding-extra-field"
+  ],
+  "not_measured_without_compiler": [
+    "parse_success",
+    "type_check_success",
+    "semantic_equivalence",
+    "diagnostic_position",
+    "cascade_count",
+    "parser_recovery_distance"
+  ]
+}

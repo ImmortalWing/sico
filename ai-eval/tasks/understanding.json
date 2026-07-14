@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "category": "understanding",
+  "tasks": [
+    {
+      "pair_id": "UNDERSTAND-NUM-003",
+      "case_id": "NUM-003",
+      "prompt": "Return one JSON object with exactly these fields: nominal_type, underlying_type, functions, main_return_type, integer_literal. functions is an unordered array of declared function names. integer_literal is a JSON number.",
+      "source": {
+        "A0": "semantic-cases/numbers-units/valid/typed-bytes.sico",
+        "B": "syntax-candidates/b/numbers-units/valid/typed-bytes.sico",
+        "C": "syntax-candidates/c/numbers-units/valid/typed-bytes.sico"
+      },
+      "expected": {
+        "nominal_type": "Bytes",
+        "underlying_type": "Int",
+        "functions": ["keep_size", "main"],
+        "main_return_type": "Bytes",
+        "integer_literal": 16
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-NOM-002",
+      "case_id": "NOM-002",
+      "prompt": "Return one JSON object with exactly these fields: record_type, fields, main_return_type, constructed_fields, construction_complete. fields is an object from field name to type. constructed_fields is an unordered array. construction_complete is a JSON boolean.",
+      "source": {
+        "A0": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+        "B": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+        "C": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico"
+      },
+      "expected": {
+        "record_type": "Feature",
+        "fields": {"name": "Text", "enabled": "Bool"},
+        "main_return_type": "Feature",
+        "constructed_fields": ["name", "enabled"],
+        "construction_complete": true
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-MATCH-001",
+      "case_id": "MATCH-001",
+      "prompt": "Return one JSON object with exactly these fields: matched_type, declared_variants, covered_variants, exhaustive, return_type. Both variant fields are unordered arrays. exhaustive is a JSON boolean.",
+      "source": {
+        "A0": "semantic-cases/exhaustive-match/valid/all-variants.sico",
+        "B": "syntax-candidates/b/exhaustive-match/valid/all-variants.sico",
+        "C": "syntax-candidates/c/exhaustive-match/valid/all-variants.sico"
+      },
+      "expected": {
+        "matched_type": "Color",
+        "declared_variants": ["Red", "Green", "Blue"],
+        "covered_variants": ["Red", "Green", "Blue"],
+        "exhaustive": true,
+        "return_type": "Text"
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-RESULT-002",
+      "case_id": "RESULT-002",
+      "prompt": "Return one JSON object with exactly these fields: source_error_type, target_error_type, mappings, parse_success_value, propagated_without_mapping. mappings is an object from source variant to target variant. parse_success_value is a JSON number and propagated_without_mapping is a JSON boolean.",
+      "source": {
+        "A0": "semantic-cases/result-mapping/valid/total-error-map.sico",
+        "B": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
+        "C": "syntax-candidates/c/result-mapping/valid/total-error-map.sico"
+      },
+      "expected": {
+        "source_error_type": "ParseError",
+        "target_error_type": "AppError",
+        "mappings": {"Empty": "MissingInput", "Invalid": "BadInput"},
+        "parse_success_value": 1,
+        "propagated_without_mapping": false
+      }
+    }
+  ]
+}

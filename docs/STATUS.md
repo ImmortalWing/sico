@@ -4,16 +4,16 @@
 > - phase: M0 设计与技术基线
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0003
-> - next step: STEP-0004
+> - last completed step: STEP-0004
+> - next step: STEP-0005
 
 ## 1. Current objective
 
-下一目标是建立可复现的 AI 生成、理解和修复评测协议与离线执行骨架。
+下一目标是补齐效果/能力、affine 资源、Future/Task、Stream、Component 调用和 revision 等 P0 语义案例。
 
 ## 2. Current step
 
-[`STEP-0003: 建立候选语法单点错误注入集 v0`](./steps/STEP-0003-syntax-error-injection-v0.md) 已完成。下一步骤编号为 `STEP-0004`，尚未开始。
+[`STEP-0004: 建立 AI 评测协议与离线执行器 v0`](./steps/STEP-0004-ai-evaluation-protocol-v0.md) 已完成。下一步骤编号为 `STEP-0005`，尚未开始。
 
 ## 3. Verified repository facts
 
@@ -27,6 +27,7 @@
 | 候选 B 案例 | 30 | verified by `syntax-candidates/b/` |
 | 候选 C 案例 | 30 | verified by `syntax-candidates/c/` |
 | 单点语法错误变体 | 18 | verified by mutation validator |
+| 固定 AI 评测任务 | 42 | verified by AI evaluation validator |
 | Rust `.rs` 文件 | 0 | measured |
 | `Cargo.toml` | 0 | measured |
 | 正式编译器 | 不存在 | verified |
@@ -45,27 +46,27 @@
 - 30 个首批 P0 正反例：[`semantic-cases/`](../semantic-cases/README.md)；
 - A0/B/C 的 90 个一一对应案例与静态指标：[`syntax-candidates/`](../syntax-candidates/README.md)；
 - 18 个可复现单点结构错误变体：[`syntax-mutations/`](../syntax-mutations/README.md)；
+- 42 项 AI 评测协议与离线执行器：[`ai-eval/`](../ai-eval/README.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
 
 按当前依赖顺序：
 
-1. 可复现的 AI 生成、理解和修复评测协议与执行器；
-2. 剩余 P0 案例：效果/能力、affine 资源、Future/Task、Stream、Component 调用、revision；
-3. 诊断协议 v0 和正式错误编号分区；
-4. 语义索引与 `outline/describe/slice/impact/flow` JSON v0；
-5. `Int`、Decimal、资源、异步和 WIT 映射原型；
-6. Rust → Component → Runtime → WIT host call 最小链路；
-7. Component Runtime 的桌面与 Android 对比报告；
-8. 语法候选的数据驱动选择或合并；
-9. M0 退出审计。
+1. 剩余 P0 案例：效果/能力、affine 资源、Future/Task、Stream、Component 调用、revision；
+2. 诊断协议 v0 和正式错误编号分区；
+3. 语义索引与 `outline/describe/slice/impact/flow` JSON v0；
+4. `Int`、Decimal、资源、异步和 WIT 映射原型；
+5. Rust → Component → Runtime → WIT host call 最小链路；
+6. Component Runtime 的桌面与 Android 对比报告；
+7. 语法候选的数据驱动选择或合并；
+8. M0 退出审计。
 
 ## 6. Blockers
 
 当前没有阻塞下一步骤的外部条件。
 
-真实 AI API 批量评测可能需要模型凭据和成本授权；如果届时不可用，应先完成协议、数据集、离线评分器和执行脚本，不伪造实测分数。
+真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞下一项 P0 设计工作。没有真实调用前不产生模型分数。
 
 ## 7. Risks
 
@@ -77,4 +78,4 @@
 
 ## 8. Next step
 
-`STEP-0004`：建立可复现 AI 生成、理解和修复评测协议；若没有模型凭据，先完成数据格式、离线评分器与执行接口。
+`STEP-0005`：补齐效果/能力、affine 资源、Future/Task、Stream、Component 调用和 revision 的 P0 最小合法/非法案例，并同步 A0/B/C 候选表示。

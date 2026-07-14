@@ -12,6 +12,7 @@ Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代�
 - [核心语义草案](./SEMANTICS.md)
 - [候选语法与评测方法](./SYNTAX.md)
 - [语法错误注入集](./syntax-mutations/README.md)
+- [AI 生成、理解与修复评测](./ai-eval/README.md)
 - [开发与架构文档](./DEVELOPMENT.md)
 - [候选语言示例](./examples/README.md)
 - [P0 语义正反例集](./semantic-cases/README.md)

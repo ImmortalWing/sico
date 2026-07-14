@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "protocol_id": "sico-ai-eval-v0",
+  "run": {
+    "run_id": "fixture-fail-v0",
+    "kind": "fixture",
+    "synthetic": true,
+    "fixture_name": "three-category-intentional-failures",
+    "scope": "smoke",
+    "task_ids": [
+      "GEN-A0-NUM-003",
+      "UNDERSTAND-B-MATCH-001",
+      "REPAIR-C-MUT-006"
+    ],
+    "repetitions": 1
+  },
+  "responses": [
+    {
+      "attempt_id": "fail-generation",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 1,
+      "raw_output": "```sico\nnewtype Bytes = Int\n```",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    },
+    {
+      "attempt_id": "fail-understanding",
+      "task_id": "UNDERSTAND-B-MATCH-001",
+      "repetition": 1,
+      "raw_output": "not json",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    },
+    {
+      "attempt_id": "fail-repair",
+      "task_id": "REPAIR-C-MUT-006",
+      "repetition": 1,
+      "raw_output": "record Feature { name: Text, enabled: Bool }",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    }
+  ]
+}

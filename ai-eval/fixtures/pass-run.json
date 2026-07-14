@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "protocol_id": "sico-ai-eval-v0",
+  "run": {
+    "run_id": "fixture-pass-v0",
+    "kind": "fixture",
+    "synthetic": true,
+    "fixture_name": "three-category-perfect-output",
+    "scope": "smoke",
+    "task_ids": [
+      "GEN-A0-NUM-003",
+      "UNDERSTAND-B-MATCH-001",
+      "REPAIR-C-MUT-006"
+    ],
+    "repetitions": 1
+  },
+  "responses": [
+    {
+      "attempt_id": "pass-generation",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 1,
+      "raw_output": "newtype Bytes = Int\n\nfn keep_size(size: Bytes) -> Bytes\n  return size\nend\n\nfn main() -> Bytes\n  return keep_size(Bytes(16))\nend\n",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    },
+    {
+      "attempt_id": "pass-understanding",
+      "task_id": "UNDERSTAND-B-MATCH-001",
+      "repetition": 1,
+      "raw_output": "{\"return_type\":\"Text\",\"exhaustive\":true,\"covered_variants\":[\"Blue\",\"Red\",\"Green\"],\"matched_type\":\"Color\",\"declared_variants\":[\"Green\",\"Blue\",\"Red\"]}",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    },
+    {
+      "attempt_id": "pass-repair",
+      "task_id": "REPAIR-C-MUT-006",
+      "repetition": 1,
+      "raw_output": "record Feature {\n  name: Text,\n  enabled: Bool,\n}\n\nfn main() -> Feature {\n  return Feature(name: \"search\", enabled: true)\n}\n",
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cost": 0,
+      "latency_ms": 0
+    }
+  ]
+}

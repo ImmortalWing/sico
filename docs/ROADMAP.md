@@ -31,7 +31,7 @@
 | 应用宿主正式命名 | complete | [`ADR-0001`](./adr/ADR-0001-sico-host-terminology.md)、[`STEP-0002`](./steps/STEP-0002-sico-host-terminology.md) |
 | 单点错误注入与恢复评测 | complete for design corpus | [`STEP-0003`](./steps/STEP-0003-syntax-error-injection-v0.md)、[`report`](./reports/syntax-error-injection-v0.md)；parser 实测留待 M1 |
 | AI 常见错误分类 | partial | 问题矩阵已有材料，需要独立数据集/分类报告 |
-| AI 理解与修复基线 | partial | 需求已定义，尚无可执行评测与实测数据 |
+| AI 理解与修复基线 | complete for offline protocol | [`STEP-0004`](./steps/STEP-0004-ai-evaluation-protocol-v0.md)、[`report`](./reports/ai-evaluation-protocol-v0.md)；真实模型数据尚未测量 |
 | 剩余 P0 语义案例 | planned | 效果/能力、资源、异步、Stream、Component、revision |
 | 诊断协议 v0 | planned | 当前只有 provisional reject key |
 | 语义索引 JSON v0 | planned | 当前只有文档需求 |
@@ -126,7 +126,7 @@ STEP-0001 audit baseline
   → STEP-0002 application-host terminology migration
   → STEP-0003 syntax error injection
   → STEP-0004 AI evaluation protocol and offline harness
-  → remaining P0 semantic cases
+  → STEP-0005 remaining P0 semantic cases
   → diagnostics v0 + semantic query JSON v0
   → Component and Runtime technical spikes
   → syntax decision

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "category": "generation",
+  "tasks": [
+    {
+      "pair_id": "GEN-NUM-003",
+      "case_id": "NUM-003",
+      "prompt": "Define nominal type Bytes over Int. Define keep_size(size: Bytes) returning the same Bytes value. Define main returning Bytes by calling keep_size with Bytes constructed from integer 16. Keep declarations in that order.",
+      "expected": {
+        "A0": "semantic-cases/numbers-units/valid/typed-bytes.sico",
+        "B": "syntax-candidates/b/numbers-units/valid/typed-bytes.sico",
+        "C": "syntax-candidates/c/numbers-units/valid/typed-bytes.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-NOM-002",
+      "case_id": "NOM-002",
+      "prompt": "Define record Feature with field name: Text followed by enabled: Bool. Define main returning Feature constructed with name equal to \"search\" and enabled equal to true. Keep declarations and fields in that order.",
+      "expected": {
+        "A0": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+        "B": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+        "C": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-MATCH-001",
+      "case_id": "MATCH-001",
+      "prompt": "Define enum Color with variants Red, Green, and Blue in that order. Define name(color: Color) returning Text by exhaustively matching all three variants to lowercase strings \"red\", \"green\", and \"blue\" in the same order.",
+      "expected": {
+        "A0": "semantic-cases/exhaustive-match/valid/all-variants.sico",
+        "B": "syntax-candidates/b/exhaustive-match/valid/all-variants.sico",
+        "C": "syntax-candidates/c/exhaustive-match/valid/all-variants.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-RESULT-002",
+      "case_id": "RESULT-002",
+      "prompt": "Define ParseError with Empty then Invalid carrying Text. Define AppError with MissingInput then BadInput carrying Text. Define parse() returning Result of Int or ParseError and succeeding with 1. Define load() returning Result of Int or AppError and explicitly map Empty to MissingInput and Invalid(value) to BadInput(value). Keep declarations and match arms in that order.",
+      "expected": {
+        "A0": "semantic-cases/result-mapping/valid/total-error-map.sico",
+        "B": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
+        "C": "syntax-candidates/c/result-mapping/valid/total-error-map.sico"
+      }
+    }
+  ]
+}

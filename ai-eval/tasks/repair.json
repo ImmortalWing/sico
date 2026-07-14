@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "category": "repair",
+  "prompt": "Repair the single reported syntax error. Preserve all names, values, declaration order, formatting style, and program behavior. Return the complete repaired source only.",
+  "tasks": [
+    {
+      "task_id": "REPAIR-A0-MUT-001",
+      "syntax": "A0",
+      "mutation": "MUT-001",
+      "input": "syntax-mutations/a0/MUT-001-missing-function-close.sico",
+      "expected": "semantic-cases/numbers-units/valid/typed-bytes.sico",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-001",
+      "syntax": "B",
+      "mutation": "MUT-001",
+      "input": "syntax-mutations/b/MUT-001-missing-function-close.sico",
+      "expected": "syntax-candidates/b/numbers-units/valid/typed-bytes.sico",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-001",
+      "syntax": "C",
+      "mutation": "MUT-001",
+      "input": "syntax-mutations/c/MUT-001-missing-function-close.sico",
+      "expected": "syntax-candidates/c/numbers-units/valid/typed-bytes.sico",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-002",
+      "syntax": "A0",
+      "mutation": "MUT-002",
+      "input": "syntax-mutations/a0/MUT-002-missing-match-arm-separator.sico",
+      "expected": "semantic-cases/exhaustive-match/valid/all-variants.sico",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-002",
+      "syntax": "B",
+      "mutation": "MUT-002",
+      "input": "syntax-mutations/b/MUT-002-missing-match-arm-separator.sico",
+      "expected": "syntax-candidates/b/exhaustive-match/valid/all-variants.sico",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-002",
+      "syntax": "C",
+      "mutation": "MUT-002",
+      "input": "syntax-mutations/c/MUT-002-missing-match-arm-separator.sico",
+      "expected": "syntax-candidates/c/exhaustive-match/valid/all-variants.sico",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-003",
+      "syntax": "A0",
+      "mutation": "MUT-003",
+      "input": "syntax-mutations/a0/MUT-003-missing-record-close.sico",
+      "expected": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-003",
+      "syntax": "B",
+      "mutation": "MUT-003",
+      "input": "syntax-mutations/b/MUT-003-missing-record-close.sico",
+      "expected": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-003",
+      "syntax": "C",
+      "mutation": "MUT-003",
+      "input": "syntax-mutations/c/MUT-003-missing-record-close.sico",
+      "expected": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-004",
+      "syntax": "A0",
+      "mutation": "MUT-004",
+      "input": "syntax-mutations/a0/MUT-004-missing-type-argument-close.sico",
+      "expected": "semantic-cases/result-mapping/valid/same-error-try.sico",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-004",
+      "syntax": "B",
+      "mutation": "MUT-004",
+      "input": "syntax-mutations/b/MUT-004-missing-type-argument-close.sico",
+      "expected": "syntax-candidates/b/result-mapping/valid/same-error-try.sico",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-004",
+      "syntax": "C",
+      "mutation": "MUT-004",
+      "input": "syntax-mutations/c/MUT-004-missing-type-argument-close.sico",
+      "expected": "syntax-candidates/c/result-mapping/valid/same-error-try.sico",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-005",
+      "syntax": "A0",
+      "mutation": "MUT-005",
+      "input": "syntax-mutations/a0/MUT-005-missing-enum-close.sico",
+      "expected": "semantic-cases/result-mapping/valid/total-error-map.sico",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-005",
+      "syntax": "B",
+      "mutation": "MUT-005",
+      "input": "syntax-mutations/b/MUT-005-missing-enum-close.sico",
+      "expected": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-005",
+      "syntax": "C",
+      "mutation": "MUT-005",
+      "input": "syntax-mutations/c/MUT-005-missing-enum-close.sico",
+      "expected": "syntax-candidates/c/result-mapping/valid/total-error-map.sico",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-006",
+      "syntax": "A0",
+      "mutation": "MUT-006",
+      "input": "syntax-mutations/a0/MUT-006-missing-call-close.sico",
+      "expected": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-006",
+      "syntax": "B",
+      "mutation": "MUT-006",
+      "input": "syntax-mutations/b/MUT-006-missing-call-close.sico",
+      "expected": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-006",
+      "syntax": "C",
+      "mutation": "MUT-006",
+      "input": "syntax-mutations/c/MUT-006-missing-call-close.sico",
+      "expected": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "protocol_id": "sico-ai-eval-v0",
+  "run": {
+    "run_id": "fixture-invalid-model-v0",
+    "kind": "model",
+    "synthetic": false,
+    "scope": "smoke",
+    "task_ids": ["GEN-A0-NUM-003"],
+    "repetitions": 1
+  },
+  "responses": [
+    {
+      "attempt_id": "invalid-model-attempt",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 1,
+      "raw_output": ""
+    }
+  ]
+}

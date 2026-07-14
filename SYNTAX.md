@@ -222,4 +222,4 @@ fn name(color: Color) -> Text {
 2. 定义最小词法器或独立 token 计数规则；
 3. 维护已建立的 [`syntax-mutations/`](./syntax-mutations/README.md) 单点错误注入清单；
 4. 人工复核三套候选是否保持相同语义；
-5. 再开始 AI 生成、理解和修复实验。
+5. 按 [`ai-eval/`](./ai-eval/README.md) 协议运行 AI 生成、理解和修复实验；协议与离线工具已建立，真实模型数据尚未测量。
