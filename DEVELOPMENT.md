@@ -798,6 +798,8 @@ AI 不必先阅读函数体，就能知道：
 
 编译器应为项目生成内存中或缓存化的 **Sico Semantic Index**。它不是新的源码格式，也不进入 `.sapp` 的运行载荷。
 
+索引与查询 JSON v0 已由 [`RFC-0002`](./docs/rfc/RFC-0002-semantic-index-query-v0.md) 接受。机器结构位于 [`semantic-index/`](./semantic-index/README.md)；当前仍是 M0 设计 oracle，没有 compiler 实现。
+
 索引至少记录：
 
 - 模块、类型、函数、常量和状态的稳定内部 ID；
@@ -840,13 +842,12 @@ AI 不必先阅读函数体，就能知道：
 ```text
 sico outline <module>       返回模块结构和公开职责
 sico describe <symbol>      返回签名、契约、效果、错误和状态
-sico callers <symbol>       返回直接或传递调用者
 sico slice <symbol>         返回理解该符号所需的最小程序切片
 sico impact <symbol/change> 返回修改影响的符号、测试、能力和组件
 sico flow <state/type>      返回状态转换或数据流
 ```
 
-这些命令名称尚未定稿，但对应能力属于 AI 工具链目标。
+CLI 外观仍可调整；`outline/describe/slice/impact/flow` JSON operation、统一 envelope 和核心字段是 v0 兼容层。调用者关系通过 `describe` 的直接关系或 `impact` 的传递路径查询，不再单独建立第六套协议。
 
 所有查询都应支持短文本和结构化 JSON，并允许限制：
 
@@ -856,6 +857,8 @@ sico flow <state/type>      返回状态转换或数据流
 - 是否包含私有实现；
 - 是否包含源码片段；
 - 是否展开传递依赖。
+
+v0 使用 `max_depth`、`max_items` 和 canonical result UTF-8 `max_bytes` 作为确定硬预算；可选 token 预算必须命名 tokenizer，不能替代 byte 限制。任何截断、阻塞诊断或未知依赖都必须显式把结果标为 `partial`。
 
 ### 14.9 AI 阅读协议
 

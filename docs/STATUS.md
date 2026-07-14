@@ -4,16 +4,16 @@
 > - phase: M0 设计与技术基线
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0006
-> - next step: STEP-0007
+> - last completed step: STEP-0007
+> - next step: STEP-0008
 
 ## 1. Current objective
 
-下一目标是建立语义索引与 `outline/describe/slice/impact/flow` JSON v0，让 AI 能按结构读取程序而不是反复加载全文。
+下一目标是用独立 Rust 原型验证 Sico `Int` 任意精度和 Decimal 表示、运算、资源上限及 WIT 边界方案，不启动正式编译器。
 
 ## 2. Current step
 
-[`STEP-0006: 建立诊断协议 v0`](./steps/STEP-0006-diagnostics-protocol-v0.md) 已完成。下一步骤编号为 `STEP-0007`，尚未开始。
+[`STEP-0007: 建立语义索引与查询 JSON v0`](./steps/STEP-0007-semantic-query-json-v0.md) 已完成。下一步骤编号为 `STEP-0008`，尚未开始。
 
 ## 3. Verified repository facts
 
@@ -50,18 +50,20 @@
 - 18 个可复现单点结构错误变体：[`syntax-mutations/`](../syntax-mutations/README.md)；
 - 42 项 AI 评测协议与离线执行器：[`ai-eval/`](../ai-eval/README.md)；
 - 24 个稳定诊断、29 个 case 映射、JSON Schema 与离线校验器：[`diagnostics/`](../diagnostics/README.md)；
+- 10 模块 Semantic Index fixture、五类查询 JSON v0 与离线校验器：[`semantic-index/`](../semantic-index/README.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
 
 按当前依赖顺序：
 
-1. 语义索引与 `outline/describe/slice/impact/flow` JSON v0；
-2. `Int`、Decimal、资源、异步和 WIT 映射原型；
+1. `Int` 与 Decimal 表示、运算、资源上限和 WIT 边界原型；
+2. affine resource、Future/Task/Stream 与 WIT 映射原型；
 3. Rust → Component → Runtime → WIT host call 最小链路；
 4. Component Runtime 的桌面与 Android 对比报告；
-5. 语法候选的数据驱动选择或合并；
-6. M0 退出审计。
+5. 第二轮语法指标与真实 AI 证据（需要凭据/成本授权）；
+6. 语法候选的数据驱动选择或合并；
+7. M0 退出审计。
 
 ## 6. Blockers
 
@@ -76,7 +78,8 @@
 - 语法候选已覆盖 10 组 P0 设计判定，但第二轮 24 个 case 尚无静态指标或 AI 实测；
 - 没有 Component 技术原型，WIT 和 Runtime 可行性尚未实测；
 - 诊断协议已有设计目录和 fixtures，但尚无 compiler 生成真实 code、跨度或级联数据。
+- 语义查询协议已有设计 fixtures，但只有两个模块详细展开，没有真实 index/accuracy/latency 数据。
 
 ## 8. Next step
 
-`STEP-0007`：建立语义索引与 `outline/describe/slice/impact/flow` JSON v0，先为代表性程序固定查询语义、响应预算和离线 fixtures。
+`STEP-0008`：建立独立 Rust 数值原型，实测任意精度 `Int`、Decimal、确定性序列化、资源上限和 WIT 可表示性。

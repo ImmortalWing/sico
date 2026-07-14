@@ -1,0 +1,32 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-outline-examples",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "outline",
+  "budget": { "max_depth": 1, "max_items": 16, "max_bytes": 32768, "used_depth": 1, "used_items": 10, "used_bytes": 3202, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/package",
+    "completeness": "partial",
+    "reasons": ["fixture modules are outline-only except order-state and account-transfer"],
+    "blocked_by": [],
+    "summary": { "basis": "inferred", "value": "10 representative modules cover core language and host boundaries", "evidence": [{ "kind": "analysis", "ref": "semantic-index/sample-matrix.json" }] },
+    "items": [
+      { "id": "sico://examples/hello", "kind": "module", "name": "hello", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "console greeting", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/calculator", "kind": "module", "name": "calculator", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "typed calculator", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/order-state", "kind": "module", "name": "order-state", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "closed order transitions", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/account-transfer", "kind": "module", "name": "account-transfer", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "transactional account transfer", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/todo-store", "kind": "module", "name": "todo-store", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "persistent todo CRUD", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/word-count", "kind": "module", "name": "word-count", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "bounded Unicode word count", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/http-service", "kind": "module", "name": "http-service", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "typed async HTTP service", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/concurrent-fetch", "kind": "module", "name": "concurrent-fetch", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "bounded concurrent fetch", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/component-plugin", "kind": "module", "name": "component-plugin", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "Component plugin boundary", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } },
+      { "id": "sico://examples/notes-ui", "kind": "module", "name": "notes-ui", "role": "module", "completeness": "partial", "facets": { "purpose": { "basis": "inferred", "value": "revision-aware notes UI", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } } }
+    ],
+    "edges": [],
+    "next_queries": [
+      { "operation": "describe", "target": "sico://examples/order-state/function/transition", "reason": "inspect a state transition" },
+      { "operation": "describe", "target": "sico://examples/account-transfer/function/apply_transfer", "reason": "inspect a contract-bearing function" }
+    ]
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sico:schema:semantic-index:v0",
+  "title": "Sico Semantic Index v0",
+  "type": "object",
+  "required": ["schema", "protocol_version", "producer", "snapshot", "package", "modules", "symbols", "relations"],
+  "properties": {
+    "schema": { "const": "sico.semantic-index.v0" },
+    "protocol_version": { "const": 0 },
+    "producer": {
+      "type": "object",
+      "required": ["name", "version", "mode"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["compiler", "fixture"] }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": { "$ref": "#/$defs/snapshot" },
+    "package": {
+      "type": "object",
+      "required": ["id", "name", "version"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "modules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "symbols": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/symbol" }
+    },
+    "relations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/relation" }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "semanticId": {
+      "type": "string",
+      "pattern": "^sico://[a-z0-9][a-z0-9.-]*(/[A-Za-z0-9._~%-]+)+$"
+    },
+    "position": {
+      "type": "object",
+      "required": ["byte", "line", "column"],
+      "properties": {
+        "byte": { "type": "integer", "minimum": 0 },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "$ref": "#/$defs/position" },
+        "end": { "$ref": "#/$defs/position" }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": ["file", "range"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "range": { "$ref": "#/$defs/range" }
+      },
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "required": ["state", "reasons", "blocked_by"],
+      "properties": {
+        "state": { "enum": ["complete", "partial", "unknown"] },
+        "reasons": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "blocked_by": { "type": "array", "items": { "type": "string", "pattern": "^E[1-9][0-9]{3}$" } }
+      },
+      "additionalProperties": true
+    },
+    "snapshot": {
+      "type": "object",
+      "required": ["id", "quality"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^(fixture:[a-z0-9._-]+|sha256:[a-f0-9]{64})$" },
+        "quality": { "$ref": "#/$defs/quality" }
+      },
+      "additionalProperties": true
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "enum": ["source", "analysis", "semantic-rule", "diagnostic", "user-change"] },
+        "ref": { "type": "string", "minLength": 1 },
+        "source": { "$ref": "#/$defs/source" }
+      },
+      "additionalProperties": true
+    },
+    "fact": {
+      "type": "object",
+      "required": ["basis", "value", "evidence"],
+      "properties": {
+        "basis": { "enum": ["declared", "verified", "inferred"] },
+        "value": {},
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "facets": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/fact" }
+    },
+    "module": {
+      "type": "object",
+      "required": ["id", "name", "source_file", "quality", "facets"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "name": { "type": "string", "minLength": 1 },
+        "source_file": { "type": "string", "minLength": 1 },
+        "quality": { "$ref": "#/$defs/quality" },
+        "facets": { "$ref": "#/$defs/facets" }
+      },
+      "additionalProperties": true
+    },
+    "symbol": {
+      "type": "object",
+      "required": ["id", "module_id", "kind", "name", "visibility", "source", "quality", "facets"],
+      "properties": {
+        "id": { "$ref": "#/$defs/semanticId" },
+        "module_id": { "$ref": "#/$defs/semanticId" },
+        "kind": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "visibility": { "enum": ["public", "package", "private"] },
+        "source": { "$ref": "#/$defs/source" },
+        "quality": { "$ref": "#/$defs/quality" },
+        "facets": { "$ref": "#/$defs/facets" }
+      },
+      "additionalProperties": true
+    },
+    "relation": {
+      "type": "object",
+      "required": ["kind", "from", "to", "basis", "evidence"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "from": { "$ref": "#/$defs/semanticId" },
+        "to": { "$ref": "#/$defs/semanticId" },
+        "basis": { "enum": ["declared", "verified", "inferred"] },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

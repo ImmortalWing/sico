@@ -1,0 +1,27 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-impact-order-status",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "impact",
+  "budget": { "max_depth": 3, "max_items": 16, "max_bytes": 32768, "used_depth": 2, "used_items": 6, "used_bytes": 3039, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/order-state/enum/OrderStatus",
+    "completeness": "partial",
+    "reasons": ["fixture has no downstream packages or Component consumers"],
+    "blocked_by": [],
+    "summary": { "basis": "inferred", "value": "adding a state variant requires transition and related tests to be rechecked", "evidence": [{ "kind": "user-change", "ref": "add Refunded variant" }, { "kind": "analysis", "ref": "fixture:index-relations" }] },
+    "items": [
+      { "id": "sico://examples/order-state/function/transition", "kind": "function", "name": "transition", "role": "direct-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "matches OrderStatus and must classify the new variant", "evidence": [{ "kind": "analysis", "ref": "fixture:match-dependency" }] }, "via": ["sico://examples/order-state/enum/OrderStatus"] },
+      { "id": "sico://examples/order-state/test/draft-order-can-be-submitted", "kind": "test", "name": "draft order can be submitted", "role": "test-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "tests transition", "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }, "via": ["sico://examples/order-state/enum/OrderStatus", "sico://examples/order-state/function/transition"] },
+      { "id": "sico://examples/order-state/test/pending-order-can-be-paid", "kind": "test", "name": "pending order can be paid", "role": "test-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "tests transition", "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }, "via": ["sico://examples/order-state/enum/OrderStatus", "sico://examples/order-state/function/transition"] },
+      { "id": "sico://examples/order-state/test/paid-order-can-be-shipped", "kind": "test", "name": "paid order can be shipped", "role": "test-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "tests transition", "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }, "via": ["sico://examples/order-state/enum/OrderStatus", "sico://examples/order-state/function/transition"] },
+      { "id": "sico://examples/order-state/test/shipped-order-cannot-be-cancelled", "kind": "test", "name": "shipped order cannot be cancelled", "role": "test-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "tests a rejected transition", "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }, "via": ["sico://examples/order-state/enum/OrderStatus", "sico://examples/order-state/function/transition"] },
+      { "id": "sico://examples/order-state/test/cancelled-order-cannot-be-submitted", "kind": "test", "name": "cancelled order cannot be submitted", "role": "test-impact", "completeness": "complete", "facets": {}, "reason": { "basis": "inferred", "value": "tests a rejected transition", "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }, "via": ["sico://examples/order-state/enum/OrderStatus", "sico://examples/order-state/function/transition"] }
+    ],
+    "edges": [],
+    "next_queries": [
+      { "operation": "flow", "target": "sico://examples/order-state/enum/OrderStatus", "reason": "inspect legal and rejected paths before changing the enum" }
+    ]
+  }
+}

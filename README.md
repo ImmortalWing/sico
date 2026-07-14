@@ -14,6 +14,7 @@ Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代�
 - [语法错误注入集](./syntax-mutations/README.md)
 - [AI 生成、理解与修复评测](./ai-eval/README.md)
 - [诊断协议与稳定错误目录](./diagnostics/README.md)
+- [语义索引与 AI 查询 JSON v0](./semantic-index/README.md)
 - [开发与架构文档](./DEVELOPMENT.md)
 - [候选语言示例](./examples/README.md)
 - [P0 语义正反例集](./semantic-cases/README.md)
@@ -37,4 +38,4 @@ Sico Runtime / Sico Host
 - WIT 定义组件和宿主能力接口；
 - 通用系统能力优先复用 WASI；
 - 不依赖 JavaScript 或 TypeScript；
-- 当前优先完成语义查询协议和 Component/Runtime 技术原型；诊断协议 v0 已形成设计契约。
+- 当前优先进入 `Int`/Decimal、资源/异步和 Component/Runtime 技术原型；诊断与语义查询 JSON v0 已形成设计契约。

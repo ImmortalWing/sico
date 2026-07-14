@@ -1,0 +1,10 @@
+{
+  "schema": "sico.semantic-query.v0",
+  "protocol_version": 0,
+  "request_id": "q-flow-order-status",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "flow",
+  "target": { "id": "sico://examples/order-state/enum/OrderStatus" },
+  "parameters": { "flow_kind": "state" },
+  "options": { "max_depth": 2, "max_items": 16, "max_bytes": 32768, "include_private": true, "include_source": false, "transitive": false }
+}

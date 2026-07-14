@@ -492,13 +492,15 @@ Model/Event/Effect、视图树、控件、布局和生命周期可以由标准 S
 
 AI 不应把 `declared` 或 `inferred` 内容冒充编译器保证。
 
-### SEM-132：查询协议按最小充分上下文返回【草案】
+### SEM-132：查询协议按最小充分上下文返回【确认】
 
 `outline`、`describe`、`slice`、`impact` 和 `flow` 共享同一语义 ID 和 JSON 类型。默认只返回回答问题所需的信息，并提供继续查询的引用，不重复整个模块源码。
 
+v0 协议由 [`RFC-0002`](./docs/rfc/RFC-0002-semantic-index-query-v0.md) 定义；确定性硬预算使用 canonical result 的 UTF-8 bytes，事实必须区分 `declared`、`verified` 和 `inferred`。
+
 程序切片必须保留目标行为所需的类型、错误、效果、能力、契约、状态和 Component 边界；压缩不能删除改变结论的分支。
 
-### SEM-133：不完整程序仍产生有界信息【草案】
+### SEM-133：不完整程序仍产生有界信息【确认】
 
 存在语法或类型错误时，编译器可以输出部分索引，但每个事实必须标记完整性和阻塞诊断。错误节点不能被伪装成确定调用或确定类型。
 
@@ -579,6 +581,6 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 2. 为 P0 语义编写最小成功例和最小失败例；当前 10 组、54 个设计判定已放入 [`semantic-cases/`](./semantic-cases/README.md)；
 3. 根据同一语义设计候选 B、C，不改变程序行为；54 个一一对应镜像已放入 [`syntax-candidates/`](./syntax-candidates/README.md)；
 4. 按 [`ai-eval/`](./ai-eval/README.md) 比较三套语法的 AI 首次生成成功率、理解 token、诊断 token 和单轮修复率；协议已完成，真实模型数据尚未测量；
-5. 诊断协议 v0 已由 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 接受；下一步单独建立语义索引 JSON v0；
+5. 诊断协议 v0 已由 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 接受，语义索引与五类查询 JSON v0 已由 [`RFC-0002`](./docs/rfc/RFC-0002-semantic-index-query-v0.md) 接受；
 6. 对 `Int`、资源、Future 和 WIT 映射做 Rust/Wasm Component 技术原型；
 7. 只有关键 P0 语义通过验证后，才建立正式编译器前端。

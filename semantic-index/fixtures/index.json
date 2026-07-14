@@ -1,0 +1,357 @@
+{
+  "schema": "sico.semantic-index.v0",
+  "protocol_version": 0,
+  "producer": { "name": "sico-semantic-fixture", "version": "0", "mode": "fixture" },
+  "snapshot": {
+    "id": "fixture:semantic-query-v0",
+    "quality": { "state": "partial", "reasons": ["fixture_scope"], "blocked_by": [] }
+  },
+  "package": { "id": "sico://examples/package", "name": "examples", "version": "0.0.0-fixture" },
+  "modules": [
+    {
+      "id": "sico://examples/hello",
+      "name": "hello",
+      "source_file": "examples/hello.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "write a greeting to the console", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/calculator",
+      "name": "calculator",
+      "source_file": "examples/calculator/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "evaluate calculator operations with typed errors", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/order-state",
+      "name": "order-state",
+      "source_file": "examples/order-state/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["selected_symbols_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "validate closed order state transitions", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/account-transfer",
+      "name": "account-transfer",
+      "source_file": "examples/account-transfer/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["selected_symbols_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "apply and persist account transfers", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/todo-store",
+      "name": "todo-store",
+      "source_file": "examples/todo-store/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "store and update todo items", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/word-count",
+      "name": "word-count",
+      "source_file": "examples/word-count/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "count Unicode words from a bounded stream", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/http-service",
+      "name": "http-service",
+      "source_file": "examples/http-service/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "handle typed asynchronous HTTP routes", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/concurrent-fetch",
+      "name": "concurrent-fetch",
+      "source_file": "examples/concurrent-fetch/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "fetch URLs with bounded structured concurrency", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/component-plugin",
+      "name": "component-plugin",
+      "source_file": "examples/component-plugin/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "call a versioned Component interface", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    },
+    {
+      "id": "sico://examples/notes-ui",
+      "name": "notes-ui",
+      "source_file": "examples/notes-ui/candidate-a.sico",
+      "quality": { "state": "partial", "reasons": ["outline_only"], "blocked_by": [] },
+      "facets": { "purpose": { "basis": "inferred", "value": "update revision-aware note UI state", "evidence": [{ "kind": "analysis", "ref": "fixture:module-outline" }] } }
+    }
+  ],
+  "symbols": [
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum",
+      "name": "OrderStatus",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 90, "line": 2, "column": 6 }, "end": { "byte": 101, "line": 2, "column": 17 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "variants": { "basis": "declared", "value": ["Draft", "PendingPayment", "Paid", "Shipped", "Cancelled"], "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=90-155" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus/variant/Draft",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Draft",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 104, "line": 3, "column": 3 }, "end": { "byte": 109, "line": 3, "column": 8 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderStatus", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=104-109" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus/variant/PendingPayment",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "PendingPayment",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 112, "line": 4, "column": 3 }, "end": { "byte": 126, "line": 4, "column": 17 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderStatus", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=112-126" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus/variant/Paid",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Paid",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 129, "line": 5, "column": 3 }, "end": { "byte": 133, "line": 5, "column": 7 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderStatus", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=129-133" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus/variant/Shipped",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Shipped",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 136, "line": 6, "column": 3 }, "end": { "byte": 143, "line": 6, "column": 10 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderStatus", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=136-143" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderStatus/variant/Cancelled",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Cancelled",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 146, "line": 7, "column": 3 }, "end": { "byte": 155, "line": 7, "column": 12 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderStatus", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=146-155" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderEvent",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum",
+      "name": "OrderEvent",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 245, "line": 11, "column": 6 }, "end": { "byte": 255, "line": 11, "column": 16 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "variants": { "basis": "declared", "value": ["Submit", "Pay", "Ship", "Cancel"], "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=245-286" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderEvent/variant/Submit",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Submit",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 258, "line": 12, "column": 3 }, "end": { "byte": 264, "line": 12, "column": 9 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderEvent", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=258-264" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderEvent/variant/Pay",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Pay",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 267, "line": 13, "column": 3 }, "end": { "byte": 270, "line": 13, "column": 6 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderEvent", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=267-270" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderEvent/variant/Ship",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Ship",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 273, "line": 14, "column": 3 }, "end": { "byte": 277, "line": 14, "column": 7 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderEvent", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=273-277" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/OrderEvent/variant/Cancel",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum-variant",
+      "name": "Cancel",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 280, "line": 15, "column": 3 }, "end": { "byte": 286, "line": 15, "column": 9 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "parent": { "basis": "declared", "value": "sico://examples/order-state/enum/OrderEvent", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=280-286" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/enum/TransitionError",
+      "module_id": "sico://examples/order-state",
+      "kind": "enum",
+      "name": "TransitionError",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 370, "line": 19, "column": 6 }, "end": { "byte": 385, "line": 19, "column": 21 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "variants": { "basis": "declared", "value": ["InvalidTransition(OrderStatus, OrderEvent)"], "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=370-435" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/function/transition",
+      "module_id": "sico://examples/order-state",
+      "kind": "function",
+      "name": "transition",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 536, "line": 24, "column": 4 }, "end": { "byte": 546, "line": 24, "column": 14 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": {
+        "signature": { "basis": "declared", "value": "fn transition(OrderStatus, OrderEvent) -> Result<OrderStatus, TransitionError>", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-624" }] },
+        "effects": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+        "capabilities": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+        "errors": { "basis": "declared", "value": ["TransitionError.InvalidTransition"], "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-1209" }] }
+      }
+    },
+    {
+      "id": "sico://examples/order-state/test/draft-order-can-be-submitted",
+      "module_id": "sico://examples/order-state",
+      "kind": "test",
+      "name": "draft order can be submitted",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 1316, "line": 48, "column": 7 }, "end": { "byte": 1344, "line": 48, "column": 35 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "tests": { "basis": "declared", "value": "sico://examples/order-state/function/transition", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1316-1442" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/test/pending-order-can-be-paid",
+      "module_id": "sico://examples/order-state",
+      "kind": "test",
+      "name": "pending order can be paid",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 1453, "line": 53, "column": 7 }, "end": { "byte": 1478, "line": 53, "column": 32 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "tests": { "basis": "declared", "value": "sico://examples/order-state/function/transition", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1453-1572" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/test/paid-order-can-be-shipped",
+      "module_id": "sico://examples/order-state",
+      "kind": "test",
+      "name": "paid order can be shipped",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 1583, "line": 58, "column": 7 }, "end": { "byte": 1608, "line": 58, "column": 32 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "tests": { "basis": "declared", "value": "sico://examples/order-state/function/transition", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1583-1702" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/test/shipped-order-cannot-be-cancelled",
+      "module_id": "sico://examples/order-state",
+      "kind": "test",
+      "name": "shipped order cannot be cancelled",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 1744, "line": 64, "column": 7 }, "end": { "byte": 1777, "line": 64, "column": 40 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "tests": { "basis": "declared", "value": "sico://examples/order-state/function/transition", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1744-1927" }] } }
+    },
+    {
+      "id": "sico://examples/order-state/test/cancelled-order-cannot-be-submitted",
+      "module_id": "sico://examples/order-state",
+      "kind": "test",
+      "name": "cancelled order cannot be submitted",
+      "visibility": "private",
+      "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 1938, "line": 69, "column": 7 }, "end": { "byte": 1973, "line": 69, "column": 42 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "tests": { "basis": "declared", "value": "sico://examples/order-state/function/transition", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1938-2127" }] } }
+    },
+    {
+      "id": "sico://examples/account-transfer/record/Account",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "record",
+      "name": "Account",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 191, "line": 12, "column": 8 }, "end": { "byte": 198, "line": 12, "column": 15 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "fields": { "basis": "declared", "value": ["id: AccountId", "balance: Money", "status: AccountStatus"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=191-263" }] } }
+    },
+    {
+      "id": "sico://examples/account-transfer/record/TransferChange",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "record",
+      "name": "TransferChange",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 268, "line": 18, "column": 8 }, "end": { "byte": 282, "line": 18, "column": 22 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "fields": { "basis": "declared", "value": ["from: Account", "to: Account"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=268-318" }] } }
+    },
+    {
+      "id": "sico://examples/account-transfer/enum/TransferError",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "enum",
+      "name": "TransferError",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 323, "line": 23, "column": 6 }, "end": { "byte": 336, "line": 23, "column": 19 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": { "variants": { "basis": "declared", "value": ["SameAccount", "InvalidAmount", "AccountNotFound", "AccountClosed", "InsufficientBalance", "StorageFailure"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=323-520" }] } }
+    },
+    {
+      "id": "sico://examples/account-transfer/function/apply_transfer",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "function",
+      "name": "apply_transfer",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 614, "line": 33, "column": 4 }, "end": { "byte": 628, "line": 33, "column": 18 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": {
+        "signature": { "basis": "declared", "value": "fn apply_transfer(Account, Account, Money) -> Result<TransferChange, TransferError>", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] },
+        "contract": { "basis": "declared", "value": "successful transfer conserves total balance", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=755-881" }] },
+        "effects": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+        "errors": { "basis": "declared", "value": ["SameAccount", "InvalidAmount", "AccountClosed", "InsufficientBalance"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=884-1518" }] }
+      }
+    },
+    {
+      "id": "sico://examples/account-transfer/function/load_account",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "function",
+      "name": "load_account",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 1527, "line": 73, "column": 4 }, "end": { "byte": 1539, "line": 73, "column": 16 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": {
+        "signature": { "basis": "declared", "value": "fn load_account(Store<AccountId, Account>, AccountId) -> Result<Account, TransferError>", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=1527-1654" }] },
+        "effects": { "basis": "inferred", "value": ["storage.read"], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+        "errors": { "basis": "declared", "value": ["AccountNotFound", "StorageFailure"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=1658-1802" }] }
+      }
+    },
+    {
+      "id": "sico://examples/account-transfer/function/transfer",
+      "module_id": "sico://examples/account-transfer",
+      "kind": "function",
+      "name": "transfer",
+      "visibility": "private",
+      "source": { "file": "examples/account-transfer/candidate-a.sico", "range": { "start": { "byte": 1894, "line": 84, "column": 4 }, "end": { "byte": 1902, "line": 84, "column": 12 } } },
+      "quality": { "state": "complete", "reasons": [], "blocked_by": [] },
+      "facets": {
+        "signature": { "basis": "declared", "value": "fn transfer(Store<AccountId, Account>, AccountId, AccountId, Money) -> Result<TransferChange, TransferError>", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=1894-2076" }] },
+        "effects": { "basis": "inferred", "value": ["storage.read", "storage.write", "storage.transaction"], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+        "capabilities": { "basis": "inferred", "value": ["store"], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] }
+      }
+    }
+  ],
+  "relations": [
+    { "kind": "uses-type", "from": "sico://examples/order-state/function/transition", "to": "sico://examples/order-state/enum/OrderStatus", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-624" }] },
+    { "kind": "uses-type", "from": "sico://examples/order-state/function/transition", "to": "sico://examples/order-state/enum/OrderEvent", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-624" }] },
+    { "kind": "returns-error", "from": "sico://examples/order-state/function/transition", "to": "sico://examples/order-state/enum/TransitionError", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-624" }] },
+    { "kind": "tests", "from": "sico://examples/order-state/test/draft-order-can-be-submitted", "to": "sico://examples/order-state/function/transition", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1316-1442" }] },
+    { "kind": "tests", "from": "sico://examples/order-state/test/pending-order-can-be-paid", "to": "sico://examples/order-state/function/transition", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1453-1572" }] },
+    { "kind": "tests", "from": "sico://examples/order-state/test/paid-order-can-be-shipped", "to": "sico://examples/order-state/function/transition", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1583-1702" }] },
+    { "kind": "tests", "from": "sico://examples/order-state/test/shipped-order-cannot-be-cancelled", "to": "sico://examples/order-state/function/transition", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1744-1927" }] },
+    { "kind": "tests", "from": "sico://examples/order-state/test/cancelled-order-cannot-be-submitted", "to": "sico://examples/order-state/function/transition", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1938-2127" }] },
+    { "kind": "calls", "from": "sico://examples/account-transfer/function/transfer", "to": "sico://examples/account-transfer/function/load_account", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=2117-2237" }] },
+    { "kind": "calls", "from": "sico://examples/account-transfer/function/transfer", "to": "sico://examples/account-transfer/function/apply_transfer", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=2242-2296" }] },
+    { "kind": "uses-type", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/record/Account", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] },
+    { "kind": "returns", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/record/TransferChange", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] },
+    { "kind": "returns-error", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/enum/TransferError", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] }
+  ]
+}

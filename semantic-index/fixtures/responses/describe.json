@@ -1,0 +1,37 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-describe-transition",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "describe",
+  "budget": { "max_depth": 1, "max_items": 16, "max_bytes": 16384, "used_depth": 0, "used_items": 1, "used_bytes": 1583, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/order-state/function/transition",
+    "completeness": "complete",
+    "reasons": [],
+    "blocked_by": [],
+    "summary": { "basis": "inferred", "value": "pure closed-state transition with an explicit rejection error", "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+    "items": [
+      {
+        "id": "sico://examples/order-state/function/transition",
+        "kind": "function",
+        "name": "transition",
+        "role": "target",
+        "completeness": "complete",
+        "source": { "file": "examples/order-state/candidate-a.sico", "range": { "start": { "byte": 536, "line": 24, "column": 4 }, "end": { "byte": 546, "line": 24, "column": 14 } } },
+        "facets": {
+          "signature": { "basis": "declared", "value": "fn transition(OrderStatus, OrderEvent) -> Result<OrderStatus, TransitionError>", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-624" }] },
+          "effects": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+          "capabilities": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] },
+          "errors": { "basis": "declared", "value": ["TransitionError.InvalidTransition"], "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=536-1209" }] },
+          "tests": { "basis": "inferred", "value": 5, "evidence": [{ "kind": "analysis", "ref": "fixture:index-relations" }] }
+        }
+      }
+    ],
+    "edges": [],
+    "next_queries": [
+      { "operation": "flow", "target": "sico://examples/order-state/enum/OrderStatus", "reason": "inspect all success and rejection paths" },
+      { "operation": "impact", "target": "sico://examples/order-state/function/transition", "reason": "inspect callers and tests before editing" }
+    ]
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:sico:schema:semantic-query:v0",
+  "title": "Sico Semantic Query v0",
+  "type": "object",
+  "required": ["schema", "protocol_version", "request_id", "snapshot_id", "operation", "target", "options"],
+  "properties": {
+    "schema": { "const": "sico.semantic-query.v0" },
+    "protocol_version": { "const": 0 },
+    "request_id": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+    "snapshot_id": { "type": "string", "pattern": "^(fixture:[a-z0-9._-]+|sha256:[a-f0-9]{64})$" },
+    "operation": { "enum": ["outline", "describe", "slice", "impact", "flow"] },
+    "target": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^sico://[a-z0-9][a-z0-9.-]*(/[A-Za-z0-9._~%-]+)+$" }
+      },
+      "additionalProperties": true
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "type": "object",
+          "required": ["kind", "summary"],
+          "properties": {
+            "kind": { "enum": ["signature", "behavior", "type", "error", "effect", "capability", "contract", "remove", "rename"] },
+            "summary": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "additionalProperties": true
+        },
+        "flow_kind": { "enum": ["state", "data", "error", "effect", "resource", "task", "revision"] }
+      },
+      "additionalProperties": true
+    },
+    "options": {
+      "type": "object",
+      "required": ["max_depth", "max_items", "max_bytes", "include_private", "include_source", "transitive"],
+      "properties": {
+        "max_depth": { "type": "integer", "minimum": 0, "maximum": 16 },
+        "max_items": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "max_bytes": { "type": "integer", "minimum": 1024, "maximum": 1048576 },
+        "include_private": { "type": "boolean" },
+        "include_source": { "type": "boolean" },
+        "transitive": { "type": "boolean" },
+        "token_budget": {
+          "type": "object",
+          "required": ["max", "tokenizer"],
+          "properties": {
+            "max": { "type": "integer", "minimum": 1 },
+            "tokenizer": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

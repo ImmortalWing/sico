@@ -1,0 +1,75 @@
+{
+  "schema": "sico.semantic-query-samples.v0",
+  "samples": [
+    {
+      "id": "hello",
+      "source": "examples/hello.sico",
+      "module_id": "sico://examples/hello",
+      "operations": ["outline", "describe"],
+      "risks": ["AI01"]
+    },
+    {
+      "id": "calculator",
+      "source": "examples/calculator/candidate-a.sico",
+      "module_id": "sico://examples/calculator",
+      "operations": ["outline", "describe", "slice", "impact"],
+      "risks": ["AI01", "AI06", "AI07"]
+    },
+    {
+      "id": "order-state",
+      "source": "examples/order-state/candidate-a.sico",
+      "module_id": "sico://examples/order-state",
+      "operations": ["outline", "describe", "slice", "impact", "flow"],
+      "risks": ["AI01", "AI02", "AI03", "AI06", "AI07"]
+    },
+    {
+      "id": "account-transfer",
+      "source": "examples/account-transfer/candidate-a.sico",
+      "module_id": "sico://examples/account-transfer",
+      "operations": ["outline", "describe", "slice", "impact"],
+      "risks": ["AI01", "AI03", "AI06", "AI07"]
+    },
+    {
+      "id": "todo-store",
+      "source": "examples/todo-store/candidate-a.sico",
+      "module_id": "sico://examples/todo-store",
+      "operations": ["outline", "describe", "impact", "flow"],
+      "risks": ["AI01", "AI02", "AI06"]
+    },
+    {
+      "id": "word-count",
+      "source": "examples/word-count/candidate-a.sico",
+      "module_id": "sico://examples/word-count",
+      "operations": ["outline", "describe", "slice", "impact"],
+      "risks": ["AI01", "AI06", "AI07"]
+    },
+    {
+      "id": "http-service",
+      "source": "examples/http-service/candidate-a.sico",
+      "module_id": "sico://examples/http-service",
+      "operations": ["outline", "describe", "slice", "impact", "flow"],
+      "risks": ["AI01", "AI04", "AI06", "AI07"]
+    },
+    {
+      "id": "concurrent-fetch",
+      "source": "examples/concurrent-fetch/candidate-a.sico",
+      "module_id": "sico://examples/concurrent-fetch",
+      "operations": ["outline", "describe", "slice", "impact", "flow"],
+      "risks": ["AI01", "AI04", "AI06", "AI07"]
+    },
+    {
+      "id": "component-plugin",
+      "source": "examples/component-plugin/candidate-a.sico",
+      "module_id": "sico://examples/component-plugin",
+      "operations": ["outline", "describe", "slice", "impact"],
+      "risks": ["AI01", "AI05", "AI06", "AI07"]
+    },
+    {
+      "id": "notes-ui",
+      "source": "examples/notes-ui/candidate-a.sico",
+      "module_id": "sico://examples/notes-ui",
+      "operations": ["outline", "describe", "slice", "impact", "flow"],
+      "risks": ["AI01", "AI02", "AI04", "AI05", "AI06", "AI07"]
+    }
+  ]
+}

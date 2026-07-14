@@ -1,0 +1,14 @@
+{
+  "schema": "sico.semantic-query-fixtures.v0",
+  "index": "index.json",
+  "fixtures": [
+    { "name": "outline", "request": "requests/outline.json", "response": "responses/outline.json", "expect": "accept" },
+    { "name": "describe", "request": "requests/describe.json", "response": "responses/describe.json", "expect": "accept" },
+    { "name": "slice", "request": "requests/slice.json", "response": "responses/slice.json", "expect": "accept" },
+    { "name": "impact", "request": "requests/impact.json", "response": "responses/impact.json", "expect": "accept" },
+    { "name": "flow", "request": "requests/flow.json", "response": "responses/flow.json", "expect": "accept" },
+    { "name": "stale-snapshot", "request": "requests/describe.json", "response": "invalid/stale-snapshot.json", "expect": "reject", "error": "snapshot mismatch" },
+    { "name": "untrusted-verified", "request": "requests/describe.json", "response": "invalid/untrusted-verified.json", "expect": "reject", "error": "verified fact lacks compiler evidence" },
+    { "name": "complete-but-truncated", "request": "requests/outline.json", "response": "invalid/complete-but-truncated.json", "expect": "reject", "error": "truncated result cannot be complete" }
+  ]
+}

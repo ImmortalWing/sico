@@ -34,7 +34,7 @@
 | AI 理解与修复基线 | complete for offline protocol | [`STEP-0004`](./steps/STEP-0004-ai-evaluation-protocol-v0.md)、[`report`](./reports/ai-evaluation-protocol-v0.md)；真实模型数据尚未测量 |
 | 剩余 P0 语义案例 | complete | [`STEP-0005`](./steps/STEP-0005-remaining-p0-semantic-cases.md)、[`report`](./reports/remaining-p0-semantic-cases.md) |
 | 诊断协议 v0 | complete for design contract | [`RFC-0001`](./rfc/RFC-0001-diagnostics-protocol-v0.md)、[`diagnostics/`](../diagnostics/README.md)、[`STEP-0006`](./steps/STEP-0006-diagnostics-protocol-v0.md) |
-| 语义索引 JSON v0 | planned | 当前只有文档需求 |
+| 语义索引 JSON v0 | complete for design contract | [`RFC-0002`](./rfc/RFC-0002-semantic-index-query-v0.md)、[`semantic-index/`](../semantic-index/README.md)、[`STEP-0007`](./steps/STEP-0007-semantic-query-json-v0.md) |
 | Wasm Component 最小原型 | planned | 当前无 Rust/Cargo 代码 |
 | Runtime 引擎桌面/Android 对比 | planned | 需要独立 report |
 | 数据驱动语法决定 | planned | 依赖错误注入与 AI 评测 |
@@ -129,8 +129,24 @@ STEP-0001 audit baseline
   → STEP-0005 remaining P0 semantic cases
   → STEP-0006 diagnostics v0
   → STEP-0007 semantic query JSON v0
-  → Component and Runtime technical spikes
-  → syntax decision
-  → M0 exit audit
+  → STEP-0008 Int and Decimal representation prototypes
+  → STEP-0009 resource, async, and WIT mapping prototypes
+  → STEP-0010 Rust → Component → Runtime → WIT host-call chain
+  → STEP-0011 desktop/Android Runtime feasibility report
+  → STEP-0012 syntax evidence completion
+  → STEP-0013 syntax decision
+  → STEP-0014 M0 exit audit
   → M1
 ```
+
+### Planned M0 execution sequence
+
+| Step | 目标 | 关键退出证据 |
+|---|---|---|
+| STEP-0008 | `Int`/Decimal 表示原型 | Rust 实测运算、序列化、限额与 WIT 边界报告 |
+| STEP-0009 | resource/async/WIT 映射原型 | affine move/drop、Future/Task/Stream 与 Component 映射证据 |
+| STEP-0010 | 最小 Component host-call 链路 | 真实构建、加载、WIT 调用和确定性重跑 |
+| STEP-0011 | Runtime 桌面/Android 对比 | 官方资料、最小实测和可审计选择/保留项 |
+| STEP-0012 | 补齐语法证据 | 第二轮静态指标、mutation 与获授权后的真实 AI runs |
+| STEP-0013 | 语法决定 | 接受、合并或淘汰 A0/B/C，并用 RFC 固定理由 |
+| STEP-0014 | M0 退出审计 | 全部门槛、残余风险和进入 M1 的明确结论 |

@@ -1,0 +1,19 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-describe-transition",
+  "snapshot_id": "fixture:stale",
+  "operation": "describe",
+  "budget": { "max_depth": 1, "max_items": 16, "max_bytes": 16384, "used_depth": 0, "used_items": 1, "used_bytes": 303, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/order-state/function/transition",
+    "completeness": "complete",
+    "reasons": [],
+    "blocked_by": [],
+    "items": [
+      { "id": "sico://examples/order-state/function/transition", "kind": "function", "name": "transition", "role": "target", "completeness": "complete", "facets": {} }
+    ],
+    "edges": [],
+    "next_queries": []
+  }
+}

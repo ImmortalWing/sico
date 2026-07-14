@@ -1,0 +1,33 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-flow-order-status",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "flow",
+  "budget": { "max_depth": 2, "max_items": 16, "max_bytes": 32768, "used_depth": 1, "used_items": 5, "used_bytes": 3630, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/order-state/enum/OrderStatus",
+    "completeness": "complete",
+    "reasons": [],
+    "blocked_by": [],
+    "summary": { "basis": "inferred", "value": "5 successful transitions and one exhaustive rejection rule cover 20 state/event pairs", "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] },
+    "items": [
+      { "id": "sico://examples/order-state/enum/OrderStatus/variant/Draft", "kind": "state", "name": "Draft", "role": "state", "completeness": "complete", "facets": { "terminal": { "basis": "inferred", "value": false, "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] } } },
+      { "id": "sico://examples/order-state/enum/OrderStatus/variant/PendingPayment", "kind": "state", "name": "PendingPayment", "role": "state", "completeness": "complete", "facets": { "terminal": { "basis": "inferred", "value": false, "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] } } },
+      { "id": "sico://examples/order-state/enum/OrderStatus/variant/Paid", "kind": "state", "name": "Paid", "role": "state", "completeness": "complete", "facets": { "terminal": { "basis": "inferred", "value": false, "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] } } },
+      { "id": "sico://examples/order-state/enum/OrderStatus/variant/Shipped", "kind": "state", "name": "Shipped", "role": "state", "completeness": "complete", "facets": { "terminal": { "basis": "inferred", "value": true, "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] } } },
+      { "id": "sico://examples/order-state/enum/OrderStatus/variant/Cancelled", "kind": "state", "name": "Cancelled", "role": "state", "completeness": "complete", "facets": { "terminal": { "basis": "inferred", "value": true, "evidence": [{ "kind": "analysis", "ref": "fixture:state-matrix" }] } } }
+    ],
+    "edges": [
+      { "kind": "state-transition", "from": "sico://examples/order-state/enum/OrderStatus/variant/Draft", "to": "sico://examples/order-state/enum/OrderStatus/variant/PendingPayment", "label": "Submit", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=629-733" }] },
+      { "kind": "state-transition", "from": "sico://examples/order-state/enum/OrderStatus/variant/Draft", "to": "sico://examples/order-state/enum/OrderStatus/variant/Cancelled", "label": "Cancel", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=739-827" }] },
+      { "kind": "state-transition", "from": "sico://examples/order-state/enum/OrderStatus/variant/PendingPayment", "to": "sico://examples/order-state/enum/OrderStatus/variant/Paid", "label": "Pay", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=833-919" }] },
+      { "kind": "state-transition", "from": "sico://examples/order-state/enum/OrderStatus/variant/PendingPayment", "to": "sico://examples/order-state/enum/OrderStatus/variant/Cancelled", "label": "Cancel", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=925-1022" }] },
+      { "kind": "state-transition", "from": "sico://examples/order-state/enum/OrderStatus/variant/Paid", "to": "sico://examples/order-state/enum/OrderStatus/variant/Shipped", "label": "Ship", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1028-1108" }] },
+      { "kind": "rejection", "from": "sico://examples/order-state/function/transition", "to": "sico://examples/order-state/enum/TransitionError", "label": "InvalidTransition", "condition": "all remaining OrderStatus x OrderEvent pairs", "covers_remaining": true, "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/order-state/candidate-a.sico#bytes=1114-1209" }] }
+    ],
+    "next_queries": [
+      { "operation": "impact", "target": "sico://examples/order-state/enum/OrderStatus", "reason": "inspect consequences of adding or removing a state" }
+    ]
+  }
+}

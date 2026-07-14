@@ -1,0 +1,29 @@
+{
+  "schema": "sico.semantic-response.v0",
+  "protocol_version": 0,
+  "request_id": "q-slice-apply-transfer",
+  "snapshot_id": "fixture:semantic-query-v0",
+  "operation": "slice",
+  "budget": { "max_depth": 2, "max_items": 16, "max_bytes": 32768, "used_depth": 1, "used_items": 4, "used_bytes": 3539, "truncated": false, "omitted_items": 0 },
+  "result": {
+    "target": "sico://examples/account-transfer/function/apply_transfer",
+    "completeness": "partial",
+    "reasons": ["Money and AccountStatus definitions are outside the detailed fixture"],
+    "blocked_by": [],
+    "summary": { "basis": "inferred", "value": "behavior slice retains signature, domain records, error enum and conservation contract", "evidence": [{ "kind": "analysis", "ref": "fixture:slice-oracle" }] },
+    "items": [
+      { "id": "sico://examples/account-transfer/function/apply_transfer", "kind": "function", "name": "apply_transfer", "role": "target", "completeness": "complete", "facets": { "signature": { "basis": "declared", "value": "fn apply_transfer(Account, Account, Money) -> Result<TransferChange, TransferError>", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] }, "contract": { "basis": "declared", "value": "successful transfer conserves total balance", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=755-881" }] }, "effects": { "basis": "inferred", "value": [], "evidence": [{ "kind": "analysis", "ref": "fixture:body-scan" }] } } },
+      { "id": "sico://examples/account-transfer/record/Account", "kind": "record", "name": "Account", "role": "input-type", "completeness": "complete", "facets": { "fields": { "basis": "declared", "value": ["id: AccountId", "balance: Money", "status: AccountStatus"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=191-263" }] } }, "reason": { "basis": "inferred", "value": "input fields are read and updated", "evidence": [{ "kind": "analysis", "ref": "fixture:data-flow" }] } },
+      { "id": "sico://examples/account-transfer/record/TransferChange", "kind": "record", "name": "TransferChange", "role": "success-type", "completeness": "complete", "facets": { "fields": { "basis": "declared", "value": ["from: Account", "to: Account"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=268-318" }] } }, "reason": { "basis": "declared", "value": "success payload", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] } },
+      { "id": "sico://examples/account-transfer/enum/TransferError", "kind": "enum", "name": "TransferError", "role": "error-type", "completeness": "complete", "facets": { "variants": { "basis": "declared", "value": ["SameAccount", "InvalidAmount", "AccountNotFound", "AccountClosed", "InsufficientBalance", "StorageFailure"], "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=323-520" }] } }, "reason": { "basis": "declared", "value": "function error type", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] } }
+    ],
+    "edges": [
+      { "kind": "uses-type", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/record/Account", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] },
+      { "kind": "returns", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/record/TransferChange", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] },
+      { "kind": "returns-error", "from": "sico://examples/account-transfer/function/apply_transfer", "to": "sico://examples/account-transfer/enum/TransferError", "basis": "declared", "evidence": [{ "kind": "source", "ref": "examples/account-transfer/candidate-a.sico#bytes=614-748" }] }
+    ],
+    "next_queries": [
+      { "operation": "describe", "target": "sico://examples/account-transfer/function/transfer", "reason": "inspect transactional caller and storage effects" }
+    ]
+  }
+}

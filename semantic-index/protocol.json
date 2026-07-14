@@ -1,0 +1,38 @@
+{
+  "schema": "sico.semantic-query-protocol.v0",
+  "protocol_version": 0,
+  "operations": ["outline", "describe", "slice", "impact", "flow"],
+  "basis": ["declared", "verified", "inferred"],
+  "completeness": ["complete", "partial", "unknown"],
+  "semantic_id": {
+    "pattern": "^sico://[a-z0-9][a-z0-9.-]*(/[A-Za-z0-9._~%-]+)+$",
+    "contains_source_offset": false,
+    "rename_creates_new_id": true
+  },
+  "budget": {
+    "hard_unit": "canonical-result-utf8-bytes",
+    "defaults": {
+      "max_depth": 2,
+      "max_items": 64,
+      "max_bytes": 65536,
+      "include_private": false,
+      "include_source": false,
+      "transitive": false
+    },
+    "limits": {
+      "max_depth": 16,
+      "max_items": 1000,
+      "max_bytes": 1048576
+    }
+  },
+  "source_coordinates": {
+    "encoding": "utf-8",
+    "byte_base": 0,
+    "byte_end": "exclusive",
+    "line_base": 1,
+    "column_base": 1,
+    "column_unit": "unicode-scalar-value"
+  },
+  "production_snapshot_id": "sha256:<64 lowercase hex>",
+  "fixture_snapshot_prefix": "fixture:"
+}
