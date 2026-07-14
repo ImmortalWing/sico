@@ -1,0 +1,12 @@
+// case: COMP-001
+// syntax: C
+// expect: accept
+// semantics: SEM-120, SEM-121
+
+enum FormatError {
+  InvalidInput,
+}
+
+interface Formatter {
+  fn format(input: Text) -> Result[Text, FormatError]
+}

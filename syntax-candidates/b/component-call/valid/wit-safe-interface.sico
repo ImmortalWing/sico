@@ -1,0 +1,12 @@
+// case: COMP-001
+// syntax: B
+// expect: accept
+// semantics: SEM-120, SEM-121
+
+enum FormatError:
+  case InvalidInput
+end enum
+
+interface Formatter:
+  function format(input: Text) returns Result[Text, FormatError]
+end interface

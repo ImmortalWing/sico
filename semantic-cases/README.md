@@ -1,6 +1,6 @@
 # Sico P0 semantic cases
 
-> - 状态：第一批草案
+> - 状态：P0 设计判定集 v0
 > - 语义基线：[`SEMANTICS.md` 0.1-draft](../SEMANTICS.md)
 > - 用途：语言判定标准、诊断设计输入和未来编译器一致性测试
 
@@ -37,7 +37,7 @@
 
 第一轮 B、C 源码位于 [`syntax-candidates/`](../syntax-candidates/README.md)。
 
-## 3. 第一批案例组
+## 3. P0 案例组
 
 | 顺序 | 案例组 | 合法 | 非法 | 入口 |
 |---:|---|---:|---:|---|
@@ -45,8 +45,14 @@
 | 2 | 名义类型与不变量 | 3 | 5 | [`nominal-invariants/`](./nominal-invariants/README.md) |
 | 3 | 完整模式匹配 | 3 | 4 | [`exhaustive-match/`](./exhaustive-match/README.md) |
 | 4 | Result 错误映射 | 3 | 4 | [`result-mapping/`](./result-mapping/README.md) |
+| 5 | 效果与能力 | 2 | 2 | [`effects-capabilities/`](./effects-capabilities/README.md) |
+| 6 | affine 资源 | 2 | 2 | [`affine-resources/`](./affine-resources/README.md) |
+| 7 | Future/Task | 2 | 2 | [`future-task/`](./future-task/README.md) |
+| 8 | Stream | 2 | 2 | [`stream/`](./stream/README.md) |
+| 9 | Component 调用 | 2 | 2 | [`component-call/`](./component-call/README.md) |
+| 10 | revision | 2 | 2 | [`revision/`](./revision/README.md) |
 
-合计 30 个最小程序：13 个必须接受，17 个必须拒绝。
+合计 54 个最小程序：25 个必须接受，29 个必须拒绝。机器可读组计数位于 [`manifest.json`](./manifest.json)。
 
 ## 4. 案例质量要求
 
@@ -61,6 +67,6 @@
 
 ## 5. 当前边界
 
-本批案例不决定 Decimal 精度、资源借用、效果系统、异步 ABI 或 WIT 版本。这些属于后续 P0 案例组。
+这些案例是语义设计判定，不是编译器实测。它们不决定 Decimal 精度、正式效果分类、完整资源借用/生命周期推导、Component async ABI 或 WIT/WASI 版本。
 
-案例中的 `Int` 遵循 SEM-021 的任意精度草案；`Float64.from_int` 只用于展示显式转换，最终标准库名称仍可改变。
+案例中的 `Int` 遵循 SEM-021 的任意精度草案；`Float64.from_int`、`using`、`task group`、`ComponentCall` 等名称只用于展示语义，最终表层或标准库名称仍可改变。

@@ -1,0 +1,20 @@
+// case: COMP-102
+// syntax: B
+// expect: reject(COMPONENT_FAILURE_COLLAPSE)
+// semantics: SEM-074, SEM-121
+
+enum FormatError:
+  case InvalidInput
+end enum
+
+interface Formatter:
+  function format(input: Text) returns Result[Text, FormatError]
+end interface
+
+function render(formatter: Component[Formatter], input: Text) returns Result[Text, FormatError]:
+  effects:
+    component.call
+  capabilities:
+    formatter
+  return call formatter.format(input)
+end function

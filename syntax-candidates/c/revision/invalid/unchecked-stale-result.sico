@@ -1,0 +1,20 @@
+// case: REV-102
+// syntax: C
+// expect: reject(UNCHECKED_STALE_RESULT)
+// semantics: SEM-113
+
+opaque Revision = Int
+
+record Model {
+  text: Text,
+  revision: Revision,
+}
+
+record Loaded {
+  text: Text,
+  revision: Revision,
+}
+
+fn apply_loaded(model: Model, loaded: Loaded) -> Model {
+  return Model(text: loaded.text, revision: model.revision)
+}

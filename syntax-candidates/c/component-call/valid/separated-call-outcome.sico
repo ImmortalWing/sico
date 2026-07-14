@@ -1,0 +1,19 @@
+// case: COMP-002
+// syntax: C
+// expect: accept
+// semantics: SEM-074, SEM-121
+
+enum FormatError {
+  InvalidInput,
+}
+
+interface Formatter {
+  fn format(input: Text) -> Result[Text, FormatError]
+}
+
+fn render(formatter: Component[Formatter], input: Text) -> ComponentCall[Text, FormatError]
+  effects [component.call]
+  capabilities [formatter]
+{
+  return call formatter.format(input)
+}

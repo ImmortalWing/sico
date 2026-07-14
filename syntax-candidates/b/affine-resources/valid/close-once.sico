@@ -1,0 +1,13 @@
+// case: RES-001
+// syntax: B
+// expect: accept
+// semantics: SEM-020, SEM-090
+
+resource Reader:
+  function close(self) returns Unit
+end resource
+
+function finish(reader: Reader) returns Unit:
+  reader.close()
+  return Unit
+end function

@@ -1,0 +1,13 @@
+// case: STREAM-001
+// expect: accept
+// semantics: SEM-090, SEM-100, SEM-105
+
+enum ReadError
+  Failed
+end
+
+async fn pull_one(stream: Stream<Int, ReadError>) -> Result<Option<Int>, ReadError>
+  using stream
+    return await stream.next()
+  end
+end

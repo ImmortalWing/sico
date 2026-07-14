@@ -1,0 +1,19 @@
+// case: REV-102
+// expect: reject(UNCHECKED_STALE_RESULT)
+// semantics: SEM-113
+
+newtype Revision = Int
+
+record Model
+  text: Text
+  revision: Revision
+end
+
+record Loaded
+  text: Text
+  revision: Revision
+end
+
+fn apply_loaded(model: Model, loaded: Loaded) -> Model
+  return Model(text: loaded.text, revision: model.revision)
+end

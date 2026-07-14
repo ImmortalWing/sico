@@ -1,0 +1,13 @@
+// case: COMP-101
+// expect: reject(COMPONENT_VERSION_IN_TYPE)
+// semantics: SEM-122
+
+interface Formatter
+  fn format(input: Text) -> Text
+end
+
+fn render(formatter: Component<Formatter@1>, input: Text) -> ComponentCall<Text, Unit>
+  effects component.call
+  capabilities formatter
+  return call formatter.format(input)
+end

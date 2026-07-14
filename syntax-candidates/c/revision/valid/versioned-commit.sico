@@ -1,0 +1,21 @@
+// case: REV-001
+// syntax: C
+// expect: accept
+// semantics: SEM-032, SEM-083, SEM-113
+
+opaque Revision = Int
+
+enum SaveError {
+  Stale(expected: Revision, actual: Revision),
+}
+
+capability Store {
+  fn commit(expected: Revision, value: Text) -> Result[Revision, SaveError]
+}
+
+export fn save(store: Store, expected: Revision, value: Text) -> Result[Revision, SaveError]
+  effects [store.write]
+  capabilities [store]
+{
+  return store.commit(expected, value)
+}

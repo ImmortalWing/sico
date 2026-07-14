@@ -1,0 +1,18 @@
+// case: RES-102
+// syntax: B
+// expect: reject(RESOURCE_CLOSED)
+// semantics: SEM-090
+
+enum ReadError:
+  case Failed
+end enum
+
+resource Reader:
+  function read(borrow self) returns Result[Text, ReadError]
+  function close(self) returns Unit
+end resource
+
+function read_after_close(reader: Reader) returns Result[Text, ReadError]:
+  reader.close()
+  return reader.read()
+end function

@@ -1,0 +1,19 @@
+// case: RES-002
+// syntax: C
+// expect: accept
+// semantics: SEM-090, SEM-091
+
+enum ReadError {
+  Failed,
+}
+
+resource Reader {
+  fn read(borrow self) -> Result[Text, ReadError]
+  fn close(self) -> Unit
+}
+
+fn read_once(reader: Reader) -> Result[Text, ReadError] {
+  using reader {
+    return reader.read()
+  }
+}

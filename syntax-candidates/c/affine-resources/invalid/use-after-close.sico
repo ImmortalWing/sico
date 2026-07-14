@@ -1,0 +1,18 @@
+// case: RES-102
+// syntax: C
+// expect: reject(RESOURCE_CLOSED)
+// semantics: SEM-090
+
+enum ReadError {
+  Failed,
+}
+
+resource Reader {
+  fn read(borrow self) -> Result[Text, ReadError]
+  fn close(self) -> Unit
+}
+
+fn read_after_close(reader: Reader) -> Result[Text, ReadError] {
+  reader.close()
+  return reader.read()
+}

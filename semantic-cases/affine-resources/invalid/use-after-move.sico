@@ -1,0 +1,14 @@
+// case: RES-101
+// expect: reject(RESOURCE_MOVED)
+// semantics: SEM-061, SEM-090
+
+resource Reader
+  fn close(self) -> Unit
+end
+
+fn finish(reader: Reader) -> Unit
+  let owned = move reader
+  owned.close()
+  reader.close()
+  return Unit
+end

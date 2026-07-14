@@ -1,0 +1,19 @@
+// case: CAP-101
+// syntax: B
+// expect: reject(UNDECLARED_CAPABILITY)
+// semantics: SEM-060, SEM-080, SEM-082
+
+enum ConsoleError:
+  case Denied
+end enum
+
+capability Console:
+  function write(text: Text) returns Result[Unit, ConsoleError]
+end capability
+
+export function announce(console: Console) returns Result[Unit, ConsoleError]:
+  effects:
+    console.write
+  capabilities: none
+  return console.write("ready")
+end function

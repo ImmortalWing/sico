@@ -1,0 +1,19 @@
+// case: RES-002
+// syntax: B
+// expect: accept
+// semantics: SEM-090, SEM-091
+
+enum ReadError:
+  case Failed
+end enum
+
+resource Reader:
+  function read(borrow self) returns Result[Text, ReadError]
+  function close(self) returns Unit
+end resource
+
+function read_once(reader: Reader) returns Result[Text, ReadError]:
+  using reader:
+    return reader.read()
+  end using
+end function

@@ -1,0 +1,12 @@
+// case: TASK-001
+// expect: accept
+// semantics: SEM-100, SEM-101
+
+async fn compute(value: Int) -> Int
+  return value + 1
+end
+
+async fn main() -> Int
+  let pending = compute(1)
+  return await pending
+end

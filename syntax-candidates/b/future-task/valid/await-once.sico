@@ -1,0 +1,13 @@
+// case: TASK-001
+// syntax: B
+// expect: accept
+// semantics: SEM-100, SEM-101
+
+async function compute(value: Int) returns Int:
+  return value + 1
+end function
+
+async function main() returns Int:
+  let pending = compute(1)
+  return await pending
+end function

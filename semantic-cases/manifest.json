@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "case_count": 54,
+  "valid_count": 25,
+  "invalid_count": 29,
+  "candidate_count": 3,
+  "program_count": 162,
+  "groups": [
+    {"id": "numbers-units", "prefix": "NUM", "valid": 4, "invalid": 4},
+    {"id": "nominal-invariants", "prefix": "NOM", "valid": 3, "invalid": 5},
+    {"id": "exhaustive-match", "prefix": "MATCH", "valid": 3, "invalid": 4},
+    {"id": "result-mapping", "prefix": "RESULT", "valid": 3, "invalid": 4},
+    {"id": "effects-capabilities", "prefix": "CAP", "valid": 2, "invalid": 2},
+    {"id": "affine-resources", "prefix": "RES", "valid": 2, "invalid": 2},
+    {"id": "future-task", "prefix": "TASK", "valid": 2, "invalid": 2},
+    {"id": "stream", "prefix": "STREAM", "valid": 2, "invalid": 2},
+    {"id": "component-call", "prefix": "COMP", "valid": 2, "invalid": 2},
+    {"id": "revision", "prefix": "REV", "valid": 2, "invalid": 2}
+  ]
+}

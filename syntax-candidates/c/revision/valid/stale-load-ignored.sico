@@ -1,0 +1,28 @@
+// case: REV-002
+// syntax: C
+// expect: accept
+// semantics: SEM-030, SEM-113
+
+opaque Revision = Int
+
+record Model {
+  text: Text,
+  revision: Revision,
+}
+
+record Loaded {
+  text: Text,
+  revision: Revision,
+}
+
+enum ApplyLoaded {
+  Applied(model: Model),
+  IgnoredStale,
+}
+
+fn apply_loaded(model: Model, loaded: Loaded) -> ApplyLoaded {
+  if loaded.revision == model.revision {
+    return ApplyLoaded.Applied(Model(text: loaded.text, revision: model.revision))
+  }
+  return ApplyLoaded.IgnoredStale
+}

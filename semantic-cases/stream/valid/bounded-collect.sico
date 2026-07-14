@@ -1,0 +1,13 @@
+// case: STREAM-002
+// expect: accept
+// semantics: SEM-093, SEM-105
+
+enum ReadError
+  Failed
+end
+
+async fn collect_small(stream: Stream<Int, ReadError>) -> Result<List<Int>, ReadError>
+  using stream
+    return await stream.collect(limit: 100)
+  end
+end

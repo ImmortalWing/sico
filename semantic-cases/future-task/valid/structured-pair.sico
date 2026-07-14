@@ -1,0 +1,15 @@
+// case: TASK-002
+// expect: accept
+// semantics: SEM-101, SEM-102, SEM-103, SEM-104
+
+async fn compute(value: Int) -> Int
+  return value + 1
+end
+
+async fn pair() -> List<Int>
+  task group
+    let first = spawn compute(1)
+    let second = spawn compute(2)
+    return await collect_tasks([first, second], order: input)
+  end
+end

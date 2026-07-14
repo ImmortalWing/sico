@@ -1,0 +1,28 @@
+// case: REV-002
+// syntax: B
+// expect: accept
+// semantics: SEM-030, SEM-113
+
+newtype Revision from Int
+
+record Model:
+  field text: Text
+  field revision: Revision
+end record
+
+record Loaded:
+  field text: Text
+  field revision: Revision
+end record
+
+enum ApplyLoaded:
+  case Applied(model: Model)
+  case IgnoredStale
+end enum
+
+function apply_loaded(model: Model, loaded: Loaded) returns ApplyLoaded:
+  if loaded.revision == model.revision:
+    return ApplyLoaded.Applied(Model(text: loaded.text, revision: model.revision))
+  end if
+  return ApplyLoaded.IgnoredStale
+end function

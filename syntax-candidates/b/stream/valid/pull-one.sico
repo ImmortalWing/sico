@@ -1,0 +1,14 @@
+// case: STREAM-001
+// syntax: B
+// expect: accept
+// semantics: SEM-090, SEM-100, SEM-105
+
+enum ReadError:
+  case Failed
+end enum
+
+async function pull_one(stream: Stream[Int, ReadError]) returns Result[Option[Int], ReadError]:
+  using stream:
+    return await stream.next()
+  end using
+end function

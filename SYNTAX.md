@@ -193,7 +193,7 @@ fn name(color: Color) -> Text {
 
 候选进入下一轮前必须满足：
 
-1. 30 个 case ID 一一对应；
+1. 54 个 case ID 一一对应；
 2. accept/reject 矩阵完全一致；
 3. 每个 reject 的主要诊断根因一致；
 4. 不引入语义文档未允许的隐式行为；
@@ -203,18 +203,19 @@ fn name(color: Color) -> Text {
 
 未达到门槛的候选可以吸收其他候选的局部设计，但必须保留独立历史，不能只保留最终版本而丢失比较证据。
 
-## 8. 当前不评测的内容
+## 8. 第二轮临时表层形式
 
-第一轮暂不比较：
+新增 P0 案例要求三套候选表达相同语义，但以下写法仍是候选，不是正式规范：
 
-- 模块、import、effect 和 capability 的最终写法；
-- borrow、move、share 和资源作用域；
-- async、Future、Task 和 Stream；
-- interface、WIT world 和版本；
-- UI SDK；
-- 文档注释和属性系统。
+| 结构 | A0 | B | C |
+|---|---|---|---|
+| 效果/能力集合 | 缩进行 `effects` / `capabilities` | 带 `:` 的命名列表 | 方括号列表 |
+| resource/interface/capability | 通用 `end` | `end resource/interface/capability` | `{}` |
+| 确定清理 | `using value ... end` | `using value: ... end using` | `using value {}` |
+| 结构化并发 | `task group ... end` | `task group: ... end task` | `task group {}` |
+| 泛型 | `Type<A, B>` | `Type[A, B]` | `Type[A, B]` |
 
-这些内容在相应 P0 语义案例完成后加入第二轮语法评测。
+第二轮仍不决定模块/import 最终写法、share 与完整借用语法、WIT world/package 声明、adapter 版本范围、UI SDK、文档注释和属性系统。
 
 ## 9. 下一步
 

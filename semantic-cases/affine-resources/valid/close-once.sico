@@ -1,0 +1,12 @@
+// case: RES-001
+// expect: accept
+// semantics: SEM-020, SEM-090
+
+resource Reader
+  fn close(self) -> Unit
+end
+
+fn finish(reader: Reader) -> Unit
+  reader.close()
+  return Unit
+end

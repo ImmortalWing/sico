@@ -1,0 +1,17 @@
+// case: CAP-001
+// expect: accept
+// semantics: SEM-060, SEM-080, SEM-082
+
+enum ConsoleError
+  Denied
+end
+
+capability Console
+  fn write(text: Text) -> Result<Unit, ConsoleError>
+end
+
+export fn announce(console: Console) -> Result<Unit, ConsoleError>
+  effects console.write
+  capabilities console
+  return console.write("ready")
+end

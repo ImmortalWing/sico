@@ -1,0 +1,14 @@
+// case: TASK-101
+// syntax: C
+// expect: reject(FUTURE_CONSUMED)
+// semantics: SEM-090, SEM-100
+
+async fn compute() -> Int {
+  return 1
+}
+
+async fn twice() -> Int {
+  let pending = compute()
+  let first = await pending
+  return first + await pending
+}

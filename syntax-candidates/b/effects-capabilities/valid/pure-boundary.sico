@@ -1,0 +1,10 @@
+// case: CAP-002
+// syntax: B
+// expect: accept
+// semantics: SEM-060, SEM-080
+
+export function add_one(value: Int) returns Int:
+  effects: none
+  capabilities: none
+  return value + 1
+end function

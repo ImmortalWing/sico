@@ -1,0 +1,14 @@
+// case: STREAM-002
+// syntax: B
+// expect: accept
+// semantics: SEM-093, SEM-105
+
+enum ReadError:
+  case Failed
+end enum
+
+async function collect_small(stream: Stream[Int, ReadError]) returns Result[List[Int], ReadError]:
+  using stream:
+    return await stream.collect(limit: 100)
+  end using
+end function

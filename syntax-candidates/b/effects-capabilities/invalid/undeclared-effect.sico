@@ -1,0 +1,19 @@
+// case: CAP-102
+// syntax: B
+// expect: reject(UNDECLARED_EFFECT)
+// semantics: SEM-060, SEM-080, SEM-081
+
+enum ConsoleError:
+  case Denied
+end enum
+
+capability Console:
+  function write(text: Text) returns Result[Unit, ConsoleError]
+end capability
+
+export function announce(console: Console) returns Result[Unit, ConsoleError]:
+  effects: none
+  capabilities:
+    console
+  return console.write("ready")
+end function

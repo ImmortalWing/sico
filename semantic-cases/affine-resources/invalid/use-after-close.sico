@@ -1,0 +1,17 @@
+// case: RES-102
+// expect: reject(RESOURCE_CLOSED)
+// semantics: SEM-090
+
+enum ReadError
+  Failed
+end
+
+resource Reader
+  fn read(borrow self) -> Result<Text, ReadError>
+  fn close(self) -> Unit
+end
+
+fn read_after_close(reader: Reader) -> Result<Text, ReadError>
+  reader.close()
+  return reader.read()
+end

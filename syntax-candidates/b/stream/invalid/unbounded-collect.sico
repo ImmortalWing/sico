@@ -1,0 +1,14 @@
+// case: STREAM-101
+// syntax: B
+// expect: reject(UNBOUNDED_STREAM_COLLECT)
+// semantics: SEM-093, SEM-105
+
+enum ReadError:
+  case Failed
+end enum
+
+async function collect_all(stream: Stream[Int, ReadError]) returns Result[List[Int], ReadError]:
+  using stream:
+    return await stream.collect()
+  end using
+end function

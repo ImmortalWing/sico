@@ -1,0 +1,14 @@
+// case: TASK-102
+// syntax: B
+// expect: reject(TASK_ESCAPES_SCOPE)
+// semantics: SEM-102, SEM-103
+
+async function compute() returns Int:
+  return 1
+end function
+
+async function leak() returns Task[Int]:
+  task group:
+    return spawn compute()
+  end task
+end function

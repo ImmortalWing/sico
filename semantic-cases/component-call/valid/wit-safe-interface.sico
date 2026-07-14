@@ -1,0 +1,11 @@
+// case: COMP-001
+// expect: accept
+// semantics: SEM-120, SEM-121
+
+enum FormatError
+  InvalidInput
+end
+
+interface Formatter
+  fn format(input: Text) -> Result<Text, FormatError>
+end

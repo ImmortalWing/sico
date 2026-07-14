@@ -1,0 +1,19 @@
+// case: COMP-102
+// syntax: C
+// expect: reject(COMPONENT_FAILURE_COLLAPSE)
+// semantics: SEM-074, SEM-121
+
+enum FormatError {
+  InvalidInput,
+}
+
+interface Formatter {
+  fn format(input: Text) -> Result[Text, FormatError]
+}
+
+fn render(formatter: Component[Formatter], input: Text) -> Result[Text, FormatError]
+  effects [component.call]
+  capabilities [formatter]
+{
+  return call formatter.format(input)
+}

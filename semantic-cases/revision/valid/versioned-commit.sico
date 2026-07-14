@@ -1,0 +1,19 @@
+// case: REV-001
+// expect: accept
+// semantics: SEM-032, SEM-083, SEM-113
+
+newtype Revision = Int
+
+enum SaveError
+  Stale(expected: Revision, actual: Revision)
+end
+
+capability Store
+  fn commit(expected: Revision, value: Text) -> Result<Revision, SaveError>
+end
+
+export fn save(store: Store, expected: Revision, value: Text) -> Result<Revision, SaveError>
+  effects store.write
+  capabilities store
+  return store.commit(expected, value)
+end

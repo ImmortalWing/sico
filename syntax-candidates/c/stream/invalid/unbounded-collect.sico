@@ -1,0 +1,14 @@
+// case: STREAM-101
+// syntax: C
+// expect: reject(UNBOUNDED_STREAM_COLLECT)
+// semantics: SEM-093, SEM-105
+
+enum ReadError {
+  Failed,
+}
+
+async fn collect_all(stream: Stream[Int, ReadError]) -> Result[List[Int], ReadError] {
+  using stream {
+    return await stream.collect()
+  }
+}

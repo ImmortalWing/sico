@@ -1,0 +1,9 @@
+// case: CAP-002
+// expect: accept
+// semantics: SEM-060, SEM-080
+
+export fn add_one(value: Int) -> Int
+  effects none
+  capabilities none
+  return value + 1
+end
