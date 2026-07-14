@@ -1,0 +1,8 @@
+// case: NUM-102
+// syntax: B
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-003
+
+function main() returns Int:
+  return "1"
+end function

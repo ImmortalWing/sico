@@ -1,0 +1,16 @@
+// case: MATCH-003
+// syntax: C
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum State { Idle, Running }
+enum Event { Start, Stop }
+
+fn allowed(state: State, event: Event) -> Bool {
+  return match (state, event) {
+    (State.Idle, Event.Start): true,
+    (State.Idle, Event.Stop): false,
+    (State.Running, Event.Start): false,
+    (State.Running, Event.Stop): true,
+  }
+}

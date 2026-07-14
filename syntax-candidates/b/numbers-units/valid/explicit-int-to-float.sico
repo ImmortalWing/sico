@@ -1,0 +1,8 @@
+// case: NUM-002
+// syntax: B
+// expect: accept
+// semantics: SEM-003, SEM-024
+
+function main() returns Float64:
+  return Float64.from_int(1)
+end function

@@ -1,0 +1,8 @@
+// case: NUM-101
+// syntax: B
+// expect: reject(IMPLICIT_NUMERIC_CONVERSION)
+// semantics: SEM-003, SEM-024
+
+function main() returns Float64:
+  return 1
+end function

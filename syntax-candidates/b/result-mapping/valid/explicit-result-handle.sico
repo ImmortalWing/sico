@@ -1,0 +1,21 @@
+// case: RESULT-003
+// syntax: B
+// expect: accept
+// semantics: SEM-034, SEM-064, SEM-070
+
+enum ReadError:
+  case Missing
+end enum
+
+function read_name() returns Result[Text, ReadError]:
+  return ok("Ada")
+end function
+
+function main() returns Text:
+  match read_name():
+    case ok(name):
+      return name
+    case error(ReadError.Missing):
+      return "unknown"
+  end match
+end function

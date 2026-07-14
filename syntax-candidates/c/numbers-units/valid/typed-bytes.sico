@@ -1,0 +1,14 @@
+// case: NUM-003
+// syntax: C
+// expect: accept
+// semantics: SEM-032
+
+opaque Bytes = Int
+
+fn keep_size(size: Bytes) -> Bytes {
+  return size
+}
+
+fn main() -> Bytes {
+  return keep_size(Bytes(16))
+}

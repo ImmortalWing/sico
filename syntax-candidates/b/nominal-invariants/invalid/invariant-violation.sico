@@ -1,0 +1,14 @@
+// case: NOM-105
+// syntax: B
+// expect: reject(INVARIANT_VIOLATION)
+// semantics: SEM-110
+
+record Range:
+  field min: Int
+  field max: Int
+  invariant min <= max
+end record
+
+function main() returns Range:
+  return Range(min: 10, max: 1)
+end function

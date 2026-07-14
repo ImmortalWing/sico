@@ -1,0 +1,20 @@
+// case: NOM-102
+// syntax: B
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-030
+
+record User:
+  field name: Text
+end record
+
+record Customer:
+  field name: Text
+end record
+
+function greet(customer: Customer) returns Text:
+  return customer.name
+end function
+
+function main() returns Text:
+  return greet(User(name: "Ada"))
+end function

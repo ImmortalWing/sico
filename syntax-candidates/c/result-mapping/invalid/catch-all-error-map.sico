@@ -1,0 +1,22 @@
+// case: RESULT-103
+// syntax: C
+// expect: reject(SEALED_ERROR_WILDCARD)
+// semantics: SEM-031, SEM-064, SEM-071
+
+enum ParseError {
+  Empty,
+  Invalid(value: Text),
+}
+
+enum AppError { BadInput }
+
+fn parse() -> Result[Int, ParseError] {
+  return Ok(1)
+}
+
+fn load() -> Result[Int, AppError] {
+  return parse().map_error(fn(problem) => match problem {
+    ParseError.Empty: AppError.BadInput,
+    else: AppError.BadInput,
+  })
+}

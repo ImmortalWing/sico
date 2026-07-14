@@ -1,0 +1,14 @@
+// case: NOM-105
+// syntax: C
+// expect: reject(INVARIANT_VIOLATION)
+// semantics: SEM-110
+
+record Range {
+  min: Int,
+  max: Int,
+  invariant: min <= max,
+}
+
+fn main() -> Range {
+  return Range(min: 10, max: 1)
+}

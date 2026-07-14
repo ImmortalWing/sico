@@ -1,0 +1,13 @@
+// case: NOM-002
+// syntax: C
+// expect: accept
+// semantics: SEM-030
+
+record Feature {
+  name: Text,
+  enabled: Bool,
+}
+
+fn main() -> Feature {
+  return Feature(name: "search", enabled: true)
+}

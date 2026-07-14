@@ -1,0 +1,17 @@
+// case: RESULT-003
+// syntax: C
+// expect: accept
+// semantics: SEM-034, SEM-064, SEM-070
+
+enum ReadError { Missing }
+
+fn read_name() -> Result[Text, ReadError] {
+  return Ok("Ada")
+}
+
+fn main() -> Text {
+  return match read_name() {
+    Ok(name): name,
+    Err(ReadError.Missing): "unknown",
+  }
+}

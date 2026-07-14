@@ -1,0 +1,8 @@
+// case: NUM-001
+// syntax: B
+// expect: accept
+// semantics: SEM-021
+
+function main() returns Int:
+  return 999999999999999999999999 + 1
+end function

@@ -1,0 +1,24 @@
+// case: RESULT-102
+// syntax: C
+// expect: reject(INCOMPLETE_ERROR_MAP)
+// semantics: SEM-031, SEM-064, SEM-071
+
+enum ParseError {
+  Empty,
+  Invalid(value: Text),
+}
+
+enum AppError {
+  MissingInput,
+  BadInput(value: Text),
+}
+
+fn parse() -> Result[Int, ParseError] {
+  return Ok(1)
+}
+
+fn load() -> Result[Int, AppError] {
+  return parse().map_error(fn(problem) => match problem {
+    ParseError.Empty: AppError.MissingInput,
+  })
+}

@@ -1,0 +1,15 @@
+// case: NOM-101
+// syntax: C
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-030, SEM-032
+
+opaque AccountId = Text
+opaque UserId = Text
+
+fn load_account(id: AccountId) -> Unit {
+  return Unit
+}
+
+fn main() -> Unit {
+  return load_account(UserId("user-1"))
+}

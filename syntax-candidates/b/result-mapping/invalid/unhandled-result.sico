@@ -1,0 +1,17 @@
+// case: RESULT-104
+// syntax: B
+// expect: reject(UNHANDLED_RESULT)
+// semantics: SEM-070, SEM-071
+
+enum SaveError:
+  case Unavailable
+end enum
+
+function save() returns Result[Unit, SaveError]:
+  return ok(Unit)
+end function
+
+function main() returns Unit:
+  save()
+  return Unit
+end function

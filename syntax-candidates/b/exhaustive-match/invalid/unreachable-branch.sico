@@ -1,0 +1,20 @@
+// case: MATCH-104
+// syntax: B
+// expect: reject(UNREACHABLE_MATCH_ARM)
+// semantics: SEM-064
+
+enum Switch:
+  case Off
+  case On
+end enum
+
+function enabled(value: Switch) returns Bool:
+  match value:
+    case Switch.Off:
+      return false
+    case Switch.On:
+      return true
+    case Switch.On:
+      return false
+  end match
+end function

@@ -1,0 +1,27 @@
+// case: MATCH-003
+// syntax: B
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum State:
+  case Idle
+  case Running
+end enum
+
+enum Event:
+  case Start
+  case Stop
+end enum
+
+function allowed(state: State, event: Event) returns Bool:
+  match (state, event):
+    case (State.Idle, Event.Start):
+      return true
+    case (State.Idle, Event.Stop):
+      return false
+    case (State.Running, Event.Start):
+      return false
+    case (State.Running, Event.Stop):
+      return true
+  end match
+end function

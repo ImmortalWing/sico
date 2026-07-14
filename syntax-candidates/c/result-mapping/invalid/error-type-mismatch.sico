@@ -1,0 +1,16 @@
+// case: RESULT-101
+// syntax: C
+// expect: reject(ERROR_TYPE_MISMATCH)
+// semantics: SEM-071
+
+enum ParseError { Invalid }
+enum AppError { BadInput }
+
+fn parse() -> Result[Int, ParseError] {
+  return Err(ParseError.Invalid)
+}
+
+fn load() -> Result[Int, AppError] {
+  let value = parse()?
+  return Ok(value)
+}

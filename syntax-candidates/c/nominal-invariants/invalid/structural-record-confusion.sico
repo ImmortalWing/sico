@@ -1,0 +1,20 @@
+// case: NOM-102
+// syntax: C
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-030
+
+record User {
+  name: Text,
+}
+
+record Customer {
+  name: Text,
+}
+
+fn greet(customer: Customer) -> Text {
+  return customer.name
+}
+
+fn main() -> Text {
+  return greet(User(name: "Ada"))
+}

@@ -1,0 +1,8 @@
+// case: NUM-102
+// syntax: C
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-003
+
+fn main() -> Int {
+  return "1"
+}

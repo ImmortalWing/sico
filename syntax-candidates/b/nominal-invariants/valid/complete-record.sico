@@ -1,0 +1,13 @@
+// case: NOM-002
+// syntax: B
+// expect: accept
+// semantics: SEM-030
+
+record Feature:
+  field name: Text
+  field enabled: Bool
+end record
+
+function main() returns Feature:
+  return Feature(name: "search", enabled: true)
+end function

@@ -1,0 +1,8 @@
+// case: NUM-001
+// syntax: C
+// expect: accept
+// semantics: SEM-021
+
+fn main() -> Int {
+  return 999999999999999999999999 + 1
+}

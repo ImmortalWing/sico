@@ -1,0 +1,14 @@
+// case: MATCH-104
+// syntax: C
+// expect: reject(UNREACHABLE_MATCH_ARM)
+// semantics: SEM-064
+
+enum Switch { Off, On }
+
+fn enabled(value: Switch) -> Bool {
+  return match value {
+    Switch.Off: false,
+    Switch.On: true,
+    Switch.On: false,
+  }
+}

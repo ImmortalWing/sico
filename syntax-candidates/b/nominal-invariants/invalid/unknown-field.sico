@@ -1,0 +1,12 @@
+// case: NOM-104
+// syntax: B
+// expect: reject(UNKNOWN_FIELD)
+// semantics: SEM-030
+
+record User:
+  field name: Text
+end record
+
+function main() returns User:
+  return User(name: "Ada", admin: true)
+end function

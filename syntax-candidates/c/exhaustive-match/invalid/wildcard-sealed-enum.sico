@@ -1,0 +1,13 @@
+// case: MATCH-102
+// syntax: C
+// expect: reject(SEALED_MATCH_WILDCARD)
+// semantics: SEM-031, SEM-064
+
+enum Color { Red, Green, Blue }
+
+fn name(color: Color) -> Text {
+  return match color {
+    Color.Red: "red",
+    else: "other",
+  }
+}

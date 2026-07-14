@@ -1,0 +1,23 @@
+// case: MATCH-103
+// syntax: B
+// expect: reject(SEALED_MATCH_WILDCARD)
+// semantics: SEM-031, SEM-064
+
+enum State:
+  case Idle
+  case Running
+end enum
+
+enum Event:
+  case Start
+  case Stop
+end enum
+
+function allowed(state: State, event: Event) returns Bool:
+  match (state, event):
+    case (State.Idle, Event.Start):
+      return true
+    case else:
+      return false
+  end match
+end function

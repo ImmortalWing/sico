@@ -1,0 +1,16 @@
+// case: RESULT-001
+// syntax: C
+// expect: accept
+// semantics: SEM-034, SEM-070, SEM-071
+
+enum LoadError { Missing }
+
+fn read_value() -> Result[Int, LoadError] {
+  return Ok(1)
+}
+
+fn load_twice() -> Result[Int, LoadError] {
+  let first = read_value()?
+  let second = read_value()?
+  return Ok(first + second)
+}

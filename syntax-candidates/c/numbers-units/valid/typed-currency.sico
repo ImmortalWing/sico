@@ -1,0 +1,14 @@
+// case: NUM-004
+// syntax: C
+// expect: accept
+// semantics: SEM-032
+
+opaque Cny = Int
+
+fn keep_amount(amount: Cny) -> Cny {
+  return amount
+}
+
+fn main() -> Cny {
+  return keep_amount(Cny(100))
+}

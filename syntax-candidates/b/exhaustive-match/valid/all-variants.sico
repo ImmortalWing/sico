@@ -1,0 +1,21 @@
+// case: MATCH-001
+// syntax: B
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum Color:
+  case Red
+  case Green
+  case Blue
+end enum
+
+function name(color: Color) returns Text:
+  match color:
+    case Color.Red:
+      return "red"
+    case Color.Green:
+      return "green"
+    case Color.Blue:
+      return "blue"
+  end match
+end function

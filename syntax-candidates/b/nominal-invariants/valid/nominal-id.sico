@@ -1,0 +1,14 @@
+// case: NOM-001
+// syntax: B
+// expect: accept
+// semantics: SEM-032
+
+newtype AccountId from Text
+
+function load(id: AccountId) returns AccountId:
+  return id
+end function
+
+function main() returns AccountId:
+  return load(AccountId("account-1"))
+end function

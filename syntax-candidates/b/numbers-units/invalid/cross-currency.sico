@@ -1,0 +1,15 @@
+// case: NUM-104
+// syntax: B
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-003, SEM-032
+
+newtype Cny from Int
+newtype Usd from Int
+
+function charge(amount: Cny) returns Unit:
+  return Unit
+end function
+
+function main() returns Unit:
+  return charge(Usd(100))
+end function

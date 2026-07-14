@@ -1,0 +1,14 @@
+// case: NOM-003
+// syntax: C
+// expect: accept
+// semantics: SEM-110
+
+record Range {
+  min: Int,
+  max: Int,
+  invariant: min <= max,
+}
+
+fn main() -> Range {
+  return Range(min: 1, max: 10)
+}

@@ -1,0 +1,14 @@
+// case: NUM-003
+// syntax: B
+// expect: accept
+// semantics: SEM-032
+
+newtype Bytes from Int
+
+function keep_size(size: Bytes) returns Bytes:
+  return size
+end function
+
+function main() returns Bytes:
+  return keep_size(Bytes(16))
+end function

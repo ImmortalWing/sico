@@ -1,0 +1,18 @@
+// case: MATCH-002
+// syntax: B
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum Notice:
+  case Message(text: Text)
+  case Stop
+end enum
+
+function is_message(notice: Notice) returns Bool:
+  match notice:
+    case Notice.Message(ignore):
+      return true
+    case Notice.Stop:
+      return false
+  end match
+end function

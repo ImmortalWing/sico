@@ -1,0 +1,14 @@
+// case: NUM-004
+// syntax: B
+// expect: accept
+// semantics: SEM-032
+
+newtype Cny from Int
+
+function keep_amount(amount: Cny) returns Cny:
+  return amount
+end function
+
+function main() returns Cny:
+  return keep_amount(Cny(100))
+end function

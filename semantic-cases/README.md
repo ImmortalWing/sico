@@ -35,6 +35,8 @@
 
 候选 B、C 必须重新表达同一案例，并保持 accept/reject 结果、诊断根因和语义摘要一致。
 
+第一轮 B、C 源码位于 [`syntax-candidates/`](../syntax-candidates/README.md)。
+
 ## 3. 第一批案例组
 
 | 顺序 | 案例组 | 合法 | 非法 | 入口 |

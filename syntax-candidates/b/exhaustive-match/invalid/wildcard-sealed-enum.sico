@@ -1,0 +1,19 @@
+// case: MATCH-102
+// syntax: B
+// expect: reject(SEALED_MATCH_WILDCARD)
+// semantics: SEM-031, SEM-064
+
+enum Color:
+  case Red
+  case Green
+  case Blue
+end enum
+
+function name(color: Color) returns Text:
+  match color:
+    case Color.Red:
+      return "red"
+    case else:
+      return "other"
+  end match
+end function

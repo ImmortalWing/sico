@@ -1,0 +1,27 @@
+// case: RESULT-102
+// syntax: B
+// expect: reject(INCOMPLETE_ERROR_MAP)
+// semantics: SEM-031, SEM-064, SEM-071
+
+enum ParseError:
+  case Empty
+  case Invalid(value: Text)
+end enum
+
+enum AppError:
+  case MissingInput
+  case BadInput(value: Text)
+end enum
+
+function parse() returns Result[Int, ParseError]:
+  return ok(1)
+end function
+
+function load() returns Result[Int, AppError]:
+  return parse().map_error(function(problem) returns AppError:
+    match problem:
+      case ParseError.Empty:
+        return AppError.MissingInput
+    end match
+  end function)
+end function

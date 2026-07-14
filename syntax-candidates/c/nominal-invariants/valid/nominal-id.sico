@@ -1,0 +1,14 @@
+// case: NOM-001
+// syntax: C
+// expect: accept
+// semantics: SEM-032
+
+opaque AccountId = Text
+
+fn load(id: AccountId) -> AccountId {
+  return id
+}
+
+fn main() -> AccountId {
+  return load(AccountId("account-1"))
+}

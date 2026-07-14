@@ -1,0 +1,15 @@
+// case: NOM-101
+// syntax: B
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-030, SEM-032
+
+newtype AccountId from Text
+newtype UserId from Text
+
+function load_account(id: AccountId) returns Unit:
+  return Unit
+end function
+
+function main() returns Unit:
+  return load_account(UserId("user-1"))
+end function
