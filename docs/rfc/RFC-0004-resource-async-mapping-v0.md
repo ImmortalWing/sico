@@ -57,7 +57,7 @@ Task 不是普通可复制泛型值。Future/Stream 的 Component lowering 必�
 - 增量序列使用 `stream<T>`，通常和终止 `future<result<_, E>>` 成对；
 - Sico Task scope、取消树和权限不作为通用 WIT resource 暴露；Runtime 负责把 reader close、instance termination 和父取消传播到调度器。
 
-原型 WIT 已由 `wit-parser 0.253.0` 解析，但尚未生成/加载真实 Component，因此 RFC 保持 `proposed`。
+原型 WIT 已由 `wit-parser 0.253.0` 解析。STEP-0010 又真实验证了 owned/borrowed resource 与原生 `async func` Component 往返；`future<T>`/`stream<T>` 尚未由 Runtime 往返，因此 RFC 保持 `proposed`。
 
 ## AI evaluation
 
@@ -82,7 +82,7 @@ Runtime 必须限制 task 数、stream buffer、执行时间和 Component memory
 
 已验证：10 个动态测试、2 个 Rust compile-fail、WIT parser、Clippy 零 warning、确定性 release 探针。
 
-接受前必须由 STEP-0010 证明至少一个 owned/borrowed resource 调用和一个 WASI 0.3 async/future/stream 形状能由锁定版本工具生成、加载和往返；若当前 guest toolchain 尚不支持原生 async，必须明确记录宿主 API 与 guest 生成器的版本差，而不能悄悄回退旧 ABI。
+STEP-0010 已证明 owned/borrowed resource 调用和原生 `async func` 能由锁定版本工具生成、加载和往返，并实测同步 host lowering 会因 async 类型不匹配被拒绝。接受前仍须至少真实往返一个 `future<T>` 和一个 `stream<T>`，并验证 close/cancel/backpressure 传播；不允许用旧 pollable 冒充。
 
 ## Links
 

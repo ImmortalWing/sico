@@ -6,3 +6,4 @@
 |---|---|---|
 | [`numeric`](./numeric/README.md) | STEP-0008 | `Int`、Decimal、限额与 WIT 边界 |
 | [`resource-async`](./resource-async/README.md) | STEP-0009 | affine resource、Task/Future/Stream 与 WASI 0.3 WIT |
+| [`component-host-call`](./component-host-call/README.md) | STEP-0010 | 真实 Component host call、resource、数值记录与原生 async ABI |

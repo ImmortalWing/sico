@@ -13,3 +13,4 @@
 | [`semantic-query-json-v0`](./semantic-query-json-v0.md) | complete | STEP-0007 | 10 模块索引、五类查询、可信度/完整性与预算 fixtures |
 | [`numeric-representation-v0`](./numeric-representation-v0.md) | complete | STEP-0008 | `Int`/Decimal 运算、规范编码、限额和 WIT 边界原型 |
 | [`resource-async-wit-v0`](./resource-async-wit-v0.md) | complete | STEP-0009 | affine resource、Task/Future/Stream 与 WASI 0.3 WIT 原型 |
+| [`component-runtime-host-call-v0`](./component-runtime-host-call-v0.md) | complete | STEP-0010 | 真实 Component host call、resource、数值记录与原生 async 往返 |

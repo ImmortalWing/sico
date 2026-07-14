@@ -1,0 +1,5 @@
+/artifacts/*.wasm
+/results/*.json
+/guest/target/
+/async-guest/target/
+/host/target/

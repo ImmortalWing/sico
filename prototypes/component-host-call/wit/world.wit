@@ -1,0 +1,39 @@
+package sico:component-host-call@0.1.0;
+
+interface runtime {
+    log: func(message: string);
+    host-add: func(left: u32, right: u32) -> u32;
+
+    resource counter {
+        constructor(seed: u32);
+        add: func(delta: u32);
+        value: func() -> u32;
+    }
+}
+
+interface app {
+    enum integer-sign {
+        negative,
+        zero,
+        positive,
+    }
+
+    record big-int {
+        sign: integer-sign,
+        magnitude-be: list<u8>,
+    }
+
+    record decimal-value {
+        coefficient: big-int,
+        scale: u32,
+    }
+
+    run: func(input: u32) -> u32;
+    roundtrip-int: func(value: big-int) -> big-int;
+    roundtrip-decimal: func(value: decimal-value) -> decimal-value;
+}
+
+world demo {
+    import runtime;
+    export app;
+}

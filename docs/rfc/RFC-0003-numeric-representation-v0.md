@@ -113,7 +113,7 @@ record decimal-value {
 
 整数 magnitude 是无符号最短大端字节；零 magnitude 为空；禁止负零和前导零。Decimal coefficient 复用该记录，并要求尾零规范化。可证明适合固定宽度的接口应优先直接使用 WIT `s8`—`s64`/`u8`—`u64`，避免无意义分配。
 
-记录的字段语义由 WIT 包版本控制，不由 Rust struct 布局控制。正式接受前必须在 STEP-0010 的真实 Component/Canonical ABI 链路中验证往返、限额和确定性。
+记录的字段语义由 WIT 包版本控制，不由 Rust struct 布局控制。STEP-0010 已用真实 Component/Canonical ABI 往返 512-byte magnitude 的 4096-bit 值与 Decimal 记录，字段和值保持不变；规范拒绝与限额仍由 STEP-0008 Rust 原型验证。
 
 ## AI evaluation
 
@@ -150,10 +150,10 @@ AI 任务至少覆盖：选择固定宽度或任意精度边界、修复隐式�
 - 两个独立进程的 Int/Decimal 规范字节 checksum 一致；
 - Windows x86_64 GNU + rust-lld release 探针通过。
 
-RFC 保持 `proposed`，直到：
+STEP-0010 已满足下列第 1、2 项；RFC 保持 `proposed`，直到其余条件完成：
 
-1. STEP-0010 用真实 WebAssembly Component 和 Runtime 往返该 WIT 类型；
-2. WIT grammar/Canonical ABI 工具验证通过；
+1. ~~STEP-0010 用真实 WebAssembly Component 和 Runtime 往返该 WIT 类型；~~
+2. ~~WIT grammar/Canonical ABI 工具验证通过；~~
 3. 至少验证一个非 Windows 构建环境，或在 M0 审计中明确保留跨平台风险；
 4. 决定资源超限在编译期、边界调用和实例执行中的稳定诊断/trap 分类。
 

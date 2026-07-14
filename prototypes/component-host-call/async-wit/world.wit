@@ -1,0 +1,14 @@
+package sico:component-async@0.1.0;
+
+interface runtime {
+    delayed-add: async func(left: u32, right: u32) -> u32;
+}
+
+interface app {
+    run: async func(input: u32) -> u32;
+}
+
+world demo {
+    import runtime;
+    export app;
+}
