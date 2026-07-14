@@ -1,0 +1,28 @@
+{
+  "schema": "sico.numeric-probe/0",
+  "crate_version": "0.1.0",
+  "os": "windows",
+  "arch": "x86_64",
+  "iterations": 2000,
+  "int": {
+    "operand_bits": 4096,
+    "result_bits": 4097,
+    "wire_bytes": 514,
+    "checksum_fnv1a64": "55d8491b11ad948c",
+    "add_elapsed_ns": 5827300,
+    "mul_elapsed_ns": 16653900,
+    "over_limit_rejected": true
+  },
+  "decimal": {
+    "input_digits": 29,
+    "result_digits": 27,
+    "result_scale": 7,
+    "canonical": "12345678901234567890.1234568",
+    "wire_bytes": 16,
+    "checksum_fnv1a64": "c69072d00c90b010",
+    "add_elapsed_ns": 2869600,
+    "mul_elapsed_ns": 7589000,
+    "non_canonical_rejected": true
+  },
+  "deterministic": true
+}

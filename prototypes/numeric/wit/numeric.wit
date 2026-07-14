@@ -1,0 +1,41 @@
+package sico:numeric-prototype@0.1.0;
+
+interface types {
+  enum integer-sign {
+    negative,
+    zero,
+    positive,
+  }
+
+  /// The magnitude is unsigned, big-endian, minimal, and empty only for zero.
+  record big-int {
+    sign: integer-sign,
+    magnitude-be: list<u8>,
+  }
+
+  /// coefficient * 10^(-scale), normalized by removing decimal trailing zeros.
+  record decimal-value {
+    coefficient: big-int,
+    scale: u32,
+  }
+
+  record numeric-limits {
+    max-int-bytes: u32,
+    max-decimal-digits: u32,
+    max-decimal-scale: u32,
+    max-wire-bytes: u32,
+  }
+
+  variant numeric-error {
+    non-canonical(string),
+    limit-exceeded(string),
+    out-of-range(string),
+  }
+
+  decode-int: func(value: big-int, limits: numeric-limits) -> result<big-int, numeric-error>;
+  decode-decimal: func(value: decimal-value, limits: numeric-limits) -> result<decimal-value, numeric-error>;
+}
+
+world numeric-probe {
+  export types;
+}

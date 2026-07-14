@@ -1,0 +1,7 @@
+# Technical prototypes
+
+本目录保存 M0 技术风险原型。原型用于验证表示、边界和工具链，不是正式 Sico 编译器或稳定标准库。
+
+| Prototype | Step | Purpose |
+|---|---|---|
+| [`numeric`](./numeric/README.md) | STEP-0008 | `Int`、Decimal、限额与 WIT 边界 |

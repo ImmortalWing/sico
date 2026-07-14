@@ -560,8 +560,8 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 
 以下问题不能通过本文首版直接视为完成：
 
-1. `Int` 任意精度实现的性能、WIT 转换与常量资源上限；
-2. Decimal 的精度、舍入上下文和序列化规范；
+1. `Int` 任意精度实现的性能、WIT 转换与常量资源上限；STEP-0008 已验证 Rust 表示、规范编码和限额，真实 Component 往返仍待 STEP-0010；
+2. Decimal 的精度、舍入上下文和序列化规范；STEP-0008 已提出 coefficient/scale v0 并验证加乘与显式舍入，除法上下文和 RFC 接受仍开放；
 3. 固定宽度整数的正式名称及公开程度；
 4. 泛型约束、接口/trait、方差和编译策略；
 5. 资源借用是否进入表层语言，以及需要怎样的生命周期推导；
@@ -582,5 +582,5 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 3. 根据同一语义设计候选 B、C，不改变程序行为；54 个一一对应镜像已放入 [`syntax-candidates/`](./syntax-candidates/README.md)；
 4. 按 [`ai-eval/`](./ai-eval/README.md) 比较三套语法的 AI 首次生成成功率、理解 token、诊断 token 和单轮修复率；协议已完成，真实模型数据尚未测量；
 5. 诊断协议 v0 已由 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 接受，语义索引与五类查询 JSON v0 已由 [`RFC-0002`](./docs/rfc/RFC-0002-semantic-index-query-v0.md) 接受；
-6. 对 `Int`、资源、Future 和 WIT 映射做 Rust/Wasm Component 技术原型；
+6. `Int`/Decimal Rust 原型和 [`RFC-0003`](./docs/rfc/RFC-0003-numeric-representation-v0.md) 已由 STEP-0008 完成；资源、Future 与 WIT 映射进入 STEP-0009，真实 Component 往返进入 STEP-0010；
 7. 只有关键 P0 语义通过验证后，才建立正式编译器前端。

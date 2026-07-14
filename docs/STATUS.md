@@ -4,16 +4,16 @@
 > - phase: M0 设计与技术基线
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0007
-> - next step: STEP-0008
+> - last completed step: STEP-0008
+> - next step: STEP-0009
 
 ## 1. Current objective
 
-下一目标是用独立 Rust 原型验证 Sico `Int` 任意精度和 Decimal 表示、运算、资源上限及 WIT 边界方案，不启动正式编译器。
+下一目标是验证 affine resource、Future/Task/Stream 的动态行为、资源清理和 WIT/Component 映射候选，不启动正式编译器。
 
 ## 2. Current step
 
-[`STEP-0007: 建立语义索引与查询 JSON v0`](./steps/STEP-0007-semantic-query-json-v0.md) 已完成。下一步骤编号为 `STEP-0008`，尚未开始。
+[`STEP-0008: 验证 Int 与 Decimal 表示原型`](./steps/STEP-0008-numeric-representation-prototypes.md) 已完成。下一步骤编号为 `STEP-0009`，尚未开始。
 
 ## 3. Verified repository facts
 
@@ -30,8 +30,9 @@
 | 固定 AI 评测任务 | 42 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 24 | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 0 | measured |
-| `Cargo.toml` | 0 | measured |
+| Rust `.rs` 文件 | 2 | measured |
+| `Cargo.toml` | 1 | measured |
+| 数值原型单元测试 | 10 passed | verified |
 | 正式编译器 | 不存在 | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
@@ -51,19 +52,19 @@
 - 42 项 AI 评测协议与离线执行器：[`ai-eval/`](../ai-eval/README.md)；
 - 24 个稳定诊断、29 个 case 映射、JSON Schema 与离线校验器：[`diagnostics/`](../diagnostics/README.md)；
 - 10 模块 Semantic Index fixture、五类查询 JSON v0 与离线校验器：[`semantic-index/`](../semantic-index/README.md)；
+- `Int`/Decimal Rust 原型、WIT 候选、RFC 和可复现报告：[`prototypes/numeric/`](../prototypes/numeric/README.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
 
 按当前依赖顺序：
 
-1. `Int` 与 Decimal 表示、运算、资源上限和 WIT 边界原型；
-2. affine resource、Future/Task/Stream 与 WIT 映射原型；
-3. Rust → Component → Runtime → WIT host call 最小链路；
-4. Component Runtime 的桌面与 Android 对比报告；
-5. 第二轮语法指标与真实 AI 证据（需要凭据/成本授权）；
-6. 语法候选的数据驱动选择或合并；
-7. M0 退出审计。
+1. affine resource、Future/Task/Stream 与 WIT 映射原型；
+2. Rust → Component → Runtime → WIT host call 最小链路；
+3. Component Runtime 的桌面与 Android 对比报告；
+4. 第二轮语法指标与真实 AI 证据（需要凭据/成本授权）；
+5. 语法候选的数据驱动选择或合并；
+6. M0 退出审计。
 
 ## 6. Blockers
 
@@ -74,7 +75,7 @@
 ## 7. Risks
 
 - A0/B/C 目前没有正式词法器或解析器，结构配对不等于语法有效；
-- `Int` 任意精度、contract invariant 和 Result 表层写法仍是草案；
+- `Int`/Decimal 记录已通过 Rust 原型，但 RFC-0003 仍待真实 Component 往返后接受；contract invariant 和 Result 表层写法仍是草案；
 - 语法候选已覆盖 10 组 P0 设计判定，但第二轮 24 个 case 尚无静态指标或 AI 实测；
 - 没有 Component 技术原型，WIT 和 Runtime 可行性尚未实测；
 - 诊断协议已有设计目录和 fixtures，但尚无 compiler 生成真实 code、跨度或级联数据。
@@ -82,4 +83,4 @@
 
 ## 8. Next step
 
-`STEP-0008`：建立独立 Rust 数值原型，实测任意精度 `Int`、Decimal、确定性序列化、资源上限和 WIT 可表示性。
+`STEP-0009`：建立 affine resource、Future/Task/Stream 的 Rust 动态原型和 WIT 映射草案，实测 move/drop、清理、取消与有界 stream 行为。
