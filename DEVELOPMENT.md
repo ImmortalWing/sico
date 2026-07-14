@@ -304,31 +304,57 @@ AST 节点至少包含：
 ### 7.2 默认文本格式
 
 ```text
-E021 user.sico:18:10 expected User, found Option<User>
+E2001 user.sico:18:10 expected User, found Option<User>
 hint: handle none before using the value
 ```
 
-### 7.3 机器协议工作方案
+### 7.3 机器协议 v0
 
 ```json
 {
-  "version": 1,
+  "schema": "sico.diagnostics.v0",
+  "protocol_version": 0,
+  "tool": { "name": "sico", "version": "0.1.0" },
+  "coordinate_system": {
+    "encoding": "utf-8",
+    "byte_base": 0,
+    "byte_end": "exclusive",
+    "line_base": 1,
+    "column_base": 1,
+    "column_unit": "unicode-scalar-value"
+  },
   "diagnostics": [
     {
-      "code": "E021",
+      "id": "d1",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
       "severity": "error",
+      "kind": "root",
       "file": "user.sico",
-      "range": [18, 10, 18, 26],
+      "range": {
+        "start": { "byte": 240, "line": 18, "column": 10 },
+        "end": { "byte": 252, "line": 18, "column": 22 }
+      },
       "message": "expected User, found Option<User>",
-      "expected": "User",
-      "found": "Option<User>",
+      "arguments": {
+        "expected": "User",
+        "found": "Option<User>"
+      },
       "hint": "handle none before using the value"
     }
-  ]
+  ],
+  "summary": {
+    "emitted": 1,
+    "errors": 1,
+    "warnings": 0,
+    "info": 0,
+    "suppressed": 0,
+    "truncated": 0
+  }
 }
 ```
 
-字段存在时必须含义稳定；不适用的字段应省略，而不是填入无意义空值。
+完整 envelope 还包含工具版本、统一坐标约定和 summary。字段存在时必须含义稳定；不适用的字段应省略，而不是填入无意义空值。权威位置是 0-based UTF-8 半开 byte range；line/column 为 1-based Unicode scalar value 坐标。正式契约见 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 和 [`diagnostics/schema/`](./diagnostics/schema/diagnostics-v0.schema.json)。
 
 ### 7.4 诊断命令
 
@@ -338,7 +364,7 @@ hint: handle none before using the value
 sico check                 默认简短文本
 sico check --json          机器格式
 sico check --max-errors 1  限制上下文占用
-sico explain E021          按需查看详细解释
+sico explain E2001         按需查看详细解释
 ```
 
 命令名称是工作方案，但“默认简短、机器模式、错误上限、按需展开”是已确认能力。

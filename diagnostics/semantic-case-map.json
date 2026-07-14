@@ -1,0 +1,238 @@
+{
+  "schema": "sico.semantic-diagnostic-cases.v0",
+  "catalog": "catalog.json",
+  "cases": [
+    {
+      "case": "NUM-101",
+      "source": "semantic-cases/numbers-units/invalid/implicit-int-to-float.sico",
+      "code": "E2002",
+      "key": "IMPLICIT_NUMERIC_CONVERSION",
+      "arguments": { "expected": "Float64", "found": "Int" },
+      "expected_message": "expected Float64, found Int; convert explicitly"
+    },
+    {
+      "case": "NUM-102",
+      "source": "semantic-cases/numbers-units/invalid/text-as-int.sico",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "arguments": { "expected": "Int", "found": "Text" },
+      "expected_message": "expected Int, found Text"
+    },
+    {
+      "case": "NUM-103",
+      "source": "semantic-cases/numbers-units/invalid/mixed-unit.sico",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "arguments": { "expected": "Bytes", "found": "Seconds" },
+      "expected_message": "expected Bytes, found Seconds"
+    },
+    {
+      "case": "NUM-104",
+      "source": "semantic-cases/numbers-units/invalid/cross-currency.sico",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "arguments": { "expected": "Cny", "found": "Usd" },
+      "expected_message": "expected Cny, found Usd"
+    },
+    {
+      "case": "NOM-101",
+      "source": "semantic-cases/nominal-invariants/invalid/nominal-confusion.sico",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "arguments": { "expected": "AccountId", "found": "UserId" },
+      "expected_message": "expected AccountId, found UserId"
+    },
+    {
+      "case": "NOM-102",
+      "source": "semantic-cases/nominal-invariants/invalid/structural-record-confusion.sico",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "arguments": { "expected": "Customer", "found": "User" },
+      "expected_message": "expected Customer, found User"
+    },
+    {
+      "case": "NOM-103",
+      "source": "semantic-cases/nominal-invariants/invalid/missing-field.sico",
+      "code": "E2010",
+      "key": "MISSING_FIELD",
+      "arguments": { "field": "enabled" },
+      "expected_message": "missing field: enabled"
+    },
+    {
+      "case": "NOM-104",
+      "source": "semantic-cases/nominal-invariants/invalid/unknown-field.sico",
+      "code": "E2011",
+      "key": "UNKNOWN_FIELD",
+      "arguments": { "field": "admin" },
+      "expected_message": "unknown field: admin"
+    },
+    {
+      "case": "NOM-105",
+      "source": "semantic-cases/nominal-invariants/invalid/invariant-violation.sico",
+      "code": "E2020",
+      "key": "INVARIANT_VIOLATION",
+      "arguments": { "record": "Range", "expression": "min <= max" },
+      "expected_message": "Range invariant is false: min <= max"
+    },
+    {
+      "case": "MATCH-101",
+      "source": "semantic-cases/exhaustive-match/invalid/missing-variant.sico",
+      "code": "E3001",
+      "key": "NON_EXHAUSTIVE_MATCH",
+      "arguments": { "missing": ["Blue"] },
+      "expected_message": "missing case: Blue"
+    },
+    {
+      "case": "MATCH-102",
+      "source": "semantic-cases/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+      "code": "E3002",
+      "key": "SEALED_MATCH_WILDCARD",
+      "arguments": { "hidden": "variants: Green, Blue" },
+      "expected_message": "wildcard hides sealed variants: Green, Blue"
+    },
+    {
+      "case": "MATCH-103",
+      "source": "semantic-cases/exhaustive-match/invalid/wildcard-sealed-product.sico",
+      "code": "E3002",
+      "key": "SEALED_MATCH_WILDCARD",
+      "arguments": { "hidden": "state/event combinations" },
+      "expected_message": "wildcard hides sealed state/event combinations"
+    },
+    {
+      "case": "MATCH-104",
+      "source": "semantic-cases/exhaustive-match/invalid/unreachable-branch.sico",
+      "code": "E3003",
+      "key": "UNREACHABLE_MATCH_ARM",
+      "arguments": { "case": "On" },
+      "expected_message": "match arm is already covered: On"
+    },
+    {
+      "case": "RESULT-101",
+      "source": "semantic-cases/result-mapping/invalid/error-type-mismatch.sico",
+      "code": "E3101",
+      "key": "ERROR_TYPE_MISMATCH",
+      "arguments": { "source_error": "ParseError", "target_error": "AppError" },
+      "expected_message": "cannot propagate ParseError as AppError"
+    },
+    {
+      "case": "RESULT-102",
+      "source": "semantic-cases/result-mapping/invalid/incomplete-error-map.sico",
+      "code": "E3102",
+      "key": "INCOMPLETE_ERROR_MAP",
+      "arguments": { "missing": ["Invalid"] },
+      "expected_message": "missing error mapping: Invalid"
+    },
+    {
+      "case": "RESULT-103",
+      "source": "semantic-cases/result-mapping/invalid/catch-all-error-map.sico",
+      "code": "E3103",
+      "key": "SEALED_ERROR_WILDCARD",
+      "arguments": { "hidden": ["Invalid"] },
+      "expected_message": "wildcard hides sealed error variants: Invalid"
+    },
+    {
+      "case": "RESULT-104",
+      "source": "semantic-cases/result-mapping/invalid/unhandled-result.sico",
+      "code": "E3104",
+      "key": "UNHANDLED_RESULT",
+      "arguments": {},
+      "expected_message": "Result must be handled, returned, or propagated"
+    },
+    {
+      "case": "CAP-101",
+      "source": "semantic-cases/effects-capabilities/invalid/undeclared-capability.sico",
+      "code": "E4001",
+      "key": "UNDECLARED_CAPABILITY",
+      "arguments": { "capability": "console" },
+      "expected_message": "capability console is not declared at this boundary"
+    },
+    {
+      "case": "CAP-102",
+      "source": "semantic-cases/effects-capabilities/invalid/undeclared-effect.sico",
+      "code": "E4002",
+      "key": "UNDECLARED_EFFECT",
+      "arguments": { "effect": "console.write" },
+      "expected_message": "missing declared effect: console.write"
+    },
+    {
+      "case": "RES-101",
+      "source": "semantic-cases/affine-resources/invalid/use-after-move.sico",
+      "code": "E5001",
+      "key": "RESOURCE_MOVED",
+      "arguments": { "resource": "reader", "target": "owned" },
+      "expected_message": "reader was moved to owned"
+    },
+    {
+      "case": "RES-102",
+      "source": "semantic-cases/affine-resources/invalid/use-after-close.sico",
+      "code": "E5002",
+      "key": "RESOURCE_CLOSED",
+      "arguments": { "resource": "reader" },
+      "expected_message": "reader was already closed"
+    },
+    {
+      "case": "TASK-101",
+      "source": "semantic-cases/future-task/invalid/await-twice.sico",
+      "code": "E5101",
+      "key": "FUTURE_CONSUMED",
+      "arguments": { "future": "pending" },
+      "expected_message": "pending was already awaited"
+    },
+    {
+      "case": "TASK-102",
+      "source": "semantic-cases/future-task/invalid/task-escapes-scope.sico",
+      "code": "E5102",
+      "key": "TASK_ESCAPES_SCOPE",
+      "arguments": {},
+      "expected_message": "task cannot leave its task group"
+    },
+    {
+      "case": "STREAM-101",
+      "source": "semantic-cases/stream/invalid/unbounded-collect.sico",
+      "code": "E5201",
+      "key": "UNBOUNDED_STREAM_COLLECT",
+      "arguments": {},
+      "expected_message": "stream collection requires an explicit limit"
+    },
+    {
+      "case": "STREAM-102",
+      "source": "semantic-cases/stream/invalid/missing-await.sico",
+      "code": "E5202",
+      "key": "ASYNC_VALUE_REQUIRES_AWAIT",
+      "arguments": { "operation": "stream.next" },
+      "expected_message": "stream.next returns a Future; await it"
+    },
+    {
+      "case": "COMP-101",
+      "source": "semantic-cases/component-call/invalid/version-as-type.sico",
+      "code": "E6001",
+      "key": "COMPONENT_VERSION_IN_TYPE",
+      "arguments": {},
+      "expected_message": "component version is package metadata, not a type argument"
+    },
+    {
+      "case": "COMP-102",
+      "source": "semantic-cases/component-call/invalid/trap-as-domain-error.sico",
+      "code": "E6002",
+      "key": "COMPONENT_FAILURE_COLLAPSE",
+      "arguments": {},
+      "expected_message": "ComponentCall cannot be returned as a domain Result"
+    },
+    {
+      "case": "REV-101",
+      "source": "semantic-cases/revision/invalid/missing-commit-revision.sico",
+      "code": "E7001",
+      "key": "MISSING_REVISION",
+      "arguments": {},
+      "expected_message": "commit requires the expected revision"
+    },
+    {
+      "case": "REV-102",
+      "source": "semantic-cases/revision/invalid/unchecked-stale-result.sico",
+      "code": "E7002",
+      "key": "UNCHECKED_STALE_RESULT",
+      "arguments": {},
+      "expected_message": "compare loaded.revision before applying loaded.text"
+    }
+  ]
+}

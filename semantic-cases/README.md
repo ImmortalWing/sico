@@ -20,7 +20,7 @@
 // expect: reject(NON_EXHAUSTIVE_MATCH)
 ```
 
-诊断键目前是语义名称，不是最终稳定错误编号。后续诊断协议 v0 会为这些键分配编号、JSON 字段和默认短消息。
+非法源码头保留可读的语义诊断键；正式稳定编号、参数和默认短消息由 [`diagnostics/catalog.json`](../diagnostics/catalog.json) 与 [`semantic-case-map.json`](../diagnostics/semantic-case-map.json) 统一管理。机器不得解析 README 或自然语言消息来判断错误类型。
 
 ## 2. A0 语义记法
 

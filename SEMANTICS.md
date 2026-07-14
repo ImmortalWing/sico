@@ -579,6 +579,6 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 2. 为 P0 语义编写最小成功例和最小失败例；当前 10 组、54 个设计判定已放入 [`semantic-cases/`](./semantic-cases/README.md)；
 3. 根据同一语义设计候选 B、C，不改变程序行为；54 个一一对应镜像已放入 [`syntax-candidates/`](./syntax-candidates/README.md)；
 4. 按 [`ai-eval/`](./ai-eval/README.md) 比较三套语法的 AI 首次生成成功率、理解 token、诊断 token 和单轮修复率；协议已完成，真实模型数据尚未测量；
-5. 单独编写诊断协议 v0 与语义索引 JSON v0；
+5. 诊断协议 v0 已由 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 接受；下一步单独建立语义索引 JSON v0；
 6. 对 `Int`、资源、Future 和 WIT 映射做 Rust/Wasm Component 技术原型；
 7. 只有关键 P0 语义通过验证后，才建立正式编译器前端。

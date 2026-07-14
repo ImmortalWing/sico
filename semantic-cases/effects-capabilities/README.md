@@ -13,7 +13,7 @@
 
 | Case | 诊断键 | 默认短消息 |
 |---|---|---|
-| [`CAP-101`](./invalid/undeclared-capability.sico) | `UNDECLARED_CAPABILITY` | capability parameter must appear in the boundary capability set |
+| [`CAP-101`](./invalid/undeclared-capability.sico) | `UNDECLARED_CAPABILITY` | capability console is not declared at this boundary |
 | [`CAP-102`](./invalid/undeclared-effect.sico) | `UNDECLARED_EFFECT` | missing declared effect: console.write |
 
 ## 语义摘要

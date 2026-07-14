@@ -1,0 +1,37 @@
+{
+  "schema": "sico.diagnostics.v0",
+  "protocol_version": 0,
+  "tool": { "name": "sico", "version": "0.0.0-fixture" },
+  "coordinate_system": {
+    "encoding": "utf-8",
+    "byte_base": 0,
+    "byte_end": "exclusive",
+    "line_base": 1,
+    "column_base": 1,
+    "column_unit": "unicode-scalar-value"
+  },
+  "diagnostics": [
+    {
+      "id": "d1",
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "severity": "error",
+      "kind": "cascade",
+      "message": "expected Int, found Text",
+      "arguments": { "expected": "Int", "found": "Text" },
+      "file": "main.sico",
+      "range": {
+        "start": { "byte": 0, "line": 1, "column": 1 },
+        "end": { "byte": 1, "line": 1, "column": 2 }
+      }
+    }
+  ],
+  "summary": {
+    "emitted": 1,
+    "errors": 1,
+    "warnings": 0,
+    "info": 0,
+    "suppressed": 0,
+    "truncated": 0
+  }
+}

@@ -33,7 +33,7 @@
 | AI 常见错误分类 | partial | 问题矩阵已有材料，需要独立数据集/分类报告 |
 | AI 理解与修复基线 | complete for offline protocol | [`STEP-0004`](./steps/STEP-0004-ai-evaluation-protocol-v0.md)、[`report`](./reports/ai-evaluation-protocol-v0.md)；真实模型数据尚未测量 |
 | 剩余 P0 语义案例 | complete | [`STEP-0005`](./steps/STEP-0005-remaining-p0-semantic-cases.md)、[`report`](./reports/remaining-p0-semantic-cases.md) |
-| 诊断协议 v0 | planned | 当前只有 provisional reject key |
+| 诊断协议 v0 | complete for design contract | [`RFC-0001`](./rfc/RFC-0001-diagnostics-protocol-v0.md)、[`diagnostics/`](../diagnostics/README.md)、[`STEP-0006`](./steps/STEP-0006-diagnostics-protocol-v0.md) |
 | 语义索引 JSON v0 | planned | 当前只有文档需求 |
 | Wasm Component 最小原型 | planned | 当前无 Rust/Cargo 代码 |
 | Runtime 引擎桌面/Android 对比 | planned | 需要独立 report |
@@ -128,7 +128,7 @@ STEP-0001 audit baseline
   → STEP-0004 AI evaluation protocol and offline harness
   → STEP-0005 remaining P0 semantic cases
   → STEP-0006 diagnostics v0
-  → semantic query JSON v0
+  → STEP-0007 semantic query JSON v0
   → Component and Runtime technical spikes
   → syntax decision
   → M0 exit audit

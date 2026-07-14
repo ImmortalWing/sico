@@ -161,7 +161,7 @@ Sico 采用强静态类型方向，在程序运行前尽可能发现结构和语
 例如：
 
 ```text
-E021 user.sico:18:10 expected User, found Option<User>
+E2001 user.sico:18:10 expected User, found Option<User>
 hint: handle none before using the value
 ```
 
@@ -169,11 +169,17 @@ hint: handle none before using the value
 
 ```json
 {
-  "code": "E021",
+  "code": "E2001",
+  "key": "TYPE_MISMATCH",
   "file": "user.sico",
-  "range": [18, 10, 18, 26],
-  "expected": "User",
-  "found": "Option<User>",
+  "range": {
+    "start": { "byte": 240, "line": 18, "column": 10 },
+    "end": { "byte": 252, "line": 18, "column": 22 }
+  },
+  "arguments": {
+    "expected": "User",
+    "found": "Option<User>"
+  },
   "hint": "handle none before using the value"
 }
 ```
@@ -187,7 +193,7 @@ hint: handle none before using the value
 - 详细类型链、相关定义和其他修复候选使用错误编号按需查询。
 - 编译器支持限制错误数量，避免大量输出占用 AI 上下文。
 
-错误编号和结构化字段属于工具协议，不能随意变化。未来的编辑器和 AI 工具应通过该协议调用编译器，而不是解析终端文本。
+错误编号和结构化字段属于工具协议，不能随意变化。未来的编辑器和 AI 工具应通过该协议调用编译器，而不是解析终端文本。正式 v0 契约、编号分区和兼容规则见 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md)，机器目录见 [`diagnostics/`](./diagnostics/README.md)。
 
 ## 8. 实现语言与运行平台
 

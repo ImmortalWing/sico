@@ -9,5 +9,6 @@
 | [STEP-0003](./STEP-0003-syntax-error-injection-v0.md) | complete | M0 | 建立候选语法单点错误注入集 v0 |
 | [STEP-0004](./STEP-0004-ai-evaluation-protocol-v0.md) | complete | M0 | 建立 AI 评测协议与离线执行器 v0 |
 | [STEP-0005](./STEP-0005-remaining-p0-semantic-cases.md) | complete | M0 | 补齐剩余 P0 语义正反例 |
+| [STEP-0006](./STEP-0006-diagnostics-protocol-v0.md) | complete | M0 | 建立诊断协议 v0 |
 
-下一可用编号：`STEP-0006`。
+下一可用编号：`STEP-0007`。

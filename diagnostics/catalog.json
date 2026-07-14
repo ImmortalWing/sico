@@ -1,0 +1,211 @@
+{
+  "schema": "sico.diagnostic-catalog.v0",
+  "catalog_version": 0,
+  "message_locale": "en-US",
+  "automatic_edits": "forbidden-v0",
+  "partitions": [
+    { "start": 1000, "end": 1999, "name": "syntax", "status": "reserved" },
+    { "start": 2000, "end": 2999, "name": "names-types-contracts", "status": "active" },
+    { "start": 3000, "end": 3999, "name": "patterns-results-control-flow", "status": "active" },
+    { "start": 4000, "end": 4999, "name": "effects-capabilities", "status": "active" },
+    { "start": 5000, "end": 5999, "name": "resources-async-streams", "status": "active" },
+    { "start": 6000, "end": 6999, "name": "components-wit", "status": "active" },
+    { "start": 7000, "end": 7999, "name": "revision-concurrency", "status": "active" },
+    { "start": 8000, "end": 8999, "name": "future", "status": "reserved" },
+    { "start": 9000, "end": 9999, "name": "compiler-tool-internal", "status": "reserved" }
+  ],
+  "diagnostics": [
+    {
+      "code": "E2001",
+      "key": "TYPE_MISMATCH",
+      "category": "type",
+      "severity": "error",
+      "message_template": "expected {expected}, found {found}",
+      "required_arguments": ["expected", "found"]
+    },
+    {
+      "code": "E2002",
+      "key": "IMPLICIT_NUMERIC_CONVERSION",
+      "category": "type",
+      "severity": "error",
+      "message_template": "expected {expected}, found {found}; convert explicitly",
+      "required_arguments": ["expected", "found"]
+    },
+    {
+      "code": "E2010",
+      "key": "MISSING_FIELD",
+      "category": "record",
+      "severity": "error",
+      "message_template": "missing field: {field}",
+      "required_arguments": ["field"]
+    },
+    {
+      "code": "E2011",
+      "key": "UNKNOWN_FIELD",
+      "category": "record",
+      "severity": "error",
+      "message_template": "unknown field: {field}",
+      "required_arguments": ["field"]
+    },
+    {
+      "code": "E2020",
+      "key": "INVARIANT_VIOLATION",
+      "category": "contract",
+      "severity": "error",
+      "message_template": "{record} invariant is false: {expression}",
+      "required_arguments": ["record", "expression"]
+    },
+    {
+      "code": "E3001",
+      "key": "NON_EXHAUSTIVE_MATCH",
+      "category": "match",
+      "severity": "error",
+      "message_template": "missing case: {missing}",
+      "required_arguments": ["missing"]
+    },
+    {
+      "code": "E3002",
+      "key": "SEALED_MATCH_WILDCARD",
+      "category": "match",
+      "severity": "error",
+      "message_template": "wildcard hides sealed {hidden}",
+      "required_arguments": ["hidden"]
+    },
+    {
+      "code": "E3003",
+      "key": "UNREACHABLE_MATCH_ARM",
+      "category": "match",
+      "severity": "error",
+      "message_template": "match arm is already covered: {case}",
+      "required_arguments": ["case"]
+    },
+    {
+      "code": "E3101",
+      "key": "ERROR_TYPE_MISMATCH",
+      "category": "result",
+      "severity": "error",
+      "message_template": "cannot propagate {source_error} as {target_error}",
+      "required_arguments": ["source_error", "target_error"]
+    },
+    {
+      "code": "E3102",
+      "key": "INCOMPLETE_ERROR_MAP",
+      "category": "result",
+      "severity": "error",
+      "message_template": "missing error mapping: {missing}",
+      "required_arguments": ["missing"]
+    },
+    {
+      "code": "E3103",
+      "key": "SEALED_ERROR_WILDCARD",
+      "category": "result",
+      "severity": "error",
+      "message_template": "wildcard hides sealed error variants: {hidden}",
+      "required_arguments": ["hidden"]
+    },
+    {
+      "code": "E3104",
+      "key": "UNHANDLED_RESULT",
+      "category": "result",
+      "severity": "error",
+      "message_template": "Result must be handled, returned, or propagated",
+      "required_arguments": []
+    },
+    {
+      "code": "E4001",
+      "key": "UNDECLARED_CAPABILITY",
+      "category": "capability",
+      "severity": "error",
+      "message_template": "capability {capability} is not declared at this boundary",
+      "required_arguments": ["capability"]
+    },
+    {
+      "code": "E4002",
+      "key": "UNDECLARED_EFFECT",
+      "category": "effect",
+      "severity": "error",
+      "message_template": "missing declared effect: {effect}",
+      "required_arguments": ["effect"]
+    },
+    {
+      "code": "E5001",
+      "key": "RESOURCE_MOVED",
+      "category": "resource",
+      "severity": "error",
+      "message_template": "{resource} was moved to {target}",
+      "required_arguments": ["resource", "target"]
+    },
+    {
+      "code": "E5002",
+      "key": "RESOURCE_CLOSED",
+      "category": "resource",
+      "severity": "error",
+      "message_template": "{resource} was already closed",
+      "required_arguments": ["resource"]
+    },
+    {
+      "code": "E5101",
+      "key": "FUTURE_CONSUMED",
+      "category": "future",
+      "severity": "error",
+      "message_template": "{future} was already awaited",
+      "required_arguments": ["future"]
+    },
+    {
+      "code": "E5102",
+      "key": "TASK_ESCAPES_SCOPE",
+      "category": "task",
+      "severity": "error",
+      "message_template": "task cannot leave its task group",
+      "required_arguments": []
+    },
+    {
+      "code": "E5201",
+      "key": "UNBOUNDED_STREAM_COLLECT",
+      "category": "stream",
+      "severity": "error",
+      "message_template": "stream collection requires an explicit limit",
+      "required_arguments": []
+    },
+    {
+      "code": "E5202",
+      "key": "ASYNC_VALUE_REQUIRES_AWAIT",
+      "category": "async",
+      "severity": "error",
+      "message_template": "{operation} returns a Future; await it",
+      "required_arguments": ["operation"]
+    },
+    {
+      "code": "E6001",
+      "key": "COMPONENT_VERSION_IN_TYPE",
+      "category": "component",
+      "severity": "error",
+      "message_template": "component version is package metadata, not a type argument",
+      "required_arguments": []
+    },
+    {
+      "code": "E6002",
+      "key": "COMPONENT_FAILURE_COLLAPSE",
+      "category": "component",
+      "severity": "error",
+      "message_template": "ComponentCall cannot be returned as a domain Result",
+      "required_arguments": []
+    },
+    {
+      "code": "E7001",
+      "key": "MISSING_REVISION",
+      "category": "revision",
+      "severity": "error",
+      "message_template": "commit requires the expected revision",
+      "required_arguments": []
+    },
+    {
+      "code": "E7002",
+      "key": "UNCHECKED_STALE_RESULT",
+      "category": "revision",
+      "severity": "error",
+      "message_template": "compare loaded.revision before applying loaded.text",
+      "required_arguments": []
+    }
+  ]
+}

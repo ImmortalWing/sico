@@ -1,0 +1,9 @@
+{
+  "schema": "sico.diagnostic-fixtures.v0",
+  "fixtures": [
+    { "path": "pass.json", "expect": "accept" },
+    { "path": "invalid-message-only.json", "expect": "reject", "error": "missing code" },
+    { "path": "invalid-range.json", "expect": "reject", "error": "range start is after end" },
+    { "path": "invalid-cascade.json", "expect": "reject", "error": "cascade is missing caused_by" }
+  ]
+}
