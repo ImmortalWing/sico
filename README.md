@@ -26,10 +26,10 @@ WebAssembly Component
     ↓
 .sapp
     ↓
-Sico Runtime / Sico Player
+Sico Runtime / Sico Host
 ```
 
-- 第一代编译器、Runtime 和 Player 核心使用 Rust；
+- 第一代编译器、Runtime 和 Host 核心使用 Rust；
 - WebAssembly Component 是正式执行与分发格式；
 - WIT 定义组件和宿主能力接口；
 - 通用系统能力优先复用 WASI；

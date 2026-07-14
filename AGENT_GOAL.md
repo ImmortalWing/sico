@@ -27,7 +27,7 @@ WebAssembly Component + WIT
     ↓
 .sapp
     ↓
-Sico Runtime / Sico Player
+Sico Runtime / Sico Host
     ↓
 桌面与 Android 原生应用
 ```
@@ -50,7 +50,7 @@ Sico 的核心价值是降低 AI 编程中的非法代码、隐藏语义、错�
 
 以下方向除非有新的 RFC、实验数据和明确替代决策，否则不得改变：
 
-1. 第一代编译器、Runtime 和 Player 核心使用 Rust；
+1. 第一代编译器、Runtime 和 Host 核心使用 Rust；
 2. WebAssembly Component 是正式执行与分发格式；
 3. Component 接口使用 WIT，通用系统能力优先复用 WASI；
 4. `.sapp` 是应用级封装，不重复发明 Component 已提供的通用字节码和 ABI；
@@ -395,15 +395,15 @@ AI 实验必须记录：
 
 退出条件：不可信测试包不能绕过能力访问宿主；trap 不使宿主崩溃；包可重复构建与检查。
 
-#### M5：桌面 Player
+#### M5：Sico Desktop Host
 
-完成 Windows、macOS、Linux Player、文件关联、权限界面、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实示例应用。
+完成 Sico Desktop Host（Windows、macOS、Linux）、文件关联、权限界面、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实示例应用。
 
 退出条件：同一 `.sapp` 在受支持桌面平台获得一致核心行为，平台差异通过接口显式呈现。
 
-#### M6：Android Player
+#### M6：Sico Android Host
 
-完成 Android Player、文件/链接/分享入口、触摸、文本输入、生命周期、Android 权限映射和与桌面共享的行为测试。
+完成 Sico Android Host、文件/链接/分享入口、触摸、文本输入、生命周期、Android 权限映射和与桌面共享的行为测试。
 
 退出条件：同一 `.sapp` 无需重新编译即可在 Android 和桌面运行，权限和生命周期测试通过。
 
@@ -440,7 +440,7 @@ AI 实验必须记录：
 - 资源在正常、错误和取消路径确定清理；
 - Runtime 对不可信应用实施内存、CPU、任务、句柄、body 和时间限额；
 - 诊断和日志默认去敏；
-- 包格式、语言、编译器、WIT、WASI、Runtime 和 Player 分别版本化；
+- 包格式、语言、编译器、WIT、WASI、Runtime 和 Host 分别版本化；
 - 破坏兼容性的决定必须有迁移方案和版本策略。
 
 ### 11. 性能与质量记录
@@ -450,7 +450,7 @@ AI 实验必须记录：
 - 冷编译和增量检查时间；
 - 编译器峰值内存；
 - Component 与 `.sapp` 体积；
-- Runtime/Player 安装体积；
+- Runtime/Host 安装体积；
 - 启动时间和运行内存；
 - WIT/host call 开销；
 - 确定性构建；
@@ -506,8 +506,8 @@ AI 实验必须记录：
 
 #### 平台
 
-- 桌面 Player 在声明支持的 Windows、macOS、Linux 版本通过行为测试；
-- Android Player 通过生命周期、权限、输入和跨平台一致性测试；
+- Sico Desktop Host 在声明支持的 Windows、macOS、Linux 版本通过行为测试；
+- Sico Android Host 通过生命周期、权限、输入和跨平台一致性测试；
 - 同一 `.sapp` 可在支持平台运行且无需重新编译。
 
 #### AI 工作流

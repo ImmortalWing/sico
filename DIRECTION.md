@@ -220,7 +220,7 @@ WebAssembly Component
 - Sico 不自研公开字节码、虚拟机、组件 ABI 或基础沙箱格式。
 - 组件接口使用 WIT 描述，跨组件数据遵循 Component Model Canonical ABI。
 - 通用系统能力优先复用 WASI；Sico 只定义 WASI 未覆盖的 UI、应用生命周期及平台能力接口。
-- Sico Runtime 和 Sico Player 是原生程序，负责加载 Component 并提供经过授权的宿主接口。
+- Sico Runtime 和 Sico Host 是原生程序，负责加载 Component 并提供经过授权的宿主接口。
 - 独立原生应用早期可以通过“Component + 精简 Runtime”封装产生，不要求同时维护另一套机器码后端。
 - 浏览器、DOM、HTML 和前端框架不属于当前目标。
 - JavaScript 和 TypeScript 不进入编译器、核心运行时或正式后端。
@@ -231,7 +231,7 @@ Sico 按以下顺序发展，每一阶段必须拥有独立价值，不能依赖
 
 1. **语言基础**：确定语义、类型系统、诊断协议、中间表示和一致性测试。
 2. **原生工具链**：使用 Rust 实现编译器，将 Sico 编译为 WebAssembly Component，并生成可移植 Sico 应用包。
-3. **Sico 运行平台**：实现跨平台 Sico Runtime 和面向用户的 Sico Player，使同一个应用包可以在 Android 与桌面系统中打开。
+3. **Sico 运行平台**：实现跨平台 Sico Runtime 和面向用户的 Sico Host，使同一个应用包可以在 Android 与桌面系统中打开。
 4. **原生生态**：形成标准库、包管理、编辑器支持、测试工具及真实的命令行、服务端和桌面应用。
 5. **可移植组件生态**：使用 WIT、Canonical ABI 和 WASI 建立稳定的能力接口与组件生态，但不依赖浏览器或 JavaScript。
 6. **Web 平台提案**：基于已经验证的生态，为 Sico/Wasm 组件设计直接调用 DOM、网络、存储和事件能力的标准宿主接口。
@@ -239,14 +239,14 @@ Sico 按以下顺序发展，每一阶段必须拥有独立价值，不能依赖
 
 是否进入下一阶段由可验证结果决定，包括工具链稳定性、真实应用数量、包生态规模、跨平台一致性和外部采用情况。
 
-### 8.4 Sico Runtime 与 Sico Player
+### 8.4 Sico Runtime 与 Sico Host
 
 Sico 可以先建立自己的跨平台应用宿主，而不等待浏览器支持。
 
 暂定命名：
 
 - **Sico Runtime**：使用 Rust 实现的执行、渲染、权限、存储和平台适配内核；
-- **Sico Player**：安装在 Android、Windows、macOS 和 Linux 上，供用户打开和运行 Sico 应用的产品；
+- **Sico Host**：安装在 Android、Windows、macOS 和 Linux 上，供用户打开、安装、授权、运行和管理 Sico 应用的产品；
 - **`.sico`**：Sico 源代码文件；
 - **`.sapp`**：经过编译、验证和封装的单文件 Sico 应用包。
 
@@ -257,7 +257,7 @@ Sico 源码与资源
       ↓ sico build
 单文件应用 example.sapp
       ↓ 打开文件或链接
-Sico Player
+Sico Host
       ↓
 Sico Runtime
       ↓
@@ -274,7 +274,7 @@ Sico Runtime
 
 Sico 不把内部 IR 放入公开应用包，也不再设计一套与 Component Model 重叠的通用字节码和 ABI。`.sapp` 负责应用级封装，Component 负责可执行代码与接口，二者职责分离。
 
-Sico Player 在首次安装后，可以通过本地文件、下载链接或自定义协议打开 `.sapp`，形成类似“点击链接即浏览应用”的体验。应用也可以选择编译为独立原生安装包；可移植包与独立原生程序是两种发布形式，不改变 Sico 语言语义。
+Sico Host 在首次安装后，可以通过本地文件、下载链接或自定义协议打开 `.sapp`，形成类似“点击链接即浏览应用”的体验。应用也可以选择编译为独立原生安装包；可移植包与独立原生程序是两种发布形式，不改变 Sico 语言语义。
 
 由于 `.sapp` 可以承载来自他人的可执行代码，Sico Runtime 必须从第一版就具备安全边界：
 

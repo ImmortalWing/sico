@@ -4,7 +4,7 @@
 > 更新日期：2026-07-14
 > 上位文档：[DIRECTION.md](./DIRECTION.md)
 
-本文档说明 Sico 应如何从语言设计进入可验证的工程实现。它描述编译器、WebAssembly Component 后端、应用包、运行时、Player、安全模型、测试方法和阶段目标。
+本文档说明 Sico 应如何从语言设计进入可验证的工程实现。它描述编译器、WebAssembly Component 后端、应用包、运行时、Host、安全模型、测试方法和阶段目标。
 
 本文档不负责提前确定尚未讨论完成的表层语法。若本文档与 `DIRECTION.md` 冲突，以 `DIRECTION.md` 中已经确认的方向为准。
 
@@ -31,7 +31,7 @@ Sico 是一门面向 AI 理解、生成、检查和修复代码的正规编程�
 - 产生清晰、简短、稳定、低 token 的诊断；
 - 让 AI 能够根据单轮结构化诊断完成局部修复；
 - 保持源码语义确定、可复现，不依赖模型临场解释；
-- 使用 Rust 实现第一代编译器、Runtime 和 Player 核心；
+- 使用 Rust 实现第一代编译器、Runtime 和 Host 核心；
 - 使用 WebAssembly Component 作为正式执行与分发格式；
 - 使用 `.sapp` 作为跨平台单文件应用包；
 - 首先建立 Android 和桌面端的原生 Sico 应用生态；
@@ -74,7 +74,7 @@ WebAssembly Component + WIT 接口
        ↓
 .sapp 应用包
        ↓
-Sico Player / Sico Runtime
+Sico Host / Sico Runtime
        ↓
 原生窗口、图形、输入、存储、网络与系统能力
 ```
@@ -89,7 +89,7 @@ Sico Player / Sico Runtime
 | Wasm Component 后端 | 生成 Core Wasm、Component 和 WIT 绑定 | 定义 Sico 表层语法 |
 | `.sapp` | 封装 Component、资源、清单、权限和签名 | 定义代码执行语义 |
 | Sico Runtime | 验证、实例化、调度、权限和宿主接口 | 编辑源码 |
-| Sico Player | 文件关联、应用展示、授权和生命周期 | 编译语言源码 |
+| Sico Host | 文件关联、应用展示、授权和生命周期 | 编译语言源码 |
 
 ### 3.3 不可破坏的边界
 
@@ -115,7 +115,7 @@ Sico Player / Sico Runtime
 - Wasm 与 Component 代码生成；
 - `.sapp` 打包、校验和签名工具；
 - Sico Runtime；
-- Sico Player 的共享核心；
+- Sico Host 的共享核心；
 - 语言服务器核心。
 
 平台外壳可以使用必要的原生平台代码，但必须保持薄层，并通过明确接口连接 Rust 核心。
@@ -141,8 +141,8 @@ sico/
 │   ├── sico-cli/          sico 命令行入口
 │   └── sico-lsp/          语言服务器
 ├── apps/
-│   ├── player-desktop/    桌面 Player
-│   └── player-android/    Android Player
+│   ├── host-desktop/      Sico Desktop Host
+│   └── host-android/      Sico Android Host
 ├── wit/                   Sico 平台 WIT 接口
 ├── spec/                  语言规范和语义测试
 ├── tests/                 端到端、兼容性和安全测试
@@ -559,11 +559,11 @@ Runtime 负责：
 
 在基准和最小端到端原型完成前，不在规范中绑定具体引擎。
 
-## 12. Sico Player
+## 12. Sico Host
 
 ### 12.1 用户体验目标
 
-用户只安装一次 Sico Player，之后可以：
+用户只安装一次 Sico Host，之后可以：
 
 - 双击本地 `.sapp`；
 - 从分享链接下载并打开应用；
@@ -578,7 +578,7 @@ Runtime 负责：
 ```text
 桌面/Android 平台外壳
           ↓
-Sico Player 共享核心
+Sico Host 共享核心
           ↓
 Sico Runtime
           ↓
@@ -641,7 +641,7 @@ Runtime 必须假设 `.sapp` 可能：
 - 签名替换和降级攻击测试；
 - Runtime 崩溃恢复测试。
 
-安全边界未通过测试前，Player 只能运行本地开发包，不开放远程生态。
+安全边界未通过测试前，Host 只能运行本地开发包，不开放远程生态。
 
 ## 14. AI 与 Vibe Coding 工作流
 
@@ -929,7 +929,7 @@ sico explain    展开错误编号
 | Component | WIT world、imports/exports 和组合测试 |
 | `.sapp` | 确定性、签名、路径和资源限制测试 |
 | Runtime | 权限、隔离、资源限额和崩溃恢复 |
-| Player | 文件打开、生命周期、升级和跨平台行为 |
+| Host | 文件打开、生命周期、升级和跨平台行为 |
 | AI | 生成成功率、单轮修复率和 token 指标 |
 
 ### 16.2 编译成功测试
@@ -989,7 +989,7 @@ sico explain    展开错误编号
 - 编译器版本；
 - `.sapp` 包格式版本；
 - Sico WIT 平台接口版本；
-- Runtime/Player 版本；
+- Runtime/Host 版本；
 - WASI 基线版本。
 
 兼容承诺应在 1.0 前通过明确实验版本表达，不能默认永久兼容早期草案。
@@ -1097,11 +1097,11 @@ sico explain    展开错误编号
 
 退出条件：不可信测试包无法绕过声明能力访问宿主资源。
 
-### M5：桌面 Player
+### M5：Sico Desktop Host
 
 交付：
 
-- 桌面 Player；
+- Sico Desktop Host；
 - `.sapp` 文件关联；
 - 应用信息和权限界面；
 - 生命周期与崩溃隔离；
@@ -1110,11 +1110,11 @@ sico explain    展开错误编号
 
 退出条件：一个 `.sapp` 可在支持的桌面系统上获得一致核心行为。
 
-### M6：Android Player
+### M6：Sico Android Host
 
 交付：
 
-- Android Player；
+- Sico Android Host；
 - 文件、链接和分享入口；
 - 触摸、文本输入和生命周期适配；
 - Android 权限映射；
@@ -1145,7 +1145,7 @@ sico explain    展开错误编号
 - 峰值编译内存；
 - Component 大小；
 - `.sapp` 大小；
-- Runtime 和 Player 安装体积；
+- Runtime 和 Host 安装体积；
 - 应用冷启动时间；
 - 空闲和运行内存；
 - 宿主调用开销；

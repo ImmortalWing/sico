@@ -4,8 +4,8 @@
 > - phase: M0 设计与技术基线
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0001
-> - next step: STEP-0002
+> - last completed step: STEP-0002
+> - next step: STEP-0003
 
 ## 1. Current objective
 
@@ -13,7 +13,7 @@
 
 ## 2. Current step
 
-[`STEP-0001: 建立审计基线与项目差距审计`](./steps/STEP-0001-project-state-audit.md) 已完成。当前没有执行中的步骤；下一步骤尚未创建。
+[`STEP-0002: 统一应用宿主命名为 Sico Host`](./steps/STEP-0002-sico-host-terminology.md) 已完成。当前没有执行中的步骤；下一步骤尚未创建。
 
 ## 3. Verified repository facts
 
@@ -76,4 +76,4 @@
 
 ## 8. Next step
 
-`STEP-0002`：建立 A0/B/C 单点错误注入规范和首批变异案例，测量结构恢复边界、预期主要诊断和潜在级联错误。该步骤仍属于设计/测试资产，不创建正式编译器。
+`STEP-0003`：建立 A0/B/C 单点错误注入规范和首批变异案例，测量结构恢复边界、预期主要诊断和潜在级联错误。该步骤仍属于设计/测试资产，不创建正式编译器。

@@ -28,7 +28,8 @@
 | 三套局部语法候选 | complete for 4 groups | [`SYNTAX.md`](../SYNTAX.md)、[`syntax-candidates/`](../syntax-candidates/README.md) |
 | 静态语法体积指标 | complete | [`METRICS.md`](../syntax-candidates/METRICS.md) |
 | 审计体系 | complete | [`STEP-0001`](./steps/STEP-0001-project-state-audit.md) |
-| 单点错误注入与恢复评测 | planned | STEP-0002 |
+| 应用宿主正式命名 | complete | [`ADR-0001`](./adr/ADR-0001-sico-host-terminology.md)、[`STEP-0002`](./steps/STEP-0002-sico-host-terminology.md) |
+| 单点错误注入与恢复评测 | planned | STEP-0003 |
 | AI 常见错误分类 | partial | 问题矩阵已有材料，需要独立数据集/分类报告 |
 | AI 理解与修复基线 | partial | 需求已定义，尚无可执行评测与实测数据 |
 | 剩余 P0 语义案例 | planned | 效果/能力、资源、异步、Stream、Component、revision |
@@ -88,21 +89,21 @@
 
 退出证据：不可信包不能越权；trap 不导致宿主崩溃；包可重复构建和检查。
 
-## M5: 桌面 Player
+## M5: Sico Desktop Host
 
 状态：`planned`
 
-主要交付：Windows/macOS/Linux Player、文件关联、权限 UI、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实应用。
+主要交付：Sico Desktop Host（Windows/macOS/Linux）、文件关联、权限 UI、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实应用。
 
 进入条件：M4 exit gate 通过。
 
 退出证据：同一 `.sapp` 在声明支持的桌面平台保持一致核心行为。
 
-## M6: Android Player
+## M6: Sico Android Host
 
 状态：`planned`
 
-主要交付：Android Player、文件/链接/分享入口、触摸、输入法、生命周期、Android 权限映射和共享行为测试。
+主要交付：Sico Android Host、文件/链接/分享入口、触摸、输入法、生命周期、Android 权限映射和共享行为测试。
 
 进入条件：M5 的应用与 UI 接口达到可移植基线；M0 Runtime 报告证明 Android 可行。
 
@@ -122,7 +123,8 @@
 
 ```text
 STEP-0001 audit baseline
-  → STEP-0002 syntax error injection
+  → STEP-0002 application-host terminology migration
+  → STEP-0003 syntax error injection
   → AI evaluation protocol and offline harness
   → remaining P0 semantic cases
   → diagnostics v0 + semantic query JSON v0

@@ -16,7 +16,7 @@
 - 启动时加载；
 - 显示加载、保存和错误状态。
 
-同一个 `.sapp` 应在桌面和 Android Player 中运行。
+同一个 `.sapp` 应在 Sico Desktop Host 和 Sico Android Host 中运行。
 
 ## 架构
 
