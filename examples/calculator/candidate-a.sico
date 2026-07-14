@@ -1,5 +1,7 @@
+// 导入唯一的外部能力：向控制台写入文本。
 use sico.console
 
+// 使用封闭枚举表示支持的运算，保证 match 能检查完整性。
 enum Operator
   Add
   Subtract
@@ -7,6 +9,7 @@ enum Operator
   Divide
 end
 
+// 所有可预期失败都使用正式错误类型表达，不抛出异常。
 enum CalculatorError
   InvalidArguments
   InvalidNumber(value: Text)
@@ -14,6 +17,7 @@ enum CalculatorError
   DivisionByZero
 end
 
+// 将底层数字解析错误映射为计算器领域错误。
 fn parse_number(value: Text) -> Result<Number, CalculatorError>
   match Number.parse(value)
     ok(number) => return ok(number)
@@ -21,6 +25,7 @@ fn parse_number(value: Text) -> Result<Number, CalculatorError>
   end
 end
 
+// 将输入文本转换为封闭的 Operator；其他文本均明确失败。
 fn parse_operator(value: Text) -> Result<Operator, CalculatorError>
   match value
     "+" => return ok(Operator.Add)
@@ -31,19 +36,24 @@ fn parse_operator(value: Text) -> Result<Operator, CalculatorError>
   end
 end
 
+// 纯计算函数：不读取或修改外部状态。
 fn calculate(left: Number, operator: Operator, right: Number) -> Result<Number, CalculatorError>
   match operator
     Operator.Add => return ok(left + right)
     Operator.Subtract => return ok(left - right)
     Operator.Multiply => return ok(left * right)
+    // 特殊情况放在普通除法之前，避免执行无效运算。
     Operator.Divide if right == 0 => return error(CalculatorError.DivisionByZero)
     Operator.Divide => return ok(left / right)
   end
 end
 
+// 组织完整业务流程，但仍保持纯函数，不直接执行控制台输出。
 fn run(arguments: List<Text>) -> Result<Text, CalculatorError>
   match arguments
+    // 固定长度列表模式同时验证参数数量并绑定三个参数。
     [left_text, operator_text, right_text] =>
+      // try 在失败时立即把同类型 CalculatorError 返回给调用者。
       let left = try parse_number(left_text)
       let operator = try parse_operator(operator_text)
       let right = try parse_number(right_text)
@@ -55,6 +65,7 @@ fn run(arguments: List<Text>) -> Result<Text, CalculatorError>
   end
 end
 
+// 用户文本与正式错误类型分离，业务逻辑不依赖显示文案。
 fn error_message(problem: CalculatorError) -> Text
   match problem
     CalculatorError.InvalidArguments =>
@@ -71,6 +82,7 @@ fn error_message(problem: CalculatorError) -> Text
   end
 end
 
+// main 是副作用边界：纯逻辑在 run 中，控制台写入只发生在这里。
 fn main(arguments: List<Text>) -> Unit
   match run(arguments)
     ok(output) => console.write_line(output)
