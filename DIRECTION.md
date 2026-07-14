@@ -163,7 +163,7 @@ hint: handle none before using the value
 
 ### 8.2 编译路径
 
-Sico 定义自己的强类型中间表示，不把 C、C++、JavaScript 或 TypeScript 当作语义中间层。
+Sico 定义自己的强类型中间表示，不把 C、C++、JavaScript 或 TypeScript 当作语义中间层。Sico IR 仅用于编译器内部分析和转换，不作为公开分发格式。
 
 ```text
 Sico 源码
@@ -171,13 +171,20 @@ Sico 源码
 AST 与类型检查
     ↓
 Sico IR
-    ├── 原生机器码
-    └── WebAssembly/WASI
+    ↓
+WebAssembly Core Module
+    ↓
+WebAssembly Component
+    ├── .sapp 可移植应用包
+    └── Component + Runtime 原生应用包
 ```
 
-- 原生运行是当前优先方向。
-- WebAssembly 用于可移植、沙箱化的非浏览器运行环境时可以考虑。
-- WASI 可以作为系统能力接口方向，但具体版本和能力模型尚待设计。
+- WebAssembly Component 是 Sico 应用的首选正式执行与分发格式。
+- Sico 不自研公开字节码、虚拟机、组件 ABI 或基础沙箱格式。
+- 组件接口使用 WIT 描述，跨组件数据遵循 Component Model Canonical ABI。
+- 通用系统能力优先复用 WASI；Sico 只定义 WASI 未覆盖的 UI、应用生命周期及平台能力接口。
+- Sico Runtime 和 Sico Player 是原生程序，负责加载 Component 并提供经过授权的宿主接口。
+- 独立原生应用早期可以通过“Component + 精简 Runtime”封装产生，不要求同时维护另一套机器码后端。
 - 浏览器、DOM、HTML 和前端框架不属于当前目标。
 - JavaScript 和 TypeScript 不进入编译器、核心运行时或正式后端。
 
@@ -186,10 +193,10 @@ Sico IR
 Sico 按以下顺序发展，每一阶段必须拥有独立价值，不能依赖后续浏览器支持才能成立：
 
 1. **语言基础**：确定语义、类型系统、诊断协议、中间表示和一致性测试。
-2. **原生工具链**：使用 Rust 实现编译器，生成可独立运行的原生程序和可移植 Sico 应用包。
+2. **原生工具链**：使用 Rust 实现编译器，将 Sico 编译为 WebAssembly Component，并生成可移植 Sico 应用包。
 3. **Sico 运行平台**：实现跨平台 Sico Runtime 和面向用户的 Sico Player，使同一个应用包可以在 Android 与桌面系统中打开。
 4. **原生生态**：形成标准库、包管理、编辑器支持、测试工具及真实的命令行、服务端和桌面应用。
-5. **可移植组件**：建立稳定的 Sico ABI 和能力模型，支持 WebAssembly/WASI 等沙箱化目标，但不依赖浏览器或 JavaScript。
+5. **可移植组件生态**：使用 WIT、Canonical ABI 和 WASI 建立稳定的能力接口与组件生态，但不依赖浏览器或 JavaScript。
 6. **Web 平台提案**：基于已经验证的生态，为 Sico/Wasm 组件设计直接调用 DOM、网络、存储和事件能力的标准宿主接口。
 7. **浏览器一等支持**：推动浏览器实现上述接口，使 Sico 应用无需 JavaScript 绑定层即可运行。
 
@@ -220,13 +227,15 @@ Sico Runtime
 原生窗口、图形、输入、网络、存储和系统能力
 ```
 
-`.sapp` 是与 CPU 和操作系统尽量无关的可移植包，而不是某个平台的原生可执行文件。它至少包含：
+`.sapp` 是与 CPU 和操作系统尽量无关的可移植包，而不是某个平台的原生可执行文件。其正式可执行载荷采用 WebAssembly Component。它至少包含：
 
-- 已通过类型检查的 Sico 字节码、IR 或 Wasm 组件；
+- 已通过类型检查的 WebAssembly Component；
 - 应用清单、入口和版本；
 - 图片、字体及其他资源；
 - 所需能力声明；
 - 内容哈希和签名信息。
+
+Sico 不把内部 IR 放入公开应用包，也不再设计一套与 Component Model 重叠的通用字节码和 ABI。`.sapp` 负责应用级封装，Component 负责可执行代码与接口，二者职责分离。
 
 Sico Player 在首次安装后，可以通过本地文件、下载链接或自定义协议打开 `.sapp`，形成类似“点击链接即浏览应用”的体验。应用也可以选择编译为独立原生安装包；可移植包与独立原生程序是两种发布形式，不改变 Sico 语言语义。
 
@@ -251,6 +260,7 @@ Sico Runtime 是语言之外的正式平台层。UI、渲染和应用生命周�
 - 不先选择 React、Vue 等具体技术栈。
 - 不使用 TypeScript 作为 JavaScript 的替代运行时。
 - 不为了浏览器兼容而引入 JavaScript 绑定层。
+- 不重复发明 WebAssembly Component 已经提供的可移植字节码、Canonical ABI、组件组合与沙箱基础。
 - 不为了快速演示而复制一套传统玩具语言语法。
 - 不在编程模型和语义未确定前实现解释器或编译器。
 
@@ -291,8 +301,9 @@ Sico 不以语法是否新颖为成功标准，而看以下结果：
 - 并发和异步语义；
 - 模块、依赖与版本规则；
 - 标准库边界；
-- 原生后端采用 LLVM、Cranelift 还是其他代码生成方案；
-- WASI 是否成为正式的可移植运行目标；
+- Sico Runtime 选择或嵌入哪一种 Component Model 执行引擎；
+- 采用哪个 WASI 基线版本，以及如何进行兼容升级；
+- 是否在后期增加不经过 Component 的直接原生机器码后端；
 - 图形界面和跨平台系统能力是否属于标准库。
 
 这些内容必须经过示例和对比后确认，不能因为某门现有语言的习惯而直接继承。
