@@ -1,0 +1,7 @@
+// case: NUM-101
+// expect: reject(IMPLICIT_NUMERIC_CONVERSION)
+// semantics: SEM-003, SEM-024
+
+fn main() -> Float64
+  return 1
+end

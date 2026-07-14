@@ -5,6 +5,7 @@
 - [代表性程序计划与覆盖矩阵](./PLAN.md)
 - [跨样本问题矩阵](./ISSUES.md)
 - [候选 A 语义审计](./SEMANTICS-AUDIT.md)
+- [P0 语义正反例集](../semantic-cases/README.md)
 
 ## `hello.sico`
 

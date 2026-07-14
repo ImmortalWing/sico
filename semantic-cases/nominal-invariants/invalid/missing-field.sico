@@ -1,0 +1,12 @@
+// case: NOM-103
+// expect: reject(MISSING_FIELD)
+// semantics: SEM-030
+
+record Feature
+  name: Text
+  enabled: Bool
+end
+
+fn main() -> Feature
+  return Feature(name: "search")
+end

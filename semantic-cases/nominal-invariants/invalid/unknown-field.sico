@@ -1,0 +1,11 @@
+// case: NOM-104
+// expect: reject(UNKNOWN_FIELD)
+// semantics: SEM-030
+
+record User
+  name: Text
+end
+
+fn main() -> User
+  return User(name: "Ada", admin: true)
+end

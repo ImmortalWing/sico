@@ -1,0 +1,15 @@
+// case: MATCH-002
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum Notice
+  Message(text: Text)
+  Stop
+end
+
+fn is_message(notice: Notice) -> Bool
+  match notice
+    Notice.Message(_) => return true
+    Notice.Stop => return false
+  end
+end

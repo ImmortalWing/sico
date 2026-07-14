@@ -1,0 +1,14 @@
+// case: NUM-104
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-003, SEM-032
+
+newtype Cny = Int
+newtype Usd = Int
+
+fn charge(amount: Cny) -> Unit
+  return Unit
+end
+
+fn main() -> Unit
+  return charge(Usd(100))
+end

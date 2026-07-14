@@ -1,0 +1,16 @@
+// case: RESULT-104
+// expect: reject(UNHANDLED_RESULT)
+// semantics: SEM-070, SEM-071
+
+enum SaveError
+  Unavailable
+end
+
+fn save() -> Result<Unit, SaveError>
+  return ok(Unit)
+end
+
+fn main() -> Unit
+  save()
+  return Unit
+end

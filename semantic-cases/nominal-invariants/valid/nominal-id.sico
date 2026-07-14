@@ -1,0 +1,13 @@
+// case: NOM-001
+// expect: accept
+// semantics: SEM-032
+
+newtype AccountId = Text
+
+fn load(id: AccountId) -> AccountId
+  return id
+end
+
+fn main() -> AccountId
+  return load(AccountId("account-1"))
+end

@@ -1,0 +1,16 @@
+// case: MATCH-104
+// expect: reject(UNREACHABLE_MATCH_ARM)
+// semantics: SEM-064
+
+enum Switch
+  Off
+  On
+end
+
+fn enabled(value: Switch) -> Bool
+  match value
+    Switch.Off => return false
+    Switch.On => return true
+    Switch.On => return false
+  end
+end

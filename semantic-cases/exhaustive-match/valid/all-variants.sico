@@ -1,0 +1,17 @@
+// case: MATCH-001
+// expect: accept
+// semantics: SEM-031, SEM-064
+
+enum Color
+  Red
+  Green
+  Blue
+end
+
+fn name(color: Color) -> Text
+  match color
+    Color.Red => return "red"
+    Color.Green => return "green"
+    Color.Blue => return "blue"
+  end
+end

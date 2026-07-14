@@ -1,0 +1,13 @@
+// case: NOM-105
+// expect: reject(INVARIANT_VIOLATION)
+// semantics: SEM-110
+
+record Range
+  min: Int
+  max: Int
+  invariant min <= max
+end
+
+fn main() -> Range
+  return Range(min: 10, max: 1)
+end

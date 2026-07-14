@@ -1,0 +1,13 @@
+// case: NOM-003
+// expect: accept
+// semantics: SEM-110
+
+record Range
+  min: Int
+  max: Int
+  invariant min <= max
+end
+
+fn main() -> Range
+  return Range(min: 1, max: 10)
+end

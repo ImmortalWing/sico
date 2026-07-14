@@ -1,0 +1,14 @@
+// case: NUM-103
+// expect: reject(TYPE_MISMATCH)
+// semantics: SEM-003, SEM-032
+
+newtype Bytes = Int
+newtype Seconds = Int
+
+fn set_limit(limit: Bytes) -> Unit
+  return Unit
+end
+
+fn main() -> Unit
+  return set_limit(Seconds(5))
+end

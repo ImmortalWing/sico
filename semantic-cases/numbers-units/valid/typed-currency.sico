@@ -1,0 +1,13 @@
+// case: NUM-004
+// expect: accept
+// semantics: SEM-032
+
+newtype Cny = Int
+
+fn keep_amount(amount: Cny) -> Cny
+  return amount
+end
+
+fn main() -> Cny
+  return keep_amount(Cny(100))
+end

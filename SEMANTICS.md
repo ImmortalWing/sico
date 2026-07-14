@@ -576,7 +576,7 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 ## 18. 下一步验证
 
 1. 用本文条目逐个重审 10 个代表性程序，标出不一致与无法表达处；第一轮结果已记录在 [`examples/SEMANTICS-AUDIT.md`](./examples/SEMANTICS-AUDIT.md)；
-2. 为每条 P0 语义编写最小成功例和最小失败例；
+2. 为每条 P0 语义编写最小成功例和最小失败例；第一批四组案例已放入 [`semantic-cases/`](./semantic-cases/README.md)；
 3. 根据同一语义设计候选 B、C，不改变程序行为；
 4. 比较三套语法的 AI 首次生成成功率、理解 token、诊断 token 和单轮修复率；
 5. 单独编写诊断协议 v0 与语义索引 JSON v0；

@@ -1,0 +1,17 @@
+// case: RESULT-001
+// expect: accept
+// semantics: SEM-034, SEM-070, SEM-071
+
+enum LoadError
+  Missing
+end
+
+fn read_value() -> Result<Int, LoadError>
+  return ok(1)
+end
+
+fn load_twice() -> Result<Int, LoadError>
+  let first = try read_value()
+  let second = try read_value()
+  return ok(first + second)
+end
