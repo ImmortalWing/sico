@@ -1,0 +1,5 @@
+use sico.console
+
+fn main() -> Unit
+  console.write_line("Hello, world!")
+end
