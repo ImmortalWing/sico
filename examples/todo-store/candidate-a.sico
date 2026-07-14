@@ -1,0 +1,102 @@
+use sico.storage
+
+newtype TodoId = Text
+
+record Todo
+  id: TodoId
+  title: Text
+  completed: Bool
+  revision: Int
+end
+
+record TodoList
+  schema_version: Int
+  items: List<Todo>
+end
+
+enum TodoCommand
+  Add(id: TodoId, title: Text)
+  Rename(id: TodoId, expected_revision: Int, title: Text)
+  Complete(id: TodoId, expected_revision: Int)
+  Delete(id: TodoId, expected_revision: Int)
+end
+
+enum TodoError
+  EmptyTitle
+  AlreadyExists(id: TodoId)
+  NotFound(id: TodoId)
+  AlreadyCompleted(id: TodoId)
+  RevisionConflict(expected: Int, actual: Int)
+  UnsupportedSchema(version: Int)
+  StorageFailure
+end
+
+fn find(items: List<Todo>, id: TodoId) -> Option<Todo>
+  return items.first(todo => todo.id == id)
+end
+
+// apply 是纯函数，所有持久化副作用留给 load/save。
+fn apply(list: TodoList, command: TodoCommand) -> Result<TodoList, TodoError>
+  match command
+    TodoCommand.Add(id, title) =>
+      let clean_title = title.trim()
+      if clean_title.is_empty()
+        return error(TodoError.EmptyTitle)
+      end
+      if find(list.items, id).is_some()
+        return error(TodoError.AlreadyExists(id))
+      end
+      let todo = Todo(id: id, title: clean_title, completed: false, revision: 1)
+      return ok(list with items = list.items.append(todo) end)
+
+    TodoCommand.Rename(id, expected, title) =>
+      let todo = try require_todo(list.items, id)
+      try require_revision(todo, expected)
+      let clean_title = title.trim()
+      if clean_title.is_empty()
+        return error(TodoError.EmptyTitle)
+      end
+      let changed = todo with title = clean_title, revision = todo.revision + 1 end
+      return ok(list with items = list.items.replace(todo, changed) end)
+
+    TodoCommand.Complete(id, expected) =>
+      let todo = try require_todo(list.items, id)
+      try require_revision(todo, expected)
+      if todo.completed
+        return error(TodoError.AlreadyCompleted(id))
+      end
+      let changed = todo with completed = true, revision = todo.revision + 1 end
+      return ok(list with items = list.items.replace(todo, changed) end)
+
+    TodoCommand.Delete(id, expected) =>
+      let todo = try require_todo(list.items, id)
+      try require_revision(todo, expected)
+      return ok(list with items = list.items.remove(todo) end)
+  end
+end
+
+fn require_todo(items: List<Todo>, id: TodoId) -> Result<Todo, TodoError>
+  match find(items, id)
+    some(todo) => return ok(todo)
+    none => return error(TodoError.NotFound(id))
+  end
+end
+
+fn require_revision(todo: Todo, expected: Int) -> Result<Unit, TodoError>
+  if todo.revision != expected
+    return error(TodoError.RevisionConflict(expected, todo.revision))
+  end
+  return ok(Unit)
+end
+
+fn load(store: DocumentStore<TodoList>) -> Result<TodoList, TodoError>
+  let list = try store.read().map_error(_ => TodoError.StorageFailure)
+  if list.schema_version != 1
+    return error(TodoError.UnsupportedSchema(list.schema_version))
+  end
+  return ok(list)
+end
+
+fn save(store: DocumentStore<TodoList>, list: TodoList) -> Result<Unit, TodoError>
+  return store.write(list).map_error(_ => TodoError.StorageFailure)
+end

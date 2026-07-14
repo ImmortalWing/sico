@@ -1,0 +1,78 @@
+use sico.http
+use sico.json
+
+record GreetInput
+  name: Text
+end
+
+record GreetOutput
+  message: Text
+end
+
+record ErrorOutput
+  error: Text
+end
+
+enum ApiError
+  NotFound
+  MethodNotAllowed
+  InvalidJson
+  InvalidName
+  BodyTooLarge
+  Internal
+end
+
+fn error_response(problem: ApiError) -> Response
+  match problem
+    ApiError.NotFound => return Response.json(404, ErrorOutput(error: "not_found"))
+    ApiError.MethodNotAllowed => return Response.json(405, ErrorOutput(error: "method_not_allowed"))
+    ApiError.InvalidJson => return Response.json(400, ErrorOutput(error: "invalid_json"))
+    ApiError.InvalidName => return Response.json(422, ErrorOutput(error: "invalid_name"))
+    ApiError.BodyTooLarge => return Response.json(413, ErrorOutput(error: "body_too_large"))
+    ApiError.Internal => return Response.json(500, ErrorOutput(error: "internal_error"))
+  end
+end
+
+// body 读取是异步且有上限；取消请求时 await 必须同时取消。
+async fn greet(request: Request) -> Result<Response, ApiError>
+  if request.method != Method.Post
+    return error(ApiError.MethodNotAllowed)
+  end
+
+  let body = try await request.body.read_text(limit: 16.kib)
+    .map_error(error => match error
+      BodyError.TooLarge => ApiError.BodyTooLarge
+      _ => ApiError.InvalidJson
+    end)
+
+  let input = try Json.decode<GreetInput>(body)
+    .map_error(_ => ApiError.InvalidJson)
+
+  let name = input.name.trim()
+  if name.is_empty()
+    return error(ApiError.InvalidName)
+  end
+
+  return ok(Response.json(200, GreetOutput(message: "Hello, " + name + "!")))
+end
+
+// 普通 match 作为路由候选基线，不先发明路由 DSL。
+async fn handle(request: Request) -> Response
+  match (request.method, request.path)
+    (Method.Get, "/health") =>
+      return Response.json(200, { status: "ok" })
+
+    (_, "/greet") =>
+      match await greet(request)
+        ok(response) => return response
+        error(problem) => return error_response(problem)
+      end
+
+    _ =>
+      return error_response(ApiError.NotFound)
+  end
+end
+
+async fn main(server: HttpServer) -> Never
+  await server.serve(handle)
+end

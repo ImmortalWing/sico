@@ -1,0 +1,45 @@
+use sico.filesystem
+
+record Counts
+  characters: Int
+  words: Int
+  lines: Int
+  bytes: Int
+end
+
+enum WordCountError
+  PermissionDenied(path: Path)
+  NotFound(path: Path)
+  InvalidUtf8(path: Path, offset: Int)
+  FileTooLarge(limit: Int)
+  ReadFailure(path: Path)
+end
+
+// with 保证 reader 在返回错误或取消时仍被关闭。
+fn count_file(file: ReadFile, max_bytes: Int) -> Result<Counts, WordCountError>
+  with reader = try file.open_text()
+    var characters = 0
+    var words = 0
+    var lines = 0
+    var bytes = 0
+
+    // text_chunks 必须保持跨 chunk 的 UTF-8 和单词边界状态。
+    for chunk in reader.text_chunks()
+      bytes += chunk.byte_length
+      if bytes > max_bytes
+        return error(WordCountError.FileTooLarge(max_bytes))
+      end
+
+      characters += chunk.graphemes().count()
+      words += chunk.words().count()
+      lines += chunk.line_breaks().count()
+    end
+
+    return ok(Counts(
+      characters: characters,
+      words: words,
+      lines: lines,
+      bytes: bytes,
+    ))
+  end
+end

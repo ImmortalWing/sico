@@ -2,6 +2,9 @@
 
 这些示例用于反推语言语义、语法和 AI 可理解性。目前全部属于设计样本，不代表已经稳定的语言规范。
 
+- [代表性程序计划与覆盖矩阵](./PLAN.md)
+- [跨样本问题矩阵](./ISSUES.md)
+
 ## `hello.sico`
 
 第一个候选程序表达以下语义：
@@ -53,3 +56,38 @@ output: "Hello, world!"
 
 - [行为规格](./order-state/SPEC.md)
 - [候选语法 A](./order-state/candidate-a.sico)
+
+## `account-transfer/`
+
+- [行为规格](./account-transfer/SPEC.md)
+- [候选语法 A](./account-transfer/candidate-a.sico)
+
+## `todo-store/`
+
+- [行为规格](./todo-store/SPEC.md)
+- [候选语法 A](./todo-store/candidate-a.sico)
+
+## `word-count/`
+
+- [行为规格](./word-count/SPEC.md)
+- [候选语法 A](./word-count/candidate-a.sico)
+
+## `http-service/`
+
+- [行为规格](./http-service/SPEC.md)
+- [候选语法 A](./http-service/candidate-a.sico)
+
+## `concurrent-fetch/`
+
+- [行为规格](./concurrent-fetch/SPEC.md)
+- [候选语法 A](./concurrent-fetch/candidate-a.sico)
+
+## `component-plugin/`
+
+- [行为规格](./component-plugin/SPEC.md)
+- [候选语法 A](./component-plugin/candidate-a.sico)
+
+## `notes-ui/`
+
+- [行为规格](./notes-ui/SPEC.md)
+- [候选语法 A](./notes-ui/candidate-a.sico)

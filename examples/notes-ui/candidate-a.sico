@@ -1,0 +1,147 @@
+use sico.ui
+use sico.app_storage
+
+newtype NoteId = Text
+
+record Note
+  id: NoteId
+  text: Text
+  completed: Bool
+end
+
+enum Status
+  Loading
+  Ready
+  Saving(revision: Int)
+  Failed(message: Text)
+end
+
+record Model
+  notes: List<Note>
+  draft: Text
+  revision: Int
+  status: Status
+end
+
+enum Event
+  DraftChanged(text: Text)
+  AddPressed(id: NoteId)
+  TogglePressed(id: NoteId)
+  DeletePressed(id: NoteId)
+  Loaded(result: Result<List<Note>, StorageError>)
+  Saved(revision: Int, result: Result<Unit, StorageError>)
+  AppResumed
+end
+
+enum Effect
+  LoadNotes
+  SaveNotes(revision: Int, notes: List<Note>)
+end
+
+record Update
+  model: Model
+  effects: List<Effect>
+end
+
+export fn init() -> Update
+  let model = Model(notes: [], draft: "", revision: 0, status: Status.Loading)
+  return Update(model: model, effects: [Effect.LoadNotes])
+end
+
+// update 是纯函数，所有外部操作都变成显式 Effect。
+export fn update(model: Model, event: Event) -> Update
+  match event
+    Event.DraftChanged(text) =>
+      return Update(model: model with draft = text end, effects: [])
+
+    Event.AddPressed(id) if model.draft.trim().is_empty() =>
+      return Update(model: model, effects: [])
+
+    Event.AddPressed(id) =>
+      let note = Note(id: id, text: model.draft.trim(), completed: false)
+      return changed(model with notes = model.notes.append(note), draft = "" end)
+
+    Event.TogglePressed(id) =>
+      let notes = model.notes.map(note =>
+        if note.id == id
+          note with completed = not note.completed end
+        else
+          note
+        end
+      )
+      return changed(model with notes = notes end)
+
+    Event.DeletePressed(id) =>
+      return changed(model with notes = model.notes.filter(note => note.id != id) end)
+
+    Event.Loaded(ok(notes)) =>
+      return Update(
+        model: model with notes = notes, status = Status.Ready end,
+        effects: [],
+      )
+
+    Event.Loaded(error(problem)) =>
+      return Update(
+        model: model with status = Status.Failed(problem.message()) end,
+        effects: [],
+      )
+
+    Event.Saved(revision, ok(Unit)) if revision == model.revision =>
+      return Update(model: model with status = Status.Ready end, effects: [])
+
+    // 旧保存结果不覆盖更新后的状态。
+    Event.Saved(_, ok(Unit)) =>
+      return Update(model: model, effects: [])
+
+    Event.Saved(_, error(problem)) =>
+      return Update(
+        model: model with status = Status.Failed(problem.message()) end,
+        effects: [],
+      )
+
+    Event.AppResumed =>
+      return Update(model: model, effects: [])
+  end
+end
+
+fn changed(model: Model) -> Update
+  let revision = model.revision + 1
+  let saving = model with revision = revision, status = Status.Saving(revision) end
+  return Update(
+    model: saving,
+    effects: [Effect.SaveNotes(revision, saving.notes)],
+  )
+end
+
+// view 只描述 UI，不持有原生窗口或控件引用。
+export fn view(model: Model) -> View
+  return ui.column([
+    ui.title("Notes"),
+    ui.text_input(
+      value: model.draft,
+      placeholder: "Write a note",
+      on_change: Event.DraftChanged,
+    ),
+    ui.button("Add", on_press: Event.AddPressed(NoteId.new())),
+    ui.list(model.notes, key: note => note.id, item: note =>
+      ui.row([
+        ui.checkbox(note.completed, on_change: Event.TogglePressed(note.id)),
+        ui.text(note.text),
+        ui.button("Delete", on_press: Event.DeletePressed(note.id)),
+      ])
+    ),
+    ui.status(model.status.to_text()),
+  ])
+end
+
+// handle 是唯一副作用边界，由 Runtime 调用并把结果送回 update。
+export async fn handle(effect: Effect) -> Event
+  match effect
+    Effect.LoadNotes =>
+      return Event.Loaded(await app_storage.read<List<Note>>("notes"))
+
+    Effect.SaveNotes(revision, notes) =>
+      let result = await app_storage.write("notes", notes)
+      return Event.Saved(revision, result)
+  end
+end

@@ -1,0 +1,97 @@
+use sico.storage
+
+// 领域类型避免把任意 Text 或 Decimal 误当作账户和金额。
+newtype AccountId = Text
+newtype Money = Decimal
+
+enum AccountStatus
+  Open
+  Closed
+end
+
+record Account
+  id: AccountId
+  balance: Money
+  status: AccountStatus
+end
+
+record TransferChange
+  from: Account
+  to: Account
+end
+
+enum TransferError
+  SameAccount
+  InvalidAmount(amount: Money)
+  AccountNotFound(id: AccountId)
+  AccountClosed(id: AccountId)
+  InsufficientBalance(available: Money, requested: Money)
+  StorageFailure
+end
+
+// 纯业务函数。契约写法仅用于暴露设计需求，并非已经定稿。
+fn apply_transfer(from: Account, to: Account, amount: Money)
+  -> Result<TransferChange, TransferError>
+
+  contract
+    ensures ok(change) =>
+      change.from.balance + change.to.balance
+        == from.balance + to.balance
+  end
+
+  if from.id == to.id
+    return error(TransferError.SameAccount)
+  end
+
+  if amount <= Money.zero
+    return error(TransferError.InvalidAmount(amount))
+  end
+
+  if from.status == AccountStatus.Closed
+    return error(TransferError.AccountClosed(from.id))
+  end
+
+  if to.status == AccountStatus.Closed
+    return error(TransferError.AccountClosed(to.id))
+  end
+
+  if from.balance < amount
+    return error(TransferError.InsufficientBalance(from.balance, amount))
+  end
+
+  let updated_from = from with
+    balance = from.balance - amount
+  end
+
+  let updated_to = to with
+    balance = to.balance + amount
+  end
+
+  return ok(TransferChange(from: updated_from, to: updated_to))
+end
+
+fn load_account(store: Store<AccountId, Account>, id: AccountId)
+  -> Result<Account, TransferError>
+
+  match store.read(id)
+    ok(some(account)) => return ok(account)
+    ok(none) => return error(TransferError.AccountNotFound(id))
+    error(_) => return error(TransferError.StorageFailure)
+  end
+end
+
+// transaction 保证两次写入同时提交或同时回滚。
+fn transfer(store: Store<AccountId, Account>, from_id: AccountId, to_id: AccountId, amount: Money)
+  -> Result<TransferChange, TransferError>
+
+  transaction store
+    let from = try load_account(store, from_id)
+    let to = try load_account(store, to_id)
+    let change = try apply_transfer(from, to, amount)
+
+    try store.write(change.from).map_error(_ => TransferError.StorageFailure)
+    try store.write(change.to).map_error(_ => TransferError.StorageFailure)
+
+    return ok(change)
+  end
+end

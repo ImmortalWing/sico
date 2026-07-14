@@ -1,0 +1,69 @@
+use sico.component
+use sico.time
+
+enum FormatError
+  Rejected(reason: Text)
+end
+
+// interface 候选语法必须能够直接映射到 WIT，而不是自造另一套 ABI。
+interface Formatter version 1
+  fn name() -> Text
+  fn format(input: Text) -> Result<Text, FormatError>
+end
+
+// 插件实现没有 import，因此不能访问文件、网络或其他宿主能力。
+component UppercaseFormatter implements Formatter@1
+  fn name() -> Text
+    return "uppercase"
+  end
+
+  fn format(input: Text) -> Result<Text, FormatError>
+    return ok(input.uppercase())
+  end
+end
+
+enum PluginError
+  InterfaceMismatch(required: Text, found: Text)
+  InvalidComponent
+  PluginTrap
+  PluginTimeout
+  InputTooLarge
+  OutputTooLarge
+  FormatRejected(reason: Text)
+end
+
+fn load_formatter(package: ComponentPackage)
+  -> Result<Component<Formatter@1>, PluginError>
+
+  return component.load<Formatter@1>(
+    package,
+    capabilities: none,
+    memory_limit: 16.mib,
+  ).map_error(error => match error
+    ComponentError.InterfaceMismatch(required, found) =>
+      PluginError.InterfaceMismatch(required, found)
+    _ => PluginError.InvalidComponent
+  end)
+end
+
+async fn format_with(plugin: Component<Formatter@1>, input: Text)
+  -> Result<Text, PluginError>
+
+  if input.byte_length > 64.kib
+    return error(PluginError.InputTooLarge)
+  end
+
+  let output = try await time.limit(100.milliseconds, plugin.format(input))
+    .map_error(error => match error
+      TimeError.Timeout => PluginError.PluginTimeout
+      ComponentError.Trap => PluginError.PluginTrap
+      FormatError.Rejected(reason) => PluginError.FormatRejected(reason)
+      _ => PluginError.PluginTrap
+    end)
+
+  if output.byte_length > 64.kib
+    return error(PluginError.OutputTooLarge)
+  end
+
+  return ok(output)
+end

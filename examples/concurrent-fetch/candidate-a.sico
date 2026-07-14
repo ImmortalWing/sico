@@ -1,0 +1,59 @@
+use sico.http
+use sico.time
+
+enum FetchResult
+  Success(url: Url, status: Int, bytes: Int)
+  HttpFailure(url: Url, status: Int)
+  Timeout(url: Url)
+  NetworkFailure(url: Url)
+  Cancelled(url: Url)
+end
+
+enum FetchConfigError
+  InvalidConcurrency(value: Int)
+  InvalidTimeout(value: Duration)
+end
+
+async fn fetch_one(client: HttpClient, url: Url, timeout: Duration, max_bytes: Int)
+  -> FetchResult
+
+  // timeout 与请求属于同一结构化作用域，离开作用域后不能遗留任务。
+  match await time.limit(timeout, client.get(url, max_bytes: max_bytes))
+    ok(response) if response.status >= 200 and response.status < 300 =>
+      return FetchResult.Success(url, response.status, response.body.byte_length)
+
+    ok(response) =>
+      return FetchResult.HttpFailure(url, response.status)
+
+    error(TimeError.Timeout) =>
+      return FetchResult.Timeout(url)
+
+    error(HttpError.Cancelled) =>
+      return FetchResult.Cancelled(url)
+
+    error(_) =>
+      return FetchResult.NetworkFailure(url)
+  end
+end
+
+async fn fetch_all(client: HttpClient, urls: List<Url>, concurrency: Int, timeout: Duration)
+  -> Result<List<FetchResult>, FetchConfigError>
+
+  if concurrency <= 0
+    return error(FetchConfigError.InvalidConcurrency(concurrency))
+  end
+  if timeout <= Duration.zero
+    return error(FetchConfigError.InvalidTimeout(timeout))
+  end
+
+  // task_group 保证父任务结束或取消时所有子任务都已结束。
+  task_group limit concurrency
+    let tasks = urls.map_indexed((index, url) =>
+      spawn indexed(index, fetch_one(client, url, timeout, max_bytes: 1.mib))
+    )
+
+    // ordered 按 index 恢复输入顺序，而不是完成顺序。
+    let results = await tasks.all().ordered()
+    return ok(results)
+  end
+end
