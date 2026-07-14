@@ -7,6 +7,7 @@ Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代�
 ## 文档
 
 - [自治 Agent 项目目标提示词](./AGENT_GOAL.md)
+- [项目状态与审计记录](./docs/README.md)
 - [方向与设计目标](./DIRECTION.md)
 - [核心语义草案](./SEMANTICS.md)
 - [候选语法与评测方法](./SYNTAX.md)
