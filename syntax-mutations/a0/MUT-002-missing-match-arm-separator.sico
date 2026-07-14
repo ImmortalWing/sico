@@ -1,0 +1,19 @@
+// mutation: MUT-002
+// syntax: A0
+// source-case: MATCH-001
+// expect: reject(SYNTAX_MISSING_MATCH_ARM_SEPARATOR)
+// recovery: next-match-arm(Color.Blue)
+
+enum Color
+  Red
+  Green
+  Blue
+end
+
+fn name(color: Color) -> Text
+  match color
+    Color.Red => return "red"
+    Color.Green return "green"
+    Color.Blue => return "blue"
+  end
+end

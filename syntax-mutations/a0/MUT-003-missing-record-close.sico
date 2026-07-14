@@ -1,0 +1,13 @@
+// mutation: MUT-003
+// syntax: A0
+// source-case: NOM-002
+// expect: reject(SYNTAX_MISSING_RECORD_CLOSE)
+// recovery: next-definition(main)
+
+record Feature
+  name: Text
+  enabled: Bool
+
+fn main() -> Feature
+  return Feature(name: "search", enabled: true)
+end

@@ -220,6 +220,6 @@ fn name(color: Color) -> Text {
 
 1. 对 A、B、C 进行结构计数；第一轮结果已记录在 [`syntax-candidates/METRICS.md`](./syntax-candidates/METRICS.md)；
 2. 定义最小词法器或独立 token 计数规则；
-3. 建立错误注入清单；
+3. 维护已建立的 [`syntax-mutations/`](./syntax-mutations/README.md) 单点错误注入清单；
 4. 人工复核三套候选是否保持相同语义；
 5. 再开始 AI 生成、理解和修复实验。

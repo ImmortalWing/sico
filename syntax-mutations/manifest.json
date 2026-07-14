@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "status": "design-corpus",
+  "entries": [
+    {
+      "mutation": "MUT-001",
+      "syntax": "A0",
+      "source_case": "NUM-003",
+      "source": "semantic-cases/numbers-units/valid/typed-bytes.sico",
+      "mutant": "syntax-mutations/a0/MUT-001-missing-function-close.sico",
+      "source_fragment": "end\n\nfn main() -> Bytes",
+      "replacement": "\nfn main() -> Bytes",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-001",
+      "syntax": "B",
+      "source_case": "NUM-003",
+      "source": "syntax-candidates/b/numbers-units/valid/typed-bytes.sico",
+      "mutant": "syntax-mutations/b/MUT-001-missing-function-close.sico",
+      "source_fragment": "end function\n\nfunction main() returns Bytes:",
+      "replacement": "\nfunction main() returns Bytes:",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-001",
+      "syntax": "C",
+      "source_case": "NUM-003",
+      "source": "syntax-candidates/c/numbers-units/valid/typed-bytes.sico",
+      "mutant": "syntax-mutations/c/MUT-001-missing-function-close.sico",
+      "source_fragment": "}\n\nfn main() -> Bytes",
+      "replacement": "\nfn main() -> Bytes",
+      "diagnostic": "SYNTAX_MISSING_FUNCTION_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-002",
+      "syntax": "A0",
+      "source_case": "MATCH-001",
+      "source": "semantic-cases/exhaustive-match/valid/all-variants.sico",
+      "mutant": "syntax-mutations/a0/MUT-002-missing-match-arm-separator.sico",
+      "source_fragment": "Color.Green => return \"green\"",
+      "replacement": "Color.Green return \"green\"",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR",
+      "recovery": "next-match-arm(Color.Blue)"
+    },
+    {
+      "mutation": "MUT-002",
+      "syntax": "B",
+      "source_case": "MATCH-001",
+      "source": "syntax-candidates/b/exhaustive-match/valid/all-variants.sico",
+      "mutant": "syntax-mutations/b/MUT-002-missing-match-arm-separator.sico",
+      "source_fragment": "case Color.Green:\n      return \"green\"",
+      "replacement": "case Color.Green\n      return \"green\"",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR",
+      "recovery": "next-match-arm(Color.Blue)"
+    },
+    {
+      "mutation": "MUT-002",
+      "syntax": "C",
+      "source_case": "MATCH-001",
+      "source": "syntax-candidates/c/exhaustive-match/valid/all-variants.sico",
+      "mutant": "syntax-mutations/c/MUT-002-missing-match-arm-separator.sico",
+      "source_fragment": "Color.Green: \"green\"",
+      "replacement": "Color.Green \"green\"",
+      "diagnostic": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR",
+      "recovery": "next-match-arm(Color.Blue)"
+    },
+    {
+      "mutation": "MUT-003",
+      "syntax": "A0",
+      "source_case": "NOM-002",
+      "source": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/a0/MUT-003-missing-record-close.sico",
+      "source_fragment": "end\n\nfn main() -> Feature",
+      "replacement": "\nfn main() -> Feature",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-003",
+      "syntax": "B",
+      "source_case": "NOM-002",
+      "source": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/b/MUT-003-missing-record-close.sico",
+      "source_fragment": "end record\n\nfunction main() returns Feature:",
+      "replacement": "\nfunction main() returns Feature:",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-003",
+      "syntax": "C",
+      "source_case": "NOM-002",
+      "source": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/c/MUT-003-missing-record-close.sico",
+      "source_fragment": "}\n\nfn main() -> Feature",
+      "replacement": "\nfn main() -> Feature",
+      "diagnostic": "SYNTAX_MISSING_RECORD_CLOSE",
+      "recovery": "next-definition(main)"
+    },
+    {
+      "mutation": "MUT-004",
+      "syntax": "A0",
+      "source_case": "RESULT-001",
+      "source": "semantic-cases/result-mapping/valid/same-error-try.sico",
+      "mutant": "syntax-mutations/a0/MUT-004-missing-type-argument-close.sico",
+      "source_fragment": "fn read_value() -> Result<Int, LoadError>\n",
+      "replacement": "fn read_value() -> Result<Int, LoadError\n",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE",
+      "recovery": "function-body(read_value)"
+    },
+    {
+      "mutation": "MUT-004",
+      "syntax": "B",
+      "source_case": "RESULT-001",
+      "source": "syntax-candidates/b/result-mapping/valid/same-error-try.sico",
+      "mutant": "syntax-mutations/b/MUT-004-missing-type-argument-close.sico",
+      "source_fragment": "function read_value() returns Result[Int, LoadError]:\n",
+      "replacement": "function read_value() returns Result[Int, LoadError:\n",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE",
+      "recovery": "function-body(read_value)"
+    },
+    {
+      "mutation": "MUT-004",
+      "syntax": "C",
+      "source_case": "RESULT-001",
+      "source": "syntax-candidates/c/result-mapping/valid/same-error-try.sico",
+      "mutant": "syntax-mutations/c/MUT-004-missing-type-argument-close.sico",
+      "source_fragment": "fn read_value() -> Result[Int, LoadError] {\n",
+      "replacement": "fn read_value() -> Result[Int, LoadError {\n",
+      "diagnostic": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE",
+      "recovery": "function-body(read_value)"
+    },
+    {
+      "mutation": "MUT-005",
+      "syntax": "A0",
+      "source_case": "RESULT-002",
+      "source": "semantic-cases/result-mapping/valid/total-error-map.sico",
+      "mutant": "syntax-mutations/a0/MUT-005-missing-enum-close.sico",
+      "source_fragment": "end\n\nenum AppError",
+      "replacement": "\nenum AppError",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE",
+      "recovery": "next-definition(AppError)"
+    },
+    {
+      "mutation": "MUT-005",
+      "syntax": "B",
+      "source_case": "RESULT-002",
+      "source": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
+      "mutant": "syntax-mutations/b/MUT-005-missing-enum-close.sico",
+      "source_fragment": "end enum\n\nenum AppError:",
+      "replacement": "\nenum AppError:",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE",
+      "recovery": "next-definition(AppError)"
+    },
+    {
+      "mutation": "MUT-005",
+      "syntax": "C",
+      "source_case": "RESULT-002",
+      "source": "syntax-candidates/c/result-mapping/valid/total-error-map.sico",
+      "mutant": "syntax-mutations/c/MUT-005-missing-enum-close.sico",
+      "source_fragment": "}\n\nenum AppError {",
+      "replacement": "\nenum AppError {",
+      "diagnostic": "SYNTAX_MISSING_ENUM_CLOSE",
+      "recovery": "next-definition(AppError)"
+    },
+    {
+      "mutation": "MUT-006",
+      "syntax": "A0",
+      "source_case": "NOM-002",
+      "source": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/a0/MUT-006-missing-call-close.sico",
+      "source_fragment": "Feature(name: \"search\", enabled: true)",
+      "replacement": "Feature(name: \"search\", enabled: true",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE",
+      "recovery": "function-close(main)"
+    },
+    {
+      "mutation": "MUT-006",
+      "syntax": "B",
+      "source_case": "NOM-002",
+      "source": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/b/MUT-006-missing-call-close.sico",
+      "source_fragment": "Feature(name: \"search\", enabled: true)",
+      "replacement": "Feature(name: \"search\", enabled: true",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE",
+      "recovery": "function-close(main)"
+    },
+    {
+      "mutation": "MUT-006",
+      "syntax": "C",
+      "source_case": "NOM-002",
+      "source": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
+      "mutant": "syntax-mutations/c/MUT-006-missing-call-close.sico",
+      "source_fragment": "Feature(name: \"search\", enabled: true)",
+      "replacement": "Feature(name: \"search\", enabled: true",
+      "diagnostic": "SYNTAX_MISSING_CALL_CLOSE",
+      "recovery": "function-close(main)"
+    }
+  ]
+}

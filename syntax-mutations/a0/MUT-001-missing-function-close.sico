@@ -1,0 +1,14 @@
+// mutation: MUT-001
+// syntax: A0
+// source-case: NUM-003
+// expect: reject(SYNTAX_MISSING_FUNCTION_CLOSE)
+// recovery: next-definition(main)
+
+newtype Bytes = Int
+
+fn keep_size(size: Bytes) -> Bytes
+  return size
+
+fn main() -> Bytes
+  return keep_size(Bytes(16))
+end

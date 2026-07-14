@@ -1,0 +1,29 @@
+// mutation: MUT-005
+// syntax: B
+// source-case: RESULT-002
+// expect: reject(SYNTAX_MISSING_ENUM_CLOSE)
+// recovery: next-definition(AppError)
+
+enum ParseError:
+  case Empty
+  case Invalid(value: Text)
+
+enum AppError:
+  case MissingInput
+  case BadInput(value: Text)
+end enum
+
+function parse() returns Result[Int, ParseError]:
+  return ok(1)
+end function
+
+function load() returns Result[Int, AppError]:
+  return parse().map_error(function(problem) returns AppError:
+    match problem:
+      case ParseError.Empty:
+        return AppError.MissingInput
+      case ParseError.Invalid(value):
+        return AppError.BadInput(value)
+    end match
+  end function)
+end function

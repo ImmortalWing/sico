@@ -1,0 +1,19 @@
+// mutation: MUT-004
+// syntax: B
+// source-case: RESULT-001
+// expect: reject(SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE)
+// recovery: function-body(read_value)
+
+enum LoadError:
+  case Missing
+end enum
+
+function read_value() returns Result[Int, LoadError:
+  return ok(1)
+end function
+
+function load_twice() returns Result[Int, LoadError]:
+  let first = try read_value()
+  let second = try read_value()
+  return ok(first + second)
+end function
