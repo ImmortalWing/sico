@@ -1,0 +1,23 @@
+{
+  "schema": "sico.resource-async-probe/0",
+  "os": "windows",
+  "arch": "x86_64",
+  "resource_closes": 1,
+  "resource_drops": 1,
+  "task_completions": 1,
+  "cancellations": 1,
+  "stream_max_in_flight": 2,
+  "backpressure": 1,
+  "events": [
+    "resource:1:open",
+    "resource:1:close",
+    "resource:2:open",
+    "resource:2:drop",
+    "scope:open",
+    "task:complete:spawn",
+    "task:complete:complete",
+    "task:cancel:spawn",
+    "scope:cancel",
+    "scope:drop"
+  ]
+}

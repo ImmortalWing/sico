@@ -38,4 +38,4 @@ Sico Runtime / Sico Host
 - WIT 定义组件和宿主能力接口；
 - 通用系统能力优先复用 WASI；
 - 不依赖 JavaScript 或 TypeScript；
-- `Int`/Decimal Rust 原型已完成；当前优先进入资源/异步和 Component/Runtime 技术原型。诊断与语义查询 JSON v0 已形成设计契约。
+- `Int`/Decimal 与 resource/async Rust 原型已完成；当前优先进入真实 Component/Runtime host-call 技术原型。诊断与语义查询 JSON v0 已形成设计契约。

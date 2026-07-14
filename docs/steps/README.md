@@ -12,5 +12,6 @@
 | [STEP-0006](./STEP-0006-diagnostics-protocol-v0.md) | complete | M0 | 建立诊断协议 v0 |
 | [STEP-0007](./STEP-0007-semantic-query-json-v0.md) | complete | M0 | 建立语义索引与查询 JSON v0 |
 | [STEP-0008](./STEP-0008-numeric-representation-prototypes.md) | complete | M0 | 验证 Int 与 Decimal 表示原型 |
+| [STEP-0009](./STEP-0009-resource-async-wit-prototypes.md) | complete | M0 | 验证 resource、async 与 WIT 映射 |
 
-下一可用编号：`STEP-0009`。
+下一可用编号：`STEP-0010`。

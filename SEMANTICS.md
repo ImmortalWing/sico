@@ -564,10 +564,10 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 2. Decimal 的精度、舍入上下文和序列化规范；STEP-0008 已提出 coefficient/scale v0 并验证加乘与显式舍入，除法上下文和 RFC 接受仍开放；
 3. 固定宽度整数的正式名称及公开程度；
 4. 泛型约束、接口/trait、方差和编译策略；
-5. 资源借用是否进入表层语言，以及需要怎样的生命周期推导；
+5. 资源借用是否进入表层语言，以及需要怎样的生命周期推导；STEP-0009 已验证调用期 borrow 和 owned move 映射，表层推导仍开放；
 6. 闭包循环与自动内存管理的最低实现模型；
 7. 效果集合的正式分类、粒度和 handler 是否必要；
-8. `Future` 的启动细节、取消观察点和 Component async ABI 映射；
+8. `Future` 的启动细节、取消观察点和 Component async ABI 映射；STEP-0009 已选择 WASI 0.3 原生 async/future/stream 并通过 WIT parser，真实 Runtime 往返仍待 STEP-0010；
 9. 契约表达式子集、静态证明器和运行时检查成本；
 10. WIT 接口版本兼容、adapter 生成和 WASI 基线；
 11. 语义索引与 AI 查询协议的 JSON schema；
