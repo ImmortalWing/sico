@@ -8,4 +8,5 @@
 | [`M2 static semantics`](./M2-static-semantics.md) | complete | full HIR、names/types/control/effects/resources、semantic diagnostics/index 与 M2 audit |
 | [`M3 Sico IR and Component`](./M3-sico-ir-component.md) | complete | typed IR/verifier、lowering、Core Wasm/Component/WIT、async boundary、CLI 与 M3 audit |
 | [`M4 .sapp and secure Runtime`](./M4-sapp-runtime.md) | complete | package/manifest/hash/signature、capability closure、storage/limits、package CLI 与 M4 audit |
-| [`M5 Sico Desktop Host`](./M5-desktop-host.md) | ready | threat/lifecycle、install/open、permission UI、UI WIT/SDK、desktop adapters 与 M5 audit |
+| [`M5 Sico Desktop Host`](./M5-desktop-host.md) | complete | threat/lifecycle、install/open、permission UI、UI WIT/SDK、desktop adapters 与 M5 audit |
+| [`M6 Sico Android Host`](./M6-android-host.md) | ready | Android contract、JNI、Intent/URI、permissions/storage、Runtime/lifecycle、native UI 与 parity audit |

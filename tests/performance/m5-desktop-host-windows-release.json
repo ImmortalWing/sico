@@ -1,0 +1,20 @@
+{
+  "schema": "sico.m5.desktop-host-startup-runs.v0",
+  "date": "2026-07-16",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "host": "x86_64-pc-windows-gnu",
+    "profile": "release",
+    "runtime": "wasmtime-46.0.1"
+  },
+  "workload": "signed package reinstall/reverify/open plus Wasmtime process execution returning 42",
+  "iterations_per_run": 20,
+  "sla": "not-established",
+  "runs": [
+    { "run": 1, "total_ms": 646.872, "mean_startup_ms": 32.344 },
+    { "run": 2, "total_ms": 652.935, "mean_startup_ms": 32.647 },
+    { "run": 3, "total_ms": 603.784, "mean_startup_ms": 30.189 }
+  ],
+  "median_mean_startup_ms": 32.344
+}

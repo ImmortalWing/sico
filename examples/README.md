@@ -1,5 +1,7 @@
 # Sico examples
 
+- [M5 代表性 Desktop Host 应用](./desktop/README.md)
+
 这些示例用于反推语言语义、语法和 AI 可理解性。目前全部属于设计样本，不代表已经稳定的语言规范。
 
 - [代表性程序计划与覆盖矩阵](./PLAN.md)

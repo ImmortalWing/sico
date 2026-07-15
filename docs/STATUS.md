@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-16
-> - phase: M5 Sico Desktop Host
+> - phase: M6 Sico Android Host
 > - phase status: ready
-> - current step: STEP-0053 (planned)
-> - last completed step: STEP-0052
-> - next step: start STEP-0053
+> - current step: STEP-0054 (planned)
+> - last completed step: STEP-0053
+> - next step: start STEP-0054
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0051：交付 Windows Desktop Host CLI/OS adapter、`.sapp` install/open/uninstall、per-user association plan/apply、native permission dialog 与 packaging smoke。
+当前目标是执行 STEP-0054：审计 Android toolchain/runner/ABI 与 Runtime availability，冻结 Intent/URI/provider、identity/storage、Activity/process lifecycle 和 packaging threat contract。
 
 ## 2. Current step
 
-[`STEP-0050`](./steps/STEP-0050-minimal-ui-wit-renderer.md) 已实现 typed no-script UI、fixed ceilings、escaping/accessibility preorder、bounded event gate 与 parse-verified UI WIT。下一执行项是 STEP-0051 Windows Host integration。
+[`STEP-0053`](./steps/STEP-0053-m5-quality-exit-audit.md) 已用代表性 signed app、10,240 properties、Windows release startup baseline 与 M0–M4 regression 完成 M5 GO。下一执行项是 STEP-0054 Android Host contract gate。
 
 ## 3. Verified repository facts
 
@@ -74,6 +74,10 @@
 | M4 security properties | 2,048 signed mutations；1,024 Component mutations；256 resource permutations | verified |
 | M4 performance | build/verify/signature median 5.459/8.571/48.177 ms；3 × 1,000；no SLA | measured |
 | M5 Host install/open | signed-only；app+signer/revision/capability hashes；3 integration tests | verified |
+| M5 Windows Desktop Host | signed install/open/Wasmtime `42`/uninstall；native Forms；zip smoke | runtime-verified |
+| M5 desktop adapters | Windows runtime；macOS/Linux generated association artifacts | contract-verified where no runner |
+| M5 host properties | 10,240 identity/capability/UI/open inputs | verified |
+| M5 startup performance | median mean 32.344 ms；3 × 20 release launches；no SLA | measured |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -135,7 +139,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0051 的外部条件。
+当前没有阻塞 STEP-0054 contract/audit 工作的外部条件。Android emulator/device、SDK/NDK 与 ABI Runtime availability 尚未在本轮验证；这些是 STEP-0054 必须明确记录的 runner 条件，不能预先视为通过。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -152,4 +156,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0051`：实现 Windows Desktop Host binary 与 per-user shell adapter，真实运行 signed `.sapp` install/open/uninstall 和 permission dialog/package smoke；registry mutation 仅由显式命令触发。
+`STEP-0054`：冻结 Android threat/lifecycle/platform/packaging contract，并以当前 toolchain、runner、ABI 和 Wasmtime/Pulley 证据决定后续 JNI/Runtime 路径。

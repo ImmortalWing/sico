@@ -25,7 +25,7 @@ if ($performance.schema -ne 'sico.m4.sapp-performance-runs.v0' -or
   throw 'M4 performance evidence is incomplete or overclaims an SLA'
 }
 if (-not $audit.Contains('GO: M4 complete; M5 entry gate satisfied; next STEP-0046.')) { throw 'M4 audit has no exact GO' }
-if ($m5Plan -notmatch '(?m)^> - status: ready after M4 GO\r?$' -or -not $m5Plan.Contains('STEP-0053')) { throw 'M5 plan is not ready/complete' }
+if ($m5Plan -notmatch '(?m)^> - status: (?:ready after M4 GO|complete)\r?$' -or -not $m5Plan.Contains('STEP-0053')) { throw 'M5 plan is not ready/complete' }
 if ($step -notmatch '(?m)^> - status: complete\r?$') { throw 'STEP-0045 is not complete' }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN

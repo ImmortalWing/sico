@@ -1,6 +1,6 @@
 # M5 plan: Sico Desktop Host
 
-> - status: ready after M4 GO
+> - status: complete
 > - created: 2026-07-16
 > - phase: M5
 > - entry evidence: [`M4 exit audit`](../reports/m4-exit-audit.md)
@@ -51,4 +51,4 @@
 
 ## 6. Immediate next step
 
-`STEP-0046`：先建立 Desktop Host threat/lifecycle/platform matrix，冻结 install/open immutable identity、permission record key、single/multi-instance、crash/cancel cleanup 与 Windows/macOS/Linux 证据边界；该 gate 通过前不实现会接受任意 `.sapp` 的 GUI Host。
+M5 已由 [`M5 exit audit`](../reports/m5-exit-audit.md) 判定 GO。下一执行项是 M6 [`STEP-0054`](../steps/README.md)：Android threat/lifecycle/platform/packaging contract。

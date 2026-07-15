@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`m5-exit-audit`](./m5-exit-audit.md) | complete | STEP-0053 | M5 Windows runtime, platform parity, quality/performance and M6 GO |
 | [`desktop-platform-parity-v0`](./desktop-platform-parity-v0.md) | accepted | STEP-0052 | shared Windows/macOS/Linux adapter contract with explicit evidence labels |
 | [`windows-desktop-host-v0`](./windows-desktop-host-v0.md) | accepted | STEP-0051 | Windows signed install/open/uninstall, native UI and zip smoke |
 | [`syntax-error-injection-v0`](./syntax-error-injection-v0.md) | complete | STEP-0003 | 18 个单点结构错误变体及可复现性验证 |

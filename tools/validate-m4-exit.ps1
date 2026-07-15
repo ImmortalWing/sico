@@ -17,8 +17,8 @@ foreach ($number in 38..45) {
   $text = Get-Content -LiteralPath $step.FullName -Raw -Encoding UTF8
   if ($text -notmatch '(?m)^> - status: complete\r?$') { throw "$($step.Name) is not complete" }
 }
-if ($status -notmatch '(?m)^> - phase: M5 ' -or $status -notmatch '(?m)^> - next step: start STEP-0046\r?$') { throw 'STATUS is not advanced to M5 STEP-0046' }
-if ($roadmap -notmatch '(?m)^> - current phase: M5\r?$') { throw 'ROADMAP current phase is not M5' }
+if ($status -notmatch '(?m)^> - phase: M[5-7] ') { throw 'STATUS has regressed below M5' }
+if ($roadmap -notmatch '(?m)^> - current phase: M[5-7]\r?$') { throw 'ROADMAP has regressed below M5' }
 if (-not $audit.Contains('GO: M4 complete; M5 entry gate satisfied; next STEP-0046.')) { throw 'M4 audit has no exact GO conclusion' }
 
 foreach ($number in 38..45) {

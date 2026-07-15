@@ -1,0 +1,33 @@
+{
+  "schema": "sico.ui.model.v0",
+  "root": {
+    "id": "root",
+    "kind": "window",
+    "text": null,
+    "accessibility_label": null,
+    "children": [
+      {
+        "id": "title",
+        "kind": "text",
+        "text": "Hello from Sico Desktop",
+        "accessibility_label": null,
+        "children": []
+      },
+      {
+        "id": "status",
+        "kind": "status",
+        "text": "The verified application result is 42.",
+        "accessibility_label": null,
+        "children": []
+      },
+      {
+        "id": "close",
+        "kind": "button",
+        "text": "Close",
+        "accessibility_label": "Close application",
+        "children": []
+      }
+    ]
+  }
+}
+

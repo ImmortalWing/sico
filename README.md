@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目已完成 M0–M4：Rust 编译器和安全 Runtime 可完成 syntax/semantics、typed IR、deterministic Component、canonical `.sapp`、development trust、capability/storage/limit enforcement，并通过正式 `sico build/run/inspect` 在 Wasmtime 46.0.1 执行。M4 退出审计已 GO，下一步是 M5 STEP-0046 Desktop Host threat/lifecycle/platform contract。
+项目已完成 M0–M5：Rust 编译器、安全 Runtime 与 Windows Desktop Host 可完成 syntax/semantics、typed IR、deterministic Component、canonical signed `.sapp`、capability/storage/limit enforcement、安装/打开/授权/生命周期/typed native UI，并在 Wasmtime 46.0.1 真实执行。M5 退出审计已 GO，下一步是 M6 STEP-0054 Android Host threat/lifecycle/platform/packaging contract。
 
 ## 文档
 
@@ -42,4 +42,5 @@ Sico Runtime / Sico Host
 - M1/M2 已完成 lossless frontend、formatter、稳定诊断、25/25 valid 与 29/29 exact invalid semantic oracle、Semantic Index/query；
 - M3 已完成 typed IR/verifier、lowering、deterministic Core/Component、WIT Result/record/resource、Future/Stream Runtime contract，以及 raw Component `build/run`；
 - M4 已完成 canonical `.sapp`、strict loader、development signature/trust、capability closure、isolated storage/WASI、Runtime limits/faults、package CLI/cache 与 security/property baseline；结论见 [M4 exit audit](./docs/reports/m4-exit-audit.md)。
-- M5 按 [Desktop Host plan](./docs/plans/M5-desktop-host.md) 从 STEP-0046 开始；raw Component 仍只作为 compiler regression boundary，不是应用分发格式。
+- M5 已完成 Windows runtime-verified Desktop Host 与 macOS/Linux contract artifacts；结论见 [M5 exit audit](./docs/reports/m5-exit-audit.md)。
+- M6 按 [Android Host plan](./docs/plans/M6-android-host.md) 从 STEP-0054 开始；raw Component 仍只作为 compiler regression boundary，不是应用分发格式。

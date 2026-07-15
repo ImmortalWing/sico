@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-16
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M5
+> - current phase: M6
 
 ## Status vocabulary
 
@@ -103,7 +103,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M5: Sico Desktop Host
 
-状态：`ready`（next STEP-0046）
+状态：`complete`
 
 主要交付：Sico Desktop Host（Windows/macOS/Linux）、文件关联、权限 UI、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实应用。
 
@@ -111,17 +111,19 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：同一 `.sapp` 在声明支持的桌面平台保持一致核心行为。
 
-执行计划：[`M5 Sico Desktop Host`](./plans/M5-desktop-host.md)，STEP-0046–0053；先完成 threat/lifecycle/platform contract，再实现 install/open 与 GUI Host。
+执行计划：[`M5 Sico Desktop Host`](./plans/M5-desktop-host.md)，STEP-0046–0053 全部完成。退出证据：Windows signed install/open/Wasmtime/uninstall、权限/生命周期/typed UI、10,240 properties、release baseline、M0–M4 regression；结论见 [`M5 exit audit`](./reports/m5-exit-audit.md)。
 
 ## M6: Sico Android Host
 
-状态：`planned`
+状态：`ready`（next STEP-0054）
 
 主要交付：Sico Android Host、文件/链接/分享入口、触摸、输入法、生命周期、Android 权限映射和共享行为测试。
 
 进入条件：M5 的应用与 UI 接口达到可移植基线；M0 Runtime 报告证明 Android 可行。
 
 退出证据：同一 `.sapp` 无需重编译即可在 Android 与桌面运行。
+
+执行计划：[`M6 Sico Android Host`](./plans/M6-android-host.md)，STEP-0054–0061；先冻结 Android threat/lifecycle/platform/packaging contract，再实现 JNI、Intent/URI、permission/storage、Runtime/lifecycle 与 native UI。
 
 ## M7: 生态、工具与发布
 
