@@ -1,6 +1,6 @@
 # M2 plan: static semantics
 
-> - status: in progress (STEP-0027 complete)
+> - status: in progress (STEP-0028 complete)
 > - created: 2026-07-15
 > - phase: M2
 > - entry evidence: [`M1 exit audit`](../reports/m1-exit-audit.md)
@@ -49,7 +49,7 @@ crate 名称和内部数据结构是 STEP-0022 工程决定；不得改变 langu
 
 编号在 STEP-0021 推送后可用。任何需要语言决定的发现必须插入独立 RFC/STEP，并更新本表；不能通过“先让测试过”提前固定语义。
 
-进度：STEP-0027 已完成；revision 的 2/2 valid 与 2/2 invalid exact primary diagnostics 见 [`review report`](../reports/revision-contract-dataflow-v0.md)。下一执行项为 STEP-0028。
+进度：STEP-0028 已完成；10 complete B modules、10 honest partial A examples、五类 query 与 production SHA-256 snapshot 见 [`review report`](../reports/compiler-semantic-index-v0.md)。下一执行项为 STEP-0029。
 
 ## 5. Test matrix
 

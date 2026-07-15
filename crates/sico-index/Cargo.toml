@@ -1,0 +1,16 @@
+[package]
+name = "sico-index"
+description = "Compiler-produced Semantic Index and query engine for Sico"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sico-semantics = { path = "../sico-semantics" }
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

@@ -1,6 +1,6 @@
 # Sico Semantic Index and Query JSON v0
 
-本目录定义 Sico 编译器未来生成的可信语义索引，以及 `outline`、`describe`、`slice`、`impact`、`flow` 五类查询的统一 JSON 契约。规范行为见 [`RFC-0002`](../docs/rfc/RFC-0002-semantic-index-query-v0.md)。
+本目录定义可信语义索引，以及 `outline`、`describe`、`slice`、`impact`、`flow` 五类查询的统一 JSON 契约。规范行为见 [`RFC-0002`](../docs/rfc/RFC-0002-semantic-index-query-v0.md)；真实 compiler producer/query engine 见 [`sico-index`](../crates/sico-index/src/lib.rs)。
 
 ## Files
 
@@ -51,4 +51,4 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-semantic-query.ps1
 ```
 
-这些文件是 M0 设计 oracle，不是编译器实测输出。fixture 中的 `complete` 仅表示相对于该 fixture/query oracle 没有省略，不证明当前仓库已实现索引构建或静态分析。
+这些 fixtures 仍是 M0 设计 oracle；fixture 中的 `complete` 只表示相对于 fixture/query oracle 没有省略。STEP-0028 已新增独立的 compiler producer：成功 B source 可生成 production `sha256:` snapshot；当前候选 A examples 会诚实产生 partial modules，不复用 fixture 的成功声明。
