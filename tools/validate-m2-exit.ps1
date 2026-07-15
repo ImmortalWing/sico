@@ -27,9 +27,9 @@ $audit = Get-Content -LiteralPath (Join-Path $root 'docs/reports/m2-exit-audit.m
 $status = Get-Content -LiteralPath (Join-Path $root 'docs/STATUS.md') -Raw -Encoding UTF8
 $cli = Get-Content -LiteralPath (Join-Path $root 'crates/sico-cli/src/lib.rs') -Raw -Encoding UTF8
 if ($m2Plan -notmatch '(?m)^> - status: complete\r?$') { throw 'M2 plan is not complete' }
-if ($m3Plan -notmatch '(?m)^> - status: ready after STEP-0029 GO\r?$') { throw 'M3 plan is missing after M2 GO' }
+if ($m3Plan -notmatch '(?m)^> - status: (ready after STEP-0029 GO|in progress.*|complete)\r?$') { throw 'M3 plan is missing after M2 GO' }
 if (-not $audit.Contains('GO: M2 complete; M3 entry gate satisfied; next STEP-0030.')) { throw 'M2 audit has no exact GO conclusion' }
-if ($status -notmatch '(?m)^> - phase: M3 ' -or $status -notmatch '(?m)^> - next step: STEP-0030\r?$') {
+if ($status -notmatch '(?m)^> - phase: M[3-9] ' -or $status -notmatch '(?m)^> - next step: STEP-00(3[0-9]|[4-9][0-9])\r?$') {
   throw 'STATUS does not preserve the post-M2 handoff'
 }
 if ($cli.Contains('type checker: unavailable') -or $cli.Contains('"type_checker": "unavailable"')) {

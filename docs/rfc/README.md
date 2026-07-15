@@ -13,7 +13,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0005`](./RFC-0005-labeled-block-syntax-baseline.md) | accepted | 选择 B labeled-block 作为 M1 parser/formatter 唯一语法基线 |
 | [`RFC-0006`](./RFC-0006-lexical-source-contract-v0.md) | accepted | 固定 M1 UTF-8、Unicode identifier、newline、trivia、token、span 与输入限额 |
 | [`RFC-0007`](./RFC-0007-m2-hir-name-prelude-contract-v0.md) | accepted | 固定 M2 deterministic HIR/source maps 与 P0-only name/prelude contract |
+| [`RFC-0008`](./RFC-0008-typed-sico-ir-contract-v0.md) | accepted | 固定 typed Sico IR、canonical JSON、source maps、限额与独立 verifier contract |
 
-下一可用编号：`RFC-0008`。
+下一可用编号：`RFC-0009`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。
