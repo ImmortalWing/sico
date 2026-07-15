@@ -14,7 +14,7 @@ $WasmtimePath = (Resolve-Path $WasmtimePath).Path
 $rfc = Get-Content -LiteralPath (Join-Path $root 'docs/rfc/RFC-0014-minimal-build-run-cli-v0.md') -Raw -Encoding UTF8
 $cliSource = Get-Content -LiteralPath (Join-Path $root 'crates/sico-cli/src/lib.rs') -Raw -Encoding UTF8
 if ($rfc -notmatch '(?m)^> - status: accepted\r?$') { throw 'RFC-0014 is not accepted' }
-foreach ($marker in @('Command::new("build")', 'Command::new("run")', 'compile_component(&module)', 'run_component(&runtime, &component, "main()")', 'SICO_WASMTIME')) {
+foreach ($marker in @('Command::new("build")', 'Command::new("run")', 'compile_component(&module)', 'raw-component', 'run_authorized_package', 'SICO_WASMTIME')) {
   if (-not $cliSource.Contains($marker)) { throw "CLI is missing M3 contract marker: $marker" }
 }
 
@@ -44,9 +44,9 @@ try {
   $cli = Join-Path $root 'target/debug/sico.exe'
   $answer = Join-Path $root 'tests/end-to-end/answer.sico'
 
-  & $cli build --output $artifacts[0] $answer | Out-Null
+  & $cli build --raw-component --output $artifacts[0] $answer | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'first deterministic build failed' }
-  & $cli build --output $artifacts[1] $answer | Out-Null
+  & $cli build --raw-component --output $artifacts[1] $answer | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'second deterministic build failed' }
   $firstHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifacts[0]).Hash
   $secondHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifacts[1]).Hash
@@ -65,7 +65,7 @@ try {
 
   $invalid = Join-Path $root 'syntax-candidates/b/numbers-units/invalid/text-as-int.sico'
   $ErrorActionPreference = 'Continue'
-  & $cli build --output $artifacts[2] $invalid 2>$errorFile | Out-Null
+  & $cli build --raw-component --output $artifacts[2] $invalid 2>$errorFile | Out-Null
   $invalidExit = $LASTEXITCODE
   $ErrorActionPreference = 'Stop'
   if ($invalidExit -ne 1) { throw 'semantic invalid source did not exit 1' }

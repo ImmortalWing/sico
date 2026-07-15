@@ -411,6 +411,7 @@ dependencies = [
  "sico-format",
  "sico-ir",
  "sico-lexer",
+ "sico-package",
  "sico-parser",
  "sico-runtime",
  "sico-semantics",
