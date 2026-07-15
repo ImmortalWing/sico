@@ -203,6 +203,28 @@ impl PermissionStore {
         Ok(PermissionOutcome::Granted(requested.clone()))
     }
 
+    /// Removes every persistent decision for one immutable app identity.
+    ///
+    /// # Errors
+    ///
+    /// Rejects malformed identities, link/reparse targets and I/O failures.
+    pub fn remove_app(&self, app_identity: &str) -> Result<bool, PermissionError> {
+        if app_identity.len() != 64
+            || !app_identity
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(PermissionError::IdentityMismatch);
+        }
+        let directory = self.root.join(app_identity);
+        if !directory.exists() {
+            return Ok(false);
+        }
+        reject_directory(&directory)?;
+        fs::remove_dir_all(directory)?;
+        Ok(true)
+    }
+
     fn write_record(
         &self,
         package: &OpenedPackage,

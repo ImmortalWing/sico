@@ -275,6 +275,25 @@ impl HostStore {
         })
     }
 
+    /// Removes every installed revision for one immutable app identity.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid identities, link/reparse targets and I/O failures.
+    pub fn uninstall(&self, app_identity: &str) -> Result<bool, HostError> {
+        validate_digest(app_identity)?;
+        let app = self.root.join("apps").join(app_identity);
+        if !app.exists() {
+            return Ok(false);
+        }
+        reject_link_or_file(&app)?;
+        if app.parent() != Some(self.root.join("apps").as_path()) {
+            return Err(HostError::InvalidStore);
+        }
+        fs::remove_dir_all(app)?;
+        Ok(true)
+    }
+
     fn atomic_install(
         &self,
         metadata: &InstalledRevision,

@@ -1,0 +1,28 @@
+[package]
+name = "sico-desktop-host"
+description = "Native desktop entrypoint for verified Sico .sapp applications"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sico-desktop-host"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sico-host-core = { path = "../sico-host-core" }
+sico-package = { path = "../sico-package" }
+sico-runtime = { path = "../sico-runtime" }
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+sico-codegen-wasm = { path = "../sico-codegen-wasm" }
+sico-ir = { path = "../sico-ir" }
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

@@ -3,9 +3,9 @@
 > - updated: 2026-07-16
 > - phase: M5 Sico Desktop Host
 > - phase status: ready
-> - current step: STEP-0051 (planned)
-> - last completed step: STEP-0050
-> - next step: start STEP-0051
+> - current step: STEP-0052 (planned)
+> - last completed step: STEP-0051
+> - next step: start STEP-0052
 
 ## 1. Current objective
 
