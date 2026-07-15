@@ -4,16 +4,16 @@
 > - phase: M2 静态语义
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0026
-> - next step: STEP-0027
+> - last completed step: STEP-0027
+> - next step: STEP-0028
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0027：实现 revision/contract dataflow，使 revision 的 2 valid/2 invalid 产生真实结果。
+下一目标是执行 STEP-0028：从真实 compiler facts 生成并验证 10-module Semantic Index/query v0。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0026`](./steps/STEP-0026-resources-async-streams.md) 已完成；下一项只扩展 revision oracle 所需 contract dataflow。
+当前没有进行中的 STEP。[`STEP-0027`](./steps/STEP-0027-revision-contract-dataflow.md) 已完成；54 个 B semantic oracle 已全部由 checker 执行，下一项是 compiler-produced index。
 
 ## 3. Verified repository facts
 
@@ -52,8 +52,9 @@
 | 实际 `.sico` match/Result check | 6 valid pass；8 invalid exact primary | verified |
 | 实际 `.sico` capability/Component check | 4 valid pass；4 invalid exact primary | verified |
 | 实际 `.sico` resource/task/stream check | 6 valid pass；6 invalid exact primary | verified |
+| 实际 `.sico` revision check | 2 valid pass；2 invalid exact primary | verified |
 
-M0/M1 已完成；仓库已有 STEP-0023–0026 的真实 semantic checker。其余 2 valid/2 invalid 仍是 M2 oracle，不能解释为已产生语义编译结果。
+M0/M1 已完成；仓库已有 STEP-0023–0027 的真实 semantic checker，25/25 valid 与 29/29 invalid 已由 crate tests 对权威 map 执行。CLI 与 Semantic Index 集成仍待 STEP-0028–0029。
 
 ## 4. Completed assets
 
@@ -90,6 +91,7 @@ M0/M1 已完成；仓库已有 STEP-0023–0026 的真实 semantic checker。其
 - match/Result control flow：[`STEP-0024`](./steps/STEP-0024-match-result-control-flow.md)、[`review report`](./reports/match-result-control-flow-v0.md)；
 - effects/capabilities/Component boundary：[`STEP-0025`](./steps/STEP-0025-effects-capabilities-component.md)、[`review report`](./reports/effects-capabilities-component-v0.md)；
 - resource/task/stream flow：[`STEP-0026`](./steps/STEP-0026-resources-async-streams.md)、[`review report`](./reports/resources-async-streams-v0.md)；
+- revision contract dataflow：[`STEP-0027`](./steps/STEP-0027-revision-contract-dataflow.md)、[`review report`](./reports/revision-contract-dataflow-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -98,7 +100,7 @@ M0/M1 已完成；仓库已有 STEP-0023–0026 的真实 semantic checker。其
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0027 的外部条件。
+当前没有阻塞 STEP-0028 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -106,12 +108,12 @@ M0/M1 已完成；仓库已有 STEP-0023–0026 的真实 semantic checker。其
 
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
-- STEP-0023–0026 已有真实 checker；revision 仍待实现，且仍无真实模型实测；
+- STEP-0023–0027 已有真实 checker；Semantic Index/CLI 尚未消费全部 facts，且仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
-- E1xxx、STEP-0023–0026 已拥有的 E2–E6 已有真实 compiler code、跨度和 bounded cascade；E7 仍待实现；
+- E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度和 bounded cascade；CLI text/JSON 尚待 STEP-0029 集成；
 - 语义查询协议已有设计 fixtures，但只有两个模块详细展开，没有真实 index/accuracy/latency 数据。
 
 ## 8. Next step
 
-`STEP-0027`：实现 revision/contract dataflow；只验收对应 2 valid/2 invalid oracle，不引入隐藏 runtime conflict handling。
+`STEP-0028`：从真实 compiler facts 生成 Semantic Index/query v0；验证 10 modules、5 operations、completeness/blocking diagnostics 与 RFC-0002 schema。

@@ -65,6 +65,7 @@ pub enum SemanticFactKind {
     ResourceState,
     AsyncState,
     StreamOperation,
+    Revision,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,6 +173,7 @@ struct Parameter {
 struct Model {
     types: BTreeMap<String, TypeDefinition>,
     functions: BTreeMap<String, FunctionDefinition>,
+    capabilities: BTreeMap<String, BTreeMap<String, Vec<Parameter>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -269,37 +271,52 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
                 );
                 push_type_fact(declaration, &mut facts);
             }
-            DeclarationKind::Function => {
-                if let Some(function) = parse_function(declaration) {
-                    facts.push(SemanticFact {
-                        id: FactId {
-                            node: declaration.id,
-                            slot: 0,
-                        },
-                        kind: SemanticFactKind::Function,
-                        name: function.name.clone(),
-                        ty: Some(function.returns.clone()),
-                        range: function.range,
-                    });
-                    for (index, parameter) in function.parameters.iter().enumerate() {
-                        facts.push(SemanticFact {
-                            id: FactId {
-                                node: declaration.id,
-                                slot: u16::try_from(index + 1).expect("parameter count is bounded"),
-                            },
-                            kind: SemanticFactKind::Parameter,
-                            name: format!("{}.{}", function.name, parameter.name),
-                            ty: Some(parameter.ty.clone()),
-                            range: parameter.range,
-                        });
-                    }
-                    model.functions.insert(function.name.clone(), function);
-                }
+            DeclarationKind::Capability => {
+                model.capabilities.insert(
+                    declaration.name.clone(),
+                    build_capability_methods(declaration),
+                );
             }
-            _ => {}
+            DeclarationKind::Function => {
+                insert_function_definition(declaration, &mut model, &mut facts);
+            }
+            DeclarationKind::Interface => {}
         }
     }
     (model, facts)
+}
+
+fn insert_function_definition(
+    declaration: &sico_hir::Declaration,
+    model: &mut Model,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let Some(function) = parse_function(declaration) else {
+        return;
+    };
+    facts.push(SemanticFact {
+        id: FactId {
+            node: declaration.id,
+            slot: 0,
+        },
+        kind: SemanticFactKind::Function,
+        name: function.name.clone(),
+        ty: Some(function.returns.clone()),
+        range: function.range,
+    });
+    for (index, parameter) in function.parameters.iter().enumerate() {
+        facts.push(SemanticFact {
+            id: FactId {
+                node: declaration.id,
+                slot: u16::try_from(index + 1).expect("parameter count is bounded"),
+            },
+            kind: SemanticFactKind::Parameter,
+            name: format!("{}.{}", function.name, parameter.name),
+            ty: Some(parameter.ty.clone()),
+            range: parameter.range,
+        });
+    }
+    model.functions.insert(function.name.clone(), function);
 }
 
 fn push_type_fact(declaration: &sico_hir::Declaration, facts: &mut Vec<SemanticFact>) {
@@ -331,6 +348,30 @@ fn build_resource_methods(declaration: &sico_hir::Declaration) -> BTreeMap<Strin
                 .iter()
                 .any(|token| token.kind == TokenKind::Borrow);
             Some((name, !borrowed))
+        })
+        .collect()
+}
+
+fn build_capability_methods(
+    declaration: &sico_hir::Declaration,
+) -> BTreeMap<String, Vec<Parameter>> {
+    declaration
+        .lines
+        .iter()
+        .filter(|line| line.kind == LineKind::FunctionSignature)
+        .filter_map(|line| {
+            let name = line.tokens.get(1)?.text.clone();
+            let left = line
+                .tokens
+                .iter()
+                .position(|token| token.kind == TokenKind::LeftParen)?;
+            let right = matching_close(&line.tokens, left)?;
+            let parameters = split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                .into_iter()
+                .filter(|tokens| !tokens.is_empty())
+                .filter_map(parse_parameter)
+                .collect();
+            Some((name, parameters))
         })
         .collect()
 }
@@ -503,6 +544,7 @@ fn analyze_function(
 ) {
     check_boundary_semantics(function, diagnostics, facts);
     check_resource_async_stream(function, model, diagnostics, facts);
+    check_revision_contracts(function, model, diagnostics, facts);
     let mut locals: BTreeMap<String, Type> = function
         .parameters
         .iter()
@@ -559,6 +601,187 @@ fn analyze_function(
             _ => {}
         }
     }
+}
+
+fn check_revision_contracts(
+    function: &FunctionDefinition,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    check_revision_calls(function, model, diagnostics, facts);
+    check_loaded_revision_guards(function, model, diagnostics, facts);
+}
+
+fn check_revision_calls(
+    function: &FunctionDefinition,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    for line in &function.body {
+        let Some((receiver, method, _)) = receiver_method(line) else {
+            continue;
+        };
+        let Some(Type::Named(capability)) = function
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == receiver)
+            .map(|parameter| &parameter.ty)
+        else {
+            continue;
+        };
+        let Some(parameters) = model
+            .capabilities
+            .get(capability)
+            .and_then(|methods| methods.get(&method))
+        else {
+            continue;
+        };
+        if !matches!(parameters.first().map(|parameter| &parameter.ty), Some(Type::Named(name)) if name == "Revision")
+        {
+            continue;
+        }
+        facts.push(flow_fact(
+            line,
+            0,
+            SemanticFactKind::Revision,
+            format!("{receiver}.{method}:expected-revision"),
+            Some(Type::named("Revision")),
+        ));
+        if !call_has_revision_argument(line, function) {
+            push_diagnostic(
+                diagnostics,
+                "E7001",
+                "MISSING_REVISION",
+                "commit requires the expected revision".to_owned(),
+                [],
+                line.range,
+            );
+        }
+    }
+}
+
+fn call_has_revision_argument(line: &Line, function: &FunctionDefinition) -> bool {
+    let Some(left) = line
+        .tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::LeftParen)
+    else {
+        return false;
+    };
+    let Some(right) = matching_close(&line.tokens, left) else {
+        return false;
+    };
+    let arguments = split_arguments(&line.tokens[left + 1..right]);
+    let Some(first) = arguments
+        .first()
+        .and_then(|argument| argument.tokens.first())
+    else {
+        return false;
+    };
+    function
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == first.text && parameter.ty == Type::named("Revision"))
+}
+
+fn check_loaded_revision_guards(
+    function: &FunctionDefinition,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let versioned_payloads: Vec<_> = function
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            let Type::Named(type_name) = &parameter.ty else {
+                return None;
+            };
+            let Some(TypeDefinition::Record { fields, .. }) = model.types.get(type_name) else {
+                return None;
+            };
+            (fields.contains_key("text")
+                && matches!(fields.get("revision").map(|field| &field.ty), Some(Type::Named(name)) if name == "Revision"))
+            .then(|| parameter.name.clone())
+        })
+        .collect();
+    for (payload_index, payload) in versioned_payloads.into_iter().enumerate() {
+        let slot = u16::try_from(payload_index).expect("parameter count is bounded");
+        let guards = revision_guard_ranges(function, &payload, slot, facts);
+        for (index, line) in function.body.iter().enumerate() {
+            if !contains_field_access(&line.tokens, &payload, "text") {
+                continue;
+            }
+            facts.push(flow_fact(
+                line,
+                slot,
+                SemanticFactKind::Revision,
+                format!("{payload}.text:apply"),
+                None,
+            ));
+            if !guards
+                .iter()
+                .any(|(start, end)| *start < index && index < *end)
+            {
+                push_diagnostic(
+                    diagnostics,
+                    "E7002",
+                    "UNCHECKED_STALE_RESULT",
+                    "compare loaded.revision before applying loaded.text".to_owned(),
+                    [],
+                    line.range,
+                );
+            }
+        }
+    }
+}
+
+fn revision_guard_ranges(
+    function: &FunctionDefinition,
+    payload: &str,
+    slot: u16,
+    facts: &mut Vec<SemanticFact>,
+) -> Vec<(usize, usize)> {
+    let mut guards = Vec::new();
+    for (index, line) in function.body.iter().enumerate() {
+        if line.kind != LineKind::If
+            || !contains_field_access(&line.tokens, payload, "revision")
+            || !line
+                .tokens
+                .iter()
+                .any(|token| token.kind == TokenKind::EqualEqual)
+        {
+            continue;
+        }
+        let end = function.body[index + 1..]
+            .iter()
+            .position(|candidate| {
+                candidate.kind == LineKind::End
+                    && candidate.depth == line.depth
+                    && candidate
+                        .tokens
+                        .get(1)
+                        .is_some_and(|token| token.kind == TokenKind::If)
+            })
+            .map_or(function.body.len(), |offset| index + 1 + offset);
+        guards.push((index, end));
+        facts.push(flow_fact(
+            line,
+            slot,
+            SemanticFactKind::Revision,
+            format!("{payload}.revision:guard"),
+            Some(Type::named("Revision")),
+        ));
+    }
+    guards
+}
+
+fn contains_field_access(tokens: &[HirToken], base: &str, field: &str) -> bool {
+    tokens.windows(3).any(|window| {
+        window[0].text == base && window[1].kind == TokenKind::Dot && window[2].text == field
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -1961,7 +2184,10 @@ mod tests {
                 analysis
                     .facts
                     .windows(2)
-                    .all(|pair| pair[0].id < pair[1].id)
+                    .all(|pair| pair[0].id < pair[1].id),
+                "{}: {:?}",
+                path.display(),
+                analysis.facts
             );
             assert!(
                 analysis
@@ -2140,7 +2366,10 @@ mod tests {
                 analysis
                     .facts
                     .windows(2)
-                    .all(|pair| pair[0].id < pair[1].id)
+                    .all(|pair| pair[0].id < pair[1].id),
+                "{}: {:?}",
+                path.display(),
+                analysis.facts
             );
             assert!(
                 analysis
@@ -2229,6 +2458,74 @@ mod tests {
     }
 
     #[test]
+    fn revision_cases_match_the_registered_oracle() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let map: JsonValue = serde_json::from_str(
+            &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
+        )
+        .unwrap();
+        let expected: BTreeMap<_, _> = map["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["case"].as_str().unwrap().starts_with("REV-"))
+            .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
+            .collect();
+        assert_eq!(expected.len(), 2);
+
+        let mut paths = Vec::new();
+        collect_sico(&repository.join("syntax-candidates/b/revision"), &mut paths);
+        paths.sort();
+        assert_eq!(paths.len(), 4);
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for (index, path) in paths.iter().enumerate() {
+            let source = SourceFile::from_bytes(
+                SourceId::new(u32::try_from(index).unwrap()),
+                path.display().to_string(),
+                &fs::read(path).unwrap(),
+            )
+            .unwrap();
+            let analysis = analyze(&source).unwrap();
+            assert_eq!(analysis, analyze(&source).unwrap());
+            if source.text().contains("// expect: accept") {
+                accepted += 1;
+                assert!(
+                    analysis.diagnostics.is_empty(),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            } else {
+                rejected += 1;
+                let oracle = &expected[metadata(source.text(), "case")];
+                assert_eq!(
+                    analysis.diagnostics.len(),
+                    1,
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+                assert_diagnostic_matches(&analysis.diagnostics[0], oracle);
+                assert!(source.span(analysis.diagnostics[0].range).is_some());
+            }
+            assert!(
+                analysis
+                    .facts
+                    .windows(2)
+                    .all(|pair| pair[0].id < pair[1].id)
+            );
+            assert!(
+                analysis
+                    .facts
+                    .iter()
+                    .all(|fact| source.span(fact.range).is_some())
+            );
+        }
+        assert_eq!((accepted, rejected), (2, 2));
+    }
+
+    #[test]
     fn remaining_b_groups_do_not_receive_unowned_diagnostics() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../syntax-candidates/b");
         let mut paths = Vec::new();
@@ -2286,6 +2583,17 @@ mod tests {
                         .diagnostics
                         .iter()
                         .all(|diagnostic| !diagnostic.code.starts_with("E5")),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            }
+            if !path_text.contains("revision") {
+                assert!(
+                    analysis
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| !diagnostic.code.starts_with("E7")),
                     "{}: {:?}",
                     path.display(),
                     analysis.diagnostics
