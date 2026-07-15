@@ -9,8 +9,9 @@ use sico_ir::{
     ValueId, VerifyError, verify,
 };
 use wasm_encoder::{
-    BlockType, CodeSection, ExportKind, ExportSection, Function, FunctionSection, Instruction,
-    Module, TypeSection, ValType,
+    BlockType, CodeSection, ComponentBuilder, ComponentExportKind, ComponentValType, ExportKind,
+    ExportSection, Function, FunctionSection, Instruction, Module, ModuleArg, PrimitiveValType,
+    TypeSection, ValType,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -60,6 +61,65 @@ pub fn compile(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
     output.section(&exports);
     output.section(&code);
     Ok(output.finish())
+}
+
+/// Compiles the proven scalar/control subset to a deterministic WebAssembly Component.
+///
+/// Each Core Wasm export is canonically lifted to a root Component function.
+/// Aggregate, resource, `Result`, string, and async boundaries remain refused
+/// until their memory and ownership adapters are implemented.
+///
+/// # Errors
+///
+/// Returns verifier errors or a typed unsupported/representation refusal.
+pub fn compile_component(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
+    let core = compile(module)?;
+    let mut builder = ComponentBuilder::default();
+    let core_module = builder.core_module_raw(Some("sico-core"), &core);
+    let core_instance = builder.core_instantiate(
+        Some("sico-core"),
+        core_module,
+        std::iter::empty::<(&str, ModuleArg)>(),
+    );
+
+    for function in &module.functions {
+        let core_function = builder.core_alias_export(
+            Some(&function.name),
+            core_instance,
+            &function.name,
+            ExportKind::Func,
+        );
+        let (type_index, mut function_type) = builder.type_function(Some(&function.name));
+        let parameters = function
+            .parameters
+            .iter()
+            .map(|parameter| {
+                component_type(&function.name, &parameter.ty)
+                    .map(|ty| (parameter.name.as_str(), ty))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        function_type.params(parameters);
+        let result = match function.return_type {
+            Type::Unit => None,
+            _ => Some(ComponentValType::Primitive(component_type(
+                &function.name,
+                &function.return_type,
+            )?)),
+        };
+        function_type.result(result);
+        let lifted = builder.lift_func(Some(&function.name), core_function, type_index, []);
+        builder.export(&function.name, ComponentExportKind::Func, lifted, None);
+    }
+
+    Ok(builder.finish())
+}
+
+fn component_type(function: &str, ty: &Type) -> Result<PrimitiveValType, CodegenError> {
+    match ty {
+        Type::Bool => Ok(PrimitiveValType::Bool),
+        Type::Int => Ok(PrimitiveValType::S64),
+        _ => Err(unsupported(function, "non-scalar Component value")),
+    }
 }
 
 fn lower_parameter_type(function: &str, ty: &Type) -> Result<ValType, CodegenError> {

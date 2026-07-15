@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
 $rfc = Get-Content -LiteralPath (Join-Path $root 'docs/rfc/RFC-0011-deterministic-core-wasm-backend-v0.md') -Raw -Encoding UTF8
-$snapshots = @(Get-Content -LiteralPath (Join-Path $root 'tests/wasm/core-wasm.hex') -Encoding UTF8 | Where-Object { $_.Trim() })
+$snapshots = @(Get-Content -LiteralPath (Join-Path $root 'tests/wasm/artifacts.hex') -Encoding UTF8 | Where-Object { $_ -match '^(numeric|control)=' })
 
 if ($rfc -notmatch '(?m)^> - status: accepted\r?$') { throw 'Core Wasm backend contract is not accepted' }
 if ($snapshots.Count -ne 2) { throw "expected 2 Core Wasm artifacts, found $($snapshots.Count)" }

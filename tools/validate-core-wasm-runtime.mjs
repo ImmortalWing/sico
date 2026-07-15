@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 
 const repository = path.resolve(import.meta.dirname, "..");
-const snapshotPath = path.join(repository, "tests", "wasm", "core-wasm.hex");
+const snapshotPath = path.join(repository, "tests", "wasm", "artifacts.hex");
 const snapshots = new Map(
   fs
     .readFileSync(snapshotPath, "utf8")

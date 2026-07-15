@@ -13,6 +13,7 @@ wasm-encoder.workspace = true
 [dev-dependencies]
 sico-source = { path = "../sico-source" }
 wasmparser.workspace = true
+wit-parser.workspace = true
 
 [lints]
 workspace = true

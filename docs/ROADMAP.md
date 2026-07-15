@@ -79,7 +79,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M3: Sico IR 与 Component
 
-状态：`in-progress`（STEP-0033 complete）
+状态：`in-progress`（STEP-0034 complete）
 
 主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序；在真实 codegen/Runtime 链路上定义 `sico run app.sico`，并以 `sico app.sico` 作为候选便捷形式。
 
@@ -87,7 +87,7 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：确定性 Component 输出；真实 Runtime 执行；WIT host call 与语义案例一致。
 
-执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)，STEP-0030–0037；typed IR/verifier、core/effect/resource/revision lowering 与 deterministic Core Wasm backend 已完成，下一步 STEP-0034 Component/WIT boundary codegen。
+执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)，STEP-0030–0037；typed IR/verifier、lowering、Core Wasm 与 Component/WIT boundary 已完成，下一步 STEP-0035 async/task/stream backend gate。
 
 ## M4: `.sapp` 与 Runtime
 
@@ -153,6 +153,7 @@ STEP-0001 audit baseline
   → STEP-0032 effect/resource/revision IR lowering
   → STEP-0033 deterministic Core Wasm backend
   → STEP-0034 Component/WIT boundary codegen
+  → STEP-0035 async/task/stream backend decision and implementation
 ```
 
 ### Historical M0 execution sequence

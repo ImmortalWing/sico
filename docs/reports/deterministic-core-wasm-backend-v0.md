@@ -33,4 +33,4 @@ STEP_0033_OK artifacts=2 deterministic=byte-identical validator=wasmparser-0.253
 
 - [`STEP-0033`](../steps/STEP-0033-deterministic-core-wasm-backend.md)
 - [`RFC-0011`](../rfc/RFC-0011-deterministic-core-wasm-backend-v0.md)
-- [`Core Wasm snapshots`](../../tests/wasm/core-wasm.hex)
+- [`Wasm artifact snapshots`](../../tests/wasm/artifacts.hex)

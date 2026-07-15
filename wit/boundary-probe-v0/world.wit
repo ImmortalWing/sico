@@ -1,4 +1,4 @@
-package sico:component-host-call@0.1.0;
+package sico:boundary-probe@0.1.0;
 
 interface runtime {
     log: func(message: string);
@@ -18,6 +18,11 @@ interface app {
         positive,
     }
 
+    enum boundary-error {
+        rejected,
+        conflict,
+    }
+
     record big-int {
         sign: integer-sign,
         magnitude-be: list<u8>,
@@ -31,9 +36,10 @@ interface app {
     run: func(input: u32) -> u32;
     roundtrip-int: func(value: big-int) -> big-int;
     roundtrip-decimal: func(value: decimal-value) -> decimal-value;
+    roundtrip-result: func(value: result<u32, boundary-error>) -> result<u32, boundary-error>;
 }
 
-world demo {
+world boundary-probe {
     import runtime;
     export app;
 }

@@ -1,10 +1,10 @@
 wit_bindgen::generate!({
-    path: "../wit",
-    world: "demo",
+    path: "../../../wit/boundary-probe-v0",
+    world: "boundary-probe",
 });
 
-use exports::sico::component_host_call::app::{BigInt, DecimalValue, Guest};
-use sico::component_host_call::runtime::{self, Counter};
+use exports::sico::boundary_probe::app::{BigInt, BoundaryError, DecimalValue, Guest};
+use sico::boundary_probe::runtime::{self, Counter};
 
 struct Component;
 
@@ -23,6 +23,10 @@ impl Guest for Component {
     }
 
     fn roundtrip_decimal(value: DecimalValue) -> DecimalValue {
+        value
+    }
+
+    fn roundtrip_result(value: Result<u32, BoundaryError>) -> Result<u32, BoundaryError> {
         value
     }
 }

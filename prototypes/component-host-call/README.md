@@ -2,7 +2,7 @@
 
 STEP-0010 的真实 Canonical ABI 探针：
 
-- 同步 Rust guest 通过 WIT 导入宿主函数与 owned/borrowed 宿主资源；
+- 同步 Rust guest 通过 [`boundary-probe-v0`](../../wit/boundary-probe-v0/world.wit) WIT 导入宿主函数与 owned/borrowed 宿主资源，并往返 Result/value records；
 - async Rust guest 通过原生 Component async ABI 调用 async 宿主导入；
 - 两者均由 `wit-component` 编码为 WebAssembly Component，再由原生 Rust/Wasmtime 宿主加载执行。
 

@@ -10,17 +10,17 @@ use wasmtime::{Engine, Store};
 use wit_component::ComponentEncoder;
 
 wasmtime::component::bindgen!({
-    path: "../wit",
-    world: "demo",
+    path: "../../../wit/boundary-probe-v0",
+    world: "boundary-probe",
     with: {
-        "sico:component-host-call/runtime@0.1.0.counter": HostCounter,
+        "sico:boundary-probe/runtime@0.1.0.counter": HostCounter,
     },
     imports: { default: trappable },
     additional_derives: [PartialEq],
 });
 
-use exports::sico::component_host_call::app::{BigInt, DecimalValue, IntegerSign};
-use sico::component_host_call::runtime::{Host, HostCounter as HostCounterResource};
+use exports::sico::boundary_probe::app::{BigInt, BoundaryError, DecimalValue, IntegerSign};
+use sico::boundary_probe::runtime::{Host, HostCounter as HostCounterResource};
 
 #[derive(Debug)]
 pub struct HostCounter {
@@ -89,6 +89,8 @@ struct RunResult {
     output: u32,
     bigint_roundtrip_bytes: usize,
     decimal_roundtrip: bool,
+    result_ok_roundtrip: bool,
+    result_error_roundtrip: bool,
     component_sha256: String,
     events: Vec<String>,
 }
@@ -119,13 +121,13 @@ fn run(component: &[u8], input: u32) -> AppResult<RunResult> {
     let component = Component::new(&engine, component)
         .map_err(|error| anyhow!("Wasmtime rejected component: {error:#}"))?;
     let mut linker = Linker::new(&engine);
-    Demo::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
+    BoundaryProbe::add_to_linker::<_, HasSelf<_>>(&mut linker, |state| state)
         .map_err(|error| anyhow!("failed to link host imports: {error:#}"))?;
     let mut store = Store::new(&engine, State::default());
-    let bindings = Demo::instantiate(&mut store, &component, &linker)
+    let bindings = BoundaryProbe::instantiate(&mut store, &component, &linker)
         .map_err(|error| anyhow!("failed to instantiate component: {error:#}"))?;
     let output = bindings
-        .sico_component_host_call_app()
+        .sico_boundary_probe_app()
         .call_run(&mut store, input)
         .map_err(|error| anyhow!("guest run trapped: {error:#}"))?;
     let bigint = BigInt {
@@ -133,7 +135,7 @@ fn run(component: &[u8], input: u32) -> AppResult<RunResult> {
         magnitude_be: vec![0xff; 512],
     };
     let bigint_returned = bindings
-        .sico_component_host_call_app()
+        .sico_boundary_probe_app()
         .call_roundtrip_int(&mut store, &bigint)
         .map_err(|error| anyhow!("big-int roundtrip trapped: {error:#}"))?;
     if bigint_returned != bigint {
@@ -147,12 +149,28 @@ fn run(component: &[u8], input: u32) -> AppResult<RunResult> {
         scale: 2,
     };
     let decimal_returned = bindings
-        .sico_component_host_call_app()
+        .sico_boundary_probe_app()
         .call_roundtrip_decimal(&mut store, &decimal)
         .map_err(|error| anyhow!("decimal roundtrip trapped: {error:#}"))?;
     let decimal_roundtrip = decimal_returned == decimal;
     if !decimal_roundtrip {
         bail!("decimal roundtrip changed the value");
+    }
+    let ok = bindings
+        .sico_boundary_probe_app()
+        .call_roundtrip_result(&mut store, Ok(42))
+        .map_err(|error| anyhow!("Result ok roundtrip trapped: {error:#}"))?;
+    let result_ok_roundtrip = ok == Ok(42);
+    if !result_ok_roundtrip {
+        bail!("Result ok roundtrip changed the value");
+    }
+    let error = bindings
+        .sico_boundary_probe_app()
+        .call_roundtrip_result(&mut store, Err(BoundaryError::Conflict))
+        .map_err(|error| anyhow!("Result error roundtrip trapped: {error:#}"))?;
+    let result_error_roundtrip = error == Err(BoundaryError::Conflict);
+    if !result_error_roundtrip {
+        bail!("Result error roundtrip changed the value");
     }
     let events = std::mem::take(&mut store.data_mut().events);
     Ok(RunResult {
@@ -161,6 +179,8 @@ fn run(component: &[u8], input: u32) -> AppResult<RunResult> {
         output,
         bigint_roundtrip_bytes: bigint_returned.magnitude_be.len(),
         decimal_roundtrip,
+        result_ok_roundtrip,
+        result_error_roundtrip,
         component_sha256: String::new(),
         events,
     })

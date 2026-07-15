@@ -1,6 +1,6 @@
 use std::{fmt::Write as _, fs, path::Path};
 
-use sico_codegen_wasm::{CodegenError, compile};
+use sico_codegen_wasm::{CodegenError, compile, compile_component};
 use sico_ir::{
     Block, BlockId, Function, FunctionId, Instruction, Module, Operation, Parameter, SourceRange,
     Terminator, Type, ValueId,
@@ -32,6 +32,30 @@ fn boolean_control_flow_builds_byte_identical_valid_wasm() {
 }
 
 #[test]
+fn scalar_components_are_deterministic_and_validate() {
+    for (name, ir) in [
+        ("numeric-component", numeric_module()),
+        ("control-component", select_module()),
+    ] {
+        let bytes = compile_component(&ir).unwrap();
+        assert_eq!(bytes, compile_component(&ir).unwrap());
+        validate(&bytes);
+        snapshot(name, &bytes);
+    }
+}
+
+#[test]
+fn boundary_probe_wit_parses_with_result_record_and_resource_shapes() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let wit = repository.join("wit/boundary-probe-v0");
+    let mut resolve = wit_parser::Resolve::default();
+    let (package, sources) = resolve.push_dir(&wit).unwrap();
+    assert_eq!(resolve.packages[package].name.namespace, "sico");
+    assert_eq!(resolve.packages[package].name.name, "boundary-probe");
+    assert!(sources.paths().next().is_some());
+}
+
+#[test]
 fn invalid_ir_and_unproven_arbitrary_int_never_emit_artifacts() {
     let mut invalid = select_module();
     invalid.schema = "invalid".into();
@@ -59,6 +83,20 @@ fn invalid_ir_and_unproven_arbitrary_int_never_emit_artifacts() {
     assert!(matches!(
         compile(&non_constant),
         Err(CodegenError::Unsupported { feature, .. }) if feature == "unbounded Int parameter"
+    ));
+
+    let aggregate_path =
+        repository.join("syntax-candidates/b/nominal-invariants/valid/complete-record.sico");
+    let aggregate_source = SourceFile::from_text(
+        SourceId::new(0),
+        aggregate_path.display().to_string(),
+        fs::read_to_string(aggregate_path).unwrap(),
+    )
+    .unwrap();
+    let aggregate_ir = sico_ir::lower_core(&aggregate_source).unwrap();
+    assert!(matches!(
+        compile_component(&aggregate_ir),
+        Err(CodegenError::Unsupported { .. })
     ));
 }
 
@@ -116,6 +154,16 @@ fn select_module() -> Module {
     module
 }
 
+fn numeric_module() -> Module {
+    let source = SourceFile::from_text(
+        SourceId::new(0),
+        "answer.sico",
+        "function main() returns Int:\n  return 40 + 2\nend function\n",
+    )
+    .unwrap();
+    sico_ir::lower_core(&source).unwrap()
+}
+
 fn validate(bytes: &[u8]) {
     wasmparser::Validator::new()
         .validate_all(bytes)
@@ -134,7 +182,7 @@ fn snapshot(name: &str, bytes: &[u8]) {
         println!("{name}={actual}");
     } else {
         let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let expected = fs::read_to_string(repository.join("tests/wasm/core-wasm.hex")).unwrap();
+        let expected = fs::read_to_string(repository.join("tests/wasm/artifacts.hex")).unwrap();
         assert!(
             expected
                 .lines()

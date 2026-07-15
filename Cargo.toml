@@ -14,6 +14,13 @@ members = [
     "crates/sico-syntax",
 ]
 resolver = "3"
+exclude = [
+    "prototypes/component-host-call/async-guest",
+    "prototypes/component-host-call/guest",
+    "prototypes/component-host-call/host",
+    "prototypes/numeric",
+    "prototypes/resource-async",
+]
 
 [workspace.package]
 version = "0.0.0"
@@ -31,6 +38,7 @@ unicode-ident = "=1.0.24"
 unicode-normalization = "=0.1.25"
 wasm-encoder = "=0.253.0"
 wasmparser = "=0.253.0"
+wit-parser = "=0.253.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
