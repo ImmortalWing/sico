@@ -1,0 +1,20 @@
+[package]
+name = "sico-mobile-host-core"
+description = "Typed Android-neutral bridge over the shared Sico Host security core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sico-host-core = { path = "../sico-host-core" }
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+sico-package = { path = "../sico-package" }
+wasm-encoder.workspace = true
+
+[lints]
+workspace = true

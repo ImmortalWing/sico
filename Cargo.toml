@@ -10,6 +10,7 @@ members = [
     "crates/sico-index",
     "crates/sico-ir",
     "crates/sico-lexer",
+    "crates/sico-mobile-host-core",
     "crates/sico-parser",
     "crates/sico-package",
     "crates/sico-runtime",

@@ -521,6 +521,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-mobile-host-core"
+version = "0.0.0"
+dependencies = [
+ "ed25519-dalek",
+ "serde",
+ "serde_json",
+ "sico-host-core",
+ "sico-package",
+ "wasm-encoder",
+]
+
+[[package]]
 name = "sico-package"
 version = "0.0.0"
 dependencies = [
