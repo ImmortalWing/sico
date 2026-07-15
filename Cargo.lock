@@ -527,8 +527,12 @@ dependencies = [
  "ed25519-dalek",
  "serde",
  "serde_json",
+ "sico-codegen-wasm",
  "sico-host-core",
+ "sico-ir",
  "sico-package",
+ "sico-runtime",
+ "sico-source",
  "wasm-encoder",
 ]
 

@@ -14,6 +14,10 @@ sico-package = { path = "../sico-package" }
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
+sico-codegen-wasm = { path = "../sico-codegen-wasm" }
+sico-ir = { path = "../sico-ir" }
+sico-runtime = { path = "../sico-runtime" }
+sico-source = { path = "../sico-source" }
 wasm-encoder.workspace = true
 
 [lints]

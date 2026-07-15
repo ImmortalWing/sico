@@ -3,9 +3,9 @@
 > - updated: 2026-07-16
 > - phase: M6 Sico Android Host
 > - phase status: ready
-> - current step: STEP-0060 (planned)
-> - last completed step: STEP-0059
-> - next step: start STEP-0060
+> - current step: STEP-0061 (planned)
+> - last completed step: STEP-0060 (host evidence only)
+> - next step: run STEP-0061 exit audit
 
 ## 1. Current objective
 

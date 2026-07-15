@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |
 | [`android-native-ui-adapter-v0`](./android-native-ui-adapter-v0.md) | accepted-cross-check | STEP-0059 | native widgets, IME and accessibility mapping |
 | [`android-runtime-lifecycle-v0`](./android-runtime-lifecycle-v0.md) | accepted-cross-check | STEP-0058 | Wasmtime Android compile evidence and process-death lifecycle contract |
 | [`android-permission-storage-v0`](./android-permission-storage-v0.md) | accepted | STEP-0057 | exact capability to Android permission/storage mapping |
