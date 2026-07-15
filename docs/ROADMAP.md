@@ -79,7 +79,7 @@ Entry gate：satisfied by STEP-0014。
 
 状态：`planned`
 
-主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序。
+主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序；在真实 codegen/Runtime 链路上定义 `sico run app.sico`，并以 `sico app.sico` 作为候选便捷形式。
 
 进入条件：M2 exit gate 通过，M0 Component 原型的技术风险已有结论。
 
@@ -89,7 +89,7 @@ Entry gate：satisfied by STEP-0014。
 
 状态：`planned`
 
-主要交付：包格式、manifest、资源、哈希、开发签名、加载验证、权限交集、隔离存储、资源限额和 `build/run/inspect`。
+主要交付：包格式、manifest、资源、哈希、开发签名、加载验证、权限交集、隔离存储、资源限额和 `build/run/inspect`；固定源码直跑的编译缓存、参数透传、stdio 与退出码契约，并为后续 `sico -c` 和交互式 REPL 提供稳定 Runtime 接口。
 
 进入条件：M3 exit gate 通过。
 

@@ -64,6 +64,24 @@ fuzz/                lexer/parser no-panic/no-hang targets
 
 进度：STEP-0015–0018 已完成；12/12 mutation recovery 与真实 E1xxx 证据见 [`STEP-0018`](../steps/STEP-0018-parser-recovery-syntax-diagnostics.md) 和 [`review report`](../reports/parser-recovery-syntax-diagnostics-v0.md)。下一执行项为 STEP-0019。
 
+### 5.1 后续命令行体验目标（M3/M4）
+
+Sico 最终应具有接近 Python 的终端使用体验，但底层仍采用“编译到 WebAssembly Component，再由 Sico Runtime 执行”，不改为动态解释器，也不引入 JavaScript：
+
+```text
+sico app.sico              # sico run app.sico 的便捷形式
+sico run app.sico          # 编译、复用本地缓存并运行源码
+sico -c '<source>'         # 执行短源码片段
+sico                       # 进入交互式 REPL
+sico build app.sico        # 显式产生可分发构件
+```
+
+- M1 的 STEP-0020 只实现 `check`、`format`、`outline`，不得伪装已经具备执行、构建或 REPL 能力；
+- M3 在 Component codegen 与最小 Runtime 链路真实通过后，定义最小端到端 `run`/源码直跑行为；
+- M4 随 `.sapp`、Runtime、缓存和权限模型固定 `build/run/inspect` 的稳定契约；
+- `-c`、无参数 REPL、参数透传、缓存失效、退出码和 stdin/stdout/stderr 规则须由后续独立 RFC/STEP 验证后接受；
+- 源码直跑必须先执行与正常构建相同的语法、类型、能力和资源检查，不能为了脚本体验绕过静态保证。
+
 ## 6. Test matrix
 
 - Unit：source range、line index、token、parser productions、formatter primitives；
