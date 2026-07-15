@@ -176,12 +176,90 @@ fn outline_freezes_order_kinds_ranges_and_json() {
 }
 
 #[test]
+fn build_emits_deterministic_component_and_preserves_failure_outputs() {
+    let source = root().join("tests/end-to-end/answer.sico");
+    let first = temp_file("answer-1.component.wasm");
+    let second = temp_file("answer-2.component.wasm");
+    let third = temp_file("answer-stdin.component.wasm");
+
+    let output = run(["build", "--output", path(&first), path(&source)], None);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert!(stdout(&output).starts_with("built "));
+    assert!(output.stderr.is_empty());
+    let first_bytes = fs::read(&first).unwrap();
+    wasmparser::Validator::new()
+        .validate_all(&first_bytes)
+        .unwrap();
+
+    let output = run(["build", "--output", path(&second), path(&source)], None);
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    let second_bytes = fs::read(&second).unwrap();
+    assert_eq!(first_bytes, second_bytes);
+
+    let source_bytes = fs::read(&source).unwrap();
+    let output = run(
+        ["build", "--output", path(&third), "-"],
+        Some(&source_bytes),
+    );
+    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
+    assert_eq!(fs::read(&third).unwrap(), first_bytes);
+
+    let output = run(["build", "--output", path(&first), path(&source)], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("refusing to overwrite"));
+    assert_eq!(fs::read(&first).unwrap(), first_bytes);
+
+    let invalid = root().join("syntax-candidates/b/numbers-units/invalid/text-as-int.sico");
+    let rejected = temp_file("rejected.component.wasm");
+    let output = run(["build", "--output", path(&rejected), path(&invalid)], None);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(stderr(&output).contains("E2001"));
+    assert!(!rejected.exists());
+
+    let unsupported =
+        root().join("syntax-candidates/b/numbers-units/valid/int-arbitrary-precision.sico");
+    let refused = temp_file("refused.component.wasm");
+    let output = run(
+        ["build", "--output", path(&refused), path(&unsupported)],
+        None,
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("outside the proven i64 probe"));
+    assert!(!refused.exists());
+
+    let output = run(
+        ["build", "-"],
+        Some(b"function main() returns Int:\n  return 1\nend function\n"),
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("requires --output"));
+
+    let no_main = temp_file("no-main.sico");
+    fs::write(
+        &no_main,
+        b"function answer() returns Int:\n  return 42\nend function\n",
+    )
+    .unwrap();
+    let no_entry = temp_file("no-entry.component.wasm");
+    let output = run(["build", "--output", path(&no_entry), path(&no_main)], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("entry function main() is missing"));
+    assert!(!no_entry.exists());
+
+    fs::remove_file(first).unwrap();
+    fs::remove_file(second).unwrap();
+    fs::remove_file(third).unwrap();
+    fs::remove_file(no_main).unwrap();
+}
+
+#[test]
 fn usage_io_and_unimplemented_commands_are_tool_errors() {
     let output = run::<0>([], None);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("Usage:"));
 
-    let output = run(["run", "app.sico"], None);
+    let output = run(["test", "app.sico"], None);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("unrecognized subcommand"));
 

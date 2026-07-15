@@ -25,3 +25,19 @@
 | [`cli-check-format-outline-v0`](./cli-check-format-outline-v0.md) | complete | STEP-0020 | 真实 binary、file/stdin、exit 0/1/2、RFC-0001 JSON、format 与 outline integration |
 | [`m1-exit-audit`](./m1-exit-audit.md) | complete | STEP-0021 | 8,192 property inputs、parser limits、3-run performance 与 M1 requirement-by-requirement GO |
 | [`full-hir-name-prelude-v0`](./full-hir-name-prelude-v0.md) | complete | STEP-0022 | 54 deterministic HIR snapshots、stable IDs/source maps、error-tree refusal 与 P0 prelude boundary |
+| [`core-nominal-types-v0`](./core-nominal-types-v0.md) | complete | STEP-0023 | core/nominal type checker 与精确诊断 |
+| [`match-result-control-flow-v0`](./match-result-control-flow-v0.md) | complete | STEP-0024 | match exhaustiveness、Result/try 与 control-flow diagnostics |
+| [`effects-capabilities-component-v0`](./effects-capabilities-component-v0.md) | complete | STEP-0025 | effects、capabilities 与 Component call boundary |
+| [`resources-async-streams-v0`](./resources-async-streams-v0.md) | complete | STEP-0026 | affine resource、Task/Future/Stream static flow |
+| [`revision-contract-dataflow-v0`](./revision-contract-dataflow-v0.md) | complete | STEP-0027 | revision guard 与 stale-value dataflow |
+| [`compiler-semantic-index-v0`](./compiler-semantic-index-v0.md) | complete | STEP-0028 | compiler-produced Semantic Index 与五类查询 |
+| [`semantic-cli-fuzz-performance-v0`](./semantic-cli-fuzz-performance-v0.md) | complete | STEP-0029 | semantic CLI、property/limits 与非 SLA 性能基线 |
+| [`m2-exit-audit`](./m2-exit-audit.md) | complete | STEP-0029 | M2 requirement-by-requirement GO |
+| [`typed-sico-ir-contract-v0`](./typed-sico-ir-contract-v0.md) | complete | STEP-0030 | typed IR、canonical serialization 与独立 verifier |
+| [`core-lowering-evaluation-order-v0`](./core-lowering-evaluation-order-v0.md) | complete | STEP-0031 | deterministic core lowering 与 evaluation order |
+| [`effect-resource-revision-ir-flow-v0`](./effect-resource-revision-ir-flow-v0.md) | complete | STEP-0032 | effect/resource/revision IR invariants |
+| [`deterministic-core-wasm-backend-v0`](./deterministic-core-wasm-backend-v0.md) | complete | STEP-0033 | verified IR 到 deterministic Core Wasm |
+| [`component-wit-boundary-v0`](./component-wit-boundary-v0.md) | complete | STEP-0034 | compiler Component lift 与 WIT Result/record/resource boundary |
+| [`async-task-stream-backend-v0`](./async-task-stream-backend-v0.md) | complete | STEP-0035 | Future/Stream Runtime contract 与 compiler typed refusal |
+| [`minimal-build-run-cli-v0`](./minimal-build-run-cli-v0.md) | complete | STEP-0036 | source→Component→Wasmtime CLI、exit/channel 与无产物失败契约 |
+| [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |

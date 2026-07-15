@@ -1,0 +1,28 @@
+{
+  "schema": "sico.m3.component-performance-runs.v0",
+  "date": "2026-07-15",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "host": "x86_64-pc-windows-gnu",
+    "profile": "release"
+  },
+  "corpus": {
+    "files": 3,
+    "results": ["Int", "Bool", "Unit"],
+    "bytes_per_iteration": 172
+  },
+  "iterations_per_run": 1000,
+  "builds_per_run": 3000,
+  "artifact_bytes_per_run": 303000,
+  "sla": "not-established",
+  "runs": [
+    { "run": 1, "elapsed_ms": 48.641, "mib_per_second": 3.372 },
+    { "run": 2, "elapsed_ms": 51.055, "mib_per_second": 3.213 },
+    { "run": 3, "elapsed_ms": 54.139, "mib_per_second": 3.030 }
+  ],
+  "median": {
+    "elapsed_ms": 51.055,
+    "mib_per_second": 3.213
+  }
+}

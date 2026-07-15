@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-15
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M3
+> - current phase: M4
 
 ## Status vocabulary
 
@@ -79,25 +79,27 @@ Entry gate：satisfied by STEP-0014。
 
 ## M3: Sico IR 与 Component
 
-状态：`in-progress`（STEP-0036 WIP）
+状态：`complete`
 
-主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序；在真实 codegen/Runtime 链路上定义 `sico run app.sico`，并以 `sico app.sico` 作为候选便捷形式。
+主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序；真实 codegen/Runtime 链路已定义 raw Component `sico build` 与同步 scalar `sico run`。
 
 进入条件：M2 exit gate 通过，M0 Component 原型的技术风险已有结论。
 
-退出证据：确定性 Component 输出；真实 Runtime 执行；WIT host call 与语义案例一致。
+退出证据：2,048-source/1,000-function deterministic Component；Wasmtime Int/Bool/Unit execution；Result/record/resource host boundary；Future/Stream Runtime contract；property/limits/performance 与 M0–M2 regression。结论见 [`M3 exit audit`](./reports/m3-exit-audit.md)。
 
-执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)，STEP-0030–0037；typed IR/verifier、lowering、Core/Component、WIT boundary 与 async Runtime contract 已完成；STEP-0036 已建立 Runtime WIP 边界，仍需完成 CLI contract、实现与验收。
+执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)，STEP-0030–0037 全部完成。
 
 ## M4: `.sapp` 与 Runtime
 
-状态：`planned`
+状态：`ready`（next STEP-0038）
 
 主要交付：包格式、manifest、资源、哈希、开发签名、加载验证、权限交集、隔离存储、资源限额和 `build/run/inspect`；固定源码直跑的编译缓存、参数透传、stdio 与退出码契约，并为后续 `sico -c` 和交互式 REPL 提供稳定 Runtime 接口。
 
 进入条件：M3 exit gate 通过。
 
 退出证据：不可信包不能越权；trap 不导致宿主崩溃；包可重复构建和检查。
+
+执行计划：[`M4 .sapp and secure Runtime`](./plans/M4-sapp-runtime.md)，STEP-0038–0045；先完成 threat model/package contract，再实现 loader，不把 raw Component 伪装成 `.sapp`。
 
 ## M5: Sico Desktop Host
 
@@ -155,6 +157,8 @@ STEP-0001 audit baseline
   → STEP-0034 Component/WIT boundary codegen
   → STEP-0035 async/task/stream backend decision and implementation
   → STEP-0036 minimal end-to-end CLI build/run chain
+  → STEP-0037 M3 determinism/quality/exit audit
+  → STEP-0038 .sapp threat model and package contract
 ```
 
 ### Historical M0 execution sequence

@@ -5,4 +5,6 @@
 | Plan | Status | Scope |
 |---|---|---|
 | [`M1 compiler frontend`](./M1-compiler-frontend.md) | complete | Rust source/span、lossless lexer/parser、恢复、formatter、`sico check`、outline 与 M1 audit |
-| [`M2 static semantics`](./M2-static-semantics.md) | ready after STEP-0021 go | full HIR、names/types/control/effects/resources、semantic diagnostics/index 与 M2 audit |
+| [`M2 static semantics`](./M2-static-semantics.md) | complete | full HIR、names/types/control/effects/resources、semantic diagnostics/index 与 M2 audit |
+| [`M3 Sico IR and Component`](./M3-sico-ir-component.md) | complete | typed IR/verifier、lowering、Core Wasm/Component/WIT、async boundary、CLI 与 M3 audit |
+| [`M4 .sapp and secure Runtime`](./M4-sapp-runtime.md) | ready | package/manifest/hash/signature、capability closure、storage/limits、package CLI 与 M4 audit |

@@ -28,7 +28,7 @@ $status = Get-Content -LiteralPath (Join-Path $root 'docs/STATUS.md') -Raw -Enco
 if ($m1Plan -notmatch '(?m)^> - status: complete\r?$') { throw 'M1 plan is not complete' }
 if ($m2Plan -notmatch '(?m)^> - status: (ready after STEP-0021 GO|in progress.*|complete)\r?$') { throw 'M2 plan is missing after M1 GO' }
 if (-not $audit.Contains('GO: M1 complete; M2 entry gate satisfied; next STEP-0022.')) { throw 'M1 audit has no exact GO conclusion' }
-if ($status -notmatch '(?m)^> - phase: M[2-9] ' -or $status -notmatch '(?m)^> - next step: STEP-00(2[2-9]|[3-9][0-9])\r?$') {
+if ($status -notmatch '(?m)^> - phase: M[2-9] ' -or $status -notmatch '(?m)^> - next step: (?:start )?STEP-00(2[2-9]|[3-9][0-9])\r?$') {
   throw 'STATUS does not preserve the post-M1 handoff'
 }
 
@@ -45,7 +45,7 @@ if ($bCases.Count -ne 54 -or $bMutations.Count -ne 12 -or $parserSnapshots.Count
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath fmt --all -- --check
   if ($LASTEXITCODE -ne 0) { throw 'workspace rustfmt failed' }

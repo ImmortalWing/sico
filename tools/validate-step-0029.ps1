@@ -38,7 +38,7 @@ foreach ($run in @($performance.runs)) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-cli -p sico-semantics --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0029 CLI/property tests failed' }

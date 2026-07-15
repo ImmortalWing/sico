@@ -21,7 +21,7 @@ foreach ($contract in @('Operation::EffectCall', 'Operation::ResourceBorrow', 'O
 if ($snapshots.Count -ne 5) { throw "expected 5 flow snapshots, found $($snapshots.Count)" }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-ir --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0032 flow tests failed' }

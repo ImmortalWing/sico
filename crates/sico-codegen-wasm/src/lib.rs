@@ -54,6 +54,12 @@ pub fn compile(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
     let mut exports = ExportSection::new();
     let mut code = CodeSection::new();
     for (index, function) in module.functions.iter().enumerate() {
+        if !function.effects.is_empty() {
+            return Err(unsupported(
+                &function.name,
+                "effectful function without a Component host adapter",
+            ));
+        }
         let function_index = u32::try_from(index).map_err(|_| CodegenError::ModuleTooLarge {
             functions: module.functions.len(),
         })?;

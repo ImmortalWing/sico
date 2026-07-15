@@ -1,0 +1,3 @@
+function main() returns Bool:
+  return true
+end function

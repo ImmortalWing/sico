@@ -45,6 +45,52 @@ fn scalar_components_are_deterministic_and_validate() {
 }
 
 #[test]
+fn deterministic_scalar_property_covers_2048_sources() {
+    for seed in 0..2_048_u32 {
+        let left = i64::from(seed);
+        let right = i64::from(seed.rotate_left(7) % 10_000);
+        let text =
+            format!("function main() returns Int:\n  return {left} + {right}\nend function\n");
+        let source = SourceFile::from_text(SourceId::new(seed), "property.sico", text).unwrap();
+        let ir = sico_ir::lower_core(&source).unwrap();
+        let first = compile_component(&ir).unwrap();
+        assert_eq!(first, compile_component(&ir).unwrap());
+        validate(&first);
+    }
+}
+
+#[test]
+fn thousand_function_component_is_valid_and_deterministic() {
+    let range = SourceRange { start: 0, end: 0 };
+    let mut module = Module::new("large.sico", 0);
+    for index in 0..1_000_u32 {
+        module.functions.push(Function {
+            id: FunctionId(index + 1),
+            name: format!("f{index:04}"),
+            parameters: Vec::new(),
+            return_type: Type::Int,
+            effects: Vec::new(),
+            entry: BlockId(0),
+            blocks: vec![Block {
+                id: BlockId(0),
+                instructions: vec![Instruction {
+                    result: ValueId(0),
+                    ty: Type::Int,
+                    operation: Operation::ConstInt(index.to_string()),
+                    range,
+                }],
+                terminator: Terminator::Return(Some(ValueId(0))),
+                range,
+            }],
+            range,
+        });
+    }
+    let first = compile_component(&module).unwrap();
+    assert_eq!(first, compile_component(&module).unwrap());
+    validate(&first);
+}
+
+#[test]
 fn boundary_probe_wit_parses_with_result_record_and_resource_shapes() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     for name in ["boundary-probe-v0", "async-flow-v0"] {
@@ -114,6 +160,14 @@ fn invalid_ir_and_unproven_arbitrary_int_never_emit_artifacts() {
     assert!(matches!(
         compile_component(&aggregate_ir),
         Err(CodegenError::Unsupported { .. })
+    ));
+
+    let mut effectful = numeric_module();
+    effectful.functions[0].effects.push("Console".into());
+    assert!(matches!(
+        compile_component(&effectful),
+        Err(CodegenError::Unsupported { feature, .. })
+            if feature == "effectful function without a Component host adapter"
     ));
 }
 

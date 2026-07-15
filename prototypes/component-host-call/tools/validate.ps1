@@ -15,7 +15,7 @@ $result2 = Join-Path $root 'results\run-2.json'
 
 Push-Location (Join-Path $root 'guest')
 try {
-    cargo build --locked --release --target wasm32-unknown-unknown
+    cargo build --offline --locked --release --target wasm32-unknown-unknown
     if ($LASTEXITCODE -ne 0) { throw 'sync Component guest build failed' }
 } finally {
     Pop-Location
@@ -23,9 +23,9 @@ try {
 
 Push-Location (Join-Path $root 'host')
 try {
-    cargo run --locked --release --bin sico-component-host -- $core $component $result1 35
+    cargo run --offline --locked --release --bin sico-component-host -- $core $component $result1 35
     if ($LASTEXITCODE -ne 0) { throw 'first sync Wasmtime host run failed' }
-    cargo run --locked --release --bin sico-component-host -- $core $component $result2 35
+    cargo run --offline --locked --release --bin sico-component-host -- $core $component $result2 35
     if ($LASTEXITCODE -ne 0) { throw 'second sync Wasmtime host run failed' }
 } finally {
     Pop-Location
@@ -66,7 +66,7 @@ if ($componentHash -cne $result.component_sha256) {
 
 Push-Location (Join-Path $root 'async-guest')
 try {
-    cargo build --locked --release --target wasm32-unknown-unknown
+    cargo build --offline --locked --release --target wasm32-unknown-unknown
     if ($LASTEXITCODE -ne 0) { throw 'async Component guest build failed' }
 } finally {
     Pop-Location
@@ -74,10 +74,10 @@ try {
 
 Push-Location (Join-Path $root 'host')
 try {
-    cargo run --locked --release --bin sico-component-async-host -- $asyncCore $asyncComponent 35
+    cargo run --offline --locked --release --bin sico-component-async-host -- $asyncCore $asyncComponent 35
     if ($LASTEXITCODE -ne 0) { throw 'first async Wasmtime host run failed' }
     $asyncHash1 = (Get-FileHash -Algorithm SHA256 -LiteralPath $asyncComponent).Hash.ToLowerInvariant()
-    cargo run --locked --release --bin sico-component-async-host -- $asyncCore $asyncComponent 35
+    cargo run --offline --locked --release --bin sico-component-async-host -- $asyncCore $asyncComponent 35
     if ($LASTEXITCODE -ne 0) { throw 'second async Wasmtime host run failed' }
     $asyncHash2 = (Get-FileHash -Algorithm SHA256 -LiteralPath $asyncComponent).Hash.ToLowerInvariant()
 } finally {

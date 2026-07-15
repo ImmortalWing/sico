@@ -3,22 +3,29 @@
 #![forbid(unsafe_code)]
 
 use std::{
-    ffi::OsString,
-    fs,
+    ffi::{OsStr, OsString},
+    fs::{self, OpenOptions},
     io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
 use serde_json::{Value, json};
+use sico_codegen_wasm::{CodegenError, compile_component};
 use sico_diagnostics::{render_syntax_json, render_syntax_text, syntax_identity};
 use sico_format::format as canonical_format;
+use sico_ir::{CoreLowerError, Module, Type, lower_core};
 use sico_parser::{DeclarationKind, Parse, parse};
+use sico_runtime::{RuntimeError, run_component};
 use sico_semantics::{Analysis, DiagnosticArgument, analyze};
 use sico_source::{SourceFile, SourceId, TextRange};
 
 pub const EXIT_SUCCESS: i32 = 0;
 pub const EXIT_DIAGNOSTIC: i32 = 1;
 pub const EXIT_TOOL_ERROR: i32 = 2;
+
+static ARTIFACT_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Runs the CLI with injectable streams for binary-level contract tests.
 pub fn run<I, T>(
@@ -56,6 +63,8 @@ where
         Some(("check", command)) => run_check(command, stdin, stdout, stderr),
         Some(("format", command)) => run_format(command, stdin, stdout, stderr),
         Some(("outline", command)) => run_outline(command, stdin, stdout, stderr),
+        Some(("build", command)) => run_build(command, stdin, stdout, stderr),
+        Some(("run", command)) => run_program(command, stdin, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
 }
@@ -63,7 +72,7 @@ where
 fn command() -> Command {
     Command::new("sico")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Sico compiler frontend")
+        .about("Sico compiler toolchain")
         .subcommand_required(true)
         .arg_required_else_help(true)
         .subcommand(
@@ -107,6 +116,23 @@ fn command() -> Command {
                         .action(ArgAction::SetTrue),
                 ),
         )
+        .subcommand(
+            Command::new("build")
+                .about("Build a deterministic WebAssembly Component")
+                .arg(input_arg())
+                .arg(output_arg()),
+        )
+        .subcommand(
+            Command::new("run")
+                .about("Build and run the synchronous scalar main function")
+                .arg(input_arg())
+                .arg(
+                    Arg::new("runtime")
+                        .long("runtime")
+                        .value_name("WASMTIME")
+                        .help("Wasmtime executable (otherwise SICO_WASMTIME or PATH)"),
+                ),
+        )
 }
 
 fn input_arg() -> Arg {
@@ -115,6 +141,276 @@ fn input_arg() -> Arg {
         .help("Source file, or - for stdin")
         .required(true)
         .allow_hyphen_values(true)
+}
+
+fn output_arg() -> Arg {
+    Arg::new("output")
+        .short('o')
+        .long("output")
+        .value_name("COMPONENT")
+        .help("Output path; required for stdin")
+}
+
+fn run_build(
+    matches: &ArgMatches,
+    stdin: &mut dyn Read,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let input = matches.get_one::<String>("input").unwrap();
+    let output = match build_output_path(input, matches.get_one::<String>("output")) {
+        Ok(output) => output,
+        Err(message) => {
+            let _ = writeln!(stderr, "{message}");
+            return EXIT_TOOL_ERROR;
+        }
+    };
+    let component = match compile_source(input, stdin, stdout, stderr) {
+        Ok(component) => component,
+        Err(exit) => return exit,
+    };
+    match write_new_artifact(&output, &component) {
+        Ok(()) => {
+            if writeln!(stdout, "built {}", output.display()).is_err() {
+                let _ = fs::remove_file(&output);
+                EXIT_TOOL_ERROR
+            } else {
+                EXIT_SUCCESS
+            }
+        }
+        Err(message) => {
+            let _ = writeln!(stderr, "{message}");
+            EXIT_TOOL_ERROR
+        }
+    }
+}
+
+fn run_program(
+    matches: &ArgMatches,
+    stdin: &mut dyn Read,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let input = matches.get_one::<String>("input").unwrap();
+    let component = match compile_source(input, stdin, stdout, stderr) {
+        Ok(component) => component,
+        Err(exit) => return exit,
+    };
+    let runtime = matches
+        .get_one::<String>("runtime")
+        .map(OsString::from)
+        .or_else(|| std::env::var_os("SICO_WASMTIME"))
+        .unwrap_or_else(|| OsString::from("wasmtime"));
+    match run_component(&runtime, &component, "main()") {
+        Ok(output) => {
+            if stdout.write_all(&output.stdout).is_err()
+                || stderr.write_all(&output.stderr).is_err()
+            {
+                return EXIT_TOOL_ERROR;
+            }
+            if output.status.success() {
+                EXIT_SUCCESS
+            } else {
+                let _ = writeln!(
+                    stderr,
+                    "sico: Runtime exited unsuccessfully: {}",
+                    output.status
+                );
+                EXIT_TOOL_ERROR
+            }
+        }
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot start Runtime {}: {}",
+                runtime.to_string_lossy(),
+                runtime_error(&error)
+            );
+            EXIT_TOOL_ERROR
+        }
+    }
+}
+
+fn compile_source(
+    input: &str,
+    stdin: &mut dyn Read,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<Vec<u8>, i32> {
+    let source = match load_source(input, stdin) {
+        Ok(source) => source,
+        Err(message) => {
+            let _ = writeln!(stderr, "{message}");
+            return Err(EXIT_TOOL_ERROR);
+        }
+    };
+    let parsed = parse(&source);
+    if !parsed.is_success() {
+        return Err(emit_frontend_failure(
+            &source, &parsed, false, stdout, stderr,
+        ));
+    }
+    let analysis = analyze(&source).expect("successful parse must lower for semantic analysis");
+    if !analysis.is_success() {
+        return Err(emit_semantic_result(
+            &source, &analysis, false, stdout, stderr,
+        ));
+    }
+    let module = match lower_core(&source) {
+        Ok(module) => module,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot lower {}: {}",
+                source.name(),
+                lower_error(&error)
+            );
+            return Err(EXIT_TOOL_ERROR);
+        }
+    };
+    if let Err(message) = validate_entry(&module) {
+        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        return Err(EXIT_TOOL_ERROR);
+    }
+    match compile_component(&module) {
+        Ok(component) => Ok(component),
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot generate Component for {}: {}",
+                source.name(),
+                codegen_error(&error)
+            );
+            Err(EXIT_TOOL_ERROR)
+        }
+    }
+}
+
+fn validate_entry(module: &Module) -> Result<(), &'static str> {
+    let mut entries = module
+        .functions
+        .iter()
+        .filter(|function| function.name == "main");
+    let Some(main) = entries.next() else {
+        return Err("synchronous scalar entry function main() is missing");
+    };
+    if entries.next().is_some() {
+        return Err("multiple main functions are not supported");
+    }
+    if !main.parameters.is_empty() {
+        return Err("main must not declare parameters in M3");
+    }
+    if !main.effects.is_empty() {
+        return Err("main effects require an M4 capability host");
+    }
+    if !matches!(main.return_type, Type::Unit | Type::Bool | Type::Int) {
+        return Err("main result must be Unit, Bool, or a compile-time proven fitting Int");
+    }
+    Ok(())
+}
+
+fn build_output_path(input: &str, output: Option<&String>) -> Result<PathBuf, String> {
+    if let Some(output) = output {
+        return Ok(PathBuf::from(output));
+    }
+    if input == "-" {
+        return Err("sico: build from stdin requires --output".to_owned());
+    }
+    Ok(Path::new(input).with_extension("component.wasm"))
+}
+
+fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {
+    if output.exists() {
+        return Err(format!(
+            "sico: refusing to overwrite existing artifact {}",
+            output.display()
+        ));
+    }
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let file_name = output
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or("component.wasm");
+    let temporary = parent.join(format!(
+        ".{file_name}.sico-{}-{}.tmp",
+        std::process::id(),
+        ARTIFACT_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(|error| {
+            format!(
+                "sico: cannot create temporary artifact {}: {error}",
+                temporary.display()
+            )
+        })?;
+    if let Err(error) = file.write_all(bytes).and_then(|()| file.sync_all()) {
+        let _ = fs::remove_file(&temporary);
+        return Err(format!(
+            "sico: cannot write temporary artifact {}: {error}",
+            temporary.display()
+        ));
+    }
+    drop(file);
+    fs::rename(&temporary, output).map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!(
+            "sico: cannot install artifact {}: {error}",
+            output.display()
+        )
+    })
+}
+
+fn lower_error(error: &CoreLowerError) -> String {
+    match error {
+        CoreLowerError::Unsupported { feature, range } => format!(
+            "unsupported {feature} at bytes {}..{}",
+            range.start, range.end
+        ),
+        CoreLowerError::Frontend(_) => "frontend gate failed unexpectedly".to_owned(),
+        CoreLowerError::Semantic(diagnostics) => format!(
+            "semantic gate failed unexpectedly with {} diagnostic(s)",
+            diagnostics.len()
+        ),
+        CoreLowerError::InvalidIr(errors) => format!(
+            "IR verifier rejected compiler output with {} error(s)",
+            errors.len()
+        ),
+    }
+}
+
+fn codegen_error(error: &CodegenError) -> String {
+    match error {
+        CodegenError::InvalidIr(errors) => {
+            format!("IR verifier rejected input with {} error(s)", errors.len())
+        }
+        CodegenError::ModuleTooLarge { functions } => {
+            format!("module has too many functions ({functions})")
+        }
+        CodegenError::AsyncUnsupported {
+            function,
+            feature,
+            contract,
+        } => format!("function {function}: unsupported {feature}: {contract}"),
+        CodegenError::Unsupported { function, feature } => {
+            format!("function {function}: unsupported {feature}")
+        }
+        CodegenError::IntegerOutsideProvenI64 { function, bytes } => {
+            format!("function {function}: Int is outside the proven i64 probe ({bytes} bytes)")
+        }
+    }
+}
+
+fn runtime_error(error: &RuntimeError) -> String {
+    match error {
+        RuntimeError::TemporaryArtifact(error) => format!("temporary artifact error: {error}"),
+        RuntimeError::Launch(error) => error.to_string(),
+    }
 }
 
 fn run_check(

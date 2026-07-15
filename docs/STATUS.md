@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-15
-> - phase: M3 Sico IR 与 Component
-> - phase status: in-progress
-> - current step: STEP-0036 (WIP handoff)
-> - last completed step: STEP-0035
-> - next step: complete STEP-0036
+> - phase: M4 `.sapp` 与 Runtime
+> - phase status: ready
+> - current step: STEP-0038 (planned)
+> - last completed step: STEP-0037 / M3 GO
+> - next step: start STEP-0038
 
 ## 1. Current objective
 
-当前目标是完成 STEP-0036：只为已真实 codegen/Wasmtime 通过的同步 scalar Component subset 冻结 `sico build/run`，明确 stdout/stderr/exit 与无产物失败契约。
+当前目标是启动 STEP-0038：先建立 `.sapp` threat model 与恶意 package fixture matrix，再通过 RFC 冻结 manifest、canonical archive、hash domain 和版本拒绝规则；在该 gate 前不实现接受任意 package 的 loader。
 
 ## 2. Current step
 
-[`STEP-0036`](./steps/STEP-0036-minimal-end-to-end-cli.md) 已开始并停在可接手 WIP：workspace/Runtime 进程边界已建立，但 CLI 命令、RFC、集成验证、报告和完整回归均未完成。最后完成的步骤仍是 [`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md)。
+M3 STEP-0030–0037 已全部完成，[`M3 exit audit`](./reports/m3-exit-audit.md) 给出 GO。下一执行项是 [`M4 plan`](./plans/M4-sapp-runtime.md) 的 STEP-0038；当前仅完成计划，尚未创建该步骤文档或实现 package loader。
 
 ## 3. Verified repository facts
 
@@ -21,7 +21,7 @@
 
 | 事实 | 结果 | 状态 |
 |---|---:|---|
-| `.sico` 文件 | 208 | measured |
+| `.sico` 文件 | 211 | measured |
 | 代表性程序 | 10 | verified by `examples/` |
 | P0 A0 语义案例 | 54 | verified by semantic case validator |
 | 候选 B 案例 | 54 | verified by semantic case validator |
@@ -30,8 +30,8 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 36 | measured |
-| `Cargo.toml` | 18 | measured |
+| Rust `.rs` 文件 | 38 | measured |
+| `Cargo.toml` | 19 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
@@ -44,7 +44,7 @@
 | B happy-path parser | 54/54 + 54 snapshots | verified |
 | parser recovery/E1xxx | 12/12 mutation；E1001–E1012 | verified |
 | canonical formatter | 54/54 AST stable + idempotent | verified |
-| `sico` CLI | 3 commands；4 integration groups | verified |
+| `sico` CLI | 5 commands；6 integration tests | verified |
 | deterministic frontend properties | 8,192 inputs | verified |
 | parser limits | depth 256；diagnostics 100 | verified |
 | M1 performance | median 1061 ms / 4.190 MiB/s；no SLA | measured |
@@ -66,6 +66,9 @@
 | WIT Result/record/resource boundary | Ok/Err；512-byte Int；Decimal；owned/borrowed/drop；host output 50 | verified |
 | future/stream Runtime contract | 3 Components；roundtrip/close/cancel；capacity 1/5；stable SHA-256 | verified |
 | async compiler boundary | Task/Future/Stream 3 feature-specific refusals | verified |
+| end-to-end CLI | file/stdin build；Int/Bool/Unit Wasmtime run；exit 0/1/2；failure no artifact | verified |
+| M3 deterministic quality | 2,048 scalar sources；1,000-function Component；3 Runtime cases | verified |
+| M3 performance | median 51.055 ms / 3.213 MiB/s；3 × 3,000 builds；no SLA | measured |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -114,6 +117,8 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - deterministic Core Wasm backend：[`STEP-0033`](./steps/STEP-0033-deterministic-core-wasm-backend.md)、[`RFC-0011`](./rfc/RFC-0011-deterministic-core-wasm-backend-v0.md)、[`review report`](./reports/deterministic-core-wasm-backend-v0.md)；
 - Component/WIT boundary：[`STEP-0034`](./steps/STEP-0034-component-wit-boundary.md)、[`RFC-0012`](./rfc/RFC-0012-component-wit-boundary-v0.md)、[`review report`](./reports/component-wit-boundary-v0.md)；
 - async/task/stream backend contract：[`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md)、[`RFC-0013`](./rfc/RFC-0013-async-backend-support-v0.md)、[`review report`](./reports/async-task-stream-backend-v0.md)；
+- minimal end-to-end CLI：[`STEP-0036`](./steps/STEP-0036-minimal-end-to-end-cli.md)、[`RFC-0014`](./rfc/RFC-0014-minimal-build-run-cli-v0.md)、[`review report`](./reports/minimal-build-run-cli-v0.md)；
+- M3 quality/exit GO 与 M4 execution plan：[`STEP-0037`](./steps/STEP-0037-m3-quality-exit-audit.md)、[`M3 exit audit`](./reports/m3-exit-audit.md)、[`M4 plan`](./plans/M4-sapp-runtime.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -122,7 +127,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0033 的外部条件。
+当前没有阻塞 STEP-0038 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -132,11 +137,11 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - STEP-0023–0029 已有真实 checker/index/CLI；仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录、`async func`、`future<T>` 与 `stream<T>`；compiler async IR 尚缺完整 task scope/cancel/bound，所以 codegen 保持专用 refusal；
-- Core Wasm 已由独立 Node engine 执行，compiler-generated Component 已由 selected Wasmtime 执行；CLI 与一般 aggregate/import adapter 仍须 STEP-0035–0036 接入；
+- Core Wasm、compiler-generated Component 与同步 scalar CLI 已由独立 engine/selected Wasmtime 执行；一般 aggregate/import adapter、package capability host 与 sandbox 留在 M4；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
 - 语义查询已有 compiler producer 与五类直接查询；跨包/IR facts、accuracy/latency 和真实模型收益仍未测量。
 
 ## 8. Next step
 
-`STEP-0036`：为同步 scalar Component subset 实现最小 source→semantics→IR→Component→Wasmtime CLI build/run，冻结输出、退出码和失败无产物契约。
+`STEP-0038`：建立 `.sapp` threat model 与恶意 package fixture matrix，并通过 RFC 冻结 manifest、canonical archive、hash domain 和版本拒绝规则。

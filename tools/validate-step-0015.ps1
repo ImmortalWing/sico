@@ -122,7 +122,7 @@ if (-not (Test-Path -LiteralPath $CargoPath)) {
   throw "cargo not found: $CargoPath"
 }
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 try {
   $metadataJson = & $CargoPath metadata --offline --locked --format-version 1 2>$null
   if ($LASTEXITCODE -ne 0) {

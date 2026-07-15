@@ -6,5 +6,9 @@ exit=1 command=format channel=stderr mode=check status=layout-diff
 exit=0 command=format channel=none mode=write status=file-rewritten
 exit=1 command=format channel=stderr mode=error-tree status=no-partial-output
 exit=0 command=outline channel=stdout format=text,json status=parser-top-level-only
+exit=0 command=build channel=stdout artifact=raw-component overwrite=refused inputs=file,stdin
+exit=0 command=run channel=runtime-stdout,stderr artifact=temporary-cleaned runtime=wasmtime entry=sync-scalar-main
+exit=1 command=build,run channel=stderr status=registered-source-diagnostic,no-artifact,no-runtime
+exit=2 command=build,run channel=stderr status=io,entry,unsupported-backend,runtime-error
 exit=2 command=usage,io,source-contract,unregistered-frontend channel=stderr status=tool-error
-unavailable=run,build,-c,repl,type-checker,ir,codegen
+unavailable=sapp,inspect,cache,args,capability-host,sandbox,-c,repl

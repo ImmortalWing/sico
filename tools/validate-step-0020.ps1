@@ -20,7 +20,7 @@ if (-not ($contract -match 'type-checker') -or -not ($contract -match 'unavailab
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-cli --all-targets --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0020 CLI integration tests failed' }

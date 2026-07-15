@@ -25,12 +25,16 @@ if (-not (Test-Path -LiteralPath $WasmtimePath -PathType Leaf)) { throw "Wasmtim
 if (-not $BinutilsPath) {
     $candidate = Join-Path $root 'target/tooling/msys2-binutils/mingw64/bin'
     if (Test-Path -LiteralPath $candidate -PathType Container) { $BinutilsPath = $candidate }
+    if (-not $BinutilsPath) {
+        $candidate = Join-Path $HOME '.rustup/toolchains/1.97.0-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained'
+        if (Test-Path -LiteralPath $candidate -PathType Container) { $BinutilsPath = $candidate }
+    }
 }
 $cargoDirectory = Split-Path -Parent $CargoPath
 if ($BinutilsPath) { $env:Path = "$BinutilsPath;$cargoDirectory;$env:Path" } else { $env:Path = "$cargoDirectory;$env:Path" }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = 'stable'
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 $artifact = Join-Path $root 'target/step-0034/numeric.component.wasm'
 Push-Location $root
 try {
@@ -40,7 +44,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Component backend strict Clippy failed' }
     & $CargoPath run --offline --locked -p sico-codegen-wasm --example emit_component -- $artifact
     if ($LASTEXITCODE -ne 0) { throw 'compiler Component emission failed' }
-    $runtimeOutput = (& $WasmtimePath run --invoke 'main()' $artifact | Out-String).Trim()
+    $runtimeOutput = (& $WasmtimePath run --codegen cache=n --invoke 'main()' $artifact | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $runtimeOutput -cne '42') {
         throw "selected Wasmtime Runtime returned unexpected output: $runtimeOutput"
     }

@@ -56,6 +56,8 @@ pub fn run_component(
 
     let result = Command::new(runtime)
         .arg("run")
+        .arg("--codegen")
+        .arg("cache=n")
         .arg("--invoke")
         .arg(invocation)
         .arg(&path)
@@ -75,4 +77,42 @@ fn temporary_path() -> PathBuf {
         "sico-runtime-{}-{id}.component.wasm",
         std::process::id()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::OsStr;
+
+    use super::{RuntimeError, run_component};
+
+    #[test]
+    fn launch_failure_still_removes_temporary_component() {
+        let before = temporary_components();
+        let error = run_component(
+            OsStr::new("sico-runtime-command-that-does-not-exist"),
+            b"component",
+            "main()",
+        )
+        .unwrap_err();
+        assert!(matches!(error, RuntimeError::Launch(_)));
+        assert_eq!(temporary_components(), before);
+    }
+
+    fn temporary_components() -> Vec<std::path::PathBuf> {
+        let prefix = format!("sico-runtime-{}-", std::process::id());
+        let mut paths: Vec<_> = std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(OsStr::to_str)
+                    .is_some_and(|name| {
+                        name.starts_with(&prefix) && name.ends_with(".component.wasm")
+                    })
+            })
+            .collect();
+        paths.sort();
+        paths
+    }
 }
