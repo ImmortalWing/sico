@@ -23,3 +23,4 @@
 | [`parser-recovery-syntax-diagnostics-v0`](./parser-recovery-syntax-diagnostics-v0.md) | complete | STEP-0018 | 12/12 mutation 根因、E1xxx text/JSON span、error node 与有界 recovery |
 | [`canonical-formatter-v0`](./canonical-formatter-v0.md) | complete | STEP-0019 | 54/54 AST-stable/idempotent canonical layout、comment policy 与 error-tree refusal |
 | [`cli-check-format-outline-v0`](./cli-check-format-outline-v0.md) | complete | STEP-0020 | 真实 binary、file/stdin、exit 0/1/2、RFC-0001 JSON、format 与 outline integration |
+| [`m1-exit-audit`](./m1-exit-audit.md) | complete | STEP-0021 | 8,192 property inputs、parser limits、3-run performance 与 M1 requirement-by-requirement GO |

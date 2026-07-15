@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-15
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M1
+> - current phase: M2
 
 ## Status vocabulary
 
@@ -51,7 +51,7 @@
 
 ## M1: 编译器前端与诊断
 
-状态：`in-progress`
+状态：`complete`
 
 Entry gate：satisfied by STEP-0014。
 
@@ -63,17 +63,19 @@ Entry gate：satisfied by STEP-0014。
 
 执行计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)，STEP-0015–0021。
 
-当前证据：STEP-0015–0020 已完成 workspace、source/lexer/parser/recovery/E1xxx、canonical formatter 与 `check`/`format`/`outline` CLI；下一步是 STEP-0021 fuzz/performance 与 M1 exit audit。证据见 [`M1 plan`](./plans/M1-compiler-frontend.md)。
+当前证据：STEP-0015–0021 已完成；source/lexer/parser/recovery/E1xxx、canonical formatter、CLI、8,192 property inputs、limits 与 performance 全部通过。结论见 [`M1 exit audit`](./reports/m1-exit-audit.md)。
 
 ## M2: 静态语义
 
-状态：`planned`
+状态：`planned`（entry gate satisfied）
 
 主要交付：名称解析、类型系统、局部推导、名义类型、Option/Result、完整匹配、不可变、效果/能力、资源基础规则和初步语义索引。
 
 进入条件：M1 exit gate 通过。
 
 退出证据：P0 非法案例全部在后端前拒绝；合法案例通过；诊断快照稳定。
+
+执行计划：[`M2 static semantics`](./plans/M2-static-semantics.md)，STEP-0022–0029；下一步 STEP-0022 full AST/HIR + name/prelude contract。
 
 ## M3: Sico IR 与 Component
 

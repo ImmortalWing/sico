@@ -79,7 +79,8 @@ foreach ($relative in $expectedDecisions.Keys) {
 }
 
 $roadmap = Read-Utf8 (Join-Path $root 'docs/ROADMAP.md')
-$missingCurrentPhase = $roadmap -notmatch '(?m)^> - current phase: M1\r?$'
+$currentPhaseMatch = [regex]::Match($roadmap, '(?m)^> - current phase: (M[1-9])\r?$')
+$missingCurrentPhase = -not $currentPhaseMatch.Success
 $m0Start = $roadmap.IndexOf('## M0:', [StringComparison]::Ordinal)
 $m1Start = $roadmap.IndexOf('## M1:', [StringComparison]::Ordinal)
 if ($m0Start -lt 0 -or $m1Start -le $m0Start) {
@@ -90,12 +91,12 @@ $m0Header = $m0Section.Substring(0, [Math]::Min(160, $m0Section.Length))
 $missingM0Complete = -not $m0Header.Contains('`complete`')
 $missingM0Audit = $m0Section -notmatch '(?m)^\| [^|]+ \| complete \| .*STEP-0014'
 if ($missingCurrentPhase -or $missingM0Complete -or $missingM0Audit) {
-  throw 'ROADMAP does not record completed M0 and current M1'
+  throw 'ROADMAP does not record completed M0 and a post-M0 current phase'
 }
 
 $statusText = Read-Utf8 (Join-Path $root 'docs/STATUS.md')
 foreach ($pattern in @(
-  '(?m)^> - phase: M1 '
+  '(?m)^> - phase: M[1-9] '
 )) {
   if ($statusText -notmatch $pattern) {
     throw "STATUS is missing expected state: $pattern"
@@ -143,4 +144,5 @@ foreach ($file in $markdownFiles) {
   }
 }
 
-Write-Output "M0_EXIT_DOCS_OK steps=14 decisions=7 markdown=$($markdownFiles.Count) local_links=$localLinks official_ai_runs=0 current_phase=M1"
+$currentPhase = $currentPhaseMatch.Groups[1].Value
+Write-Output "M0_EXIT_DOCS_OK steps=14 decisions=7 markdown=$($markdownFiles.Count) local_links=$localLinks official_ai_runs=0 current_phase=$currentPhase"

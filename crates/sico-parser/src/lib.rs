@@ -8,6 +8,11 @@ use sico_lexer::{LexError, Token, TokenKind, lex};
 use sico_source::{SourceFile, TextRange, TextSize};
 use sico_syntax::{GreenNodeBuilder, SyntaxKind, SyntaxNode, root};
 
+/// Maximum combined block or delimiter nesting accepted by the parser.
+pub const MAX_PARSE_DEPTH: usize = 256;
+/// Maximum parser diagnostics retained for one source.
+pub const MAX_PARSE_ERRORS: usize = 100;
+
 /// B block identity carried by both opener and `end <kind>`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockKind {
@@ -119,6 +124,9 @@ pub enum ParseErrorKind {
     MissingTaskClose,
     MissingInterfaceClose,
     MissingParameterListClose,
+    NestingLimitExceeded {
+        limit: usize,
+    },
     MissingBlockClose(BlockKind),
     UnexpectedClose(BlockKind),
     MismatchedClose {
@@ -234,9 +242,13 @@ pub fn parse(source: &SourceFile) -> Parse {
     let mut delimiters = Vec::<(TokenKind, TextRange, usize)>::new();
     let mut declarations = Vec::new();
     let mut errors = Vec::new();
+    let mut depth_limit_exceeded = false;
 
     for line in &lines {
-        validate_delimiters(tokens, line, &mut delimiters, &mut errors);
+        if validate_delimiters(tokens, line, &mut delimiters, &mut errors, &mut empty_nodes) {
+            depth_limit_exceeded = true;
+            break;
+        }
         if line.significant.is_empty() {
             continue;
         }
@@ -286,20 +298,28 @@ pub fn parse(source: &SourceFile) -> Parse {
                 }
                 let matching = blocks.iter().rposition(|block| block.kind == actual);
                 match matching {
-                    None if blocks.is_empty() => errors.push(ParseError {
-                        kind: ParseErrorKind::UnexpectedClose(actual),
-                        range: tokens[line.significant[0]].range,
-                        related: None,
-                        anchor: RecoveryAnchor::Local,
-                    }),
+                    None if blocks.is_empty() => {
+                        push_parse_error(
+                            &mut errors,
+                            ParseError {
+                                kind: ParseErrorKind::UnexpectedClose(actual),
+                                range: tokens[line.significant[0]].range,
+                                related: None,
+                                anchor: RecoveryAnchor::Local,
+                            },
+                        );
+                    }
                     None => {
                         let expected = blocks.last().unwrap().kind;
-                        errors.push(ParseError {
-                            kind: ParseErrorKind::MismatchedClose { expected, actual },
-                            range: tokens[line.significant[0]].range,
-                            related: blocks.last().map(|block| block.open_range),
-                            anchor: RecoveryAnchor::Local,
-                        });
+                        push_parse_error(
+                            &mut errors,
+                            ParseError {
+                                kind: ParseErrorKind::MismatchedClose { expected, actual },
+                                range: tokens[line.significant[0]].range,
+                                related: blocks.last().map(|block| block.open_range),
+                                anchor: RecoveryAnchor::Local,
+                            },
+                        );
                     }
                     Some(position) => {
                         while blocks.len() - 1 > position {
@@ -379,6 +399,21 @@ pub fn parse(source: &SourceFile) -> Parse {
         }
 
         if let Some((kind, opener_index)) = candidate {
+            if blocks.len() >= MAX_PARSE_DEPTH {
+                push_recovery_error(
+                    &mut errors,
+                    &mut empty_nodes,
+                    line.start,
+                    ParseErrorKind::NestingLimitExceeded {
+                        limit: MAX_PARSE_DEPTH,
+                    },
+                    tokens[opener_index].range,
+                    None,
+                    RecoveryAnchor::EndOfFile,
+                );
+                depth_limit_exceeded = true;
+                break;
+            }
             let top_level = blocks.is_empty() && kind.declaration().is_some();
             let node_start = if top_level {
                 line.significant[0]
@@ -399,25 +434,34 @@ pub fn parse(source: &SourceFile) -> Parse {
         }
     }
 
-    for (kind, range, _) in delimiters.into_iter().rev() {
-        errors.push(ParseError {
-            kind: ParseErrorKind::UnclosedDelimiter(kind),
-            range,
-            related: None,
-            anchor: RecoveryAnchor::EndOfFile,
-        });
-    }
-    while let Some(open) = blocks.pop() {
-        push_recovery_error(
-            &mut errors,
-            &mut empty_nodes,
-            token_count,
-            missing_close_error(open.kind),
-            TextRange::empty(source.len()),
-            Some(open.open_range),
-            RecoveryAnchor::EndOfFile,
-        );
-        schedule_finish(&mut finishes, token_count);
+    if depth_limit_exceeded {
+        while blocks.pop().is_some() {
+            schedule_finish(&mut finishes, token_count);
+        }
+    } else {
+        for (kind, range, _) in delimiters.into_iter().rev() {
+            push_parse_error(
+                &mut errors,
+                ParseError {
+                    kind: ParseErrorKind::UnclosedDelimiter(kind),
+                    range,
+                    related: None,
+                    anchor: RecoveryAnchor::EndOfFile,
+                },
+            );
+        }
+        while let Some(open) = blocks.pop() {
+            push_recovery_error(
+                &mut errors,
+                &mut empty_nodes,
+                token_count,
+                missing_close_error(open.kind),
+                TextRange::empty(source.len()),
+                Some(open.open_range),
+                RecoveryAnchor::EndOfFile,
+            );
+            schedule_finish(&mut finishes, token_count);
+        }
     }
 
     let syntax = build_tree(
@@ -548,16 +592,28 @@ fn push_recovery_error(
     related: Option<TextRange>,
     anchor: RecoveryAnchor,
 ) {
-    empty_nodes
-        .entry(node_index)
-        .or_default()
-        .extend([SyntaxKind::ERROR, SyntaxKind::MISSING]);
-    errors.push(ParseError {
-        kind,
-        range,
-        related,
-        anchor,
-    });
+    if push_parse_error(
+        errors,
+        ParseError {
+            kind,
+            range,
+            related,
+            anchor,
+        },
+    ) {
+        empty_nodes
+            .entry(node_index)
+            .or_default()
+            .extend([SyntaxKind::ERROR, SyntaxKind::MISSING]);
+    }
+}
+
+fn push_parse_error(errors: &mut Vec<ParseError>, error: ParseError) -> bool {
+    if errors.len() == MAX_PARSE_ERRORS {
+        return false;
+    }
+    errors.push(error);
+    true
 }
 
 fn recover_function_header(
@@ -654,11 +710,26 @@ fn validate_delimiters(
     line: &Line,
     stack: &mut Vec<(TokenKind, TextRange, usize)>,
     errors: &mut Vec<ParseError>,
-) {
+    empty_nodes: &mut BTreeMap<usize, Vec<SyntaxKind>>,
+) -> bool {
     for index in &line.significant {
         let token = tokens[*index];
         match token.kind {
             TokenKind::LeftParen | TokenKind::LeftBracket => {
+                if stack.len() >= MAX_PARSE_DEPTH {
+                    push_recovery_error(
+                        errors,
+                        empty_nodes,
+                        *index,
+                        ParseErrorKind::NestingLimitExceeded {
+                            limit: MAX_PARSE_DEPTH,
+                        },
+                        token.range,
+                        None,
+                        RecoveryAnchor::EndOfFile,
+                    );
+                    return true;
+                }
                 stack.push((token.kind, token.range, *index));
             }
             TokenKind::RightParen | TokenKind::RightBracket => {
@@ -670,17 +741,21 @@ fn validate_delimiters(
                 if stack.last().is_some_and(|(kind, _, _)| *kind == expected) {
                     stack.pop();
                 } else {
-                    errors.push(ParseError {
-                        kind: ParseErrorKind::UnexpectedDelimiter(token.kind),
-                        range: token.range,
-                        related: None,
-                        anchor: RecoveryAnchor::Local,
-                    });
+                    push_parse_error(
+                        errors,
+                        ParseError {
+                            kind: ParseErrorKind::UnexpectedDelimiter(token.kind),
+                            range: token.range,
+                            related: None,
+                            anchor: RecoveryAnchor::Local,
+                        },
+                    );
                 }
             }
             _ => {}
         }
     }
+    false
 }
 
 fn schedule_finish(finishes: &mut BTreeMap<usize, usize>, index: usize) {
@@ -906,6 +981,75 @@ mod tests {
             assert!(kinds.contains(&SyntaxKind::ERROR), "{name}");
             assert!(kinds.contains(&SyntaxKind::MISSING), "{name}");
         }
+    }
+
+    #[test]
+    fn parser_depth_and_diagnostic_limits_are_exact_and_lossless() {
+        let at_limit = nested_blocks(MAX_PARSE_DEPTH);
+        let file = source(&at_limit);
+        let parsed = parse(&file);
+        assert!(parsed.is_success(), "{:?}", parsed.errors());
+        assert_eq!(parsed.syntax().text().to_string(), at_limit);
+
+        let over_limit = nested_blocks(MAX_PARSE_DEPTH + 1);
+        let file = source(&over_limit);
+        let parsed = parse(&file);
+        assert_eq!(parsed.errors().len(), 1);
+        assert_eq!(
+            parsed.errors()[0].kind,
+            ParseErrorKind::NestingLimitExceeded {
+                limit: MAX_PARSE_DEPTH
+            }
+        );
+        assert!(parsed.ast().is_none());
+        assert_eq!(parsed.syntax().text().to_string(), over_limit);
+
+        let at_delimiter_limit = format!(
+            "function main() returns Int:\n  return {}1{}\nend function\n",
+            "(".repeat(MAX_PARSE_DEPTH),
+            ")".repeat(MAX_PARSE_DEPTH)
+        );
+        assert!(parse(&source(&at_delimiter_limit)).is_success());
+        let over_delimiter_limit = format!(
+            "function main() returns Int:\n  return {}1{}\nend function\n",
+            "(".repeat(MAX_PARSE_DEPTH + 1),
+            ")".repeat(MAX_PARSE_DEPTH + 1)
+        );
+        let parsed = parse(&source(&over_delimiter_limit));
+        assert_eq!(parsed.errors().len(), 1);
+        assert!(matches!(
+            parsed.errors()[0].kind,
+            ParseErrorKind::NestingLimitExceeded { .. }
+        ));
+        assert_eq!(parsed.syntax().text().to_string(), over_delimiter_limit);
+
+        let unexpected = ")\n".repeat(MAX_PARSE_ERRORS + 50);
+        let parsed = parse(&source(&unexpected));
+        assert_eq!(parsed.errors().len(), MAX_PARSE_ERRORS);
+        assert!(
+            parsed
+                .errors()
+                .iter()
+                .all(|error| error.kind
+                    == ParseErrorKind::UnexpectedDelimiter(TokenKind::RightParen))
+        );
+    }
+
+    fn nested_blocks(depth: usize) -> String {
+        let mut text = String::from("function main() returns Int:\n");
+        for _ in 1..depth {
+            text.push_str("if true:\n");
+        }
+        text.push_str("return 1\n");
+        for _ in 1..depth {
+            text.push_str("end if\n");
+        }
+        text.push_str("end function\n");
+        text
+    }
+
+    fn source(text: &str) -> SourceFile {
+        SourceFile::from_text(SourceId::new(9_999), "limit-test.sico", text).unwrap()
     }
 
     fn collect_sico(root: &Path, output: &mut Vec<std::path::PathBuf>) {

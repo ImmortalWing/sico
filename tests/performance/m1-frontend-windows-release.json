@@ -1,0 +1,33 @@
+{
+  "schema": "sico.m1.frontend-performance-runs.v0",
+  "date": "2026-07-15",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "profile": "release"
+  },
+  "command": "cargo run --offline --locked --release --quiet -p sico-cli --example m1_frontend_bench -- 200",
+  "corpus": {
+    "files": 66,
+    "canonical": 54,
+    "mutations": 12,
+    "bytes_per_iteration": 23314
+  },
+  "iterations_per_run": 200,
+  "runs": [
+    { "elapsed_ms": 1061, "mib_per_second": 4.190 },
+    { "elapsed_ms": 1049, "mib_per_second": 4.236 },
+    { "elapsed_ms": 1121, "mib_per_second": 3.966 }
+  ],
+  "median": {
+    "elapsed_ms": 1061,
+    "mib_per_second": 4.190
+  },
+  "per_run_work": {
+    "total_bytes": 4662800,
+    "successful_formats": 10800,
+    "diagnostic_parses": 2400,
+    "scope": "source+lex+parse; format on successful parse"
+  },
+  "sla": "not-established"
+}

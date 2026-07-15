@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-15
-> - phase: M1 编译器前端与诊断
-> - phase status: in-progress
+> - phase: M2 静态语义
+> - phase status: planned (entry gate satisfied)
 > - current step: none
-> - last completed step: STEP-0020
-> - next step: STEP-0021
+> - last completed step: STEP-0021
+> - next step: STEP-0022
 
 ## 1. Current objective
 
-下一目标是完成 deterministic fuzz/property、size/depth/token limit 与 corpus performance 证据，并逐项审计 M1 exit gate；通过后策划 M2 静态语义执行计划。
+下一目标是执行 STEP-0022：建立完整 B AST/HIR、stable IDs/source maps 与 name/prelude contract；任何无法由现有 oracle 唯一决定的语义先进入 RFC/case。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md) 已完成；真实 binary 的 3 个命令、file/stdin、exit 0/1/2 和 text/JSON contract 已通过进程级测试。
+当前没有进行中的 STEP。M1 已由 [`exit audit`](./reports/m1-exit-audit.md) 判定 complete 并 GO to M2；[`M2 plan`](./plans/M2-static-semantics.md) 已就绪，尚未开始实现语义。
 
 ## 3. Verified repository facts
 
@@ -30,7 +30,7 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 18 | measured |
+| Rust `.rs` 文件 | 22 | measured |
 | `Cargo.toml` | 13 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
@@ -45,9 +45,12 @@
 | parser recovery/E1xxx | 12/12 mutation；E1001–E1012 | verified |
 | canonical formatter | 54/54 AST stable + idempotent | verified |
 | `sico` CLI | 3 commands；4 integration groups | verified |
-| 实际 `.sico` 编译结果 | 不存在 | verified |
+| deterministic frontend properties | 8,192 inputs | verified |
+| parser limits | depth 256；diagnostics 100 | verified |
+| M1 performance | median 1061 ms / 4.190 MiB/s；no SLA | measured |
+| 实际 `.sico` type-check 结果 | 不存在 | verified |
 
-M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译器和前端行为仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
+M0/M1 已完成；仓库有真实 source/lexer/parser/recovery/formatter/CLI，但没有 type checker。25/29 accept/reject 仍是 M2 oracle，不能解释为已产生语义编译结果。
 
 ## 4. Completed assets
 
@@ -77,6 +80,8 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 - parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；
 - canonical formatter、comment/trivia policy 与 error-tree refusal：[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md)；
 - `sico check`/`format`/`outline`、退出码与 M2 capability boundary：[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md)；
+- frontend fuzz/limits/performance 与 M1 GO：[`STEP-0021`](./steps/STEP-0021-fuzz-performance-m1-exit.md)、[`M1 exit audit`](./reports/m1-exit-audit.md)；
+- STEP-0022–0029 静态语义执行计划：[`M2 static semantics`](./plans/M2-static-semantics.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -85,15 +90,15 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0021 的外部条件。
+当前没有阻塞 STEP-0022 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
 ## 7. Risks
 
-- B 已选为 M1 baseline，source/lexer/parser 与 12 类局部恢复已经实现，但复合错误、深度和随机输入仍待 STEP-0021 验证；
+- B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
-- 语法候选已覆盖 10 组 P0 判定、完整静态指标和离线 AI 任务，但仍没有真实 parser 或模型实测；
+- 语法候选已有真实 B parser 数据，但仍无 type checker 或真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1001–E1012 已有真实 parser code、跨度和 recovery 数据；E2xxx 及以后仍无 type checker 实现；
@@ -101,4 +106,4 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 8. Next step
 
-`STEP-0021`：执行 deterministic fuzz/property、深度/大小/token 限额和 corpus performance；逐项完成 M1 exit audit，通过后编写下一阶段静态语义计划。
+`STEP-0022`：建立 full B AST/HIR、stable IDs/source maps 和 name/prelude contract；对 54 个 B case 形成 lowering snapshots，并先 RFC 化任何语义歧义。

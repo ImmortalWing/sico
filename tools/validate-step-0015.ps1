@@ -157,7 +157,8 @@ foreach ($name in $lockedDirect.Keys) {
 }
 
 $mainFiles = @(Get-ChildItem -LiteralPath (Join-Path $root 'crates') -Recurse -File -Filter 'main.rs')
-if ($mainFiles.Count -ne 0) {
+$step0020 = Join-Path $root 'docs/steps/STEP-0020-cli-check-format-outline.md'
+if (-not (Test-Path -LiteralPath $step0020) -and $mainFiles.Count -ne 0) {
   throw 'STEP-0015 must not create a CLI binary before STEP-0020'
 }
 

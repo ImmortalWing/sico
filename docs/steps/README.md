@@ -24,5 +24,6 @@
 | [STEP-0018](./STEP-0018-parser-recovery-syntax-diagnostics.md) | complete | M1 | 实现 parser recovery 与 E1xxx syntax diagnostics |
 | [STEP-0019](./STEP-0019-canonical-formatter.md) | complete | M1 | 实现 parse-success-only canonical formatter |
 | [STEP-0020](./STEP-0020-cli-check-format-outline.md) | complete | M1 | 实现 `sico check`、`format` 与 `outline` CLI contract |
+| [STEP-0021](./STEP-0021-fuzz-performance-m1-exit.md) | complete | M1 | 完成 frontend fuzz/limits/performance 与 M1 exit audit |
 
-下一可用编号：`STEP-0021`。
+下一可用编号：`STEP-0022`。

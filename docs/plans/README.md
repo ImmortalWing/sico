@@ -4,4 +4,5 @@
 
 | Plan | Status | Scope |
 |---|---|---|
-| [`M1 compiler frontend`](./M1-compiler-frontend.md) | ready after STEP-0014 go | Rust source/span、lossless lexer/parser、恢复、formatter、`sico check`、outline 与 M1 audit |
+| [`M1 compiler frontend`](./M1-compiler-frontend.md) | complete | Rust source/span、lossless lexer/parser、恢复、formatter、`sico check`、outline 与 M1 audit |
+| [`M2 static semantics`](./M2-static-semantics.md) | ready after STEP-0021 go | full HIR、names/types/control/effects/resources、semantic diagnostics/index 与 M2 audit |
