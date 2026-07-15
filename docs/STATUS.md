@@ -4,16 +4,16 @@
 > - phase: M2 静态语义
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0025
-> - next step: STEP-0026
+> - last completed step: STEP-0026
+> - next step: STEP-0027
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0026：实现 affine resources 与 Future/Task/Stream checks，使 resource/task/stream 的 6 valid/6 invalid 产生真实结果。
+下一目标是执行 STEP-0027：实现 revision/contract dataflow，使 revision 的 2 valid/2 invalid 产生真实结果。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0025`](./steps/STEP-0025-effects-capabilities-component.md) 已完成；下一项只扩展 resource/task/stream oracle 所需规则。
+当前没有进行中的 STEP。[`STEP-0026`](./steps/STEP-0026-resources-async-streams.md) 已完成；下一项只扩展 revision oracle 所需 contract dataflow。
 
 ## 3. Verified repository facts
 
@@ -51,8 +51,9 @@
 | 实际 `.sico` core/nominal type-check | 7 valid pass；9 invalid exact primary | verified |
 | 实际 `.sico` match/Result check | 6 valid pass；8 invalid exact primary | verified |
 | 实际 `.sico` capability/Component check | 4 valid pass；4 invalid exact primary | verified |
+| 实际 `.sico` resource/task/stream check | 6 valid pass；6 invalid exact primary | verified |
 
-M0/M1 已完成；仓库已有 STEP-0023–0025 的真实 semantic checker。其余 8 valid/8 invalid 仍是 M2 oracle，不能解释为已产生语义编译结果。
+M0/M1 已完成；仓库已有 STEP-0023–0026 的真实 semantic checker。其余 2 valid/2 invalid 仍是 M2 oracle，不能解释为已产生语义编译结果。
 
 ## 4. Completed assets
 
@@ -88,6 +89,7 @@ M0/M1 已完成；仓库已有 STEP-0023–0025 的真实 semantic checker。其
 - core/nominal type checker：[`STEP-0023`](./steps/STEP-0023-core-nominal-types.md)、[`review report`](./reports/core-nominal-types-v0.md)；
 - match/Result control flow：[`STEP-0024`](./steps/STEP-0024-match-result-control-flow.md)、[`review report`](./reports/match-result-control-flow-v0.md)；
 - effects/capabilities/Component boundary：[`STEP-0025`](./steps/STEP-0025-effects-capabilities-component.md)、[`review report`](./reports/effects-capabilities-component-v0.md)；
+- resource/task/stream flow：[`STEP-0026`](./steps/STEP-0026-resources-async-streams.md)、[`review report`](./reports/resources-async-streams-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -96,7 +98,7 @@ M0/M1 已完成；仓库已有 STEP-0023–0025 的真实 semantic checker。其
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0026 的外部条件。
+当前没有阻塞 STEP-0027 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -104,12 +106,12 @@ M0/M1 已完成；仓库已有 STEP-0023–0025 的真实 semantic checker。其
 
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
-- STEP-0023–0025 已有真实 checker；resource/async/revision 仍待实现，且仍无真实模型实测；
+- STEP-0023–0026 已有真实 checker；revision 仍待实现，且仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
-- E1xxx、STEP-0023–0025 已拥有的 E2/E3/E4/E6 已有真实 compiler code、跨度和 bounded cascade；E5/E7 仍待实现；
+- E1xxx、STEP-0023–0026 已拥有的 E2–E6 已有真实 compiler code、跨度和 bounded cascade；E7 仍待实现；
 - 语义查询协议已有设计 fixtures，但只有两个模块详细展开，没有真实 index/accuracy/latency 数据。
 
 ## 8. Next step
 
-`STEP-0026`：实现 affine resources 与 Future/Task/Stream checks；只验收对应 6 valid/6 invalid oracle，不提前实现 revision。
+`STEP-0027`：实现 revision/contract dataflow；只验收对应 2 valid/2 invalid oracle，不引入隐藏 runtime conflict handling。

@@ -62,6 +62,9 @@ pub enum SemanticFactKind {
     Effect,
     Capability,
     ComponentCall,
+    ResourceState,
+    AsyncState,
+    StreamOperation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -121,6 +124,9 @@ enum TypeDefinition {
     Enum {
         variants: Vec<VariantDefinition>,
     },
+    Resource {
+        methods: BTreeMap<String, bool>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -152,6 +158,7 @@ struct FunctionDefinition {
     declared_effects: Vec<(String, HirId, TextRange)>,
     declared_capabilities: Vec<(String, HirId, TextRange)>,
     component_version_range: Option<TextRange>,
+    is_async: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -254,6 +261,14 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
                     .insert(declaration.name.clone(), TypeDefinition::Enum { variants });
                 push_type_fact(declaration, &mut facts);
             }
+            DeclarationKind::Resource => {
+                let methods = build_resource_methods(declaration);
+                model.types.insert(
+                    declaration.name.clone(),
+                    TypeDefinition::Resource { methods },
+                );
+                push_type_fact(declaration, &mut facts);
+            }
             DeclarationKind::Function => {
                 if let Some(function) = parse_function(declaration) {
                     facts.push(SemanticFact {
@@ -298,6 +313,26 @@ fn push_type_fact(declaration: &sico_hir::Declaration, facts: &mut Vec<SemanticF
         ty: None,
         range: declaration.range,
     });
+}
+
+fn build_resource_methods(declaration: &sico_hir::Declaration) -> BTreeMap<String, bool> {
+    declaration
+        .lines
+        .iter()
+        .filter(|line| line.kind == LineKind::FunctionSignature)
+        .filter_map(|line| {
+            let name = line.tokens.get(1)?.text.clone();
+            let left = line
+                .tokens
+                .iter()
+                .position(|token| token.kind == TokenKind::LeftParen)?;
+            let right = matching_close(&line.tokens, left)?;
+            let borrowed = line.tokens[left + 1..right]
+                .iter()
+                .any(|token| token.kind == TokenKind::Borrow);
+            Some((name, !borrowed))
+        })
+        .collect()
 }
 
 fn build_enum_variants(
@@ -376,6 +411,7 @@ fn parse_function(declaration: &sico_hir::Declaration) -> Option<FunctionDefinit
             .iter()
             .find(|token| token.kind == TokenKind::At)
             .map(|token| token.range),
+        is_async: header.iter().any(|token| token.kind == TokenKind::Async),
         body,
         range: declaration.range,
     })
@@ -466,6 +502,7 @@ fn analyze_function(
     facts: &mut Vec<SemanticFact>,
 ) {
     check_boundary_semantics(function, diagnostics, facts);
+    check_resource_async_stream(function, model, diagnostics, facts);
     let mut locals: BTreeMap<String, Type> = function
         .parameters
         .iter()
@@ -521,6 +558,304 @@ fn analyze_function(
             }
             _ => {}
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum ResourceStatus {
+    Available,
+    Moved(String),
+    Closed,
+}
+
+fn check_resource_async_stream(
+    function: &FunctionDefinition,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let mut resources: BTreeMap<String, (String, ResourceStatus)> = function
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            let Type::Named(type_name) = &parameter.ty else {
+                return None;
+            };
+            matches!(
+                model.types.get(type_name),
+                Some(TypeDefinition::Resource { .. })
+            )
+            .then(|| {
+                (
+                    parameter.name.clone(),
+                    (type_name.clone(), ResourceStatus::Available),
+                )
+            })
+        })
+        .collect();
+    let streams: Vec<_> = function
+        .parameters
+        .iter()
+        .filter(|parameter| matches!(&parameter.ty, Type::Generic { name, .. } if name == "Stream"))
+        .map(|parameter| parameter.name.clone())
+        .collect();
+    let mut futures = BTreeMap::<String, bool>::new();
+
+    for line in &function.body {
+        track_resource_move(line, &mut resources, facts);
+        check_resource_use(line, &mut resources, model, diagnostics, facts);
+        track_future_binding(line, model, &mut futures, facts);
+        check_future_await(line, &mut futures, diagnostics, facts);
+        check_task_escape(line, diagnostics);
+        check_stream_operation(line, &streams, diagnostics, facts);
+    }
+}
+
+fn track_resource_move(
+    line: &Line,
+    resources: &mut BTreeMap<String, (String, ResourceStatus)>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    if line.kind != LineKind::Let
+        || line
+            .tokens
+            .get(3)
+            .is_none_or(|token| token.kind != TokenKind::Move)
+    {
+        return;
+    }
+    let Some(source) = line.tokens.get(4).map(|token| token.text.clone()) else {
+        return;
+    };
+    let target = line.tokens[1].text.clone();
+    let Some((type_name, status)) = resources.get_mut(&source) else {
+        return;
+    };
+    if matches!(status, ResourceStatus::Available) {
+        *status = ResourceStatus::Moved(target.clone());
+        let moved_type = type_name.clone();
+        resources.insert(
+            target.clone(),
+            (moved_type.clone(), ResourceStatus::Available),
+        );
+        facts.push(flow_fact(
+            line,
+            1,
+            SemanticFactKind::ResourceState,
+            format!("{source}->moved:{target}"),
+            Some(Type::named(moved_type)),
+        ));
+    }
+}
+
+fn check_resource_use(
+    line: &Line,
+    resources: &mut BTreeMap<String, (String, ResourceStatus)>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let Some((receiver, method, _)) = receiver_method(line) else {
+        return;
+    };
+    let Some((type_name, status)) = resources.get_mut(&receiver) else {
+        return;
+    };
+    match status {
+        ResourceStatus::Moved(target) => push_diagnostic(
+            diagnostics,
+            "E5001",
+            "RESOURCE_MOVED",
+            format!("{receiver} was moved to {target}"),
+            [("resource", receiver.as_str()), ("target", target.as_str())],
+            line.range,
+        ),
+        ResourceStatus::Closed => push_diagnostic(
+            diagnostics,
+            "E5002",
+            "RESOURCE_CLOSED",
+            format!("{receiver} was already closed"),
+            [("resource", receiver.as_str())],
+            line.range,
+        ),
+        ResourceStatus::Available => {
+            let consuming = matches!(
+                model.types.get(type_name),
+                Some(TypeDefinition::Resource { methods }) if methods.get(&method) == Some(&true)
+            );
+            if consuming {
+                *status = ResourceStatus::Closed;
+                facts.push(flow_fact(
+                    line,
+                    0,
+                    SemanticFactKind::ResourceState,
+                    format!("{receiver}->closed"),
+                    Some(Type::named(type_name.clone())),
+                ));
+            }
+        }
+    }
+}
+
+fn track_future_binding(
+    line: &Line,
+    model: &Model,
+    futures: &mut BTreeMap<String, bool>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    if line.kind != LineKind::Let || line.tokens.len() < 5 {
+        return;
+    }
+    let asynchronous = if line.tokens[3].kind == TokenKind::Spawn {
+        true
+    } else {
+        model
+            .functions
+            .get(&line.tokens[3].text)
+            .is_some_and(|function| function.is_async)
+    };
+    if asynchronous {
+        let name = line.tokens[1].text.clone();
+        futures.insert(name.clone(), false);
+        facts.push(flow_fact(
+            line,
+            1,
+            SemanticFactKind::AsyncState,
+            format!("{name}->pending"),
+            None,
+        ));
+    }
+}
+
+fn check_future_await(
+    line: &Line,
+    futures: &mut BTreeMap<String, bool>,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    for window in line.tokens.windows(2) {
+        if window[0].kind != TokenKind::Await {
+            continue;
+        }
+        let name = &window[1].text;
+        let Some(consumed) = futures.get_mut(name) else {
+            continue;
+        };
+        if *consumed {
+            push_diagnostic(
+                diagnostics,
+                "E5101",
+                "FUTURE_CONSUMED",
+                format!("{name} was already awaited"),
+                [("future", name.as_str())],
+                window[1].range,
+            );
+        } else {
+            *consumed = true;
+            let slot = u16::from(line.kind == LineKind::Let);
+            facts.push(flow_fact(
+                line,
+                slot,
+                SemanticFactKind::AsyncState,
+                format!("{name}->awaited"),
+                None,
+            ));
+        }
+    }
+}
+
+fn check_task_escape(line: &Line, diagnostics: &mut Vec<SemanticDiagnostic>) {
+    if line.kind == LineKind::Return
+        && line.depth > 0
+        && line
+            .tokens
+            .get(1)
+            .is_some_and(|token| token.kind == TokenKind::Spawn)
+    {
+        push_diagnostic(
+            diagnostics,
+            "E5102",
+            "TASK_ESCAPES_SCOPE",
+            "task cannot leave its task group".to_owned(),
+            [],
+            line.range,
+        );
+    }
+}
+
+fn check_stream_operation(
+    line: &Line,
+    streams: &[String],
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let Some((receiver, operation, receiver_index)) = receiver_method(line) else {
+        return;
+    };
+    if !streams.contains(&receiver) || !matches!(operation.as_str(), "next" | "collect") {
+        return;
+    }
+    facts.push(flow_fact(
+        line,
+        0,
+        SemanticFactKind::StreamOperation,
+        format!("{receiver}.{operation}"),
+        None,
+    ));
+    let awaited = line.tokens[..receiver_index]
+        .iter()
+        .any(|token| token.kind == TokenKind::Await);
+    if operation == "next" && !awaited {
+        let full_name = format!("{receiver}.{operation}");
+        push_diagnostic(
+            diagnostics,
+            "E5202",
+            "ASYNC_VALUE_REQUIRES_AWAIT",
+            format!("{full_name} returns a Future; await it"),
+            [("operation", full_name.as_str())],
+            line.range,
+        );
+    } else if operation == "collect" && !line.tokens.iter().any(|token| token.text == "limit") {
+        push_diagnostic(
+            diagnostics,
+            "E5201",
+            "UNBOUNDED_STREAM_COLLECT",
+            "stream collection requires an explicit limit".to_owned(),
+            [],
+            line.range,
+        );
+    }
+}
+
+fn receiver_method(line: &Line) -> Option<(String, String, usize)> {
+    let dot = line
+        .tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::Dot)?;
+    let receiver_index = dot.checked_sub(1)?;
+    Some((
+        line.tokens.get(receiver_index)?.text.clone(),
+        line.tokens.get(dot + 1)?.text.clone(),
+        receiver_index,
+    ))
+}
+
+fn flow_fact(
+    line: &Line,
+    slot: u16,
+    kind: SemanticFactKind,
+    name: String,
+    ty: Option<Type>,
+) -> SemanticFact {
+    SemanticFact {
+        id: FactId {
+            node: line.id,
+            slot,
+        },
+        kind,
+        name,
+        ty,
+        range: line.range,
     }
 }
 
@@ -1057,6 +1392,37 @@ fn infer_expression(
     if tokens.is_empty() {
         return unknown(range);
     }
+    if tokens[0].kind == TokenKind::Await {
+        let awaited = infer_expression(&tokens[1..], locals, model, diagnostics);
+        if let Type::Generic { name, arguments } = awaited.ty
+            && matches!(name.as_str(), "Future" | "Task")
+            && arguments.len() == 1
+        {
+            return Value {
+                ty: arguments[0].clone(),
+                range,
+                integer: None,
+            };
+        }
+        return unknown(range);
+    }
+    if tokens[0].kind == TokenKind::Spawn {
+        let spawned = infer_expression(&tokens[1..], locals, model, diagnostics);
+        let result = match spawned.ty {
+            Type::Generic { name, arguments } if name == "Future" && arguments.len() == 1 => {
+                arguments[0].clone()
+            }
+            _ => Type::Unknown,
+        };
+        return Value {
+            ty: Type::Generic {
+                name: "Task".to_owned(),
+                arguments: vec![result],
+            },
+            range,
+            integer: None,
+        };
+    }
     if let Some(index) = top_level_any(tokens, &[TokenKind::EqualEqual, TokenKind::LessEqual]) {
         let _left = infer_expression(&tokens[..index], locals, model, diagnostics);
         let _right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
@@ -1166,35 +1532,8 @@ fn infer_call(
         .map(|argument| infer_expression(argument.tokens, locals, model, diagnostics))
         .collect();
 
-    if callee == "ok" {
-        return Value {
-            ty: Type::Generic {
-                name: "Result".to_owned(),
-                arguments: vec![
-                    values
-                        .first()
-                        .map_or(Type::Unknown, |value| value.ty.clone()),
-                    Type::Unknown,
-                ],
-            },
-            range,
-            integer: None,
-        };
-    }
-    if callee == "error" {
-        return Value {
-            ty: Type::Generic {
-                name: "Result".to_owned(),
-                arguments: vec![
-                    Type::Unknown,
-                    values
-                        .first()
-                        .map_or(Type::Unknown, |value| value.ty.clone()),
-                ],
-            },
-            range,
-            integer: None,
-        };
+    if let Some(result) = infer_result_constructor(&callee, &values, range) {
+        return result;
     }
 
     if callee == "Float64.from_int" {
@@ -1212,7 +1551,14 @@ fn infer_call(
             require_type(&parameter.ty, value, diagnostics);
         }
         return Value {
-            ty: function.returns.clone(),
+            ty: if function.is_async {
+                Type::Generic {
+                    name: "Future".to_owned(),
+                    arguments: vec![function.returns.clone()],
+                }
+            } else {
+                function.returns.clone()
+            },
             range,
             integer: None,
         };
@@ -1247,7 +1593,7 @@ fn infer_call(
                     diagnostics,
                 );
             }
-            TypeDefinition::Enum { .. } => {}
+            TypeDefinition::Enum { .. } | TypeDefinition::Resource { .. } => {}
         }
         return Value {
             ty: Type::named(callee),
@@ -1256,6 +1602,25 @@ fn infer_call(
         };
     }
     unknown(range)
+}
+
+fn infer_result_constructor(callee: &str, values: &[Value], range: TextRange) -> Option<Value> {
+    let value_type = values
+        .first()
+        .map_or(Type::Unknown, |value| value.ty.clone());
+    let arguments = match callee {
+        "ok" => vec![value_type, Type::Unknown],
+        "error" => vec![Type::Unknown, value_type],
+        _ => return None,
+    };
+    Some(Value {
+        ty: Type::Generic {
+            name: "Result".to_owned(),
+            arguments,
+        },
+        range,
+        integer: None,
+    })
 }
 
 fn check_record_constructor(
@@ -1788,6 +2153,82 @@ mod tests {
     }
 
     #[test]
+    fn resource_task_and_stream_cases_match_the_registered_oracle() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let map: JsonValue = serde_json::from_str(
+            &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
+        )
+        .unwrap();
+        let expected: BTreeMap<_, _> = map["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| {
+                let id = case["case"].as_str().unwrap();
+                id.starts_with("RES-") || id.starts_with("TASK-") || id.starts_with("STREAM-")
+            })
+            .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
+            .collect();
+        assert_eq!(expected.len(), 6);
+
+        let mut paths = Vec::new();
+        for group in ["affine-resources", "future-task", "stream"] {
+            collect_sico(
+                &repository.join("syntax-candidates/b").join(group),
+                &mut paths,
+            );
+        }
+        paths.sort();
+        assert_eq!(paths.len(), 12);
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for (index, path) in paths.iter().enumerate() {
+            let source = SourceFile::from_bytes(
+                SourceId::new(u32::try_from(index).unwrap()),
+                path.display().to_string(),
+                &fs::read(path).unwrap(),
+            )
+            .unwrap();
+            let analysis = analyze(&source).unwrap();
+            assert_eq!(analysis, analyze(&source).unwrap());
+            if source.text().contains("// expect: accept") {
+                accepted += 1;
+                assert!(
+                    analysis.diagnostics.is_empty(),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            } else {
+                rejected += 1;
+                let oracle = &expected[metadata(source.text(), "case")];
+                assert_eq!(
+                    analysis.diagnostics.len(),
+                    1,
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+                assert_diagnostic_matches(&analysis.diagnostics[0], oracle);
+                assert!(source.span(analysis.diagnostics[0].range).is_some());
+            }
+            assert!(
+                analysis
+                    .facts
+                    .windows(2)
+                    .all(|pair| pair[0].id < pair[1].id)
+            );
+            assert!(
+                analysis
+                    .facts
+                    .iter()
+                    .all(|fact| source.span(fact.range).is_some())
+            );
+        }
+        assert_eq!((accepted, rejected), (6, 6));
+    }
+
+    #[test]
     fn remaining_b_groups_do_not_receive_unowned_diagnostics() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../syntax-candidates/b");
         let mut paths = Vec::new();
@@ -1831,6 +2272,20 @@ mod tests {
                     analysis.diagnostics.iter().all(|diagnostic| {
                         !diagnostic.code.starts_with("E4") && !diagnostic.code.starts_with("E6")
                     }),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            }
+            if !path_text.contains("affine-resources")
+                && !path_text.contains("future-task")
+                && !path_text.contains("stream")
+            {
+                assert!(
+                    analysis
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| !diagnostic.code.starts_with("E5")),
                     "{}: {:?}",
                     path.display(),
                     analysis.diagnostics
