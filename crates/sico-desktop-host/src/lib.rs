@@ -19,6 +19,13 @@ use sico_host_core::{
 };
 use sico_runtime::{HostLimits, prepare_storage, run_authorized_package};
 
+mod platform;
+pub use platform::{
+    EvidenceLevel, PlatformContract, PlatformKind, SAPP_EXTENSION, SAPP_MEDIA_TYPE, SAPP_UTI,
+    contracts as platform_contracts, linux_desktop_entry, linux_mime_package, linux_mimeapps_list,
+    macos_info_plist, write_artifacts as write_platform_artifacts,
+};
+
 pub const EXIT_SUCCESS: i32 = 0;
 pub const EXIT_ERROR: i32 = 2;
 
@@ -41,6 +48,9 @@ where
         Some(("association-plan", matches)) => association_plan_command(matches, stdout, stderr),
         Some(("association-apply", matches)) => association_apply_command(matches, stderr),
         Some(("association-remove", _)) => association_remove_command(stderr),
+        Some(("platform-artifacts", matches)) => {
+            platform_artifacts_command(matches, stdout, stderr)
+        }
         Some(("ui-preview", matches)) => ui_preview_command(matches, stdout, stderr),
         _ => EXIT_ERROR,
     }
@@ -77,6 +87,11 @@ fn command() -> ClapCommand {
                 .arg(Arg::new("executable").long("executable").required(true)),
         )
         .subcommand(ClapCommand::new("association-remove"))
+        .subcommand(
+            ClapCommand::new("platform-artifacts")
+                .arg(Arg::new("output").long("output").required(true))
+                .arg(Arg::new("executable").long("executable").required(true)),
+        )
         .subcommand(
             ClapCommand::new("ui-preview")
                 .arg(Arg::new("model").required(true))
@@ -320,6 +335,23 @@ fn association_apply_command(matches: &ArgMatches, stderr: &mut dyn Write) -> i3
 fn association_remove_command(stderr: &mut dyn Write) -> i32 {
     match remove_windows_association() {
         Ok(()) => EXIT_SUCCESS,
+        Err(error) => fail(stderr, &error),
+    }
+}
+
+fn platform_artifacts_command(
+    matches: &ArgMatches,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    match write_platform_artifacts(path_arg(matches, "output"), path_arg(matches, "executable")) {
+        Ok(()) => {
+            if writeln!(stdout, "platform-artifacts=windows,macos,linux").is_ok() {
+                EXIT_SUCCESS
+            } else {
+                EXIT_ERROR
+            }
+        }
         Err(error) => fail(stderr, &error),
     }
 }

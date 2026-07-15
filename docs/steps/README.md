@@ -4,6 +4,7 @@
 
 | Step | 状态 | 阶段 | 标题 |
 |---|---|---|---|
+| [STEP-0052](./STEP-0052-desktop-platform-adapters-parity.md) | complete | M5 | Windows/macOS/Linux adapter artifacts and parity evidence |
 | [STEP-0051](./STEP-0051-windows-desktop-host-integration.md) | complete | M5 | Windows install/open/uninstall, native UI and package smoke |
 | [STEP-0001](./STEP-0001-project-state-audit.md) | complete | M0 | 建立审计基线与项目差距审计 |
 | [STEP-0002](./STEP-0002-sico-host-terminology.md) | complete | M0 | 统一应用宿主命名为 Sico Host |
