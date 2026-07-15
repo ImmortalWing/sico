@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 use sico_semantics::{Analysis, AnalyzeError, SemanticDiagnostic, analyze};
 use sico_source::{SourceFile, TextRange};
 
+mod lower;
+
+pub use lower::{CoreLowerError, lower_core};
+
 pub const SCHEMA: &str = "sico.ir.v0";
 pub const MAX_IR_DIAGNOSTICS: usize = 100;
 pub const MAX_FUNCTIONS: usize = 10_000;
@@ -131,6 +135,10 @@ pub enum Operation {
         function: FunctionId,
         arguments: Vec<ValueId>,
     },
+    Intrinsic {
+        name: String,
+        arguments: Vec<ValueId>,
+    },
     Construct {
         name: String,
         fields: Vec<ValueId>,
@@ -154,6 +162,7 @@ pub enum Operation {
         value: ValueId,
         expected: ValueId,
     },
+    Try(ValueId),
     Await(ValueId),
     StreamNext(ValueId),
 }
@@ -166,10 +175,12 @@ impl Operation {
             | Self::ResourceMove(value)
             | Self::ResourceBorrow(value)
             | Self::ResourceDrop(value)
+            | Self::Try(value)
             | Self::Await(value)
             | Self::StreamNext(value) => vec![*value],
             Self::AddInt { left, right } => vec![*left, *right],
             Self::Call { arguments, .. }
+            | Self::Intrinsic { arguments, .. }
             | Self::Construct {
                 fields: arguments, ..
             }
@@ -193,7 +204,27 @@ pub enum Terminator {
         then_block: BlockId,
         else_block: BlockId,
     },
+    Match {
+        values: Vec<ValueId>,
+        arms: Vec<MatchArm>,
+    },
     Unreachable,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MatchArm {
+    pub patterns: Vec<Pattern>,
+    pub target: BlockId,
+    pub range: SourceRange,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum Pattern {
+    Wildcard,
+    Binding(String),
+    Bool(bool),
+    Variant { name: String, payload: Vec<Self> },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -442,6 +473,22 @@ impl<'a> Verifier<'a> {
                     }
                 }
             }
+            Operation::Intrinsic { name, arguments } => {
+                if name == "Float64.from_int" {
+                    if arguments.len() != 1 || instruction.ty != Type::Float64 {
+                        self.error(path, VerifyErrorKind::TypeMismatch);
+                    } else {
+                        self.expect_type(path, available.get(&arguments[0]), &Type::Int);
+                    }
+                } else {
+                    self.error(path, VerifyErrorKind::UnknownTarget);
+                }
+            }
+            Operation::Try(value) => match available.get(value) {
+                Some(Type::Result { ok, .. }) if ok.as_ref() == &instruction.ty => {}
+                Some(_) => self.error(path, VerifyErrorKind::TypeMismatch),
+                None => self.error(path, VerifyErrorKind::UndefinedValue),
+            },
             Operation::EffectCall { effect, .. } if effects.binary_search(effect).is_err() => {
                 self.error(path, VerifyErrorKind::UndeclaredEffect);
             }
@@ -476,6 +523,25 @@ impl<'a> Verifier<'a> {
                 self.expect_type(path, available.get(condition), &Type::Bool);
                 if !block_ids.contains(then_block) || !block_ids.contains(else_block) {
                     self.error(path, VerifyErrorKind::UnknownTarget);
+                }
+            }
+            Terminator::Match { values, arms } => {
+                for value in values {
+                    if !available.contains_key(value) {
+                        self.error(path, VerifyErrorKind::UndefinedValue);
+                    }
+                }
+                if arms.is_empty() {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                }
+                for arm in arms {
+                    if arm.patterns.len() != values.len() {
+                        self.error(path, VerifyErrorKind::TypeMismatch);
+                    }
+                    if !block_ids.contains(&arm.target) {
+                        self.error(path, VerifyErrorKind::UnknownTarget);
+                    }
+                    self.range(path, arm.range);
                 }
             }
             Terminator::Unreachable => {}

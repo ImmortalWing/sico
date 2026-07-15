@@ -195,6 +195,9 @@ version = "0.0.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sico-hir",
+ "sico-lexer",
+ "sico-parser",
  "sico-semantics",
  "sico-source",
 ]

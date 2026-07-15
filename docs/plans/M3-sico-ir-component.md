@@ -1,6 +1,6 @@
 # M3 plan: Sico IR and Component
 
-> - status: in progress (STEP-0030 complete)
+> - status: in progress (STEP-0031 complete)
 > - created: 2026-07-15
 > - phase: M3
 > - entry evidence: [`M2 exit audit`](../reports/m2-exit-audit.md)
@@ -46,7 +46,7 @@ tests/
 | STEP-0036 | minimal end-to-end CLI build/run chain | source→semantics→IR→Component→Runtime；stdout/stderr/exit contract；invalid input 不产物；命令 surface 经审查冻结 |
 | STEP-0037 | determinism、fuzz/limits/performance 与 M3 exit audit | IR/verifier/codegen fuzz；artifact determinism；runtime corpus；non-SLA baseline；M0–M2 regression；下一阶段计划 |
 
-进度：STEP-0030 已完成；typed IR v0、canonical JSON、source maps、独立 verifier 与 semantic gate 见 [`RFC-0008`](../rfc/RFC-0008-typed-sico-ir-contract-v0.md) 和 [`review report`](../reports/typed-sico-ir-contract-v0.md)。下一执行项为 STEP-0031。
+进度：STEP-0030/0031 已完成；typed IR/verifier 与 12-case deterministic core lowering/evaluation order 分别见 [`RFC-0008`](../rfc/RFC-0008-typed-sico-ir-contract-v0.md)、[`RFC-0009`](../rfc/RFC-0009-core-lowering-evaluation-order-v0.md) 和 [`review report`](../reports/core-lowering-evaluation-order-v0.md)。下一执行项为 STEP-0032。
 
 ## 5. Test matrix
 

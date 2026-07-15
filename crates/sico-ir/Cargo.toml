@@ -9,6 +9,9 @@ publish.workspace = true
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+sico-hir = { path = "../sico-hir" }
+sico-lexer = { path = "../sico-lexer" }
+sico-parser = { path = "../sico-parser" }
 sico-semantics = { path = "../sico-semantics" }
 sico-source = { path = "../sico-source" }
 
