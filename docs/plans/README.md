@@ -9,4 +9,5 @@
 | [`M3 Sico IR and Component`](./M3-sico-ir-component.md) | complete | typed IR/verifier、lowering、Core Wasm/Component/WIT、async boundary、CLI 与 M3 audit |
 | [`M4 .sapp and secure Runtime`](./M4-sapp-runtime.md) | complete | package/manifest/hash/signature、capability closure、storage/limits、package CLI 与 M4 audit |
 | [`M5 Sico Desktop Host`](./M5-desktop-host.md) | complete | threat/lifecycle、install/open、permission UI、UI WIT/SDK、desktop adapters 与 M5 audit |
-| [`M6 Sico Android Host`](./M6-android-host.md) | ready | Android contract、JNI、Intent/URI、permissions/storage、Runtime/lifecycle、native UI 与 parity audit |
+| [`M6 Sico Android Host`](./M6-android-host.md) | blocked-external-runner | shared Android contracts complete; device Runtime/UI evidence pending |
+| [`M7 ecosystem, tooling and release`](./M7-ecosystem-release.md) | planned-blocked | publisher identity, registry, updates, LSP, AI tools and external pilot after M6 GO |

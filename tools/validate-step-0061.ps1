@@ -1,0 +1,16 @@
+param([string]$RepositoryRoot=(Split-Path -Parent $PSScriptRoot),[string]$CargoPath=(Join-Path $HOME '.cargo/bin/cargo.exe'))
+$ErrorActionPreference='Stop';Set-StrictMode -Version Latest;$root=(Resolve-Path $RepositoryRoot).Path
+$step=Get-Content -LiteralPath (Join-Path $root 'docs/steps/STEP-0061-m6-quality-exit-audit.md') -Raw -Encoding UTF8
+$audit=Get-Content -LiteralPath (Join-Path $root 'docs/reports/m6-exit-audit.md') -Raw -Encoding UTF8
+$plan=Get-Content -LiteralPath (Join-Path $root 'docs/plans/M7-ecosystem-release.md') -Raw -Encoding UTF8
+$runner=Get-Content -LiteralPath (Join-Path $root 'tests/android-host/runner-gate.json') -Raw -Encoding UTF8|ConvertFrom-Json
+$performance=Get-Content -LiteralPath (Join-Path $root 'tests/performance/m6-mobile-host-bridge-windows-release.json') -Raw -Encoding UTF8|ConvertFrom-Json
+if($step -notmatch '(?m)^> - status: complete-audit\r?$'){throw 'STEP-0061 audit is incomplete'}
+if(-not $audit.Contains('NO-GO: M6 blocked at Android runner exit gate; resume STEP-0060 device validation before M7.')){throw 'M6 audit must remain NO-GO'}
+if($plan -notmatch '(?m)^> - status: planned, blocked until M6 GO\r?$' -or -not $plan.Contains('STEP-0069')){throw 'M7 blocked plan is incomplete'}
+if($runner.status-ne 'blocked-external-runner' -or $runner.available.licensed_sdk -or $runner.available.adb){throw 'runner gate does not match audited environment'}
+if($performance.schema-ne 'sico.m6.mobile-host-bridge-probe.v0' -or $performance.runs.Count-ne 3 -or $performance.median_mean_dispatch_us-le 0 -or $performance.android_runtime-ne 'unavailable'){throw 'M6 partial performance record invalid'}
+foreach($phase in 0..5){$prior=Get-Content -LiteralPath (Join-Path $root "docs/reports/m$phase-exit-audit.md") -Raw -Encoding UTF8;if(-not $prior.Contains("GO: M$phase complete")){throw "M$phase exit GO missing"}}
+$previousRuntime=$env:SICO_TEST_WASMTIME;$previousToolchain=$env:RUSTUP_TOOLCHAIN;$env:RUSTUP_TOOLCHAIN='1.97.0-x86_64-pc-windows-gnu';Push-Location $root
+try{$env:SICO_TEST_WASMTIME=& (Join-Path $root 'tools/ensure-wasmtime.ps1');& $CargoPath fmt --all -- --check;if($LASTEXITCODE-ne 0){throw 'M6 formatting failed'};& $CargoPath clippy --offline --locked --workspace --all-targets --all-features -- -D warnings;if($LASTEXITCODE-ne 0){throw 'M6 workspace Clippy failed'};& $CargoPath test --offline --locked --workspace --all-targets --all-features;if($LASTEXITCODE-ne 0){throw 'M6 workspace tests failed'};foreach($target in 'aarch64-linux-android','x86_64-linux-android'){& $CargoPath check --offline --locked -p sico-mobile-host-core --target $target;if($LASTEXITCODE-ne 0){throw "M6 Android core check failed: $target"}};& (Join-Path $root 'tools/measure-m6-mobile-host.ps1') -RepositoryRoot $root -CargoPath $CargoPath -IterationsPerRun 1000 -OutputPath (Join-Path $root 'target/m6/performance-smoke.json');if($LASTEXITCODE-ne 0){throw 'M6 performance reproducibility smoke failed'}}finally{Pop-Location;$env:SICO_TEST_WASMTIME=$previousRuntime;$env:RUSTUP_TOOLCHAIN=$previousToolchain}
+Write-Output 'STEP_0061_BLOCKED properties=8192 bridge_median_us=1.260 workspace=fmt,clippy,test android_runner=unavailable audit=NO-GO resume=STEP-0060 m7=planned-blocked'

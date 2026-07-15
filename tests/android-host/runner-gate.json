@@ -1,0 +1,24 @@
+{
+  "schema": "sico.android.runner-gate.v0",
+  "date": "2026-07-16",
+  "status": "blocked-external-runner",
+  "required": {
+    "licensed_sdk": true,
+    "licensed_ndk": true,
+    "adb": true,
+    "runner": ["arm64-device", "x86_64-emulator"],
+    "same_package_digest": true,
+    "runtime_result": "42",
+    "entry_paths": ["view", "send", "picker", "deep-link-picker"],
+    "lifecycle": ["background", "process-death", "timeout", "cancel", "crash"],
+    "native_ui": ["touch", "ime", "talkback"],
+    "performance": ["cold-start", "warm-start"]
+  },
+  "available": {
+    "licensed_sdk": false,
+    "licensed_ndk": false,
+    "adb": false,
+    "arm64_device": false,
+    "x86_64_emulator": false
+  }
+}

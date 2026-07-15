@@ -2,10 +2,14 @@
 
 > - updated: 2026-07-16
 > - phase: M6 Sico Android Host
-> - phase status: ready
-> - current step: STEP-0061 (planned)
-> - last completed step: STEP-0060 (host evidence only)
-> - next step: run STEP-0061 exit audit
+> - phase status: blocked-external-runner
+> - current step: STEP-0060 (device validation blocked)
+> - last completed step: STEP-0061 (NO-GO audit)
+> - next step: provision licensed Android runner and resume STEP-0060
+
+## 0. M6 exit state
+
+STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no licensed Android SDK/NDK, ADB, emulator or device; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. M7 STEP-0062–0069 is planned but blocked until the runner gate passes.
 
 ## 1. Current objective
 

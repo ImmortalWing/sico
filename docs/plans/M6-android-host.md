@@ -1,6 +1,6 @@
 # M6 plan: Sico Android Host
 
-> - status: ready after M5 GO
+> - status: blocked-external-runner after STEP-0061 audit
 > - created: 2026-07-16
 > - phase: M6
 > - entry evidence: [`M5 exit audit`](../reports/m5-exit-audit.md)
@@ -42,5 +42,4 @@
 
 ## 5. Immediate next step
 
-`STEP-0054`：审计当前 Android toolchain/runner/ABI 和 Wasmtime/Pulley availability，冻结 Intent/URI/provider、identity/storage、Activity/process lifecycle 与 packaging threat contract；在该 gate 前不创建会接受任意外部 `.sapp` 的 Activity。
-
+Provision a licensed Android SDK/NDK, ADB, x86_64 emulator and arm64 device. Resume STEP-0060 with same-digest Android execution, lifecycle and native UI evidence, then repeat STEP-0061. M7 remains blocked until that audit returns GO.

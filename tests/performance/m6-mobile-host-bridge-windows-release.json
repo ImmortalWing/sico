@@ -1,0 +1,35 @@
+{
+    "schema":  "sico.m6.mobile-host-bridge-probe.v0",
+    "date":  "2026-07-16",
+    "environment":  {
+                        "os":  "Windows",
+                        "rust":  "1.97.0",
+                        "host":  "x86_64-pc-windows-gnu",
+                        "profile":  "release"
+                    },
+    "workload":  "typed probe dispatch through Android-neutral Mobile Host core",
+    "iterations_per_run":  10000,
+    "sla":  "not-established",
+    "android_runtime":  "unavailable",
+    "runs":  [
+                 {
+                     "run":  1,
+                     "iterations":  10000,
+                     "elapsed_ms":  12.597,
+                     "mean_dispatch_us":  1.26
+                 },
+                 {
+                     "run":  2,
+                     "iterations":  10000,
+                     "elapsed_ms":  11.741,
+                     "mean_dispatch_us":  1.174
+                 },
+                 {
+                     "run":  3,
+                     "iterations":  10000,
+                     "elapsed_ms":  12.826,
+                     "mean_dispatch_us":  1.283
+                 }
+             ],
+    "median_mean_dispatch_us":  1.26
+}

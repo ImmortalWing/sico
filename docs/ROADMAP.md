@@ -115,7 +115,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M6: Sico Android Host
 
-状态：`ready`（next STEP-0054）
+状态：`blocked-external-runner`（STEP-0054–0061 host evidence complete; resume STEP-0060 device validation）
 
 主要交付：Sico Android Host、文件/链接/分享入口、触摸、输入法、生命周期、Android 权限映射和共享行为测试。
 
@@ -123,17 +123,19 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：同一 `.sapp` 无需重编译即可在 Android 与桌面运行。
 
-执行计划：[`M6 Sico Android Host`](./plans/M6-android-host.md)，STEP-0054–0061；先冻结 Android threat/lifecycle/platform/packaging contract，再实现 JNI、Intent/URI、permission/storage、Runtime/lifecycle 与 native UI。
+执行计划：[`M6 Sico Android Host`](./plans/M6-android-host.md)，STEP-0054–0061；shared core、Intent、permission、lifecycle、native UI contract、Desktop/Mobile parity 与审计已完成。缺少 licensed SDK/NDK/ADB/emulator/device，尚不能证明 Android Runtime、触摸/IME/TalkBack 与启动性能，M6 不得标记 complete。
 
 ## M7: 生态、工具与发布
 
-状态：`planned`
+状态：`planned-blocked`（等待 M6 GO）
 
 主要交付：标准库稳定边界、包发布与发现、身份/签名/安全更新、LSP、AI 工具协议、真实应用和第三方 Component 试点。
 
 进入条件：M4-M6 的发布、运行和平台能力稳定。
 
 退出证据：外部开发者无需修改编译器或 Runtime 即可完成开发、检查、构建、发布、安装、运行和调试。
+
+执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069；在 M6 Android runner gate GO 前不开始实现。
 
 ## Immediate dependency chain
 
