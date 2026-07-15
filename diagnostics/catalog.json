@@ -4,7 +4,7 @@
   "message_locale": "en-US",
   "automatic_edits": "forbidden-v0",
   "partitions": [
-    { "start": 1000, "end": 1999, "name": "syntax", "status": "reserved" },
+    { "start": 1000, "end": 1999, "name": "syntax", "status": "active" },
     { "start": 2000, "end": 2999, "name": "names-types-contracts", "status": "active" },
     { "start": 3000, "end": 3999, "name": "patterns-results-control-flow", "status": "active" },
     { "start": 4000, "end": 4999, "name": "effects-capabilities", "status": "active" },
@@ -15,6 +15,102 @@
     { "start": 9000, "end": 9999, "name": "compiler-tool-internal", "status": "reserved" }
   ],
   "diagnostics": [
+    {
+      "code": "E1001",
+      "key": "SYNTAX_MISSING_FUNCTION_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end function",
+      "required_arguments": []
+    },
+    {
+      "code": "E1002",
+      "key": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR",
+      "category": "syntax-separator",
+      "severity": "error",
+      "message_template": "missing ':' after match arm",
+      "required_arguments": []
+    },
+    {
+      "code": "E1003",
+      "key": "SYNTAX_MISSING_RECORD_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end record",
+      "required_arguments": []
+    },
+    {
+      "code": "E1004",
+      "key": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE",
+      "category": "syntax-delimiter",
+      "severity": "error",
+      "message_template": "missing ']' in type arguments",
+      "required_arguments": []
+    },
+    {
+      "code": "E1005",
+      "key": "SYNTAX_MISSING_ENUM_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end enum",
+      "required_arguments": []
+    },
+    {
+      "code": "E1006",
+      "key": "SYNTAX_MISSING_CALL_CLOSE",
+      "category": "syntax-delimiter",
+      "severity": "error",
+      "message_template": "missing ')' in call",
+      "required_arguments": []
+    },
+    {
+      "code": "E1007",
+      "key": "SYNTAX_MISSING_CAPABILITY_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end capability",
+      "required_arguments": []
+    },
+    {
+      "code": "E1008",
+      "key": "SYNTAX_MISSING_RESOURCE_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end resource",
+      "required_arguments": []
+    },
+    {
+      "code": "E1009",
+      "key": "SYNTAX_MISSING_USING_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end using",
+      "required_arguments": []
+    },
+    {
+      "code": "E1010",
+      "key": "SYNTAX_MISSING_TASK_GROUP_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end task",
+      "required_arguments": []
+    },
+    {
+      "code": "E1011",
+      "key": "SYNTAX_MISSING_INTERFACE_CLOSE",
+      "category": "syntax-block",
+      "severity": "error",
+      "message_template": "missing end interface",
+      "required_arguments": []
+    },
+    {
+      "code": "E1012",
+      "key": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE",
+      "category": "syntax-delimiter",
+      "severity": "error",
+      "message_template": "missing ')' in parameter list",
+      "required_arguments": []
+    },
     {
       "code": "E2001",
       "key": "TYPE_MISMATCH",

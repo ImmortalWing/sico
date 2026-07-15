@@ -153,6 +153,8 @@ dependencies = [
 name = "sico-diagnostics"
 version = "0.0.0"
 dependencies = [
+ "serde_json",
+ "sico-parser",
  "sico-source",
 ]
 
@@ -179,6 +181,7 @@ name = "sico-parser"
 version = "0.0.0"
 dependencies = [
  "rowan",
+ "serde_json",
  "sico-lexer",
  "sico-source",
  "sico-syntax",

@@ -10,7 +10,7 @@
       "failure_signal": "A declaration or scoped construct loses its required typed close.",
       "compiler_prevention": "Report the expected block kind at the local recovery anchor and retain an error node.",
       "ai_repair_constraint": "Restore only the missing close; do not move or delete the following definition.",
-      "diagnostic_keys": [],
+      "diagnostic_keys": ["SYNTAX_MISSING_FUNCTION_CLOSE", "SYNTAX_MISSING_RECORD_CLOSE", "SYNTAX_MISSING_ENUM_CLOSE", "SYNTAX_MISSING_CAPABILITY_CLOSE", "SYNTAX_MISSING_RESOURCE_CLOSE", "SYNTAX_MISSING_USING_CLOSE", "SYNTAX_MISSING_TASK_GROUP_CLOSE", "SYNTAX_MISSING_INTERFACE_CLOSE"],
       "mutation_ids": ["MUT-001", "MUT-003", "MUT-005", "MUT-007", "MUT-008", "MUT-009", "MUT-010", "MUT-011"],
       "related_issue_ids": ["C04"]
     },
@@ -19,7 +19,7 @@
       "failure_signal": "A match arm, type argument, call, or parameter list loses one required delimiter.",
       "compiler_prevention": "Name the missing delimiter and recover at the containing construct rather than rewriting the expression.",
       "ai_repair_constraint": "Insert the single missing delimiter without changing names, values, order, or behavior.",
-      "diagnostic_keys": [],
+      "diagnostic_keys": ["SYNTAX_MISSING_MATCH_ARM_SEPARATOR", "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE", "SYNTAX_MISSING_CALL_CLOSE", "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"],
       "mutation_ids": ["MUT-002", "MUT-004", "MUT-006", "MUT-012"],
       "related_issue_ids": ["C03", "C04", "T09"]
     },

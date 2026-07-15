@@ -374,7 +374,30 @@ foreach ($caseEntry in $cases) {
   $seenSources[$source] = $true
   $usedKeys[$key] = $true
 }
-Compare-StringSets @($usedKeys.Keys) @($catalogByKey.Keys) 'catalog usage'
+$semanticCatalogKeys = @($catalog.diagnostics | Where-Object { [int]$_.code.Substring(1) -ge 2000 } | ForEach-Object { [string]$_.key })
+Compare-StringSets @($usedKeys.Keys) $semanticCatalogKeys 'semantic catalog usage'
+
+$syntaxMap = Read-Json (Join-Path $diagnosticsRoot 'syntax-mutation-map.json')
+if ($syntaxMap.schema -ne 'sico.syntax-diagnostic-mutations.v0' -or @($syntaxMap.cases).Count -ne 12) {
+  throw 'syntax mutation diagnostic map must contain 12 cases'
+}
+$mutationManifest = Read-Json (Join-Path $root 'syntax-mutations/manifest.json')
+$bMutations = @($mutationManifest.entries | Where-Object syntax -eq 'B')
+$seenSyntaxKeys = @{}
+foreach ($syntaxCase in @($syntaxMap.cases)) {
+  $mutation = @($bMutations | Where-Object mutation -eq $syntaxCase.mutation)
+  if ($mutation.Count -ne 1 -or $mutation[0].diagnostic -ne $syntaxCase.key) {
+    throw "syntax mutation map differs from B manifest: $($syntaxCase.mutation)"
+  }
+  if (-not $catalogByCode.ContainsKey([string]$syntaxCase.code) -or
+      $catalogByCode[[string]$syntaxCase.code].key -ne $syntaxCase.key -or
+      $catalogByCode[[string]$syntaxCase.code].message_template -ne $syntaxCase.message) {
+    throw "syntax mutation catalog identity mismatch: $($syntaxCase.mutation)"
+  }
+  $seenSyntaxKeys[[string]$syntaxCase.key] = $true
+}
+$syntaxCatalogKeys = @($catalog.diagnostics | Where-Object { [int]$_.code.Substring(1) -lt 2000 } | ForEach-Object { [string]$_.key })
+Compare-StringSets @($seenSyntaxKeys.Keys) $syntaxCatalogKeys 'syntax catalog usage'
 
 $schema = Read-Json (Join-Path $diagnosticsRoot 'schema/diagnostics-v0.schema.json')
 if ($schema.'$schema' -ne 'https://json-schema.org/draft/2020-12/schema' -or
@@ -419,4 +442,4 @@ foreach ($fixture in @($fixtureManifest.fixtures)) {
   }
 }
 
-Write-Output "DIAGNOSTICS_OK catalog=$($catalogByCode.Count) cases=$($cases.Count) partitions=$($partitions.Count) fixtures=$(@($fixtureManifest.fixtures).Count) accepted=$acceptedFixtures rejected=$rejectedFixtures max_message_bytes=$maxMessageBytes"
+Write-Output "DIAGNOSTICS_OK catalog=$($catalogByCode.Count) semantic_cases=$($cases.Count) syntax_mutations=$(@($syntaxMap.cases).Count) partitions=$($partitions.Count) fixtures=$(@($fixtureManifest.fixtures).Count) accepted=$acceptedFixtures rejected=$rejectedFixtures max_message_bytes=$maxMessageBytes"

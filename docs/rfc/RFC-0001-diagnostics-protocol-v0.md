@@ -63,7 +63,7 @@ v0 必须先固定协议，未来 parser/type checker 才能生成可审计输�
 
 | 范围 | 领域 | v0 状态 |
 |---|---|---|
-| `E1000`–`E1999` | 词法、语法、恢复 | reserved；等待 M1 parser 证据 |
+| `E1000`–`E1999` | 词法、语法、恢复 | active；E1001–E1012 由 STEP-0018 parser/mutation 证据激活 |
 | `E2000`–`E2999` | 名称、类型、字段、契约 | active |
 | `E3000`–`E3999` | 模式、Result、控制流 | active |
 | `E4000`–`E4999` | 效果、能力、边界声明 | active |
@@ -231,7 +231,7 @@ JSON Schema 位于 [`diagnostics/schema/diagnostics-v0.schema.json`](../../diagn
 - **只保存 byte range**：机器精确但人工不便；同时保存派生 line/column。
 - **只保存 line/column**：Unicode 和编辑器编码会产生歧义；拒绝。
 - **立即固定自动 edits**：没有正式语法树和 formatter，容易产生错误修复；推迟。
-- **为 mutation 立即分配 E1xxx**：没有 parser 证据，无法证明根因和恢复行为；只预留分区。
+- **在 parser 证据前为 mutation 分配 E1xxx**：M0 时拒绝并只预留分区；STEP-0018 已用 12/12 B mutation 的根因、span 和 recovery 证据激活 E1001–E1012。
 
 ## Validation and acceptance criteria
 

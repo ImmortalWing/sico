@@ -1,0 +1,17 @@
+{
+  "schema": "sico.syntax-diagnostic-mutations.v0",
+  "cases": [
+    { "mutation": "MUT-001", "code": "E1001", "key": "SYNTAX_MISSING_FUNCTION_CLOSE", "message": "missing end function", "anchor": "next-definition" },
+    { "mutation": "MUT-002", "code": "E1002", "key": "SYNTAX_MISSING_MATCH_ARM_SEPARATOR", "message": "missing ':' after match arm", "anchor": "next-match-arm" },
+    { "mutation": "MUT-003", "code": "E1003", "key": "SYNTAX_MISSING_RECORD_CLOSE", "message": "missing end record", "anchor": "next-definition" },
+    { "mutation": "MUT-004", "code": "E1004", "key": "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE", "message": "missing ']' in type arguments", "anchor": "function-body" },
+    { "mutation": "MUT-005", "code": "E1005", "key": "SYNTAX_MISSING_ENUM_CLOSE", "message": "missing end enum", "anchor": "next-definition" },
+    { "mutation": "MUT-006", "code": "E1006", "key": "SYNTAX_MISSING_CALL_CLOSE", "message": "missing ')' in call", "anchor": "function-close" },
+    { "mutation": "MUT-007", "code": "E1007", "key": "SYNTAX_MISSING_CAPABILITY_CLOSE", "message": "missing end capability", "anchor": "next-definition" },
+    { "mutation": "MUT-008", "code": "E1008", "key": "SYNTAX_MISSING_RESOURCE_CLOSE", "message": "missing end resource", "anchor": "next-definition" },
+    { "mutation": "MUT-009", "code": "E1009", "key": "SYNTAX_MISSING_USING_CLOSE", "message": "missing end using", "anchor": "function-close" },
+    { "mutation": "MUT-010", "code": "E1010", "key": "SYNTAX_MISSING_TASK_GROUP_CLOSE", "message": "missing end task", "anchor": "function-close" },
+    { "mutation": "MUT-011", "code": "E1011", "key": "SYNTAX_MISSING_INTERFACE_CLOSE", "message": "missing end interface", "anchor": "end-of-file" },
+    { "mutation": "MUT-012", "code": "E1012", "key": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE", "message": "missing ')' in parameter list", "anchor": "function-body" }
+  ]
+}

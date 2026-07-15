@@ -1,0 +1,12 @@
+MUT-001|E1001|229..229|12:1|next-definition|E1001 syntax-mutations/b/MUT-001-missing-function-close.sico:12:1 missing end function
+MUT-002|E1002|329..329|17:21|next-match-arm|E1002 syntax-mutations/b/MUT-002-missing-match-arm-separator.sico:17:21 missing ':' after match arm
+MUT-003|E1003|199..199|11:1|next-definition|E1003 syntax-mutations/b/MUT-003-missing-record-close.sico:11:1 missing end record
+MUT-004|E1004|247..247|11:52|function-body|E1004 syntax-mutations/b/MUT-004-missing-type-argument-close.sico:11:52 missing ']' in type arguments
+MUT-005|E1005|205..205|11:1|next-definition|E1005 syntax-mutations/b/MUT-005-missing-enum-close.sico:11:1 missing end enum
+MUT-006|E1006|287..287|14:1|function-close|E1006 syntax-mutations/b/MUT-006-missing-call-close.sico:14:1 missing ')' in call
+MUT-007|E1007|277..277|14:1|next-definition|E1007 syntax-mutations/b/MUT-007-missing-capability-close.sico:14:1 missing end capability
+MUT-008|E1008|303..303|15:1|next-definition|E1008 syntax-mutations/b/MUT-008-missing-resource-close.sico:15:1 missing end resource
+MUT-009|E1009|421..421|19:1|function-close|E1009 syntax-mutations/b/MUT-009-missing-using-close.sico:19:1 missing end using
+MUT-010|E1010|410..410|16:1|function-close|E1010 syntax-mutations/b/MUT-010-missing-task-group-close.sico:16:1 missing end task
+MUT-011|E1011|269..269|13:1|end-of-file|E1011 syntax-mutations/b/MUT-011-missing-interface-close.sico:13:1 missing end interface
+MUT-012|E1012|439..439|17:68|function-body|E1012 syntax-mutations/b/MUT-012-missing-parameter-list-close.sico:17:68 missing ')' in parameter list

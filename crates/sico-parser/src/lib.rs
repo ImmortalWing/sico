@@ -101,10 +101,25 @@ impl ModuleAst {
 pub struct ParseError {
     pub kind: ParseErrorKind,
     pub range: TextRange,
+    pub related: Option<TextRange>,
+    pub anchor: RecoveryAnchor,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParseErrorKind {
+    MissingFunctionClose,
+    MissingMatchArmSeparator,
+    MissingRecordClose,
+    MissingTypeArgumentClose,
+    MissingEnumClose,
+    MissingCallClose,
+    MissingCapabilityClose,
+    MissingResourceClose,
+    MissingUsingClose,
+    MissingTaskClose,
+    MissingInterfaceClose,
+    MissingParameterListClose,
+    MissingBlockClose(BlockKind),
     UnexpectedClose(BlockKind),
     MismatchedClose {
         expected: BlockKind,
@@ -113,6 +128,31 @@ pub enum ParseErrorKind {
     MissingClose(BlockKind),
     UnexpectedDelimiter(TokenKind),
     UnclosedDelimiter(TokenKind),
+}
+
+/// Deterministic point where parsing resumes after the root cause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryAnchor {
+    NextDefinition,
+    NextMatchArm,
+    FunctionBody,
+    FunctionClose,
+    EndOfFile,
+    Local,
+}
+
+impl RecoveryAnchor {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NextDefinition => "next-definition",
+            Self::NextMatchArm => "next-match-arm",
+            Self::FunctionBody => "function-body",
+            Self::FunctionClose => "function-close",
+            Self::EndOfFile => "end-of-file",
+            Self::Local => "local",
+        }
+    }
 }
 
 /// Parser output keeps source, lexical, syntax, and semantic-shape layers apart.
@@ -131,7 +171,14 @@ impl Parse {
     }
 
     #[must_use]
-    pub const fn ast(&self) -> &ModuleAst {
+    pub fn ast(&self) -> Option<&ModuleAst> {
+        self.is_success().then_some(&self.ast)
+    }
+
+    /// Recovered declaration shape for editor/outline use. This must not be
+    /// passed to M2 when [`Self::ast`] is `None`.
+    #[must_use]
+    pub const fn recovered_ast(&self) -> &ModuleAst {
         &self.ast
     }
 
@@ -155,17 +202,24 @@ impl Parse {
 struct OpenBlock {
     kind: BlockKind,
     start: TextSize,
+    open_range: TextRange,
     name: Option<String>,
     top_level: bool,
 }
 
 #[derive(Clone, Debug)]
 struct Line {
+    start: usize,
     end: usize,
     significant: Vec<usize>,
 }
 
 /// Parses one validated source as RFC-0005 B syntax.
+///
+/// # Panics
+///
+/// Panics only if the lexer violates its internal guarantees that token ranges
+/// are ordered, in bounds, and every non-empty line has a significant token.
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn parse(source: &SourceFile) -> Parse {
@@ -175,8 +229,9 @@ pub fn parse(source: &SourceFile) -> Parse {
     let lines = lines(tokens, token_count);
     let mut starts = BTreeMap::<usize, SyntaxKind>::new();
     let mut finishes = BTreeMap::<usize, usize>::new();
+    let mut empty_nodes = BTreeMap::<usize, Vec<SyntaxKind>>::new();
     let mut blocks = Vec::<OpenBlock>::new();
-    let mut delimiters = Vec::<(TokenKind, TextRange)>::new();
+    let mut delimiters = Vec::<(TokenKind, TextRange, usize)>::new();
     let mut declarations = Vec::new();
     let mut errors = Vec::new();
 
@@ -187,28 +242,80 @@ pub fn parse(source: &SourceFile) -> Parse {
         }
         let first = tokens[line.significant[0]].kind;
 
+        if first == TokenKind::Case
+            && blocks.iter().any(|block| block.kind == BlockKind::Match)
+            && line
+                .significant
+                .last()
+                .is_none_or(|index| tokens[*index].kind != TokenKind::Colon)
+        {
+            let anchor = tokens[*line.significant.last().unwrap()].range.end();
+            let related = blocks
+                .iter()
+                .rev()
+                .find(|block| block.kind == BlockKind::Match)
+                .map(|block| block.open_range);
+            push_recovery_error(
+                &mut errors,
+                &mut empty_nodes,
+                line.end,
+                ParseErrorKind::MissingMatchArmSeparator,
+                TextRange::empty(anchor),
+                related,
+                RecoveryAnchor::NextMatchArm,
+            );
+        }
+
+        recover_function_header(tokens, line, &mut delimiters, &mut errors, &mut empty_nodes);
+
         if first == TokenKind::End {
             if let Some(actual) = line
                 .significant
                 .get(1)
                 .and_then(|index| close_kind(tokens[*index].kind))
             {
-                match blocks.pop() {
-                    None => errors.push(ParseError {
+                if actual == BlockKind::Function {
+                    recover_call_delimiter(
+                        tokens,
+                        line,
+                        &blocks,
+                        &mut delimiters,
+                        &mut errors,
+                        &mut empty_nodes,
+                    );
+                }
+                let matching = blocks.iter().rposition(|block| block.kind == actual);
+                match matching {
+                    None if blocks.is_empty() => errors.push(ParseError {
                         kind: ParseErrorKind::UnexpectedClose(actual),
                         range: tokens[line.significant[0]].range,
+                        related: None,
+                        anchor: RecoveryAnchor::Local,
                     }),
-                    Some(open) if open.kind != actual => {
+                    None => {
+                        let expected = blocks.last().unwrap().kind;
                         errors.push(ParseError {
-                            kind: ParseErrorKind::MismatchedClose {
-                                expected: open.kind,
-                                actual,
-                            },
+                            kind: ParseErrorKind::MismatchedClose { expected, actual },
                             range: tokens[line.significant[0]].range,
+                            related: blocks.last().map(|block| block.open_range),
+                            anchor: RecoveryAnchor::Local,
                         });
-                        schedule_finish(&mut finishes, line.end);
                     }
-                    Some(open) => {
+                    Some(position) => {
+                        while blocks.len() - 1 > position {
+                            let missing = blocks.pop().unwrap();
+                            push_recovery_error(
+                                &mut errors,
+                                &mut empty_nodes,
+                                line.start,
+                                missing_close_error(missing.kind),
+                                TextRange::empty(tokens[line.significant[0]].range.start()),
+                                Some(missing.open_range),
+                                RecoveryAnchor::FunctionClose,
+                            );
+                            schedule_finish(&mut finishes, line.start);
+                        }
+                        let open = blocks.pop().unwrap();
                         schedule_finish(&mut finishes, line.end);
                         if open.top_level
                             && let (Some(kind), Some(name)) = (open.kind.declaration(), open.name)
@@ -223,6 +330,33 @@ pub fn parse(source: &SourceFile) -> Parse {
                 }
             }
             continue;
+        }
+
+        let candidate = opener(tokens, line);
+        let starts_top_level = line.significant[0] == line.start
+            && (matches!(
+                first,
+                TokenKind::Newtype
+                    | TokenKind::Record
+                    | TokenKind::Enum
+                    | TokenKind::Capability
+                    | TokenKind::Resource
+                    | TokenKind::Interface
+                    | TokenKind::Function
+            ) || (matches!(first, TokenKind::Export | TokenKind::Async)
+                && candidate.is_some_and(|(kind, _)| kind == BlockKind::Function)));
+        if starts_top_level && blocks.len() == 1 && blocks[0].top_level {
+            let missing = blocks.pop().unwrap();
+            push_recovery_error(
+                &mut errors,
+                &mut empty_nodes,
+                line.start,
+                missing_close_error(missing.kind),
+                TextRange::empty(tokens[line.significant[0]].range.start()),
+                Some(missing.open_range),
+                RecoveryAnchor::NextDefinition,
+            );
+            schedule_finish(&mut finishes, line.start);
         }
 
         if blocks.is_empty() && first == TokenKind::Newtype {
@@ -244,7 +378,7 @@ pub fn parse(source: &SourceFile) -> Parse {
             continue;
         }
 
-        if let Some((kind, opener_index)) = opener(tokens, line) {
+        if let Some((kind, opener_index)) = candidate {
             let top_level = blocks.is_empty() && kind.declaration().is_some();
             let node_start = if top_level {
                 line.significant[0]
@@ -258,27 +392,42 @@ pub fn parse(source: &SourceFile) -> Parse {
             blocks.push(OpenBlock {
                 kind,
                 start: tokens[node_start].range.start(),
+                open_range: tokens[opener_index].range,
                 name,
                 top_level,
             });
         }
     }
 
-    for (kind, range) in delimiters.into_iter().rev() {
+    for (kind, range, _) in delimiters.into_iter().rev() {
         errors.push(ParseError {
             kind: ParseErrorKind::UnclosedDelimiter(kind),
             range,
+            related: None,
+            anchor: RecoveryAnchor::EndOfFile,
         });
     }
     while let Some(open) = blocks.pop() {
-        errors.push(ParseError {
-            kind: ParseErrorKind::MissingClose(open.kind),
-            range: TextRange::empty(open.start),
-        });
+        push_recovery_error(
+            &mut errors,
+            &mut empty_nodes,
+            token_count,
+            missing_close_error(open.kind),
+            TextRange::empty(source.len()),
+            Some(open.open_range),
+            RecoveryAnchor::EndOfFile,
+        );
         schedule_finish(&mut finishes, token_count);
     }
 
-    let syntax = build_tree(source.text(), tokens, token_count, &starts, &finishes);
+    let syntax = build_tree(
+        source.text(),
+        tokens,
+        token_count,
+        &starts,
+        &finishes,
+        &empty_nodes,
+    );
     Parse {
         syntax,
         ast: ModuleAst { declarations },
@@ -306,7 +455,11 @@ fn line(tokens: &[Token], start: usize, end: usize) -> Line {
     let significant = (start..end)
         .filter(|index| !tokens[*index].kind.is_trivia())
         .collect();
-    Line { end, significant }
+    Line {
+        start,
+        end,
+        significant,
+    }
 }
 
 fn opener(tokens: &[Token], line: &Line) -> Option<(BlockKind, usize)> {
@@ -372,28 +525,156 @@ fn identifier_after(
         })
 }
 
+fn missing_close_error(kind: BlockKind) -> ParseErrorKind {
+    match kind {
+        BlockKind::Function => ParseErrorKind::MissingFunctionClose,
+        BlockKind::Record => ParseErrorKind::MissingRecordClose,
+        BlockKind::Enum => ParseErrorKind::MissingEnumClose,
+        BlockKind::Capability => ParseErrorKind::MissingCapabilityClose,
+        BlockKind::Resource => ParseErrorKind::MissingResourceClose,
+        BlockKind::Using => ParseErrorKind::MissingUsingClose,
+        BlockKind::Task => ParseErrorKind::MissingTaskClose,
+        BlockKind::Interface => ParseErrorKind::MissingInterfaceClose,
+        BlockKind::Match | BlockKind::If => ParseErrorKind::MissingBlockClose(kind),
+    }
+}
+
+fn push_recovery_error(
+    errors: &mut Vec<ParseError>,
+    empty_nodes: &mut BTreeMap<usize, Vec<SyntaxKind>>,
+    node_index: usize,
+    kind: ParseErrorKind,
+    range: TextRange,
+    related: Option<TextRange>,
+    anchor: RecoveryAnchor,
+) {
+    empty_nodes
+        .entry(node_index)
+        .or_default()
+        .extend([SyntaxKind::ERROR, SyntaxKind::MISSING]);
+    errors.push(ParseError {
+        kind,
+        range,
+        related,
+        anchor,
+    });
+}
+
+fn recover_function_header(
+    tokens: &[Token],
+    line: &Line,
+    delimiters: &mut Vec<(TokenKind, TextRange, usize)>,
+    errors: &mut Vec<ParseError>,
+    empty_nodes: &mut BTreeMap<usize, Vec<SyntaxKind>>,
+) {
+    let Some(function_index) = line
+        .significant
+        .iter()
+        .copied()
+        .find(|index| tokens[*index].kind == TokenKind::Function)
+    else {
+        return;
+    };
+    let Some(returns_index) = line
+        .significant
+        .iter()
+        .copied()
+        .find(|index| tokens[*index].kind == TokenKind::Returns)
+    else {
+        return;
+    };
+
+    if let Some(position) = delimiters.iter().rposition(|(kind, _, index)| {
+        *kind == TokenKind::LeftParen && *index > function_index && *index < returns_index
+    }) {
+        let (_, related, _) = delimiters.remove(position);
+        push_recovery_error(
+            errors,
+            empty_nodes,
+            returns_index,
+            ParseErrorKind::MissingParameterListClose,
+            TextRange::empty(tokens[returns_index].range.start()),
+            Some(related),
+            RecoveryAnchor::FunctionBody,
+        );
+    }
+
+    let colon_index = *line.significant.last().unwrap();
+    if tokens[colon_index].kind == TokenKind::Colon
+        && let Some(position) = delimiters.iter().rposition(|(kind, _, index)| {
+            *kind == TokenKind::LeftBracket && *index > returns_index && *index < colon_index
+        })
+    {
+        let (_, related, _) = delimiters.remove(position);
+        push_recovery_error(
+            errors,
+            empty_nodes,
+            colon_index,
+            ParseErrorKind::MissingTypeArgumentClose,
+            TextRange::empty(tokens[colon_index].range.start()),
+            Some(related),
+            RecoveryAnchor::FunctionBody,
+        );
+    }
+}
+
+fn recover_call_delimiter(
+    tokens: &[Token],
+    line: &Line,
+    blocks: &[OpenBlock],
+    delimiters: &mut Vec<(TokenKind, TextRange, usize)>,
+    errors: &mut Vec<ParseError>,
+    empty_nodes: &mut BTreeMap<usize, Vec<SyntaxKind>>,
+) {
+    let Some(function) = blocks
+        .iter()
+        .rev()
+        .find(|block| block.kind == BlockKind::Function)
+    else {
+        return;
+    };
+    if let Some(position) = delimiters.iter().rposition(|(kind, range, _)| {
+        *kind == TokenKind::LeftParen && range.start() > function.start
+    }) {
+        let (_, related, _) = delimiters.remove(position);
+        push_recovery_error(
+            errors,
+            empty_nodes,
+            line.start,
+            ParseErrorKind::MissingCallClose,
+            TextRange::empty(tokens[line.significant[0]].range.start()),
+            Some(related),
+            RecoveryAnchor::FunctionClose,
+        );
+    }
+}
+
 fn validate_delimiters(
     tokens: &[Token],
     line: &Line,
-    stack: &mut Vec<(TokenKind, TextRange)>,
+    stack: &mut Vec<(TokenKind, TextRange, usize)>,
     errors: &mut Vec<ParseError>,
 ) {
     for index in &line.significant {
         let token = tokens[*index];
         match token.kind {
-            TokenKind::LeftParen | TokenKind::LeftBracket => stack.push((token.kind, token.range)),
+            TokenKind::LeftParen | TokenKind::LeftBracket => {
+                stack.push((token.kind, token.range, *index));
+            }
             TokenKind::RightParen | TokenKind::RightBracket => {
                 let expected = if token.kind == TokenKind::RightParen {
                     TokenKind::LeftParen
                 } else {
                     TokenKind::LeftBracket
                 };
-                if stack.last().is_some_and(|(kind, _)| *kind == expected) {
+                if stack.last().is_some_and(|(kind, _, _)| *kind == expected) {
                     stack.pop();
                 } else {
                     errors.push(ParseError {
                         kind: ParseErrorKind::UnexpectedDelimiter(token.kind),
                         range: token.range,
+                        related: None,
+                        anchor: RecoveryAnchor::Local,
                     });
                 }
             }
@@ -412,10 +693,17 @@ fn build_tree(
     token_count: usize,
     starts: &BTreeMap<usize, SyntaxKind>,
     finishes: &BTreeMap<usize, usize>,
+    empty_nodes: &BTreeMap<usize, Vec<SyntaxKind>>,
 ) -> SyntaxNode {
     let mut builder = GreenNodeBuilder::new();
     builder.start_node(rowan_kind(SyntaxKind::ROOT));
     for (index, token) in tokens.iter().copied().take(token_count).enumerate() {
+        if let Some(kinds) = empty_nodes.get(&index) {
+            for kind in kinds {
+                builder.start_node(rowan_kind(*kind));
+                builder.finish_node();
+            }
+        }
         if let Some(kind) = starts.get(&index) {
             builder.start_node(rowan_kind(*kind));
         }
@@ -429,6 +717,12 @@ fn build_tree(
             for _ in 0..*count {
                 builder.finish_node();
             }
+        }
+    }
+    if let Some(kinds) = empty_nodes.get(&token_count) {
+        for kind in kinds {
+            builder.start_node(rowan_kind(*kind));
+            builder.finish_node();
         }
     }
     builder.finish_node();
@@ -479,7 +773,7 @@ mod tests {
                 path.display()
             );
             assert!(
-                !parsed.ast().declarations().is_empty(),
+                !parsed.ast().unwrap().declarations().is_empty(),
                 "{}",
                 path.display()
             );
@@ -488,7 +782,7 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .replace('\\', "/");
-            shapes.push(format!("{relative} = {}", parsed.ast().shape()));
+            shapes.push(format!("{relative} = {}", parsed.ast().unwrap().shape()));
             if source.text().contains("// expect: accept") {
                 designed_accept += 1;
             } else if source.text().contains("// expect: reject(") {
@@ -521,6 +815,97 @@ mod tests {
         assert!(kinds.contains(&SyntaxKind::FUNCTION_DECL));
         assert!(kinds.contains(&SyntaxKind::IF_BLOCK));
         assert!(kinds.contains(&SyntaxKind::MATCH_BLOCK));
+    }
+
+    #[test]
+    fn b_mutations_recover_with_one_registered_root_cause() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../syntax-mutations/b");
+        let expected = [
+            (
+                "MUT-001-missing-function-close.sico",
+                ParseErrorKind::MissingFunctionClose,
+                RecoveryAnchor::NextDefinition,
+            ),
+            (
+                "MUT-002-missing-match-arm-separator.sico",
+                ParseErrorKind::MissingMatchArmSeparator,
+                RecoveryAnchor::NextMatchArm,
+            ),
+            (
+                "MUT-003-missing-record-close.sico",
+                ParseErrorKind::MissingRecordClose,
+                RecoveryAnchor::NextDefinition,
+            ),
+            (
+                "MUT-004-missing-type-argument-close.sico",
+                ParseErrorKind::MissingTypeArgumentClose,
+                RecoveryAnchor::FunctionBody,
+            ),
+            (
+                "MUT-005-missing-enum-close.sico",
+                ParseErrorKind::MissingEnumClose,
+                RecoveryAnchor::NextDefinition,
+            ),
+            (
+                "MUT-006-missing-call-close.sico",
+                ParseErrorKind::MissingCallClose,
+                RecoveryAnchor::FunctionClose,
+            ),
+            (
+                "MUT-007-missing-capability-close.sico",
+                ParseErrorKind::MissingCapabilityClose,
+                RecoveryAnchor::NextDefinition,
+            ),
+            (
+                "MUT-008-missing-resource-close.sico",
+                ParseErrorKind::MissingResourceClose,
+                RecoveryAnchor::NextDefinition,
+            ),
+            (
+                "MUT-009-missing-using-close.sico",
+                ParseErrorKind::MissingUsingClose,
+                RecoveryAnchor::FunctionClose,
+            ),
+            (
+                "MUT-010-missing-task-group-close.sico",
+                ParseErrorKind::MissingTaskClose,
+                RecoveryAnchor::FunctionClose,
+            ),
+            (
+                "MUT-011-missing-interface-close.sico",
+                ParseErrorKind::MissingInterfaceClose,
+                RecoveryAnchor::EndOfFile,
+            ),
+            (
+                "MUT-012-missing-parameter-list-close.sico",
+                ParseErrorKind::MissingParameterListClose,
+                RecoveryAnchor::FunctionBody,
+            ),
+        ];
+        for (index, (name, expected_kind, expected_anchor)) in expected.into_iter().enumerate() {
+            let path = root.join(name);
+            let source = SourceFile::from_bytes(
+                SourceId::new(u32::try_from(index).unwrap()),
+                path.display().to_string(),
+                &fs::read(&path).unwrap(),
+            )
+            .unwrap();
+            let parsed = parse(&source);
+            assert!(parsed.lex_errors().is_empty(), "{name}");
+            assert_eq!(parsed.errors().len(), 1, "{name}: {:?}", parsed.errors());
+            assert_eq!(parsed.errors()[0].kind, expected_kind, "{name}");
+            assert_eq!(parsed.errors()[0].anchor, expected_anchor, "{name}");
+            assert!(parsed.errors()[0].related.is_some(), "{name}");
+            assert!(parsed.ast().is_none(), "{name}");
+            assert_eq!(parsed.syntax().text().to_string(), source.text(), "{name}");
+            let kinds: Vec<_> = parsed
+                .syntax()
+                .descendants()
+                .map(|node| node.kind())
+                .collect();
+            assert!(kinds.contains(&SyntaxKind::ERROR), "{name}");
+            assert!(kinds.contains(&SyntaxKind::MISSING), "{name}");
+        }
     }
 
     fn collect_sico(root: &Path, output: &mut Vec<std::path::PathBuf>) {

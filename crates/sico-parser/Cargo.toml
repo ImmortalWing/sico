@@ -12,5 +12,8 @@ sico-lexer = { path = "../sico-lexer" }
 sico-source = { path = "../sico-source" }
 sico-syntax = { path = "../sico-syntax" }
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true
