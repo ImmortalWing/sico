@@ -5,7 +5,8 @@ ADR 记录工程与架构决定，例如 Component Runtime 引擎、`.sapp` 物�
 | ADR | 状态 | 标题 |
 |---|---|---|
 | [ADR-0001](./ADR-0001-sico-host-terminology.md) | accepted | 使用 Sico Host 作为应用宿主产品名称 |
+| [ADR-0002](./ADR-0002-runtime-platform-baseline.md) | accepted | Wasmtime 桌面 Cranelift 与 Android Pulley 平台基线 |
 
-下一可用编号：`ADR-0002`。
+下一可用编号：`ADR-0003`。
 
 创建时使用 [`ADR template`](../templates/ADR.md)，并在本页登记状态和替代关系。

@@ -280,6 +280,8 @@ Sico Runtime
 
 Sico 不把内部 IR 放入公开应用包，也不再设计一套与 Component Model 重叠的通用字节码和 ABI。`.sapp` 负责应用级封装，Component 负责可执行代码与接口，二者职责分离。
 
+Runtime v0 采用 Wasmtime：桌面使用 Cranelift，Android 先以 64-bit Pulley 实验路径验证。`.sapp` 只分发可验证的原始 Component，不把架构相关的 Wasmtime 预编译工件作为共享格式；完整理由见 [`ADR-0002`](docs/adr/ADR-0002-runtime-platform-baseline.md)。
+
 Sico Host 在首次安装后，可以通过本地文件、下载链接或自定义协议打开 `.sapp`，形成类似“点击链接即浏览应用”的体验。应用也可以选择编译为独立原生安装包；可移植包与独立原生程序是两种发布形式，不改变 Sico 语言语义。
 
 由于 `.sapp` 可以承载来自他人的可执行代码，Sico Runtime 必须从第一版就具备安全边界：
@@ -346,7 +348,7 @@ Sico 不以语法是否新颖为成功标准，而看以下结果：
 - 并发和异步语义；
 - 模块、依赖与版本规则；
 - 标准库边界；
-- Sico Runtime 选择或嵌入哪一种 Component Model 执行引擎；
+- Android Pulley 能否满足真实应用性能、包体和商店发布门槛，以及何时允许可选 Cranelift；
 - 采用哪个 WASI 基线版本，以及如何进行兼容升级；
 - 是否在后期增加不经过 Component 的直接原生机器码后端；
 - 图形界面和跨平台系统能力是否属于标准库。

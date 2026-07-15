@@ -35,8 +35,8 @@
 | 剩余 P0 语义案例 | complete | [`STEP-0005`](./steps/STEP-0005-remaining-p0-semantic-cases.md)、[`report`](./reports/remaining-p0-semantic-cases.md) |
 | 诊断协议 v0 | complete for design contract | [`RFC-0001`](./rfc/RFC-0001-diagnostics-protocol-v0.md)、[`diagnostics/`](../diagnostics/README.md)、[`STEP-0006`](./steps/STEP-0006-diagnostics-protocol-v0.md) |
 | 语义索引 JSON v0 | complete for design contract | [`RFC-0002`](./rfc/RFC-0002-semantic-index-query-v0.md)、[`semantic-index/`](../semantic-index/README.md)、[`STEP-0007`](./steps/STEP-0007-semantic-query-json-v0.md) |
-| Wasm Component 最小原型 | planned | 当前无 Rust/Cargo 代码 |
-| Runtime 引擎桌面/Android 对比 | planned | 需要独立 report |
+| Wasm Component 最小原型 | complete | [`STEP-0010`](./steps/STEP-0010-component-runtime-host-call.md)、[`report`](./reports/component-runtime-host-call-v0.md) |
+| Runtime 引擎桌面/Android 对比 | complete for M0 decision | [`ADR-0002`](./adr/ADR-0002-runtime-platform-baseline.md)、[`STEP-0011`](./steps/STEP-0011-runtime-desktop-android-feasibility.md)；Android 真机验证留待 M6 前置探针 |
 | 数据驱动语法决定 | planned | 依赖错误注入与 AI 评测 |
 | M0 退出审计 | planned | 依赖以上所有 M0 项 |
 
@@ -45,7 +45,7 @@
 - 关键语义都有正反例、诊断根因和明确状态；
 - 语法决定有静态、错误恢复和 AI 评测证据；
 - 诊断与语义查询协议存在 v0；
-- Component 最小链路和 Runtime 可行性真实运行；
+- Component 最小链路在选定桌面 Runtime 真实运行；Android 风险、后端和后续实测门槛已有明确 ADR/报告；
 - 所有关键开放项明确进入 RFC、ADR 或后续阶段；
 - 编译器实现不会隐式替语言做决定。
 
@@ -146,7 +146,7 @@ STEP-0001 audit baseline
 | STEP-0008 | `Int`/Decimal 表示原型 | Rust 实测运算、序列化、限额与 WIT 边界报告 |
 | STEP-0009 | resource/async/WIT 映射原型 | affine move/drop、Future/Task/Stream 与 Component 映射证据 |
 | STEP-0010 | 最小 Component host-call 链路 | 真实构建、加载、WIT 调用和确定性重跑 |
-| STEP-0011 | Runtime 桌面/Android 对比 | 官方资料、最小实测和可审计选择/保留项 |
+| STEP-0011 | Runtime 桌面/Android 对比 | 桌面实测、官方资料和可审计选择/保留项 |
 | STEP-0012 | 补齐语法证据 | 第二轮静态指标、mutation 与获授权后的真实 AI runs |
 | STEP-0013 | 语法决定 | 接受、合并或淘汰 A0/B/C，并用 RFC 固定理由 |
 | STEP-0014 | M0 退出审计 | 全部门槛、残余风险和进入 M1 的明确结论 |

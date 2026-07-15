@@ -489,7 +489,7 @@ sico:log        结构化日志
 6. 请求用户授权；
 7. 实例化应用。
 
-WASI 基线版本仍是开放问题。选型时必须验证 Runtime 支持度、Android 可用性、异步模型和未来迁移路径。
+跨 Component 异步基线采用 WASI 0.3 原生 `async func`/`future`/`stream`；接口包仍须独立版本化。STEP-0010 已实测 `async func`，Future/Stream Runtime 往返与兼容升级仍由 RFC-0004 跟踪。
 
 ## 10. `.sapp` 应用包
 
@@ -569,7 +569,7 @@ Runtime 负责：
 
 ### 11.3 执行引擎选型
 
-具体 Component Model 执行引擎尚未确定。选型原型必须比较：
+Runtime v0 采用 Wasmtime，桌面默认 Cranelift，Android 先以 64-bit Pulley 实验路径验证；`.sapp` 分发 raw Component，宿主预编译缓存不进入公开包格式。决定与信任边界见 [`ADR-0002`](docs/adr/ADR-0002-runtime-platform-baseline.md)。后续原型继续测量：
 
 - Component Model 与目标 WASI 版本支持；
 - Android、Windows、macOS、Linux 支持；
@@ -583,7 +583,7 @@ Runtime 负责：
 - 安全维护记录；
 - Rust 嵌入 API 稳定性。
 
-在基准和最小端到端原型完成前，不在规范中绑定具体引擎。
+该引擎选择是实现 ADR，不进入 Sico 语言语义或公开 ABI。Android 未完成真机、生命周期、包体和商店政策探针前，不宣称生产支持。
 
 ## 12. Sico Host
 
@@ -1234,8 +1234,8 @@ sico explain    展开错误编号
 6. 定义最小值与类型语义；
 7. 定义形式化契约、效果、能力和语义索引草案；
 8. 定义诊断协议 v0 和错误编号分区；
-9. 用 Rust 单独验证“生成 Component → Runtime 加载 → WIT 宿主调用”的最小链路；
-10. 比较 Component Runtime 在桌面和 Android 上的可行性；
+9. ~~用 Rust 单独验证“生成 Component → Runtime 加载 → WIT 宿主调用”的最小链路~~（STEP-0010 已完成）；
+10. ~~比较 Component Runtime 在桌面和 Android 上的可行性~~（STEP-0011/ADR-0002 已完成 M0 选择）；
 11. 根据结果确认 M1 的工程结构。
 
 完成以上任务后，才开始正式编写 Sico 编译器前端。

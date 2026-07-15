@@ -14,5 +14,6 @@
 | [STEP-0008](./STEP-0008-numeric-representation-prototypes.md) | complete | M0 | 验证 Int 与 Decimal 表示原型 |
 | [STEP-0009](./STEP-0009-resource-async-wit-prototypes.md) | complete | M0 | 验证 resource、async 与 WIT 映射 |
 | [STEP-0010](./STEP-0010-component-runtime-host-call.md) | complete | M0 | 验证 Component Runtime WIT host call 实链 |
+| [STEP-0011](./STEP-0011-runtime-desktop-android-feasibility.md) | complete | M0 | 比较 Component Runtime 桌面与 Android 可行性 |
 
-下一可用编号：`STEP-0011`。
+下一可用编号：`STEP-0012`。
