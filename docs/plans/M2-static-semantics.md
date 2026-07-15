@@ -1,6 +1,6 @@
 # M2 plan: static semantics
 
-> - status: in progress (STEP-0023 complete)
+> - status: in progress (STEP-0024 complete)
 > - created: 2026-07-15
 > - phase: M2
 > - entry evidence: [`M1 exit audit`](../reports/m1-exit-audit.md)
@@ -49,7 +49,7 @@ crate 名称和内部数据结构是 STEP-0022 工程决定；不得改变 langu
 
 编号在 STEP-0021 推送后可用。任何需要语言决定的发现必须插入独立 RFC/STEP，并更新本表；不能通过“先让测试过”提前固定语义。
 
-进度：STEP-0023 已完成；core/nominal types 的 7/7 valid 与 9/9 invalid exact primary diagnostics 见 [`review report`](../reports/core-nominal-types-v0.md)。下一执行项为 STEP-0024。
+进度：STEP-0024 已完成；match/result 的 6/6 valid 与 8/8 invalid exact primary diagnostics 见 [`review report`](../reports/match-result-control-flow-v0.md)。下一执行项为 STEP-0025。
 
 ## 5. Test matrix
 

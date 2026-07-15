@@ -34,8 +34,14 @@ pub struct SemanticDiagnostic {
     pub code: &'static str,
     pub key: &'static str,
     pub message: String,
-    pub arguments: BTreeMap<String, String>,
+    pub arguments: BTreeMap<String, DiagnosticArgument>,
     pub range: TextRange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DiagnosticArgument {
+    Text(String),
+    List(Vec<String>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -51,6 +57,8 @@ pub enum SemanticFactKind {
     Parameter,
     Field,
     Local,
+    Variant,
+    Match,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -107,6 +115,15 @@ enum TypeDefinition {
         fields: BTreeMap<String, FieldDefinition>,
         invariant: Option<Invariant>,
     },
+    Enum {
+        variants: Vec<VariantDefinition>,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct VariantDefinition {
+    name: String,
+    payload: Vec<Type>,
 }
 
 #[derive(Clone, Debug)]
@@ -188,16 +205,7 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
                 model
                     .types
                     .insert(declaration.name.clone(), TypeDefinition::Newtype { base });
-                facts.push(SemanticFact {
-                    id: FactId {
-                        node: declaration.id,
-                        slot: 0,
-                    },
-                    kind: SemanticFactKind::Type,
-                    name: declaration.name.clone(),
-                    ty: None,
-                    range: declaration.range,
-                });
+                push_type_fact(declaration, &mut facts);
             }
             DeclarationKind::Record => {
                 let mut fields = BTreeMap::new();
@@ -231,16 +239,14 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
                     declaration.name.clone(),
                     TypeDefinition::Record { fields, invariant },
                 );
-                facts.push(SemanticFact {
-                    id: FactId {
-                        node: declaration.id,
-                        slot: 0,
-                    },
-                    kind: SemanticFactKind::Type,
-                    name: declaration.name.clone(),
-                    ty: None,
-                    range: declaration.range,
-                });
+                push_type_fact(declaration, &mut facts);
+            }
+            DeclarationKind::Enum => {
+                let variants = build_enum_variants(declaration, &mut facts);
+                model
+                    .types
+                    .insert(declaration.name.clone(), TypeDefinition::Enum { variants });
+                push_type_fact(declaration, &mut facts);
             }
             DeclarationKind::Function => {
                 if let Some(function) = parse_function(declaration) {
@@ -273,6 +279,60 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
         }
     }
     (model, facts)
+}
+
+fn push_type_fact(declaration: &sico_hir::Declaration, facts: &mut Vec<SemanticFact>) {
+    facts.push(SemanticFact {
+        id: FactId {
+            node: declaration.id,
+            slot: 0,
+        },
+        kind: SemanticFactKind::Type,
+        name: declaration.name.clone(),
+        ty: None,
+        range: declaration.range,
+    });
+}
+
+fn build_enum_variants(
+    declaration: &sico_hir::Declaration,
+    facts: &mut Vec<SemanticFact>,
+) -> Vec<VariantDefinition> {
+    let mut variants = Vec::new();
+    for line in &declaration.lines {
+        if line.kind != LineKind::Variant || line.tokens.len() < 2 {
+            continue;
+        }
+        let name = line.tokens[1].text.clone();
+        let payload = line
+            .tokens
+            .iter()
+            .position(|token| token.kind == TokenKind::LeftParen)
+            .and_then(|left| matching_close(&line.tokens, left).map(|right| (left, right)))
+            .map_or_else(Vec::new, |(left, right)| {
+                split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                    .into_iter()
+                    .filter(|tokens| !tokens.is_empty())
+                    .filter_map(parse_parameter)
+                    .map(|parameter| parameter.ty)
+                    .collect()
+            });
+        variants.push(VariantDefinition {
+            name: name.clone(),
+            payload,
+        });
+        facts.push(SemanticFact {
+            id: FactId {
+                node: line.id,
+                slot: 0,
+            },
+            kind: SemanticFactKind::Variant,
+            name: format!("{}.{}", declaration.name, name),
+            ty: Some(Type::named(declaration.name.clone())),
+            range: line.range,
+        });
+    }
+    variants
 }
 
 fn parse_function(declaration: &sico_hir::Declaration) -> Option<FunctionDefinition> {
@@ -370,10 +430,20 @@ fn analyze_function(
         .iter()
         .map(|parameter| (parameter.name.clone(), parameter.ty.clone()))
         .collect();
-    for line in &function.body {
+    for (line_index, line) in function.body.iter().enumerate() {
         match line.kind {
             LineKind::Let if line.tokens.len() >= 4 => {
-                let value = infer_expression(&line.tokens[3..], &locals, model, diagnostics);
+                let value = if line.tokens[3].kind == TokenKind::Try {
+                    infer_try(
+                        &line.tokens[4..],
+                        &function.returns,
+                        &locals,
+                        model,
+                        diagnostics,
+                    )
+                } else {
+                    infer_expression(&line.tokens[3..], &locals, model, diagnostics)
+                };
                 locals.insert(line.tokens[1].text.clone(), value.ty.clone());
                 facts.push(SemanticFact {
                     id: FactId {
@@ -388,14 +458,379 @@ fn analyze_function(
             }
             LineKind::Return if line.tokens.len() >= 2 => {
                 let value = infer_expression(&line.tokens[1..], &locals, model, diagnostics);
-                require_type(&function.returns, &value, diagnostics);
+                if line.depth <= 1 {
+                    require_type(&function.returns, &value, diagnostics);
+                }
             }
             LineKind::Expression => {
-                let _ = infer_expression(&line.tokens, &locals, model, diagnostics);
+                let value = infer_expression(&line.tokens, &locals, model, diagnostics);
+                if result_parts(&value.ty).is_some() {
+                    push_diagnostic(
+                        diagnostics,
+                        "E3104",
+                        "UNHANDLED_RESULT",
+                        "Result must be handled, returned, or propagated".to_owned(),
+                        [],
+                        line.range,
+                    );
+                }
+            }
+            LineKind::Match => {
+                check_match(line_index, function, model, diagnostics, facts);
             }
             _ => {}
         }
     }
+}
+
+fn infer_try(
+    tokens: &[HirToken],
+    target_return: &Type,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    let source = infer_expression(tokens, locals, model, diagnostics);
+    let Some((ok_type, source_error)) = result_parts(&source.ty) else {
+        return unknown(source.range);
+    };
+    if let Some((_, target_error)) = result_parts(target_return)
+        && !types_compatible(source_error, target_error)
+    {
+        let source_name = source_error.to_string();
+        let target_name = target_error.to_string();
+        push_diagnostic(
+            diagnostics,
+            "E3101",
+            "ERROR_TYPE_MISMATCH",
+            format!("cannot propagate {source_name} as {target_name}"),
+            [
+                ("source_error", source_name.as_str()),
+                ("target_error", target_name.as_str()),
+            ],
+            source.range,
+        );
+    }
+    Value {
+        ty: ok_type.clone(),
+        range: source.range,
+        integer: None,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct MatchPattern {
+    key: String,
+    variants: Vec<(String, String)>,
+    wildcard: bool,
+    result_ok: bool,
+    result_error: bool,
+    range: TextRange,
+}
+
+fn check_match(
+    line_index: usize,
+    function: &FunctionDefinition,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let line = &function.body[line_index];
+    let patterns = collect_match_patterns(line_index, function);
+    if patterns.is_empty() {
+        return;
+    }
+    facts.push(SemanticFact {
+        id: FactId {
+            node: line.id,
+            slot: 0,
+        },
+        kind: SemanticFactKind::Match,
+        name: format!("{}.match", function.name),
+        ty: None,
+        range: line.range,
+    });
+
+    let Some(covered) = unique_covered_patterns(&patterns, diagnostics) else {
+        return;
+    };
+
+    let is_error_map = function.body[..line_index].iter().any(|candidate| {
+        candidate.depth < line.depth
+            && candidate
+                .tokens
+                .iter()
+                .any(|token| token.text == "map_error")
+    });
+    let is_result_match = patterns
+        .iter()
+        .any(|pattern| pattern.result_ok || pattern.result_error);
+    let enum_names = ordered_enum_names(&patterns);
+    let wildcard = patterns.iter().find(|pattern| pattern.wildcard);
+
+    if is_error_map {
+        check_error_map(line, &patterns, &enum_names, wildcard, model, diagnostics);
+        return;
+    }
+
+    if let Some(wildcard) = wildcard {
+        check_sealed_wildcard(wildcard, &patterns, &enum_names, model, diagnostics);
+        return;
+    }
+
+    if is_result_match {
+        return;
+    }
+    check_match_exhaustiveness(line, &patterns, &enum_names, &covered, model, diagnostics);
+}
+
+fn check_error_map(
+    line: &Line,
+    patterns: &[MatchPattern],
+    enum_names: &[String],
+    wildcard: Option<&MatchPattern>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    let Some(enum_name) = enum_names.first() else {
+        return;
+    };
+    let missing = missing_enum_variants(enum_name, patterns, model);
+    if let Some(wildcard) = wildcard {
+        if !missing.is_empty() {
+            push_list_diagnostic(
+                diagnostics,
+                "E3103",
+                "SEALED_ERROR_WILDCARD",
+                format!(
+                    "wildcard hides sealed error variants: {}",
+                    missing.join(", ")
+                ),
+                "hidden",
+                missing,
+                wildcard.range,
+            );
+        }
+    } else if !missing.is_empty() {
+        push_list_diagnostic(
+            diagnostics,
+            "E3102",
+            "INCOMPLETE_ERROR_MAP",
+            format!("missing error mapping: {}", missing.join(", ")),
+            "missing",
+            missing,
+            line.range,
+        );
+    }
+}
+
+fn check_sealed_wildcard(
+    wildcard: &MatchPattern,
+    patterns: &[MatchPattern],
+    enum_names: &[String],
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    if enum_names.len() > 1 {
+        push_diagnostic(
+            diagnostics,
+            "E3002",
+            "SEALED_MATCH_WILDCARD",
+            "wildcard hides sealed state/event combinations".to_owned(),
+            [("hidden", "state/event combinations")],
+            wildcard.range,
+        );
+    } else if let Some(enum_name) = enum_names.first() {
+        let missing = missing_enum_variants(enum_name, patterns, model);
+        if !missing.is_empty() {
+            let hidden = format!("variants: {}", missing.join(", "));
+            push_diagnostic(
+                diagnostics,
+                "E3002",
+                "SEALED_MATCH_WILDCARD",
+                format!("wildcard hides sealed {hidden}"),
+                [("hidden", hidden.as_str())],
+                wildcard.range,
+            );
+        }
+    }
+}
+
+fn check_match_exhaustiveness(
+    line: &Line,
+    patterns: &[MatchPattern],
+    enum_names: &[String],
+    covered: &[String],
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    let missing = if enum_names.len() == 1 {
+        missing_enum_variants(&enum_names[0], patterns, model)
+    } else {
+        product_patterns(enum_names, model)
+            .into_iter()
+            .filter(|pattern| !covered.contains(pattern))
+            .collect()
+    };
+    if !missing.is_empty() {
+        push_list_diagnostic(
+            diagnostics,
+            "E3001",
+            "NON_EXHAUSTIVE_MATCH",
+            format!("missing case: {}", missing.join(", ")),
+            "missing",
+            missing,
+            line.range,
+        );
+    }
+}
+
+fn collect_match_patterns(line_index: usize, function: &FunctionDefinition) -> Vec<MatchPattern> {
+    let line = &function.body[line_index];
+    let mut patterns = Vec::new();
+    for candidate in function.body.iter().skip(line_index + 1) {
+        if candidate.kind == LineKind::End
+            && candidate.depth == line.depth
+            && candidate
+                .tokens
+                .get(1)
+                .is_some_and(|token| token.kind == TokenKind::Match)
+        {
+            break;
+        }
+        if candidate.kind == LineKind::MatchArm && candidate.depth == line.depth + 1 {
+            patterns.push(parse_match_pattern(candidate));
+        }
+    }
+    patterns
+}
+
+fn unique_covered_patterns(
+    patterns: &[MatchPattern],
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Vec<String>> {
+    let mut covered = Vec::new();
+    for pattern in patterns {
+        if !pattern.wildcard && covered.contains(&pattern.key) {
+            let case_name = pattern
+                .variants
+                .last()
+                .map_or(pattern.key.as_str(), |(_, variant)| variant.as_str());
+            push_diagnostic(
+                diagnostics,
+                "E3003",
+                "UNREACHABLE_MATCH_ARM",
+                format!("match arm is already covered: {case_name}"),
+                [("case", case_name)],
+                pattern.range,
+            );
+            return None;
+        }
+        if !pattern.wildcard {
+            covered.push(pattern.key.clone());
+        }
+    }
+    Some(covered)
+}
+
+fn parse_match_pattern(line: &Line) -> MatchPattern {
+    let end = line
+        .tokens
+        .iter()
+        .rposition(|token| token.kind == TokenKind::Colon)
+        .unwrap_or(line.tokens.len());
+    let tokens = &line.tokens[1..end];
+    let wildcard = tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::Else);
+    let result_ok = tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::OkKeyword);
+    let result_error = tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::ErrorKeyword);
+    let variants: Vec<_> = tokens
+        .windows(3)
+        .filter(|window| window[1].kind == TokenKind::Dot)
+        .map(|window| (window[0].text.clone(), window[2].text.clone()))
+        .collect();
+    let key = if result_ok {
+        "ok".to_owned()
+    } else if result_error {
+        format!(
+            "error:{}",
+            variants
+                .last()
+                .map_or("<unknown>", |(_, variant)| variant.as_str())
+        )
+    } else {
+        variants
+            .iter()
+            .map(|(enum_name, variant)| format!("{enum_name}.{variant}"))
+            .collect::<Vec<_>>()
+            .join("|")
+    };
+    MatchPattern {
+        key,
+        variants,
+        wildcard,
+        result_ok,
+        result_error,
+        range: line.range,
+    }
+}
+
+fn ordered_enum_names(patterns: &[MatchPattern]) -> Vec<String> {
+    let mut names = Vec::new();
+    for pattern in patterns {
+        for (enum_name, _) in &pattern.variants {
+            if !names.contains(enum_name) {
+                names.push(enum_name.clone());
+            }
+        }
+    }
+    names
+}
+
+fn missing_enum_variants(enum_name: &str, patterns: &[MatchPattern], model: &Model) -> Vec<String> {
+    let Some(TypeDefinition::Enum { variants }) = model.types.get(enum_name) else {
+        return Vec::new();
+    };
+    variants
+        .iter()
+        .filter(|variant| {
+            !patterns.iter().any(|pattern| {
+                pattern
+                    .variants
+                    .iter()
+                    .any(|(name, covered)| name == enum_name && covered == &variant.name)
+            })
+        })
+        .map(|variant| variant.name.clone())
+        .collect()
+}
+
+fn product_patterns(enum_names: &[String], model: &Model) -> Vec<String> {
+    let mut products = vec![String::new()];
+    for enum_name in enum_names {
+        let Some(TypeDefinition::Enum { variants }) = model.types.get(enum_name) else {
+            return Vec::new();
+        };
+        products = products
+            .into_iter()
+            .flat_map(|prefix| {
+                variants.iter().map(move |variant| {
+                    let item = format!("{enum_name}.{}", variant.name);
+                    if prefix.is_empty() {
+                        item
+                    } else {
+                        format!("{prefix}|{item}")
+                    }
+                })
+            })
+            .collect();
+    }
+    products
 }
 
 #[allow(clippy::too_many_lines)]
@@ -478,6 +913,13 @@ fn infer_expression(
         };
     }
     if tokens.len() == 3 && tokens[1].kind == TokenKind::Dot {
+        if enum_variant(model, &tokens[0].text, &tokens[2].text).is_some() {
+            return Value {
+                ty: Type::named(tokens[0].text.clone()),
+                range,
+                integer: None,
+            };
+        }
         let base = infer_expression(&tokens[..1], locals, model, diagnostics);
         if let Type::Named(type_name) = &base.ty
             && let Some(TypeDefinition::Record { fields, .. }) = model.types.get(type_name)
@@ -511,6 +953,37 @@ fn infer_call(
         .map(|argument| infer_expression(argument.tokens, locals, model, diagnostics))
         .collect();
 
+    if callee == "ok" {
+        return Value {
+            ty: Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![
+                    values
+                        .first()
+                        .map_or(Type::Unknown, |value| value.ty.clone()),
+                    Type::Unknown,
+                ],
+            },
+            range,
+            integer: None,
+        };
+    }
+    if callee == "error" {
+        return Value {
+            ty: Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![
+                    Type::Unknown,
+                    values
+                        .first()
+                        .map_or(Type::Unknown, |value| value.ty.clone()),
+                ],
+            },
+            range,
+            integer: None,
+        };
+    }
+
     if callee == "Float64.from_int" {
         if let Some(value) = values.first() {
             require_type(&Type::named("Int"), value, diagnostics);
@@ -527,6 +1000,18 @@ fn infer_call(
         }
         return Value {
             ty: function.returns.clone(),
+            range,
+            integer: None,
+        };
+    }
+    if let Some((enum_name, variant_name)) = callee.split_once('.')
+        && let Some(variant) = enum_variant(model, enum_name, variant_name)
+    {
+        for (expected, value) in variant.payload.iter().zip(&values) {
+            require_type(expected, value, diagnostics);
+        }
+        return Value {
+            ty: Type::named(enum_name),
             range,
             integer: None,
         };
@@ -549,6 +1034,7 @@ fn infer_call(
                     diagnostics,
                 );
             }
+            TypeDefinition::Enum { .. } => {}
         }
         return Value {
             ty: Type::named(callee),
@@ -626,7 +1112,7 @@ fn check_record_constructor(
 }
 
 fn require_type(expected: &Type, value: &Value, diagnostics: &mut Vec<SemanticDiagnostic>) {
-    if expected == &value.ty || expected.is_unknown() || value.ty.is_unknown() {
+    if types_compatible(expected, &value.ty) {
         return;
     }
     let expected_name = expected.to_string();
@@ -659,6 +1145,52 @@ fn require_type(expected: &Type, value: &Value, diagnostics: &mut Vec<SemanticDi
     );
 }
 
+fn types_compatible(left: &Type, right: &Type) -> bool {
+    match (left, right) {
+        (Type::Unknown, _) | (_, Type::Unknown) => true,
+        (Type::Named(left), Type::Named(right)) => left == right,
+        (
+            Type::Generic {
+                name: left_name,
+                arguments: left_arguments,
+            },
+            Type::Generic {
+                name: right_name,
+                arguments: right_arguments,
+            },
+        ) => {
+            left_name == right_name
+                && left_arguments.len() == right_arguments.len()
+                && left_arguments
+                    .iter()
+                    .zip(right_arguments)
+                    .all(|(left, right)| types_compatible(left, right))
+        }
+        _ => false,
+    }
+}
+
+fn result_parts(ty: &Type) -> Option<(&Type, &Type)> {
+    let Type::Generic { name, arguments } = ty else {
+        return None;
+    };
+    if name != "Result" || arguments.len() != 2 {
+        return None;
+    }
+    Some((&arguments[0], &arguments[1]))
+}
+
+fn enum_variant<'a>(
+    model: &'a Model,
+    enum_name: &str,
+    variant_name: &str,
+) -> Option<&'a VariantDefinition> {
+    let TypeDefinition::Enum { variants } = model.types.get(enum_name)? else {
+        return None;
+    };
+    variants.iter().find(|variant| variant.name == variant_name)
+}
+
 fn push_diagnostic<'a, const N: usize>(
     diagnostics: &mut Vec<SemanticDiagnostic>,
     code: &'static str,
@@ -676,8 +1208,29 @@ fn push_diagnostic<'a, const N: usize>(
         message,
         arguments: arguments
             .into_iter()
-            .map(|(name, value)| (name.to_owned(), value.to_owned()))
+            .map(|(name, value)| (name.to_owned(), DiagnosticArgument::Text(value.to_owned())))
             .collect(),
+        range,
+    });
+}
+
+fn push_list_diagnostic(
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    code: &'static str,
+    key: &'static str,
+    message: String,
+    argument_name: &str,
+    values: Vec<String>,
+    range: TextRange,
+) {
+    if diagnostics.len() == MAX_SEMANTIC_DIAGNOSTICS {
+        return;
+    }
+    diagnostics.push(SemanticDiagnostic {
+        code,
+        key,
+        message,
+        arguments: BTreeMap::from([(argument_name.to_owned(), DiagnosticArgument::List(values))]),
         range,
     });
 }
@@ -838,6 +1391,12 @@ mod tests {
                     .iter()
                     .all(|fact| source.span(fact.range).is_some())
             );
+            assert!(
+                analysis
+                    .facts
+                    .windows(2)
+                    .all(|pair| pair[0].id < pair[1].id)
+            );
             if source.text().contains("// expect: accept") {
                 accepted += 1;
                 assert!(
@@ -858,16 +1417,83 @@ mod tests {
                     analysis.diagnostics
                 );
                 let diagnostic = &analysis.diagnostics[0];
-                assert_eq!(diagnostic.code, oracle["code"]);
-                assert_eq!(diagnostic.key, oracle["key"]);
-                assert_eq!(diagnostic.message, oracle["expected_message"]);
-                for (name, value) in oracle["arguments"].as_object().unwrap() {
-                    assert_eq!(diagnostic.arguments[name], value.as_str().unwrap());
-                }
+                assert_diagnostic_matches(diagnostic, oracle);
                 assert!(source.span(diagnostic.range).is_some());
             }
         }
         assert_eq!((accepted, rejected), (7, 9));
+    }
+
+    #[test]
+    fn match_and_result_cases_match_the_registered_oracle() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let map: JsonValue = serde_json::from_str(
+            &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
+        )
+        .unwrap();
+        let expected: BTreeMap<_, _> = map["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| {
+                let id = case["case"].as_str().unwrap();
+                id.starts_with("MATCH-") || id.starts_with("RESULT-")
+            })
+            .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
+            .collect();
+        assert_eq!(expected.len(), 8);
+
+        let mut paths = Vec::new();
+        collect_sico(
+            &repository.join("syntax-candidates/b/exhaustive-match"),
+            &mut paths,
+        );
+        collect_sico(
+            &repository.join("syntax-candidates/b/result-mapping"),
+            &mut paths,
+        );
+        paths.sort();
+        assert_eq!(paths.len(), 14);
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for (index, path) in paths.iter().enumerate() {
+            let source = SourceFile::from_bytes(
+                SourceId::new(u32::try_from(index).unwrap()),
+                path.display().to_string(),
+                &fs::read(path).unwrap(),
+            )
+            .unwrap();
+            let analysis = analyze(&source).unwrap();
+            assert_eq!(analysis, analyze(&source).unwrap());
+            if source.text().contains("// expect: accept") {
+                accepted += 1;
+                assert!(
+                    analysis.diagnostics.is_empty(),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            } else {
+                rejected += 1;
+                let oracle = &expected[metadata(source.text(), "case")];
+                assert_eq!(
+                    analysis.diagnostics.len(),
+                    1,
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+                assert_diagnostic_matches(&analysis.diagnostics[0], oracle);
+                assert!(source.span(analysis.diagnostics[0].range).is_some());
+            }
+            assert!(
+                analysis
+                    .facts
+                    .iter()
+                    .all(|fact| source.span(fact.range).is_some())
+            );
+        }
+        assert_eq!((accepted, rejected), (6, 8));
     }
 
     #[test]
@@ -878,11 +1504,7 @@ mod tests {
         paths.sort();
         assert_eq!(paths.len(), 54);
         for (index, path) in paths.iter().enumerate() {
-            if path.to_string_lossy().contains("numbers-units")
-                || path.to_string_lossy().contains("nominal-invariants")
-            {
-                continue;
-            }
+            let path_text = path.to_string_lossy();
             let source = SourceFile::from_bytes(
                 SourceId::new(u32::try_from(index).unwrap()),
                 path.display().to_string(),
@@ -890,15 +1512,28 @@ mod tests {
             )
             .unwrap();
             let analysis = analyze(&source).unwrap();
-            assert!(
-                analysis
-                    .diagnostics
-                    .iter()
-                    .all(|diagnostic| !diagnostic.code.starts_with("E2")),
-                "{}: {:?}",
-                path.display(),
-                analysis.diagnostics
-            );
+            if !path_text.contains("numbers-units") && !path_text.contains("nominal-invariants") {
+                assert!(
+                    analysis
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| !diagnostic.code.starts_with("E2")),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            }
+            if !path_text.contains("exhaustive-match") && !path_text.contains("result-mapping") {
+                assert!(
+                    analysis
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| !diagnostic.code.starts_with("E3")),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            }
         }
     }
 
@@ -906,6 +1541,33 @@ mod tests {
         text.lines()
             .find_map(|line| line.strip_prefix(&format!("// {key}: ")))
             .unwrap()
+    }
+
+    fn assert_diagnostic_matches(diagnostic: &SemanticDiagnostic, oracle: &JsonValue) {
+        assert_eq!(diagnostic.code, oracle["code"]);
+        assert_eq!(diagnostic.key, oracle["key"]);
+        assert_eq!(diagnostic.message, oracle["expected_message"]);
+        let expected_arguments: BTreeMap<_, _> = oracle["arguments"]
+            .as_object()
+            .unwrap()
+            .iter()
+            .map(|(name, value)| {
+                let value = if let Some(text) = value.as_str() {
+                    DiagnosticArgument::Text(text.to_owned())
+                } else {
+                    DiagnosticArgument::List(
+                        value
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|item| item.as_str().unwrap().to_owned())
+                            .collect(),
+                    )
+                };
+                (name.clone(), value)
+            })
+            .collect();
+        assert_eq!(diagnostic.arguments, expected_arguments);
     }
 
     fn collect_sico(root: &Path, output: &mut Vec<std::path::PathBuf>) {
