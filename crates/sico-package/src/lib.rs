@@ -122,6 +122,12 @@ pub struct TrustedPackage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthorizedPackage {
+    pub trusted: TrustedPackage,
+    pub granted_capabilities: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TrustStatus {
     UnsignedDevelopment,
     Development { public_key: String },
@@ -173,6 +179,10 @@ pub enum PackageError {
     MissingSignature,
     InvalidSignature(String),
     UntrustedKey,
+    UnknownCapability(String),
+    SourceManifestMismatch,
+    ImportManifestMismatch,
+    HostDenied(Vec<String>),
 }
 
 impl std::fmt::Display for PackageError {
@@ -218,6 +228,20 @@ impl std::fmt::Display for PackageError {
                 write!(formatter, "development signature is invalid: {message}")
             }
             Self::UntrustedKey => formatter.write_str("development signing key is not trusted"),
+            Self::UnknownCapability(name) => write!(formatter, "capability is unknown: {name}"),
+            Self::SourceManifestMismatch => {
+                formatter.write_str("source effects and manifest capabilities differ")
+            }
+            Self::ImportManifestMismatch => {
+                formatter.write_str("Component imports and manifest capabilities differ")
+            }
+            Self::HostDenied(capabilities) => {
+                write!(
+                    formatter,
+                    "host denied required capabilities: {}",
+                    capabilities.join(",")
+                )
+            }
         }
     }
 }
@@ -463,6 +487,82 @@ pub fn verify_trusted(bytes: &[u8], policy: &TrustPolicy) -> Result<TrustedPacka
             public_key: record.public_key,
         },
     })
+}
+
+/// Proves source/manifest/import closure and applies host grants.
+///
+/// Extra host grants are never exposed: the returned set is exactly the
+/// package request after every required capability has been granted.
+///
+/// # Errors
+///
+/// Rejects unknown imports/grants, closure mismatches, and missing host grants.
+pub fn authorize(
+    trusted: TrustedPackage,
+    host_grants: &BTreeSet<String>,
+) -> Result<AuthorizedPackage, PackageError> {
+    for grant in host_grants {
+        if !is_supported_capability(grant) {
+            return Err(PackageError::UnknownCapability(grant.clone()));
+        }
+    }
+    if trusted.package.manifest.source_effects != trusted.package.manifest.capabilities {
+        return Err(PackageError::SourceManifestMismatch);
+    }
+    let imported = capabilities_for_imports(&trusted.package.component_imports)?;
+    let requested: BTreeSet<_> = trusted
+        .package
+        .manifest
+        .capabilities
+        .iter()
+        .cloned()
+        .collect();
+    if imported != requested {
+        return Err(PackageError::ImportManifestMismatch);
+    }
+    let missing: Vec<_> = requested.difference(host_grants).cloned().collect();
+    if !missing.is_empty() {
+        return Err(PackageError::HostDenied(missing));
+    }
+    Ok(AuthorizedPackage {
+        trusted,
+        granted_capabilities: requested,
+    })
+}
+
+/// Maps top-level Component imports to the stable M4 capability namespace.
+///
+/// # Errors
+///
+/// Returns [`PackageError::UnknownCapability`] for every import outside the
+/// explicit WASI/Sico v0 mapping.
+pub fn capabilities_for_imports(imports: &[String]) -> Result<BTreeSet<String>, PackageError> {
+    let mut capabilities = BTreeSet::new();
+    for import in imports {
+        let capability =
+            if import.starts_with("wasi:filesystem/") || import.starts_with("sico:storage/") {
+                "storage.read-write"
+            } else if import.starts_with("wasi:clocks/") {
+                "clock.read"
+            } else if import.starts_with("wasi:random/") {
+                "random.read"
+            } else if import.starts_with("wasi:sockets/") || import.starts_with("wasi:http/") {
+                "network.connect"
+            } else if import.starts_with("sico:log/") {
+                "log.write"
+            } else {
+                return Err(PackageError::UnknownCapability(import.clone()));
+            };
+        capabilities.insert(capability.to_owned());
+    }
+    Ok(capabilities)
+}
+
+fn is_supported_capability(capability: &str) -> bool {
+    matches!(
+        capability,
+        "storage.read-write" | "clock.read" | "random.read" | "network.connect" | "log.write"
+    )
 }
 
 fn validate_manifest(manifest: &Manifest) -> Result<(), PackageError> {

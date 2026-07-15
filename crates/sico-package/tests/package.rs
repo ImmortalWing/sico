@@ -4,10 +4,14 @@ use ed25519_dalek::SigningKey;
 use sico_codegen_wasm::compile_component;
 use sico_ir::lower_core;
 use sico_package::{
-    BuildInput, PackageError, ResourceInput, RuntimeLimits, TrustPolicy, TrustStatus,
-    build_unsigned, sign_development, verify, verify_trusted,
+    BuildInput, PackageError, ResourceInput, RuntimeLimits, TrustPolicy, TrustStatus, authorize,
+    build_unsigned, capabilities_for_imports, sign_development, verify, verify_trusted,
 };
 use sico_source::{SourceFile, SourceId};
+use wasm_encoder::{
+    Component, ComponentExportKind, ComponentExportSection, ComponentImportSection,
+    ComponentTypeRef, ComponentValType, PrimitiveValType,
+};
 
 fn component() -> Vec<u8> {
     let source = SourceFile::from_text(
@@ -183,4 +187,70 @@ fn find(haystack: &[u8], needle: &[u8]) -> usize {
         .windows(needle.len())
         .position(|window| window == needle)
         .unwrap()
+}
+
+#[test]
+fn capability_closure_and_host_intersection_are_enforced() {
+    let import = "wasi:clocks/monotonic-clock@0.2.0";
+    let mut build = input();
+    build.component = importing_component(import);
+    build.source_effects = vec!["clock.read".to_owned()];
+    build.capabilities = vec!["clock.read".to_owned()];
+    let seed = [19_u8; 32];
+    let public_key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+    let signed = sign_development(&build_unsigned(build).unwrap(), &seed).unwrap();
+    let trusted = verify_trusted(
+        &signed,
+        &TrustPolicy::RequireDevelopment(BTreeSet::from([public_key])),
+    )
+    .unwrap();
+    assert_eq!(trusted.package.component_imports, vec![import]);
+    assert_eq!(
+        authorize(trusted.clone(), &BTreeSet::new()).unwrap_err(),
+        PackageError::HostDenied(vec!["clock.read".to_owned()])
+    );
+    let grants = BTreeSet::from(["clock.read".to_owned(), "random.read".to_owned()]);
+    let authorized = authorize(trusted, &grants).unwrap();
+    assert_eq!(
+        authorized.granted_capabilities,
+        BTreeSet::from(["clock.read".to_owned()])
+    );
+}
+
+#[test]
+fn capability_mismatch_and_unknown_import_are_default_denied() {
+    assert!(matches!(
+        capabilities_for_imports(&["evil:ambient/root@1.0.0".to_owned()]),
+        Err(PackageError::UnknownCapability(_))
+    ));
+
+    let seed = [23_u8; 32];
+    let public_key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+    let mut mismatch = input();
+    mismatch.source_effects = vec!["clock.read".to_owned()];
+    mismatch.capabilities = vec!["clock.read".to_owned()];
+    let signed = sign_development(&build_unsigned(mismatch).unwrap(), &seed).unwrap();
+    let trusted = verify_trusted(
+        &signed,
+        &TrustPolicy::RequireDevelopment(BTreeSet::from([public_key])),
+    )
+    .unwrap();
+    assert_eq!(
+        authorize(trusted, &BTreeSet::from(["clock.read".to_owned()])).unwrap_err(),
+        PackageError::ImportManifestMismatch
+    );
+}
+
+fn importing_component(name: &str) -> Vec<u8> {
+    let mut imports = ComponentImportSection::new();
+    imports.import(
+        name,
+        ComponentTypeRef::Value(ComponentValType::Primitive(PrimitiveValType::Bool)),
+    );
+    let mut component = Component::new();
+    component.section(&imports);
+    let mut exports = ComponentExportSection::new();
+    exports.export("capability-probe", ComponentExportKind::Value, 0, None);
+    component.section(&exports);
+    component.finish()
 }

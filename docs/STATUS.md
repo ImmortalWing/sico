@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M4 `.sapp` 与 Runtime
 > - phase status: in-progress
-> - current step: STEP-0041 (planned)
-> - last completed step: STEP-0040
-> - next step: start STEP-0041
+> - current step: STEP-0042 (planned)
+> - last completed step: STEP-0041
+> - next step: start STEP-0042
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0041：建立 source effects、manifest requests、Component imports 与 host grants 的能力闭包/交集，任何 unknown、missing 或 undeclared capability 默认拒绝。
+当前目标是执行 STEP-0042：把 `AuthorizedPackage` 映射到默认关闭的 Wasmtime WASI flags，并建立稳定 app identity、隔离 storage root、路径/symlink/cross-app/quota/cleanup gate。
 
 ## 2. Current step
 
-[`STEP-0040`](./steps/STEP-0040-development-signing-trust-policy.md) 已实现 domain-separated Ed25519 development signing、strict verification 与 `TrustedPackage` trust gate。下一执行项是 STEP-0041 capability closure/intersection。
+[`STEP-0041`](./steps/STEP-0041-capability-closure-permission-intersection.md) 已实现 source/manifest/import closure、host grant intersection 与 unknown default-deny。下一执行项是 STEP-0042 WASI capability host/storage isolation。
 
 ## 3. Verified repository facts
 
@@ -127,7 +127,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0041 的外部条件。
+当前没有阻塞 STEP-0042 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -144,4 +144,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0041`：验证 source/manifest/import 三方闭包，并只授予与 host grant 的交集；unknown/undeclared import 在 host link 前拒绝。
+`STEP-0042`：实现最小 WASI capability mapping 与 per-app isolated storage root，拒绝 traversal、symlink、cross-app 和 quota bypass。
