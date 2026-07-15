@@ -29,7 +29,10 @@ fn backend_selection_prefers_proven_native_then_pulley() {
         engine_config_plan(RuntimeBackend::NativeCranelift).target,
         "android-native"
     );
-    assert_eq!(engine_config_plan(RuntimeBackend::Pulley).target, "pulley64");
+    assert_eq!(
+        engine_config_plan(RuntimeBackend::Pulley).target,
+        "pulley64"
+    );
 }
 
 #[test]

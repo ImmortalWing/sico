@@ -14,6 +14,7 @@ use sico_host_core::{HostStore, InstallOptions};
 mod intent;
 mod lifecycle;
 mod permission;
+mod ui;
 pub use intent::{
     AndroidIntent, AndroidIntentAction, IntentDecision, IntentError, copy_package_stream,
     validate_intent,
@@ -27,6 +28,7 @@ pub use permission::{
     AndroidPermissionError, AndroidPermissionPlan, AndroidScope, UriGrantSession,
     map_android_permissions,
 };
+pub use ui::{AndroidRenderPlan, AndroidUiSession, AndroidWidget, AndroidWidgetKind};
 
 pub const BRIDGE_SCHEMA: &str = "sico.android.bridge.v0";
 pub const MAX_BRIDGE_BYTES: usize = 64 * 1024;

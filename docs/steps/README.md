@@ -4,6 +4,7 @@
 
 | Step | 状态 | 阶段 | 标题 |
 |---|---|---|---|
+| [STEP-0059](./STEP-0059-android-native-ui-adapter.md) | complete-cross-check | M6 | Android native touch, IME and accessibility adapter |
 | [STEP-0058](./STEP-0058-android-runtime-lifecycle.md) | complete-cross-check | M6 | Wasmtime Android cross-check and lifecycle supervision |
 | [STEP-0057](./STEP-0057-android-permission-storage.md) | complete | M6 | Android permission, URI grant and app-private storage mapping |
 | [STEP-0056](./STEP-0056-android-intent-package-ingest.md) | complete | M6 | content URI package/open/share/deep-link adapter |

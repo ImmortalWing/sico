@@ -52,6 +52,7 @@ pub struct UiModel {
 pub struct RenderNode {
     pub id: String,
     pub kind: UiNodeKind,
+    pub raw_text: Option<String>,
     pub escaped_text: Option<String>,
     pub accessibility_label: Option<String>,
     pub depth: usize,
@@ -249,6 +250,7 @@ fn validate_node(
     state.nodes.push(RenderNode {
         id: node.id.clone(),
         kind: node.kind,
+        raw_text: text.map(str::to_owned),
         escaped_text: text.map(escape_text),
         accessibility_label: label.map(str::to_owned),
         depth,

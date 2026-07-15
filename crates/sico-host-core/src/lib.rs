@@ -30,7 +30,8 @@ pub use permission::{
     PermissionStore,
 };
 pub use ui::{
-    EventGate, RenderNode, RenderPlan, UiError, UiEvent, UiEventKind, UiModel, UiNode, UiNodeKind,
+    EventGate, MAX_QUEUED_UI_EVENTS, MAX_TEXT_BYTES, MAX_UI_EVENTS_PER_SECOND, RenderNode,
+    RenderPlan, UiError, UiEvent, UiEventKind, UiModel, UiNode, UiNodeKind,
 };
 
 static STAGING_ID: AtomicU64 = AtomicU64::new(0);
