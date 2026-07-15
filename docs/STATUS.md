@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M5 Sico Desktop Host
 > - phase status: ready
-> - current step: STEP-0046 (planned)
-> - last completed step: STEP-0045
-> - next step: start STEP-0046
+> - current step: STEP-0047 (planned)
+> - last completed step: STEP-0046
+> - next step: start STEP-0047
 
 ## 1. Current objective
 
-M4 已通过退出审计。当前目标是执行 STEP-0046：建立 Desktop Host threat/lifecycle/platform matrix，冻结 install/open identity、permission record key、instance/crash/cancel cleanup 与跨平台证据边界。
+当前目标是执行 STEP-0047：实现 shared Desktop Host core 与 signed-only install/copy-by-digest/reverify-on-open pipeline。
 
 ## 2. Current step
 
-[`STEP-0045`](./steps/STEP-0045-m4-security-quality-exit.md) 已完成 3,328-case security/determinism properties、Windows release baseline、全 workspace 与 M0–M3 regression；[`M4 exit audit`](./reports/m4-exit-audit.md) 已给出 GO。下一执行项是 STEP-0046 Desktop Host contract。
+[`STEP-0046`](./steps/STEP-0046-desktop-host-threat-lifecycle-contract.md) 已用 24-case matrix、ADR-0004 与 RFC-0020 冻结 immutable identity、permission/lifecycle/UI/platform boundary。下一执行项是 STEP-0047 shared host core。
 
 ## 3. Verified repository facts
 
@@ -134,7 +134,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0046 的外部条件。
+当前没有阻塞 STEP-0047 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -151,4 +151,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0046`：建立 Desktop Host threat/lifecycle/platform matrix，先冻结 install/open、permission、identity、instance、crash/cancel cleanup 与 Windows/macOS/Linux 验证边界，再实现 GUI Host。
+`STEP-0047`：实现只接受 locally trusted signed `.sapp` 的 shared Host core，以 exact digest 原子安装并在每次 open 前重新验证 metadata/package/trust/capability closure。

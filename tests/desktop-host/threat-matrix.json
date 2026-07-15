@@ -1,0 +1,30 @@
+{
+  "schema": "sico.desktop-host.threat-matrix.v0",
+  "date": "2026-07-16",
+  "cases": [
+    { "id": "HOST-001", "class": "install", "attack": "source package changes after selection", "required": "copy exact verified bytes and open immutable installed digest" },
+    { "id": "HOST-002", "class": "install", "attack": "partial package copy", "required": "atomic create-new install or no revision" },
+    { "id": "HOST-003", "class": "install", "attack": "same app id with different signer", "required": "distinct app identity and permission/storage namespace" },
+    { "id": "HOST-004", "class": "install", "attack": "unsigned package requests persistent install", "required": "reject persistent install" },
+    { "id": "HOST-005", "class": "install", "attack": "same signer attempts version downgrade", "required": "explicit downgrade refusal by default" },
+    { "id": "HOST-006", "class": "install", "attack": "concurrent install of same revision", "required": "one canonical revision or deterministic already-installed result" },
+    { "id": "HOST-007", "class": "open", "attack": "installed package bytes tampered", "required": "digest and strict trust reverify before authorization" },
+    { "id": "HOST-008", "class": "open", "attack": "association passes arbitrary option", "required": "path is one argument and never parsed as host flags or shell" },
+    { "id": "HOST-009", "class": "open", "attack": "association points outside package extension", "required": "strict .sapp input and package magic verification" },
+    { "id": "HOST-010", "class": "open", "attack": "stale metadata points at another digest", "required": "metadata identity, revision and bytes must close" },
+    { "id": "HOST-011", "class": "permission", "attack": "capability added after previous approval", "required": "new capability fingerprint requires new decision" },
+    { "id": "HOST-012", "class": "permission", "attack": "permission record copied between signers", "required": "record key includes immutable app identity" },
+    { "id": "HOST-013", "class": "permission", "attack": "permission record JSON corrupt or unknown version", "required": "fail closed and re-prompt" },
+    { "id": "HOST-014", "class": "permission", "attack": "allow-once reused after process ends", "required": "session decision is never persisted" },
+    { "id": "HOST-015", "class": "permission", "attack": "UI displays manifest but import closure differs", "required": "prompt only consumes AuthorizedPackage closure" },
+    { "id": "HOST-016", "class": "permission", "attack": "control characters spoof permission text", "required": "escape and reject non-display capability identity" },
+    { "id": "HOST-017", "class": "lifecycle", "attack": "rapid repeated open", "required": "single supervised instance and bounded queued events" },
+    { "id": "HOST-018", "class": "lifecycle", "attack": "guest ignores close", "required": "bounded graceful close then kill process tree" },
+    { "id": "HOST-019", "class": "lifecycle", "attack": "guest trap or timeout", "required": "host survives and reports classified terminal state" },
+    { "id": "HOST-020", "class": "lifecycle", "attack": "host restarts after guest crash", "required": "orphan/temp audit before next launch" },
+    { "id": "HOST-021", "class": "ui", "attack": "guest injects markup or shell text", "required": "typed model, escaped text, no HTML or shell evaluation" },
+    { "id": "HOST-022", "class": "ui", "attack": "oversized/deep UI tree or event flood", "required": "node/depth/text/event-rate ceilings" },
+    { "id": "HOST-023", "class": "platform", "attack": "Windows result claimed for macOS/Linux", "required": "per-platform evidence status and no inferred pass" },
+    { "id": "HOST-024", "class": "platform", "attack": "platform association silently becomes default", "required": "register open capability without taking default absent user action" }
+  ]
+}

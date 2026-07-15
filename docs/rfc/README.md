@@ -25,7 +25,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0017`](./RFC-0017-capability-closure-permission-v0.md) | accepted | 固定 source/manifest/import closure、host grant intersection 与 unknown default-deny |
 | [`RFC-0018`](./RFC-0018-runtime-limits-fault-taxonomy-v0.md) | accepted | 固定 manifest/host effective limits、七类 fault 与 malicious guest 后 host survival |
 | [`RFC-0019`](./RFC-0019-package-cli-cache-stdio-v0.md) | accepted | 固定 `.sapp` build/run/inspect、source cache、args/stdio 与 exit contract |
+| [`RFC-0020`](./RFC-0020-desktop-ui-permission-contract-v0.md) | accepted | 固定 Desktop permission record 与 typed bounded UI model |
 
-下一可用编号：`RFC-0020`。
+下一可用编号：`RFC-0021`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。
