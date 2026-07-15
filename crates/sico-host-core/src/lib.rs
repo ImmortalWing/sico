@@ -17,6 +17,13 @@ use sico_package::{
     verify_trusted,
 };
 
+mod permission;
+
+pub use permission::{
+    PermissionChoice, PermissionError, PermissionOutcome, PermissionPrompt, PermissionSession,
+    PermissionStore,
+};
+
 static STAGING_ID: AtomicU64 = AtomicU64::new(0);
 const APP_ID_DOMAIN: &[u8] = b"SICO-DESKTOP-APP-ID-V0\0";
 const CAPABILITY_DOMAIN: &[u8] = b"SICO-DESKTOP-CAPABILITY-V0\0";

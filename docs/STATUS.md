@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M5 Sico Desktop Host
 > - phase status: ready
-> - current step: STEP-0048 (planned)
-> - last completed step: STEP-0047
-> - next step: start STEP-0048
+> - current step: STEP-0049 (planned)
+> - last completed step: STEP-0048
+> - next step: start STEP-0049
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0048：实现 permission prompt model、allow-once/deny/persistent decisions 与 strict durable record store。
+当前目标是执行 STEP-0049：实现 single-instance lifecycle state machine、bounded open queue、guest process supervision、timeout/cancel/crash classification 与 cleanup。
 
 ## 2. Current step
 
-[`STEP-0047`](./steps/STEP-0047-shared-host-install-open.md) 已实现 signed-only atomic install、copy-by-digest、signer isolation、downgrade/tamper refusal 与 reverify-on-open。下一执行项是 STEP-0048 permission records。
+[`STEP-0048`](./steps/STEP-0048-permission-records.md) 已实现 authorized-closure prompt、deny/allow-once/persistent decisions、terminal session expiry 与 corrupt/identity-drift record fail-closed。下一执行项是 STEP-0049 lifecycle supervision。
 
 ## 3. Verified repository facts
 
@@ -135,7 +135,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0048 的外部条件。
+当前没有阻塞 STEP-0049 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -152,4 +152,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0048`：实现只消费 `OpenedPackage` 的 permission prompt/decision store，绑定 app identity、signer 与 capability fingerprint，corrupt/unknown/drift record fail closed。
+`STEP-0049`：实现每 app identity 单一受监督 guest、bounded duplicate-open events、close deadline/kill、fault terminal state 与 permission session/temp/storage cleanup。
