@@ -3,17 +3,17 @@
 > - updated: 2026-07-15
 > - phase: M3 Sico IR 与 Component
 > - phase status: in-progress
-> - current step: none
+> - current step: STEP-0036 (WIP handoff)
 > - last completed step: STEP-0035
-> - next step: STEP-0036
+> - next step: complete STEP-0036
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0036：只为已真实 codegen/Wasmtime 通过的同步 scalar Component subset 冻结 `sico build/run`，明确 stdout/stderr/exit 与无产物失败契约。
+当前目标是完成 STEP-0036：只为已真实 codegen/Wasmtime 通过的同步 scalar Component subset 冻结 `sico build/run`，明确 stdout/stderr/exit 与无产物失败契约。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md) 已完成；下一项把可证明的最小 source→Component→Runtime 链接入 CLI。
+[`STEP-0036`](./steps/STEP-0036-minimal-end-to-end-cli.md) 已开始并停在可接手 WIP：workspace/Runtime 进程边界已建立，但 CLI 命令、RFC、集成验证、报告和完整回归均未完成。最后完成的步骤仍是 [`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md)。
 
 ## 3. Verified repository facts
 

@@ -214,13 +214,17 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "serde_json",
+ "sico-codegen-wasm",
  "sico-diagnostics",
  "sico-format",
+ "sico-ir",
  "sico-lexer",
  "sico-parser",
+ "sico-runtime",
  "sico-semantics",
  "sico-source",
  "sico-syntax",
+ "wasmparser",
 ]
 
 [[package]]
@@ -305,6 +309,10 @@ dependencies = [
  "sico-source",
  "sico-syntax",
 ]
+
+[[package]]
+name = "sico-runtime"
+version = "0.0.0"
 
 [[package]]
 name = "sico-semantics"
