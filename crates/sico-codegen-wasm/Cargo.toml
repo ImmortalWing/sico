@@ -1,0 +1,18 @@
+[package]
+name = "sico-codegen-wasm"
+description = "Deterministic verified Sico IR to Core WebAssembly backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sico-ir = { path = "../sico-ir" }
+wasm-encoder.workspace = true
+
+[dev-dependencies]
+sico-source = { path = "../sico-source" }
+wasmparser.workspace = true
+
+[lints]
+workspace = true

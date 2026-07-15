@@ -4,16 +4,16 @@
 > - phase: M3 Sico IR 与 Component
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0032
-> - next step: STEP-0033
+> - last completed step: STEP-0033
+> - next step: STEP-0034
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0033：让 verified IR 生成 deterministic Core Wasm，并由真实 validator/engine 执行受支持 numeric/control subset。
+下一目标是执行 STEP-0034：先冻结 WIT/canonical ABI mapping，再让真实 Component validator 与 selected Wasmtime Runtime 往返 Result/resource/value records。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0032`](./steps/STEP-0032-effect-resource-revision-flow.md) 已完成；下一项建立 verified-IR-only Core Wasm backend。
+当前没有进行中的 STEP。[`STEP-0033`](./steps/STEP-0033-deterministic-core-wasm-backend.md) 已完成；下一项建立 Component/WIT boundary codegen。
 
 ## 3. Verified repository facts
 
@@ -30,15 +30,15 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 32 | measured |
-| `Cargo.toml` | 17 | measured |
+| Rust `.rs` 文件 | 34 | measured |
+| `Cargo.toml` | 18 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
 | 真实 WebAssembly Component | 2 | verified |
 | Component sync/async 重跑 | 2 + 2 passed | verified |
 | 4096-bit/Decimal ABI roundtrip | 512 bytes + true | verified |
-| 正式编译器 workspace | 11 crates, build/test pass | verified |
+| 正式编译器 workspace | 12 crates, build/test pass | verified |
 | source/line index | 6 tests passed | verified |
 | lossless lexer | 8 tests; B 54/54 | verified |
 | B happy-path parser | 54/54 + 54 snapshots | verified |
@@ -61,6 +61,7 @@
 | independent IR verifier | 9 mutation classes；diagnostic cap 100 | verified |
 | deterministic core lowering | 12 valid lowered；13 valid typed-refused；29 invalid blocked | verified |
 | effect/resource/revision lowering | 5 flow cases；cumulative valid 17/25；4 verifier mutations | verified |
+| deterministic Core Wasm backend | 2 byte-identical artifacts；wasmparser + Node engine；42/7/9 | verified |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -106,6 +107,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - typed Sico IR contract/verifier：[`STEP-0030`](./steps/STEP-0030-typed-sico-ir-contract-verifier.md)、[`RFC-0008`](./rfc/RFC-0008-typed-sico-ir-contract-v0.md)、[`review report`](./reports/typed-sico-ir-contract-v0.md)；
 - core lowering/evaluation order：[`STEP-0031`](./steps/STEP-0031-core-lowering-evaluation-order.md)、[`RFC-0009`](./rfc/RFC-0009-core-lowering-evaluation-order-v0.md)、[`review report`](./reports/core-lowering-evaluation-order-v0.md)；
 - effect/resource/revision IR flow：[`STEP-0032`](./steps/STEP-0032-effect-resource-revision-flow.md)、[`RFC-0010`](./rfc/RFC-0010-effect-resource-revision-ir-flow-v0.md)、[`review report`](./reports/effect-resource-revision-ir-flow-v0.md)；
+- deterministic Core Wasm backend：[`STEP-0033`](./steps/STEP-0033-deterministic-core-wasm-backend.md)、[`RFC-0011`](./rfc/RFC-0011-deterministic-core-wasm-backend-v0.md)、[`review report`](./reports/deterministic-core-wasm-backend-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -124,10 +126,11 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - STEP-0023–0029 已有真实 checker/index/CLI；仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
+- Core Wasm 已由独立 Node engine 执行，但 Node 不是产品 Runtime；selected Wasmtime Component 链路仍须由 STEP-0034–0036 接入正式 compiler/CLI；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
 - 语义查询已有 compiler producer 与五类直接查询；跨包/IR facts、accuracy/latency 和真实模型收益仍未测量。
 
 ## 8. Next step
 
-`STEP-0033`：实现 verified-IR-only deterministic Core Wasm backend；真实 validate、byte-identical rebuild 和 numeric/control engine execution。
+`STEP-0034`：审查 WIT/canonical ABI mapping，实现 Component boundary codegen、真实 Component validation 与 selected Wasmtime host call。
