@@ -147,6 +147,7 @@ dependencies = [
  "sico-format",
  "sico-lexer",
  "sico-parser",
+ "sico-semantics",
  "sico-source",
  "sico-syntax",
 ]

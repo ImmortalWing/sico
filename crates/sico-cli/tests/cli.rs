@@ -11,7 +11,7 @@ use serde_json::Value;
 static TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
-fn check_freezes_file_stdin_text_json_and_semantic_boundary() {
+fn check_runs_semantics_for_file_stdin_text_and_json() {
     let valid = root().join("syntax-candidates/b/nominal-invariants/valid/complete-record.sico");
     let semantic_reject =
         root().join("syntax-candidates/b/nominal-invariants/invalid/missing-field.sico");
@@ -19,8 +19,8 @@ fn check_freezes_file_stdin_text_json_and_semantic_boundary() {
 
     let output = run(["check", path(&valid)], None);
     assert_eq!(output.status.code(), Some(0));
-    assert!(stdout(&output).contains("syntax ok:"));
-    assert!(stdout(&output).contains("type checker: unavailable (M2)"));
+    assert!(stdout(&output).contains("check ok:"));
+    assert!(stdout(&output).contains("syntax + semantics"));
     assert!(output.stderr.is_empty());
 
     let output = run(["check", "--json", path(&valid)], None);
@@ -28,17 +28,28 @@ fn check_freezes_file_stdin_text_json_and_semantic_boundary() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["summary"]["errors"], 0);
     assert_eq!(json["status"]["syntax"], "ok");
-    assert_eq!(json["status"]["type_checker"], "unavailable");
-    assert_eq!(json["status"]["semantic_checks_performed"], false);
+    assert_eq!(json["status"]["type_checker"], "ok");
+    assert_eq!(json["status"]["semantic_checks_performed"], true);
 
     let output = run(["check", path(&semantic_reject)], None);
-    assert_eq!(output.status.code(), Some(0));
-    assert!(stdout(&output).contains("type checker: unavailable (M2)"));
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    assert!(stderr(&output).contains("E2010"));
+
+    let output = run(["check", "--json", path(&semantic_reject)], None);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["diagnostics"][0]["code"], "E2010");
+    assert_eq!(json["diagnostics"][0]["key"], "MISSING_FIELD");
+    assert_eq!(json["status"]["syntax"], "ok");
+    assert_eq!(json["status"]["type_checker"], "error");
+    assert_eq!(json["status"]["semantic_checks_performed"], true);
 
     let bytes = fs::read(&valid).unwrap();
     let output = run(["check", "-"], Some(&bytes));
     assert_eq!(output.status.code(), Some(0));
-    assert!(stdout(&output).contains("syntax ok: <stdin>"));
+    assert!(stdout(&output).contains("check ok: <stdin>"));
 
     let output = run(["check", path(&mutation)], None);
     assert_eq!(output.status.code(), Some(1));
@@ -52,8 +63,55 @@ fn check_freezes_file_stdin_text_json_and_semantic_boundary() {
     assert_eq!(json["schema"], "sico.diagnostics.v0");
     assert_eq!(json["diagnostics"][0]["code"], "E1001");
     assert_eq!(json["status"]["syntax"], "error");
-    assert_eq!(json["status"]["type_checker"], "unavailable");
+    assert_eq!(json["status"]["type_checker"], "not-run");
     assert_eq!(json["status"]["semantic_checks_performed"], false);
+}
+
+#[test]
+fn check_matches_all_54_semantic_oracles() {
+    let repository = root();
+    let map: Value = serde_json::from_str(
+        &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
+    )
+    .unwrap();
+    let expected: std::collections::BTreeMap<_, _> = map["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
+        .collect();
+    let mut sources = Vec::new();
+    collect_sico(&repository.join("syntax-candidates/b"), &mut sources);
+    sources.sort();
+    assert_eq!(sources.len(), 54);
+    let mut accepted = 0;
+    let mut rejected = 0;
+    for source in sources {
+        let text = fs::read_to_string(&source).unwrap();
+        let output = run(["check", "--json", path(&source)], None);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        if text.contains("// expect: accept") {
+            accepted += 1;
+            assert_eq!(output.status.code(), Some(0), "{}", source.display());
+            assert_eq!(json["diagnostics"].as_array().unwrap().len(), 0);
+            assert_eq!(json["status"]["type_checker"], "ok");
+        } else {
+            rejected += 1;
+            assert_eq!(output.status.code(), Some(1), "{}", source.display());
+            assert_eq!(json["diagnostics"].as_array().unwrap().len(), 1);
+            let oracle = &expected[metadata(&text, "case")];
+            assert_eq!(json["diagnostics"][0]["code"], oracle["code"]);
+            assert_eq!(json["diagnostics"][0]["key"], oracle["key"]);
+            assert_eq!(
+                json["diagnostics"][0]["message"],
+                oracle["expected_message"]
+            );
+            assert_eq!(json["diagnostics"][0]["arguments"], oracle["arguments"]);
+            assert_eq!(json["status"]["type_checker"], "error");
+        }
+        assert_eq!(json["status"]["semantic_checks_performed"], true);
+    }
+    assert_eq!((accepted, rejected), (25, 29));
 }
 
 #[test]
@@ -105,7 +163,7 @@ fn outline_freezes_order_kinds_ranges_and_json() {
     assert_eq!(output.status.code(), Some(0));
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["schema"], "sico.outline.v0");
-    assert_eq!(json["type_checker"], "unavailable");
+    assert_eq!(json["type_checker"], "not-run");
     assert_eq!(json["declarations"][0]["kind"], "record");
     assert_eq!(json["declarations"][0]["name"], "Feature");
     assert_eq!(json["declarations"][1]["kind"], "function");
@@ -182,4 +240,24 @@ fn stderr(output: &Output) -> String {
 fn temp_file(suffix: &str) -> PathBuf {
     let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("sico-cli-{}-{id}-{suffix}", std::process::id()))
+}
+
+fn collect_sico(root: &Path, output: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(root).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            collect_sico(&path, output);
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension == "sico")
+        {
+            output.push(path);
+        }
+    }
+}
+
+fn metadata<'a>(text: &'a str, key: &str) -> &'a str {
+    text.lines()
+        .find_map(|line| line.strip_prefix(&format!("// {key}: ")))
+        .unwrap()
 }

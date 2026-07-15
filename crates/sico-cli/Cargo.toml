@@ -17,6 +17,7 @@ sico-diagnostics = { path = "../sico-diagnostics" }
 sico-format = { path = "../sico-format" }
 sico-lexer = { path = "../sico-lexer" }
 sico-parser = { path = "../sico-parser" }
+sico-semantics = { path = "../sico-semantics" }
 sico-source = { path = "../sico-source" }
 sico-syntax = { path = "../sico-syntax" }
 

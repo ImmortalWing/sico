@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-15
-> - phase: M2 静态语义
-> - phase status: in-progress
+> - phase: M3 Sico IR 与 Component
+> - phase status: ready
 > - current step: none
-> - last completed step: STEP-0028
-> - next step: STEP-0029
+> - last completed step: STEP-0029
+> - next step: STEP-0030
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0029：集成 semantic CLI text/JSON，补 fuzz/limits/performance，并完成 M2 exit audit。
+下一目标是执行 STEP-0030：先冻结 typed Sico IR、source map、canonical serialization 与 verifier contract，不提前选择尚未确定的 ABI/runtime 语义。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0028`](./steps/STEP-0028-compiler-semantic-index.md) 已完成；下一项完成 CLI 与 M2 exit gates。
+当前没有进行中的 STEP。[`STEP-0029`](./steps/STEP-0029-semantic-cli-fuzz-m2-exit.md) 已完成并取得 M2 GO；下一项按 M3 计划建立 IR contract/validator。
 
 ## 3. Verified repository facts
 
@@ -30,15 +30,15 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 22 | measured |
-| `Cargo.toml` | 13 | measured |
+| Rust `.rs` 文件 | 27 | measured |
+| `Cargo.toml` | 16 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
 | 真实 WebAssembly Component | 2 | verified |
 | Component sync/async 重跑 | 2 + 2 passed | verified |
 | 4096-bit/Decimal ABI roundtrip | 512 bytes + true | verified |
-| 正式编译器 workspace | 9 crates, build/test pass | verified |
+| 正式编译器 workspace | 10 crates, build/test pass | verified |
 | source/line index | 6 tests passed | verified |
 | lossless lexer | 8 tests; B 54/54 | verified |
 | B happy-path parser | 54/54 + 54 snapshots | verified |
@@ -54,8 +54,11 @@
 | 实际 `.sico` resource/task/stream check | 6 valid pass；6 invalid exact primary | verified |
 | 实际 `.sico` revision check | 2 valid pass；2 invalid exact primary | verified |
 | compiler-produced Semantic Index | 10 complete B modules；10 honest partial A modules；5 queries | verified |
+| semantic CLI full oracle | 25/25 valid；29/29 exact invalid；text/JSON | verified |
+| deterministic semantic properties/limits | 2,048 inputs；diagnostics 100；locals 2,000；depth 200 | verified |
+| M2 performance | median 1242.186 ms / 2.808 MiB/s；no SLA | measured |
 
-M0/M1 已完成；STEP-0023–0027 checker 已执行 25/25 valid 与 29/29 invalid，STEP-0028 已生成真实 compiler index/query。CLI semantic integration 与 M2 exit audit 仍待 STEP-0029。
+M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
 ## 4. Completed assets
 
@@ -94,6 +97,8 @@ M0/M1 已完成；STEP-0023–0027 checker 已执行 25/25 valid 与 29/29 inval
 - resource/task/stream flow：[`STEP-0026`](./steps/STEP-0026-resources-async-streams.md)、[`review report`](./reports/resources-async-streams-v0.md)；
 - revision contract dataflow：[`STEP-0027`](./steps/STEP-0027-revision-contract-dataflow.md)、[`review report`](./reports/revision-contract-dataflow-v0.md)；
 - compiler Semantic Index/query：[`STEP-0028`](./steps/STEP-0028-compiler-semantic-index.md)、[`review report`](./reports/compiler-semantic-index-v0.md)；
+- semantic CLI、quality baseline 与 M2 GO：[`STEP-0029`](./steps/STEP-0029-semantic-cli-fuzz-m2-exit.md)、[`review report`](./reports/semantic-cli-fuzz-performance-v0.md)、[`M2 exit audit`](./reports/m2-exit-audit.md)；
+- STEP-0030–0037 IR/Component 执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -102,7 +107,7 @@ M0/M1 已完成；STEP-0023–0027 checker 已执行 25/25 valid 与 29/29 inval
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0029 的外部条件。
+当前没有阻塞 STEP-0030 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -110,12 +115,12 @@ M0/M1 已完成；STEP-0023–0027 checker 已执行 25/25 valid 与 29/29 inval
 
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
-- STEP-0023–0028 已有真实 checker/index；CLI 尚未启用 semantic checks，且仍无真实模型实测；
+- STEP-0023–0029 已有真实 checker/index/CLI；仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
-- E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度和 bounded cascade；CLI text/JSON 尚待 STEP-0029 集成；
+- E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
 - 语义查询已有 compiler producer 与五类直接查询；跨包/IR facts、accuracy/latency 和真实模型收益仍未测量。
 
 ## 8. Next step
 
-`STEP-0029`：集成 semantic CLI text/JSON，补 deterministic fuzz/limits/performance，并完成 25/25、29/29 与全部 M2 gate 的 exit audit。
+`STEP-0030`：冻结 typed Sico IR/source-map/canonical serialization/verifier contract；先建立 malformed IR negative evidence 与语义决策门槛，再开始 lowering。

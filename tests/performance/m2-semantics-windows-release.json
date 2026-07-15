@@ -1,0 +1,27 @@
+{
+  "schema": "sico.m2.semantics-performance-runs.v0",
+  "date": "2026-07-15",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "profile": "release"
+  },
+  "corpus": {
+    "files": 54,
+    "valid": 25,
+    "invalid": 29,
+    "bytes_per_iteration": 18289
+  },
+  "iterations_per_run": 200,
+  "analyses_per_run": 10800,
+  "sla": "not-established",
+  "runs": [
+    { "run": 1, "elapsed_ms": 1227.133, "mib_per_second": 2.843, "accepted": 5000, "rejected": 5800 },
+    { "run": 2, "elapsed_ms": 1316.174, "mib_per_second": 2.650, "accepted": 5000, "rejected": 5800 },
+    { "run": 3, "elapsed_ms": 1242.186, "mib_per_second": 2.808, "accepted": 5000, "rejected": 5800 }
+  ],
+  "median": {
+    "elapsed_ms": 1242.186,
+    "mib_per_second": 2.808
+  }
+}

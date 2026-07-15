@@ -1,4 +1,4 @@
-//! Command-line integration for the M1 Sico frontend.
+//! Command-line integration for the Sico frontend and static semantics.
 
 #![forbid(unsafe_code)]
 
@@ -13,7 +13,8 @@ use serde_json::{Value, json};
 use sico_diagnostics::{render_syntax_json, render_syntax_text, syntax_identity};
 use sico_format::format as canonical_format;
 use sico_parser::{DeclarationKind, Parse, parse};
-use sico_source::{SourceFile, SourceId};
+use sico_semantics::{Analysis, DiagnosticArgument, analyze};
+use sico_source::{SourceFile, SourceId, TextRange};
 
 pub const EXIT_SUCCESS: i32 = 0;
 pub const EXIT_DIAGNOSTIC: i32 = 1;
@@ -67,7 +68,7 @@ fn command() -> Command {
         .arg_required_else_help(true)
         .subcommand(
             Command::new("check")
-                .about("Check source syntax (M2 type checker is unavailable)")
+                .about("Check source syntax and static semantics")
                 .arg(input_arg())
                 .arg(
                     Arg::new("json")
@@ -132,18 +133,8 @@ fn run_check(
     if !parsed.is_success() {
         return emit_frontend_failure(&source, &parsed, json_output, stdout, stderr);
     }
-
-    if json_output {
-        let output = check_json(&source, &parsed, "ok").unwrap();
-        if writeln!(stdout, "{output}").is_err() {
-            return EXIT_TOOL_ERROR;
-        }
-    } else if writeln!(stdout, "syntax ok: {}", source.name()).is_err()
-        || writeln!(stdout, "type checker: unavailable (M2)").is_err()
-    {
-        return EXIT_TOOL_ERROR;
-    }
-    EXIT_SUCCESS
+    let analysis = analyze(&source).expect("successful parse must lower for semantic analysis");
+    emit_semantic_result(&source, &analysis, json_output, stdout, stderr)
 }
 
 fn run_format(
@@ -225,7 +216,7 @@ fn run_outline(
         let output = serde_json::to_string_pretty(&json!({
             "schema": "sico.outline.v0",
             "file": source.name(),
-            "type_checker": "unavailable",
+            "type_checker": "not-run",
             "declarations": declarations
         }))
         .unwrap();
@@ -307,7 +298,7 @@ fn emit_frontend_failure(
     }
 
     if json_output {
-        let output = check_json(source, parsed, "error").unwrap();
+        let output = syntax_check_json(source, parsed).unwrap();
         if writeln!(stdout, "{output}").is_err() {
             return EXIT_TOOL_ERROR;
         }
@@ -320,15 +311,140 @@ fn emit_frontend_failure(
     EXIT_DIAGNOSTIC
 }
 
-fn check_json(source: &SourceFile, parsed: &Parse, syntax: &str) -> Option<String> {
+fn syntax_check_json(source: &SourceFile, parsed: &Parse) -> Option<String> {
     let mut value: Value =
         serde_json::from_str(&render_syntax_json(source, source.name(), parsed.errors())?).ok()?;
     value["status"] = json!({
-        "syntax": syntax,
-        "type_checker": "unavailable",
+        "syntax": "error",
+        "type_checker": "not-run",
         "semantic_checks_performed": false
     });
     serde_json::to_string_pretty(&value).ok()
+}
+
+fn emit_semantic_result(
+    source: &SourceFile,
+    analysis: &Analysis,
+    json_output: bool,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    if json_output {
+        let output = semantic_check_json(source, analysis);
+        if writeln!(stdout, "{output}").is_err() {
+            return EXIT_TOOL_ERROR;
+        }
+    } else if analysis.is_success() {
+        if writeln!(stdout, "check ok: {} (syntax + semantics)", source.name()).is_err() {
+            return EXIT_TOOL_ERROR;
+        }
+    } else {
+        for diagnostic in &analysis.diagnostics {
+            let Some(position) = source
+                .line_index()
+                .line_col(source.text(), diagnostic.range.start())
+            else {
+                return EXIT_TOOL_ERROR;
+            };
+            if writeln!(
+                stderr,
+                "{} {}:{}:{} {}",
+                diagnostic.code,
+                source.name(),
+                position.line,
+                position.column,
+                diagnostic.message
+            )
+            .is_err()
+            {
+                return EXIT_TOOL_ERROR;
+            }
+        }
+    }
+    if analysis.is_success() {
+        EXIT_SUCCESS
+    } else {
+        EXIT_DIAGNOSTIC
+    }
+}
+
+fn semantic_check_json(source: &SourceFile, analysis: &Analysis) -> String {
+    let diagnostics: Vec<_> = analysis
+        .diagnostics
+        .iter()
+        .enumerate()
+        .map(|(index, diagnostic)| {
+            json!({
+                "id": format!("d{}", index + 1),
+                "code": diagnostic.code,
+                "key": diagnostic.key,
+                "severity": "error",
+                "kind": "root",
+                "message": diagnostic.message,
+                "arguments": diagnostic.arguments.iter().map(|(name, value)| {
+                    let value = match value {
+                        DiagnosticArgument::Text(text) => json!(text),
+                        DiagnosticArgument::List(items) => json!(items),
+                    };
+                    (name.clone(), value)
+                }).collect::<serde_json::Map<_, _>>(),
+                "file": source.name(),
+                "range": diagnostic_range(source, diagnostic.range)
+            })
+        })
+        .collect();
+    let errors = diagnostics.len();
+    serde_json::to_string_pretty(&json!({
+        "schema": "sico.diagnostics.v0",
+        "protocol_version": 0,
+        "tool": { "name": "sico", "version": env!("CARGO_PKG_VERSION") },
+        "coordinate_system": {
+            "encoding": "utf-8",
+            "byte_base": 0,
+            "byte_end": "exclusive",
+            "line_base": 1,
+            "column_base": 1,
+            "column_unit": "unicode-scalar-value"
+        },
+        "diagnostics": diagnostics,
+        "summary": {
+            "emitted": errors,
+            "errors": errors,
+            "warnings": 0,
+            "info": 0,
+            "suppressed": 0,
+            "truncated": 0
+        },
+        "status": {
+            "syntax": "ok",
+            "type_checker": if errors == 0 { "ok" } else { "error" },
+            "semantic_checks_performed": true
+        }
+    }))
+    .expect("diagnostic JSON serialization cannot fail")
+}
+
+fn diagnostic_range(source: &SourceFile, range: TextRange) -> Value {
+    let start = source
+        .line_index()
+        .line_col(source.text(), range.start())
+        .expect("semantic range start is a scalar boundary");
+    let end = source
+        .line_index()
+        .line_col(source.text(), range.end())
+        .expect("semantic range end is a scalar boundary");
+    json!({
+        "start": {
+            "byte": u32::from(range.start()),
+            "line": start.line,
+            "column": start.column
+        },
+        "end": {
+            "byte": u32::from(range.end()),
+            "line": end.line,
+            "column": end.column
+        }
+    })
 }
 
 const fn declaration_kind(kind: DeclarationKind) -> &'static str {

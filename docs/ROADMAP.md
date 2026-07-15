@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-15
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M2
+> - current phase: M3
 
 ## Status vocabulary
 
@@ -67,7 +67,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M2: 静态语义
 
-状态：`planned`（entry gate satisfied）
+状态：`complete`
 
 主要交付：名称解析、类型系统、局部推导、名义类型、Option/Result、完整匹配、不可变、效果/能力、资源基础规则和初步语义索引。
 
@@ -75,17 +75,19 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：P0 非法案例全部在后端前拒绝；合法案例通过；诊断快照稳定。
 
-执行计划：[`M2 static semantics`](./plans/M2-static-semantics.md)，STEP-0022–0029；下一步 STEP-0022 full AST/HIR + name/prelude contract。
+执行计划：[`M2 static semantics`](./plans/M2-static-semantics.md)，STEP-0022–0029 全部完成。退出证据：25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query、property/limits/performance；结论见 [`M2 exit audit`](./reports/m2-exit-audit.md)。
 
 ## M3: Sico IR 与 Component
 
-状态：`planned`
+状态：`ready`（entry gate satisfied）
 
 主要交付：强类型 IR、验证器、lowering、Core Wasm、Component 封装、WIT 绑定和最小端到端 CLI 程序；在真实 codegen/Runtime 链路上定义 `sico run app.sico`，并以 `sico app.sico` 作为候选便捷形式。
 
 进入条件：M2 exit gate 通过，M0 Component 原型的技术风险已有结论。
 
 退出证据：确定性 Component 输出；真实 Runtime 执行；WIT host call 与语义案例一致。
+
+执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)，STEP-0030–0037；下一步 STEP-0030 typed Sico IR contract/validator。
 
 ## M4: `.sapp` 与 Runtime
 
@@ -144,10 +146,12 @@ STEP-0001 audit baseline
   → STEP-0012 syntax evidence completion
   → STEP-0013 syntax decision
   → STEP-0014 M0 exit audit
-  → M1
+  → STEP-0015–0021 M1 compiler frontend and exit audit
+  → STEP-0022–0029 M2 static semantics and exit audit
+  → STEP-0030 M3 typed Sico IR contract/validator
 ```
 
-### Planned M0 execution sequence
+### Historical M0 execution sequence
 
 | Step | 目标 | 关键退出证据 |
 |---|---|---|
