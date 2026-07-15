@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M4 `.sapp` 与 Runtime
 > - phase status: in-progress
-> - current step: STEP-0043 (planned)
-> - last completed step: STEP-0042
-> - next step: start STEP-0043
+> - current step: STEP-0044 (planned)
+> - last completed step: STEP-0043
+> - next step: start STEP-0044
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0043：把 manifest limits 与 host ceilings 取最小值，传入真实 Wasmtime fuel/timeout/memory/table/instance/WASI resource controls，并冻结 fault taxonomy 与 host-survival corpus。
+当前目标是执行 STEP-0044：把 `.sapp` 提升为正式 `build/run/inspect` surface，加入可审计 source-run cache，并冻结参数、stdio 与退出码契约。
 
 ## 2. Current step
 
-[`STEP-0042`](./steps/STEP-0042-wasi-capability-host-isolated-storage.md) 已实现 hashed per-app storage、junction/reparse/path/cross-app/quota audit 与 explicit-default-off WASI flags。下一执行项是 STEP-0043 limits/fault taxonomy。
+[`STEP-0043`](./steps/STEP-0043-runtime-limits-fault-taxonomy.md) 已在真实 Wasmtime 46.0.1 上施加 effective limits，冻结七类 fault，并证明 infinite-loop guest 结束后 host 仍可运行健康 Component。下一执行项是 STEP-0044 package CLI/cache contract。
 
 ## 3. Verified repository facts
 
@@ -69,6 +69,7 @@
 | end-to-end CLI | file/stdin build；Int/Bool/Unit Wasmtime run；exit 0/1/2；failure no artifact | verified |
 | M3 deterministic quality | 2,048 scalar sources；1,000-function Component；3 Runtime cases | verified |
 | M3 performance | median 51.055 ms / 3.213 MiB/s；3 × 3,000 builds；no SLA | measured |
+| M4 Runtime limits | 11 dimensions；7 fault classes；6 tests；真实 infinite-loop + host survival | verified |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -127,7 +128,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0043 的外部条件。
+当前没有阻塞 STEP-0044 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -144,4 +145,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0043`：在真实 Wasmtime execution 施加 fuel/time/memory/table/instance/WASI resource limits，并区分 domain/denial/cancel/timeout/trap/host-fatal。
+`STEP-0044`：冻结 `.sapp` package `build/run/inspect`、source-run cache、args/stdio 与退出码契约，并覆盖 stale/corrupt cache refusal。

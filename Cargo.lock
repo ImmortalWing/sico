@@ -503,6 +503,7 @@ dependencies = [
  "sico-ir",
  "sico-source",
  "unicode-normalization",
+ "wasm-encoder",
  "wasmparser",
 ]
 
@@ -520,6 +521,13 @@ dependencies = [
 [[package]]
 name = "sico-runtime"
 version = "0.0.0"
+dependencies = [
+ "sico-codegen-wasm",
+ "sico-ir",
+ "sico-package",
+ "sico-source",
+ "wasm-encoder",
+]
 
 [[package]]
 name = "sico-semantics"

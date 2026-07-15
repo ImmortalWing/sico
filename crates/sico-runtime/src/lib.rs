@@ -21,6 +21,107 @@ pub enum RuntimeError {
     Launch(std::io::Error),
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HostLimits {
+    pub fuel: u64,
+    pub timeout_ms: u64,
+    pub memory_bytes: u64,
+    pub table_elements: u32,
+    pub instances: u32,
+    pub tables: u32,
+    pub memories: u32,
+    pub wasi_resources: u32,
+    pub hostcall_fuel: u64,
+    pub random_bytes: u64,
+    pub body_bytes: u64,
+    pub storage_bytes: u64,
+}
+
+impl Default for HostLimits {
+    fn default() -> Self {
+        Self {
+            fuel: 10_000_000,
+            timeout_ms: 10_000,
+            memory_bytes: 128 * 1024 * 1024,
+            table_elements: 100_000,
+            instances: 32,
+            tables: 32,
+            memories: 16,
+            wasi_resources: 256,
+            hostcall_fuel: 1_000_000,
+            random_bytes: 1024 * 1024,
+            body_bytes: 4 * 1024 * 1024,
+            storage_bytes: 64 * 1024 * 1024,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectiveLimits {
+    pub fuel: u64,
+    pub timeout_ms: u64,
+    pub memory_bytes: u64,
+    pub table_elements: u32,
+    pub instances: u32,
+    pub tables: u32,
+    pub memories: u32,
+    pub wasi_resources: u32,
+    pub hostcall_fuel: u64,
+    pub random_bytes: u64,
+    pub body_bytes: u64,
+    pub storage_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FaultClass {
+    DomainError,
+    CapabilityDenied,
+    Cancelled,
+    Timeout,
+    ResourceLimit,
+    Trap,
+    HostFatal,
+}
+
+#[derive(Debug)]
+pub struct PackageRuntimeOutput {
+    pub status: ExitStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub fault: Option<FaultClass>,
+    pub limits: EffectiveLimits,
+}
+
+#[derive(Debug)]
+pub enum PackageRuntimeError {
+    TemporaryArtifact(std::io::Error),
+    Launch(std::io::Error),
+    Storage(StorageError),
+}
+
+impl std::fmt::Display for PackageRuntimeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TemporaryArtifact(error) => {
+                write!(formatter, "temporary Component failed: {error}")
+            }
+            Self::Launch(error) => write!(formatter, "Runtime launch failed: {error}"),
+            Self::Storage(error) => write!(formatter, "Runtime storage failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for PackageRuntimeError {}
+
+impl PackageRuntimeError {
+    /// Classifies Runtime-owned setup and launch failures without exposing
+    /// guest stderr as host state.
+    #[must_use]
+    pub const fn fault_class(&self) -> FaultClass {
+        FaultClass::HostFatal
+    }
+}
+
 #[derive(Debug)]
 pub struct RuntimeOutput {
     pub status: ExitStatus,
@@ -217,6 +318,127 @@ pub fn wasi_arguments(
     Ok(arguments)
 }
 
+#[must_use]
+pub fn effective_limits(package: &AuthorizedPackage, host: &HostLimits) -> EffectiveLimits {
+    let requested = &package.trusted.package.manifest.limits;
+    EffectiveLimits {
+        fuel: requested.fuel.min(host.fuel),
+        timeout_ms: requested.timeout_ms.min(host.timeout_ms),
+        memory_bytes: requested.memory_bytes.min(host.memory_bytes),
+        table_elements: requested.table_elements.min(host.table_elements),
+        instances: requested.instances.min(host.instances),
+        tables: requested.tables.min(host.tables),
+        memories: requested.memories.min(host.memories),
+        wasi_resources: requested.wasi_resources.min(host.wasi_resources),
+        hostcall_fuel: requested.hostcall_fuel.min(host.hostcall_fuel),
+        random_bytes: requested.random_bytes.min(host.random_bytes),
+        body_bytes: requested.body_bytes.min(host.body_bytes),
+        storage_bytes: host.storage_bytes,
+    }
+}
+
+/// Executes an authorized package under explicit Wasmtime/WASI ceilings.
+///
+/// # Errors
+///
+/// Returns only host-fatal setup/launch/storage errors. Guest timeout, fuel,
+/// resource-limit and ordinary traps are returned as classified output.
+pub fn run_authorized_package(
+    runtime: &OsStr,
+    package: &AuthorizedPackage,
+    storage: Option<&AppStorage>,
+    host_limits: &HostLimits,
+) -> Result<PackageRuntimeOutput, PackageRuntimeError> {
+    let limits = effective_limits(package, host_limits);
+    if let Some(storage) = storage {
+        storage.audit().map_err(PackageRuntimeError::Storage)?;
+    }
+    let path = temporary_path();
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&path)
+        .map_err(PackageRuntimeError::TemporaryArtifact)?;
+    if let Err(error) = file
+        .write_all(&package.trusted.package.component)
+        .and_then(|()| file.sync_all())
+    {
+        let _ = fs::remove_file(&path);
+        return Err(PackageRuntimeError::TemporaryArtifact(error));
+    }
+    drop(file);
+
+    let mut command = Command::new(runtime);
+    command
+        .arg("run")
+        .arg("--codegen")
+        .arg("cache=n")
+        .arg("-W")
+        .arg(format!("fuel={}", limits.fuel))
+        .arg("-W")
+        .arg(format!("timeout={}ms", limits.timeout_ms))
+        .arg("-W")
+        .arg(format!("max-memory-size={}", limits.memory_bytes))
+        .arg("-W")
+        .arg(format!("max-table-elements={}", limits.table_elements))
+        .arg("-W")
+        .arg(format!("max-instances={}", limits.instances))
+        .arg("-W")
+        .arg(format!("max-tables={}", limits.tables))
+        .arg("-W")
+        .arg(format!("max-memories={}", limits.memories))
+        .arg("-W")
+        .arg("trap-on-grow-failure=y")
+        .arg("-S")
+        .arg(format!("max-resources={}", limits.wasi_resources))
+        .arg("-S")
+        .arg(format!("hostcall-fuel={}", limits.hostcall_fuel))
+        .arg("-S")
+        .arg(format!("max-random-size={}", limits.random_bytes))
+        .arg("-S")
+        .arg(format!(
+            "http-outgoing-body-chunk-size={}",
+            limits.body_bytes
+        ));
+    for argument in wasi_arguments(package, storage).map_err(PackageRuntimeError::Storage)? {
+        command.arg(argument);
+    }
+    command.arg("--invoke").arg("main()").arg(&path);
+    let result = command.output().map_err(PackageRuntimeError::Launch);
+    let _ = fs::remove_file(path);
+    let output = result?;
+    if let Some(storage) = storage {
+        storage.audit().map_err(PackageRuntimeError::Storage)?;
+    }
+    let fault = classify_fault(output.status.success(), &output.stderr);
+    Ok(PackageRuntimeOutput {
+        status: output.status,
+        stdout: output.stdout,
+        stderr: output.stderr,
+        fault,
+        limits,
+    })
+}
+
+fn classify_fault(success: bool, stderr: &[u8]) -> Option<FaultClass> {
+    if success {
+        return None;
+    }
+    let message = String::from_utf8_lossy(stderr).to_ascii_lowercase();
+    if message.contains("timeout") || message.contains("interrupt") || message.contains("epoch") {
+        Some(FaultClass::Timeout)
+    } else if message.contains("fuel")
+        || message.contains("resource limit")
+        || message.contains("memory limit")
+        || message.contains("table limit")
+        || message.contains("failed to grow")
+    {
+        Some(FaultClass::ResourceLimit)
+    } else {
+        Some(FaultClass::Trap)
+    }
+}
+
 fn storage_identity(package: &AuthorizedPackage) -> String {
     let trust = match &package.trusted.trust {
         TrustStatus::UnsignedDevelopment => "unsigned-development",
@@ -300,13 +522,22 @@ pub fn run_component(
     invocation: &str,
 ) -> Result<RuntimeOutput, RuntimeError> {
     let path = temporary_path();
+    run_component_at(runtime, component, invocation, &path)
+}
+
+fn run_component_at(
+    runtime: &OsStr,
+    component: &[u8],
+    invocation: &str,
+    path: &Path,
+) -> Result<RuntimeOutput, RuntimeError> {
     let mut file = OpenOptions::new()
         .create_new(true)
         .write(true)
-        .open(&path)
+        .open(path)
         .map_err(RuntimeError::TemporaryArtifact)?;
     if let Err(error) = file.write_all(component).and_then(|()| file.sync_all()) {
-        let _ = fs::remove_file(&path);
+        let _ = fs::remove_file(path);
         return Err(RuntimeError::TemporaryArtifact(error));
     }
     drop(file);
@@ -317,7 +548,7 @@ pub fn run_component(
         .arg("cache=n")
         .arg("--invoke")
         .arg(invocation)
-        .arg(&path)
+        .arg(path)
         .output()
         .map_err(RuntimeError::Launch);
     let _ = fs::remove_file(path);
@@ -352,40 +583,31 @@ mod tests {
         BuildInput, RuntimeLimits, TrustPolicy, authorize, build_unsigned, verify_trusted,
     };
     use sico_source::{SourceFile, SourceId};
+    use wasm_encoder::{
+        BlockType, CodeSection, ComponentBuilder, ComponentExportKind, ExportKind, ExportSection,
+        Function, FunctionSection, Instruction, Module, ModuleArg, TypeSection,
+    };
 
-    use super::{RuntimeError, StorageError, prepare_storage, run_component, wasi_arguments};
+    use super::{
+        FaultClass, HostLimits, RuntimeError, StorageError, effective_limits, prepare_storage,
+        run_authorized_package, run_component_at, wasi_arguments,
+    };
 
     static TEST_ID: AtomicU64 = AtomicU64::new(0);
 
     #[test]
     fn launch_failure_still_removes_temporary_component() {
-        let before = temporary_components();
-        let error = run_component(
+        let path = test_directory().join("launch-failure.component.wasm");
+        let error = run_component_at(
             OsStr::new("sico-runtime-command-that-does-not-exist"),
             b"component",
             "main()",
+            &path,
         )
         .unwrap_err();
         assert!(matches!(error, RuntimeError::Launch(_)));
-        assert_eq!(temporary_components(), before);
-    }
-
-    fn temporary_components() -> Vec<std::path::PathBuf> {
-        let prefix = format!("sico-runtime-{}-", std::process::id());
-        let mut paths: Vec<_> = std::fs::read_dir(std::env::temp_dir())
-            .unwrap()
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.file_name()
-                    .and_then(OsStr::to_str)
-                    .is_some_and(|name| {
-                        name.starts_with(&prefix) && name.ends_with(".component.wasm")
-                    })
-            })
-            .collect();
-        paths.sort();
-        paths
+        assert!(!path.exists());
+        fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -442,6 +664,48 @@ mod tests {
         fs::remove_dir_all(base).unwrap();
     }
 
+    #[test]
+    fn manifest_limits_can_only_reduce_host_ceilings() {
+        let package = authorized("dev.sico.limits");
+        let host = HostLimits {
+            fuel: 2_000_000,
+            timeout_ms: 250,
+            memory_bytes: 32 * 1024 * 1024,
+            ..HostLimits::default()
+        };
+        let limits = effective_limits(&package, &host);
+        assert_eq!(limits.fuel, 1_000_000);
+        assert_eq!(limits.timeout_ms, 250);
+        assert_eq!(limits.memory_bytes, 32 * 1024 * 1024);
+        assert_eq!(limits.storage_bytes, host.storage_bytes);
+    }
+
+    #[test]
+    fn real_wasmtime_limits_trap_loop_and_host_survives() {
+        let Some(runtime) = std::env::var_os("SICO_TEST_WASMTIME") else {
+            return;
+        };
+        let requested = RuntimeLimits {
+            fuel: 10_000,
+            timeout_ms: 1_000,
+            ..RuntimeLimits::default()
+        };
+        let malicious = authorized_component("dev.sico.loop", infinite_component(), requested);
+        let outcome =
+            run_authorized_package(&runtime, &malicious, None, &HostLimits::default()).unwrap();
+        assert!(!outcome.status.success());
+        assert!(matches!(
+            outcome.fault,
+            Some(FaultClass::ResourceLimit | FaultClass::Timeout)
+        ));
+
+        let healthy = authorized("dev.sico.after-loop");
+        let outcome =
+            run_authorized_package(&runtime, &healthy, None, &HostLimits::default()).unwrap();
+        assert!(outcome.status.success());
+        assert_eq!(outcome.fault, None);
+    }
+
     fn authorized(app_id: &str) -> sico_package::AuthorizedPackage {
         let source = SourceFile::from_text(
             SourceId::new(99),
@@ -450,6 +714,14 @@ mod tests {
         )
         .unwrap();
         let component = compile_component(&lower_core(&source).unwrap()).unwrap();
+        authorized_component(app_id, component, RuntimeLimits::default())
+    }
+
+    fn authorized_component(
+        app_id: &str,
+        component: Vec<u8>,
+        limits: RuntimeLimits,
+    ) -> sico_package::AuthorizedPackage {
         let package = build_unsigned(BuildInput {
             app_id: app_id.to_owned(),
             app_version: "0.1.0".to_owned(),
@@ -457,11 +729,47 @@ mod tests {
             resources: Vec::new(),
             source_effects: Vec::new(),
             capabilities: Vec::new(),
-            limits: RuntimeLimits::default(),
+            limits,
         })
         .unwrap();
         let trusted = verify_trusted(&package, &TrustPolicy::AllowUnsignedDevelopment).unwrap();
         authorize(trusted, &BTreeSet::new()).unwrap()
+    }
+
+    fn infinite_component() -> Vec<u8> {
+        let mut types = TypeSection::new();
+        types.ty().function([], []);
+        let mut functions = FunctionSection::new();
+        functions.function(0);
+        let mut exports = ExportSection::new();
+        exports.export("main", ExportKind::Func, 0);
+        let mut body = Function::new([]);
+        body.instruction(&Instruction::Loop(BlockType::Empty));
+        body.instruction(&Instruction::Br(0));
+        body.instruction(&Instruction::End);
+        body.instruction(&Instruction::End);
+        let mut code = CodeSection::new();
+        code.function(&body);
+        let mut core_module = Module::new();
+        core_module.section(&types);
+        core_module.section(&functions);
+        core_module.section(&exports);
+        core_module.section(&code);
+
+        let mut builder = ComponentBuilder::default();
+        let module = builder.core_module_raw(Some("loop-core"), &core_module.finish());
+        let instance = builder.core_instantiate(
+            Some("loop-core"),
+            module,
+            std::iter::empty::<(&str, ModuleArg)>(),
+        );
+        let function = builder.core_alias_export(Some("main"), instance, "main", ExportKind::Func);
+        let (ty, mut function_type) = builder.type_function(Some("main"));
+        function_type.params(std::iter::empty::<(&str, wasm_encoder::ComponentValType)>());
+        function_type.result(None);
+        let lifted = builder.lift_func(Some("main"), function, ty, []);
+        builder.export("main", ComponentExportKind::Func, lifted, None);
+        builder.finish()
     }
 
     fn test_directory() -> PathBuf {
