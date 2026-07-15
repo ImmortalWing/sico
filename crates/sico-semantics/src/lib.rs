@@ -59,6 +59,9 @@ pub enum SemanticFactKind {
     Local,
     Variant,
     Match,
+    Effect,
+    Capability,
+    ComponentCall,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,6 +149,9 @@ struct FunctionDefinition {
     returns: Type,
     body: Vec<Line>,
     range: TextRange,
+    declared_effects: Vec<(String, HirId, TextRange)>,
+    declared_capabilities: Vec<(String, HirId, TextRange)>,
+    component_version_range: Option<TextRange>,
 }
 
 #[derive(Clone, Debug)]
@@ -359,13 +365,47 @@ fn parse_function(declaration: &sico_hir::Declaration) -> Option<FunctionDefinit
         .iter()
         .rposition(|token| token.kind != TokenKind::Colon)
         .unwrap_or(header.len() - 1);
+    let body: Vec<_> = declaration.lines.iter().skip(1).cloned().collect();
     Some(FunctionDefinition {
         name: name_token.text.clone(),
         parameters,
         returns: parse_type(&header[returns + 1..=end]),
-        body: declaration.lines.iter().skip(1).cloned().collect(),
+        declared_effects: parse_boundary_items(&body, LineKind::Effects),
+        declared_capabilities: parse_boundary_items(&body, LineKind::Capabilities),
+        component_version_range: header
+            .iter()
+            .find(|token| token.kind == TokenKind::At)
+            .map(|token| token.range),
+        body,
         range: declaration.range,
     })
+}
+
+fn parse_boundary_items(lines: &[Line], section: LineKind) -> Vec<(String, HirId, TextRange)> {
+    let Some(index) = lines.iter().position(|line| line.kind == section) else {
+        return Vec::new();
+    };
+    if lines[index]
+        .tokens
+        .iter()
+        .any(|token| token.kind == TokenKind::None)
+    {
+        return Vec::new();
+    }
+    lines[index + 1..]
+        .iter()
+        .take_while(|line| line.kind == LineKind::Expression)
+        .map(|line| {
+            (
+                line.tokens
+                    .iter()
+                    .map(|token| token.text.as_str())
+                    .collect(),
+                line.id,
+                line.range,
+            )
+        })
+        .collect()
 }
 
 fn parse_parameter(tokens: &[HirToken]) -> Option<Parameter> {
@@ -425,6 +465,7 @@ fn analyze_function(
     diagnostics: &mut Vec<SemanticDiagnostic>,
     facts: &mut Vec<SemanticFact>,
 ) {
+    check_boundary_semantics(function, diagnostics, facts);
     let mut locals: BTreeMap<String, Type> = function
         .parameters
         .iter()
@@ -481,6 +522,178 @@ fn analyze_function(
             _ => {}
         }
     }
+}
+
+#[derive(Clone, Debug)]
+struct BoundaryCall {
+    effect: String,
+    capability: String,
+    component: bool,
+    node: HirId,
+    range: TextRange,
+}
+
+fn check_boundary_semantics(
+    function: &FunctionDefinition,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    push_boundary_facts(function, facts);
+    check_component_version(function, diagnostics);
+
+    let has_boundary = function
+        .body
+        .iter()
+        .any(|line| matches!(line.kind, LineKind::Effects | LineKind::Capabilities));
+    if !has_boundary {
+        return;
+    }
+    for call in function.body.iter().filter_map(boundary_call) {
+        check_boundary_call(function, &call, diagnostics, facts);
+    }
+}
+
+fn push_boundary_facts(function: &FunctionDefinition, facts: &mut Vec<SemanticFact>) {
+    for (name, node, range) in &function.declared_effects {
+        facts.push(SemanticFact {
+            id: FactId {
+                node: *node,
+                slot: 0,
+            },
+            kind: SemanticFactKind::Effect,
+            name: format!("{}.effect.{name}", function.name),
+            ty: None,
+            range: *range,
+        });
+    }
+    for (name, node, range) in &function.declared_capabilities {
+        facts.push(SemanticFact {
+            id: FactId {
+                node: *node,
+                slot: 0,
+            },
+            kind: SemanticFactKind::Capability,
+            name: format!("{}.capability.{name}", function.name),
+            ty: None,
+            range: *range,
+        });
+    }
+}
+
+fn check_component_version(
+    function: &FunctionDefinition,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    if function
+        .parameters
+        .iter()
+        .any(|parameter| matches!(&parameter.ty, Type::Generic { name, .. } if name == "Component"))
+        && let Some(range) = function.component_version_range
+    {
+        push_diagnostic(
+            diagnostics,
+            "E6001",
+            "COMPONENT_VERSION_IN_TYPE",
+            "component version is package metadata, not a type argument".to_owned(),
+            [],
+            range,
+        );
+    }
+}
+
+fn check_boundary_call(
+    function: &FunctionDefinition,
+    call: &BoundaryCall,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    if call.component {
+        facts.push(SemanticFact {
+            id: FactId {
+                node: call.node,
+                slot: 0,
+            },
+            kind: SemanticFactKind::ComponentCall,
+            name: format!("{}.component-call", function.name),
+            ty: Some(function.returns.clone()),
+            range: call.range,
+        });
+        if !matches!(&function.returns, Type::Generic { name, .. } if name == "ComponentCall") {
+            push_diagnostic(
+                diagnostics,
+                "E6002",
+                "COMPONENT_FAILURE_COLLAPSE",
+                "ComponentCall cannot be returned as a domain Result".to_owned(),
+                [],
+                call.range,
+            );
+        }
+    }
+    if !function
+        .declared_capabilities
+        .iter()
+        .any(|(name, _, _)| name == &call.capability)
+    {
+        push_diagnostic(
+            diagnostics,
+            "E4001",
+            "UNDECLARED_CAPABILITY",
+            format!(
+                "capability {} is not declared at this boundary",
+                call.capability
+            ),
+            [("capability", call.capability.as_str())],
+            call.range,
+        );
+    }
+    let explicitly_pure = function.body.iter().any(|line| {
+        line.kind == LineKind::Effects
+            && line
+                .tokens
+                .iter()
+                .any(|token| token.kind == TokenKind::None)
+    });
+    if explicitly_pure {
+        push_diagnostic(
+            diagnostics,
+            "E4002",
+            "UNDECLARED_EFFECT",
+            format!("missing declared effect: {}", call.effect),
+            [("effect", call.effect.as_str())],
+            call.range,
+        );
+    }
+}
+
+fn boundary_call(line: &Line) -> Option<BoundaryCall> {
+    let dot = line
+        .tokens
+        .iter()
+        .position(|token| token.kind == TokenKind::Dot)?;
+    if !line
+        .tokens
+        .iter()
+        .any(|token| token.kind == TokenKind::LeftParen)
+    {
+        return None;
+    }
+    let receiver = line.tokens.get(dot.checked_sub(1)?)?.text.clone();
+    let method = line.tokens.get(dot + 1)?.text.clone();
+    let component = line
+        .tokens
+        .iter()
+        .any(|token| token.kind == TokenKind::Call);
+    Some(BoundaryCall {
+        effect: if component {
+            "component.call".to_owned()
+        } else {
+            format!("{receiver}.{method}")
+        },
+        capability: receiver,
+        component,
+        node: line.id,
+        range: line.range,
+    })
 }
 
 fn infer_try(
@@ -1497,6 +1710,84 @@ mod tests {
     }
 
     #[test]
+    fn capability_and_component_cases_match_the_registered_oracle() {
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let map: JsonValue = serde_json::from_str(
+            &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
+        )
+        .unwrap();
+        let expected: BTreeMap<_, _> = map["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| {
+                let id = case["case"].as_str().unwrap();
+                id.starts_with("CAP-") || id.starts_with("COMP-")
+            })
+            .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
+            .collect();
+        assert_eq!(expected.len(), 4);
+
+        let mut paths = Vec::new();
+        collect_sico(
+            &repository.join("syntax-candidates/b/effects-capabilities"),
+            &mut paths,
+        );
+        collect_sico(
+            &repository.join("syntax-candidates/b/component-call"),
+            &mut paths,
+        );
+        paths.sort();
+        assert_eq!(paths.len(), 8);
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for (index, path) in paths.iter().enumerate() {
+            let source = SourceFile::from_bytes(
+                SourceId::new(u32::try_from(index).unwrap()),
+                path.display().to_string(),
+                &fs::read(path).unwrap(),
+            )
+            .unwrap();
+            let analysis = analyze(&source).unwrap();
+            assert_eq!(analysis, analyze(&source).unwrap());
+            if source.text().contains("// expect: accept") {
+                accepted += 1;
+                assert!(
+                    analysis.diagnostics.is_empty(),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            } else {
+                rejected += 1;
+                let oracle = &expected[metadata(source.text(), "case")];
+                assert_eq!(
+                    analysis.diagnostics.len(),
+                    1,
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+                assert_diagnostic_matches(&analysis.diagnostics[0], oracle);
+                assert!(source.span(analysis.diagnostics[0].range).is_some());
+            }
+            assert!(
+                analysis
+                    .facts
+                    .windows(2)
+                    .all(|pair| pair[0].id < pair[1].id)
+            );
+            assert!(
+                analysis
+                    .facts
+                    .iter()
+                    .all(|fact| source.span(fact.range).is_some())
+            );
+        }
+        assert_eq!((accepted, rejected), (4, 4));
+    }
+
+    #[test]
     fn remaining_b_groups_do_not_receive_unowned_diagnostics() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../syntax-candidates/b");
         let mut paths = Vec::new();
@@ -1529,6 +1820,17 @@ mod tests {
                         .diagnostics
                         .iter()
                         .all(|diagnostic| !diagnostic.code.starts_with("E3")),
+                    "{}: {:?}",
+                    path.display(),
+                    analysis.diagnostics
+                );
+            }
+            if !path_text.contains("effects-capabilities") && !path_text.contains("component-call")
+            {
+                assert!(
+                    analysis.diagnostics.iter().all(|diagnostic| {
+                        !diagnostic.code.starts_with("E4") && !diagnostic.code.starts_with("E6")
+                    }),
                     "{}: {:?}",
                     path.display(),
                     analysis.diagnostics
