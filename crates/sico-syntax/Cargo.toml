@@ -1,0 +1,14 @@
+[package]
+name = "sico-syntax"
+description = "Lossless syntax tree and typed syntax wrappers for Sico"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+rowan.workspace = true
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

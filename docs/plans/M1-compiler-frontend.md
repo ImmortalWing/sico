@@ -1,6 +1,6 @@
 # M1 plan: compiler frontend and diagnostics
 
-> - status: ready after M0 exit
+> - status: in progress (STEP-0015 complete)
 > - created: 2026-07-15
 > - phase: M1
 > - language baseline: [`RFC-0005`](../rfc/RFC-0005-labeled-block-syntax-baseline.md)
@@ -14,7 +14,7 @@
 
 - STEP-0014 结论允许进入 M1；
 - B 的 54 个 canonical case、12 个 B mutation 和 RFC-0005 不漂移；
-- Unicode/identifier、token 和换行规则在 lexer 实现前形成 RFC；
+- Unicode/identifier、token 和换行规则已在 lexer 实现前由 [`RFC-0006`](../rfc/RFC-0006-lexical-source-contract-v0.md) 接受；
 - RFC-0001 的 E1xxx syntax partition 从 `reserved` 升级前有真实 parser 根因、span 和 recovery 证据。
 
 ## 3. Engineering boundaries
@@ -61,6 +61,8 @@ fuzz/                lexer/parser no-panic/no-hang targets
 | STEP-0021 | fuzz/performance + M1 exit audit | no panic/hang corpus；size/depth/token limits；全部 M1 gate requirement-by-requirement proven |
 
 编号在 STEP-0014 完成后可立即使用。若某步发现必须先做语言决定，则暂停实现、新建 RFC，并在本表插入新 STEP；不得把语法选择藏进 Rust enum 或 parser 分支。
+
+进度：STEP-0015 已完成，证据见 [`step record`](../steps/STEP-0015-compiler-workspace-lexical-source.md) 与 [`review report`](../reports/compiler-workspace-lexical-source-v0.md)；下一执行项为 STEP-0016。
 
 ## 6. Test matrix
 

@@ -46,9 +46,6 @@ foreach ($name in @(
 
 $stepDirectory = Join-Path $root 'docs/steps'
 $stepFiles = @(Get-ChildItem -LiteralPath $stepDirectory -Filter 'STEP-*.md' | Sort-Object Name)
-if ($stepFiles.Count -ne 14) {
-  throw "expected 14 M0 step records, found $($stepFiles.Count)"
-}
 for ($number = 1; $number -le 14; $number++) {
   $prefix = "STEP-{0:D4}-" -f $number
   $matches = @($stepFiles | Where-Object Name -like "$prefix*")
@@ -98,9 +95,7 @@ if ($missingCurrentPhase -or $missingM0Complete -or $missingM0Audit) {
 
 $statusText = Read-Utf8 (Join-Path $root 'docs/STATUS.md')
 foreach ($pattern in @(
-  '(?m)^> - phase: M1 ',
-  '(?m)^> - last completed step: STEP-0014$',
-  '(?m)^> - next step: STEP-0015$'
+  '(?m)^> - phase: M1 '
 )) {
   if ($statusText -notmatch $pattern) {
     throw "STATUS is missing expected state: $pattern"
@@ -148,4 +143,4 @@ foreach ($file in $markdownFiles) {
   }
 }
 
-Write-Output "M0_EXIT_DOCS_OK steps=14 decisions=7 markdown=$($markdownFiles.Count) local_links=$localLinks official_ai_runs=0 current_phase=M1 next=STEP-0015"
+Write-Output "M0_EXIT_DOCS_OK steps=14 decisions=7 markdown=$($markdownFiles.Count) local_links=$localLinks official_ai_runs=0 current_phase=M1"

@@ -2,18 +2,18 @@
 
 > - updated: 2026-07-15
 > - phase: M1 编译器前端与诊断
-> - phase status: planned
+> - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0014
-> - next step: STEP-0015
+> - last completed step: STEP-0015
+> - next step: STEP-0016
 
 ## 1. Current objective
 
-下一目标是按 M1 计划建立正式 Rust workspace，并先固定 source/token/Unicode/identifier/newline/trivia lexical contract。
+下一目标是按 RFC-0006 实现统一 source/span、line index 与无损 lexer，并让 STEP-0015 的 21 个 contract case 成为真实 Rust behavior tests。
 
 ## 2. Current step
 
-[`STEP-0014: M0 退出审计`](./steps/STEP-0014-m0-exit-audit.md) 已完成并给出 GO。下一步骤编号为 `STEP-0015`，尚未开始。
+[`STEP-0015: 建立编译器 workspace 并冻结 lexical/source 契约`](./steps/STEP-0015-compiler-workspace-lexical-source.md) 已完成：七 crate workspace 可构建，RFC-0006 accepted，21 个 contract case 和独立 validator 通过。crate 仍是空实现边界，没有实际 lexer/parser 行为。
 
 ## 3. Verified repository facts
 
@@ -30,18 +30,19 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 24 | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 11 | measured |
-| `Cargo.toml` | 5 | measured |
+| Rust `.rs` 文件 | 18 | measured |
+| `Cargo.toml` | 13 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
 | 真实 WebAssembly Component | 2 | verified |
 | Component sync/async 重跑 | 2 + 2 passed | verified |
 | 4096-bit/Decimal ABI roundtrip | 512 bytes + true | verified |
-| 正式编译器 | 不存在 | verified |
+| 正式编译器 workspace | 7 crates, build/test pass | verified |
+| source/lexer/parser 实现 | 不存在 | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
-M0 已完成；仓库获准进入 M1，但正式编译器仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
+M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译器和前端行为仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
 
 ## 4. Completed assets
 
@@ -65,6 +66,7 @@ M0 已完成；仓库获准进入 M1，但正式编译器仍不存在。现有 a
 - 12 类 AI-oriented 错误 taxonomy（真实频率未测量）：[`error-taxonomy.json`](../ai-eval/error-taxonomy.json)；
 - M0 requirement-by-requirement GO 结论与递延登记：[`M0 exit audit`](./reports/m0-exit-audit.md)；
 - STEP-0015–0021 前端工程计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)；
+- 正式 Rust workspace、lexical/source v0 与 21 个 contract case：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md)、[`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -79,7 +81,7 @@ M0 已完成；仓库获准进入 M1，但正式编译器仍不存在。现有 a
 
 ## 7. Risks
 
-- B 已选为 M1 baseline，但目前没有正式词法器或解析器；结构配对与具名关闭不等于已测恢复能力；
+- B 已选为 M1 baseline，lexical/source contract 已冻结，但目前没有正式 source/lexer/parser 实现；结构配对与具名关闭不等于已测恢复能力；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - 语法候选已覆盖 10 组 P0 判定、完整静态指标和离线 AI 任务，但仍没有真实 parser 或模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
@@ -89,4 +91,4 @@ M0 已完成；仓库获准进入 M1，但正式编译器仍不存在。现有 a
 
 ## 8. Next step
 
-`STEP-0015`：建立正式 compiler workspace；在 lexer 实现前完成 lexical/source RFC，固定 UTF-8、identifier/Unicode、newline、trivia、token、span 与输入限额。
+`STEP-0016`：实现 source/span、line index 与 lossless lexer；执行 token golden、Unicode/invalid-byte diagnostics、line index property tests 和 trivia byte-preservation tests，不开始 B parser 或 M2 语义。

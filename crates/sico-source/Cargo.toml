@@ -1,0 +1,13 @@
+[package]
+name = "sico-source"
+description = "Source text and byte-range boundary for the Sico compiler"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+text-size.workspace = true
+
+[lints]
+workspace = true

@@ -17,3 +17,4 @@
 | [`runtime-desktop-android-v0`](./runtime-desktop-android-v0.md) | complete | STEP-0011 | 桌面/Android Runtime、后端、发布政策与最小探针选择 |
 | [`syntax-evidence-v1`](./syntax-evidence-v1.md) | complete | STEP-0012 | 54-case 静态快照、36 mutation 与 96-task AI 离线协议 |
 | [`m0-exit-audit`](./m0-exit-audit.md) | complete | STEP-0014 | M0 全门槛、真实 Rust/Component 重跑、递延登记与 M1 GO 结论 |
+| [`compiler-workspace-lexical-source-v0`](./compiler-workspace-lexical-source-v0.md) | complete | STEP-0015 | 七 crate workspace、锁定依赖、RFC-0006 与 21 个 lexical/source contract case 审查 |

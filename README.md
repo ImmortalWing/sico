@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目当前处于方向与架构设计阶段，尚未开始编写编译器实现。
+项目已完成 M0 设计与技术基线，当前处于 M1 编译器前端阶段。正式 Rust workspace 已建立，但 source/lexer/parser 尚未实现。
 
 ## 文档
 
@@ -38,4 +38,5 @@ Sico Runtime / Sico Host
 - WIT 定义组件和宿主能力接口；
 - 通用系统能力优先复用 WASI；
 - 不依赖 JavaScript 或 TypeScript；
-- M0 设计与技术基线已通过退出审计；`Int`/Decimal、resource/async 和真实 Component/Runtime host-call 原型已完成，Runtime v0 选择 Wasmtime，M1 表层语法选择 B Labeled Blocks。下一步是 STEP-0015 的正式 Rust workspace 与 lexical/source RFC；编译器实现尚未开始。
+- M0 设计与技术基线已通过退出审计；`Int`/Decimal、resource/async 和真实 Component/Runtime host-call 原型已完成，Runtime v0 选择 Wasmtime，M1 表层语法选择 B Labeled Blocks。
+- STEP-0015 已建立七 crate Rust workspace，并由 RFC-0006 固定 UTF-8、Unicode identifier、newline、trivia、token、span 与输入限额。下一步是 STEP-0016 的 source/span 与无损 lexer；目前不能实际编译 `.sico`。

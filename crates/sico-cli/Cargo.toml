@@ -1,0 +1,19 @@
+[package]
+name = "sico-cli"
+description = "Command-line integration boundary for the Sico toolchain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+clap.workspace = true
+sico-diagnostics = { path = "../sico-diagnostics" }
+sico-format = { path = "../sico-format" }
+sico-lexer = { path = "../sico-lexer" }
+sico-parser = { path = "../sico-parser" }
+sico-source = { path = "../sico-source" }
+sico-syntax = { path = "../sico-syntax" }
+
+[lints]
+workspace = true

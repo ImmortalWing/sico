@@ -18,5 +18,6 @@
 | [STEP-0012](./STEP-0012-syntax-evidence-completion.md) | complete | M0 | 补齐第二轮语法静态、mutation 与 AI 离线证据 |
 | [STEP-0013](./STEP-0013-syntax-baseline-decision.md) | complete | M0 | 选择 B labeled-block 作为 M1 唯一语法基线 |
 | [STEP-0014](./STEP-0014-m0-exit-audit.md) | complete | M0 | 完成 M0 退出审计并授权进入 M1 |
+| [STEP-0015](./STEP-0015-compiler-workspace-lexical-source.md) | complete | M1 | 建立正式 Rust workspace 并冻结 lexical/source 契约 |
 
-下一可用编号：`STEP-0015`。
+下一可用编号：`STEP-0016`。

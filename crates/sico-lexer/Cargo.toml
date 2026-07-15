@@ -1,0 +1,16 @@
+[package]
+name = "sico-lexer"
+description = "Lossless lexical analysis for Sico source"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sico-source = { path = "../sico-source" }
+sico-syntax = { path = "../sico-syntax" }
+unicode-ident.workspace = true
+unicode-normalization.workspace = true
+
+[lints]
+workspace = true

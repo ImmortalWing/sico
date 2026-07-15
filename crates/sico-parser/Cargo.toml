@@ -1,0 +1,15 @@
+[package]
+name = "sico-parser"
+description = "Error-tolerant parser for the Sico B grammar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sico-lexer = { path = "../sico-lexer" }
+sico-source = { path = "../sico-source" }
+sico-syntax = { path = "../sico-syntax" }
+
+[lints]
+workspace = true

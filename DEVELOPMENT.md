@@ -168,7 +168,7 @@ sico/
 
 所有诊断、AST 节点和后续 IR 来源信息都引用统一跨度类型，禁止各模块自行计算行列。
 
-Unicode 标识符是否允许、如何规范化以及是否允许中文标识符属于开放问题。无论最终选择如何，编译器必须识别全角结构符号、不可见字符和易混淆字符，并提供短诊断。
+[`RFC-0006`](./docs/rfc/RFC-0006-lexical-source-contract-v0.md) 已接受 Unicode 17.0 XID + NFC 标识符并允许中文名称，同时禁止 source control/default-ignorable、全角结构符号替代和静默规范化。跨 script/confusable warning 仍是 proposed，需在具有 symbol table 后单独决定。
 
 ### 5.2 语法树与 AST
 
@@ -1194,7 +1194,7 @@ sico explain    展开错误编号
 语言层：
 
 - M1 表层语法已由 RFC-0005 选择 B；文件组织及未覆盖模块/import/属性语法仍开放；
-- 中文标识符与 Unicode 规范化；
+- Unicode confusable/cross-script 名称安全 lint（identifier/XID/NFC 已由 RFC-0006 接受）；
 - 名义类型、结构类型或混合模型；
 - 泛型与多态；
 - 所有权、GC 或其他内存管理模型；

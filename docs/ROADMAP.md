@@ -51,7 +51,7 @@
 
 ## M1: 编译器前端与诊断
 
-状态：`planned`
+状态：`in-progress`
 
 Entry gate：satisfied by STEP-0014。
 
@@ -62,6 +62,8 @@ Entry gate：satisfied by STEP-0014。
 退出证据：合法语法案例稳定解析；非法案例产生预期主要诊断；单点错误不会形成不可控级联。
 
 执行计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)，STEP-0015–0021。
+
+当前证据：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md) 已建立七 crate workspace 并接受 [`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；下一步是 STEP-0016 source/span + lossless lexer。
 
 ## M2: 静态语义
 

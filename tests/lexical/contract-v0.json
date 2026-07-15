@@ -1,0 +1,163 @@
+{
+  "schema": "sico.lexical-contract.v0",
+  "unicode_version": "17.0.0",
+  "positive": [
+    {
+      "id": "LEX-P001",
+      "category": "utf8",
+      "source": "function main() returns Unit:\n  return Unit\nend function\n",
+      "expect": "strict UTF-8 without BOM"
+    },
+    {
+      "id": "LEX-P002",
+      "category": "identifier",
+      "source": "计算 café _结果2",
+      "expect": "three NFC XID identifiers"
+    },
+    {
+      "id": "LEX-P003",
+      "category": "newline",
+      "source": "a\nb\r\nc",
+      "expect": "LF and CRLF are newline trivia"
+    },
+    {
+      "id": "LEX-P004",
+      "category": "trivia",
+      "source": "\t // 中文 comment\n",
+      "expect": "whitespace, line comment, newline"
+    },
+    {
+      "id": "LEX-P005",
+      "category": "token",
+      "source": "async function _name(a: Int) returns Result[Int, Error]: @ + - = == <= 001 \"A\\n\\\"B\\\\\" true false _\nend function",
+      "expect": "accepted token families use maximal munch"
+    },
+    {
+      "id": "LEX-P006",
+      "category": "span",
+      "source": "// 😀\n中",
+      "expect": "byte offsets map through one Unicode scalar emoji",
+      "points": [
+        { "byte": 0, "line": 1, "column": 1 },
+        { "byte": 3, "line": 1, "column": 4 },
+        { "byte": 7, "line": 1, "column": 5 },
+        { "byte": 8, "line": 2, "column": 1 },
+        { "byte": 11, "line": 2, "column": 2 }
+      ]
+    },
+    {
+      "id": "LEX-P007",
+      "category": "limit",
+      "source": "",
+      "expect": "values exactly equal to each hard limit are accepted"
+    }
+  ],
+  "negative": [
+    {
+      "id": "LEX-N001",
+      "category": "utf8",
+      "bytes": [102, 255, 111],
+      "expect": "reject before lexing",
+      "message": "source is not valid UTF-8"
+    },
+    {
+      "id": "LEX-N002",
+      "category": "utf8",
+      "bytes": [239, 187, 191, 102],
+      "expect": "reject UTF-8 BOM",
+      "message": "UTF-8 BOM is not allowed"
+    },
+    {
+      "id": "LEX-N003",
+      "category": "identifier",
+      "source": "café",
+      "expect": "reject decomposed non-NFC spelling",
+      "message": "identifier must be NFC"
+    },
+    {
+      "id": "LEX-N004",
+      "category": "identifier",
+      "source": "a​b",
+      "expect": "reject default-ignorable U+200B",
+      "message": "invisible character is not allowed"
+    },
+    {
+      "id": "LEX-N005",
+      "category": "identifier",
+      "source": "😀name",
+      "expect": "emoji is not XID_Start",
+      "message": "character cannot start an identifier"
+    },
+    {
+      "id": "LEX-N006",
+      "category": "newline",
+      "source": "a\rb",
+      "expect": "reject bare CR",
+      "message": "use LF or CRLF newline"
+    },
+    {
+      "id": "LEX-N007",
+      "category": "trivia",
+      "source": "a b",
+      "expect": "NBSP is not whitespace trivia",
+      "message": "use ASCII space"
+    },
+    {
+      "id": "LEX-N008",
+      "category": "trivia",
+      "source": "/* comment */",
+      "expect": "block comments are not accepted",
+      "message": "unexpected '/'"
+    },
+    {
+      "id": "LEX-N009",
+      "category": "token",
+      "source": "\"unterminated",
+      "expect": "reject unterminated string",
+      "message": "unterminated string"
+    },
+    {
+      "id": "LEX-N010",
+      "category": "token",
+      "source": "\"bad\\u{41}\"",
+      "expect": "Unicode escape is not accepted",
+      "message": "unknown string escape"
+    },
+    {
+      "id": "LEX-N011",
+      "category": "token",
+      "source": "name： Text",
+      "expect": "fullwidth colon is not punctuation",
+      "message": "use ASCII ':'"
+    },
+    {
+      "id": "LEX-N012",
+      "category": "utf8",
+      "source": "a\u0000b",
+      "expect": "reject forbidden source control",
+      "message": "control character is not allowed"
+    },
+    {
+      "id": "LEX-N013",
+      "category": "span",
+      "source": "中",
+      "expect": "byte 1 is not a UTF-8 scalar boundary",
+      "message": "range boundary is not a character boundary"
+    },
+    {
+      "id": "LEX-N014",
+      "category": "limit",
+      "source": "",
+      "expect": "each hard limit plus one is rejected",
+      "message": "input limit exceeded"
+    }
+  ],
+  "limits": {
+    "source_bytes": 16777216,
+    "line_bytes": 1048576,
+    "identifier_bytes": 1024,
+    "token_bytes": 1048576,
+    "tokens": 1000000,
+    "diagnostics": 100
+  }
+}
