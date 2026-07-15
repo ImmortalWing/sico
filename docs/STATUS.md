@@ -4,16 +4,16 @@
 > - phase: M3 Sico IR 与 Component
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0034
-> - next step: STEP-0035
+> - last completed step: STEP-0035
+> - next step: STEP-0036
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0035：先审计 RFC-0004 与 Wasmtime/WASI 0.3 真实支持，仅在 future/stream close、cancel、backpressure 证据齐全后实现对应 backend subset。
+下一目标是执行 STEP-0036：只为已真实 codegen/Wasmtime 通过的同步 scalar Component subset 冻结 `sico build/run`，明确 stdout/stderr/exit 与无产物失败契约。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0034`](./steps/STEP-0034-component-wit-boundary.md) 已完成；下一项审计并实现有真实证据的 async/task/stream backend subset。
+当前没有进行中的 STEP。[`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md) 已完成；下一项把可证明的最小 source→Component→Runtime 链接入 CLI。
 
 ## 3. Verified repository facts
 
@@ -30,7 +30,7 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 35 | measured |
+| Rust `.rs` 文件 | 36 | measured |
 | `Cargo.toml` | 18 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
@@ -64,6 +64,8 @@
 | deterministic Core Wasm backend | 2 byte-identical artifacts；wasmparser + Node engine；42/7/9 | verified |
 | compiler-generated Component | 2 byte-identical artifacts；wasmparser + Wasmtime 46.0.1；42 | verified |
 | WIT Result/record/resource boundary | Ok/Err；512-byte Int；Decimal；owned/borrowed/drop；host output 50 | verified |
+| future/stream Runtime contract | 3 Components；roundtrip/close/cancel；capacity 1/5；stable SHA-256 | verified |
+| async compiler boundary | Task/Future/Stream 3 feature-specific refusals | verified |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -111,6 +113,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - effect/resource/revision IR flow：[`STEP-0032`](./steps/STEP-0032-effect-resource-revision-flow.md)、[`RFC-0010`](./rfc/RFC-0010-effect-resource-revision-ir-flow-v0.md)、[`review report`](./reports/effect-resource-revision-ir-flow-v0.md)；
 - deterministic Core Wasm backend：[`STEP-0033`](./steps/STEP-0033-deterministic-core-wasm-backend.md)、[`RFC-0011`](./rfc/RFC-0011-deterministic-core-wasm-backend-v0.md)、[`review report`](./reports/deterministic-core-wasm-backend-v0.md)；
 - Component/WIT boundary：[`STEP-0034`](./steps/STEP-0034-component-wit-boundary.md)、[`RFC-0012`](./rfc/RFC-0012-component-wit-boundary-v0.md)、[`review report`](./reports/component-wit-boundary-v0.md)；
+- async/task/stream backend contract：[`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md)、[`RFC-0013`](./rfc/RFC-0013-async-backend-support-v0.md)、[`review report`](./reports/async-task-stream-backend-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -128,7 +131,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - STEP-0023–0029 已有真实 checker/index/CLI；仍无真实模型实测；
-- WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
+- WIT 0.253 已真实往返 resource、数值记录、`async func`、`future<T>` 与 `stream<T>`；compiler async IR 尚缺完整 task scope/cancel/bound，所以 codegen 保持专用 refusal；
 - Core Wasm 已由独立 Node engine 执行，compiler-generated Component 已由 selected Wasmtime 执行；CLI 与一般 aggregate/import adapter 仍须 STEP-0035–0036 接入；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
@@ -136,4 +139,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0035`：审计 RFC-0004/runtime support，只实现真实 future/stream/cancel/backpressure 证据支持的 async/task/stream backend subset。
+`STEP-0036`：为同步 scalar Component subset 实现最小 source→semantics→IR→Component→Wasmtime CLI build/run，冻结输出、退出码和失败无产物契约。

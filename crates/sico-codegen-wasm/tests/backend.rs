@@ -47,12 +47,29 @@ fn scalar_components_are_deterministic_and_validate() {
 #[test]
 fn boundary_probe_wit_parses_with_result_record_and_resource_shapes() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let wit = repository.join("wit/boundary-probe-v0");
-    let mut resolve = wit_parser::Resolve::default();
-    let (package, sources) = resolve.push_dir(&wit).unwrap();
-    assert_eq!(resolve.packages[package].name.namespace, "sico");
-    assert_eq!(resolve.packages[package].name.name, "boundary-probe");
-    assert!(sources.paths().next().is_some());
+    for name in ["boundary-probe-v0", "async-flow-v0"] {
+        let wit = repository.join("wit").join(name);
+        let mut resolve = wit_parser::Resolve::default();
+        let (package, sources) = resolve.push_dir(&wit).unwrap();
+        assert_eq!(resolve.packages[package].name.namespace, "sico");
+        assert!(sources.paths().next().is_some());
+    }
+}
+
+#[test]
+fn task_future_and_stream_have_explicit_backend_refusals() {
+    for (feature, ty) in [
+        ("Task", Type::Task(Box::new(Type::Int))),
+        ("Future", Type::Future(Box::new(Type::Int))),
+        ("Stream", Type::Stream(Box::new(Type::Int))),
+    ] {
+        let ir = identity_module(ty);
+        assert!(matches!(
+            compile_component(&ir),
+            Err(CodegenError::AsyncUnsupported { feature: actual, contract, .. })
+                if actual == feature && !contract.is_empty()
+        ));
+    }
 }
 
 #[test]
@@ -162,6 +179,32 @@ fn numeric_module() -> Module {
     )
     .unwrap();
     sico_ir::lower_core(&source).unwrap()
+}
+
+fn identity_module(ty: Type) -> Module {
+    let range = SourceRange { start: 0, end: 0 };
+    let mut module = Module::new("async-boundary.sico", 0);
+    module.functions.push(Function {
+        id: FunctionId(1),
+        name: "identity".into(),
+        parameters: vec![Parameter {
+            id: ValueId(0),
+            name: "value".into(),
+            ty: ty.clone(),
+            range,
+        }],
+        return_type: ty,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: Vec::new(),
+            terminator: Terminator::Return(Some(ValueId(0))),
+            range,
+        }],
+        range,
+    });
+    module
 }
 
 fn validate(bytes: &[u8]) {

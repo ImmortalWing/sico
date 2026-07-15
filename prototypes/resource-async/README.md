@@ -1,6 +1,6 @@
 # Sico resource and async prototype
 
-STEP-0009 的独立 Rust 原型，验证 affine resource、结构化 task、one-shot future、有界 stream 和 WASI 0.3 WIT 映射。
+STEP-0009 的独立 Rust 原型，验证 affine resource、结构化 task、one-shot future、有界 stream 和 [`async-flow-v0`](../../wit/async-flow-v0/world.wit) WASI 0.3 WIT 映射。
 
 ```powershell
 cargo test --manifest-path prototypes/resource-async/Cargo.toml

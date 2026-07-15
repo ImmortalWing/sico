@@ -1,6 +1,6 @@
 # RFC-0004: Resource and async mapping v0
 
-> - status: proposed
+> - status: accepted
 > - date: 2026-07-15
 > - authors: autonomous-agent
 > - target language/platform version: draft / WASI 0.3
@@ -57,7 +57,7 @@ Task 不是普通可复制泛型值。Future/Stream 的 Component lowering 必�
 - 增量序列使用 `stream<T>`，通常和终止 `future<result<_, E>>` 成对；
 - Sico Task scope、取消树和权限不作为通用 WIT resource 暴露；Runtime 负责把 reader close、instance termination 和父取消传播到调度器。
 
-原型 WIT 已由 `wit-parser 0.253.0` 解析。STEP-0010 又真实验证了 owned/borrowed resource 与原生 `async func` Component 往返；`future<T>`/`stream<T>` 尚未由 Runtime 往返，因此 RFC 保持 `proposed`。
+正式 [`async-flow-v0`](../../wit/async-flow-v0/world.wit) WIT 已由 `wit-parser 0.253.0` 解析。STEP-0010 真实验证了 owned/borrowed resource 与原生 `async func` Component 往返；STEP-0035 又用 Wasmtime 46.0.1 真实验证 `future<T>`/`stream<T>` identity roundtrip、reader close、pending future cancel acknowledgement 与 capacity 1/5 的 bounded stream demand。因此本 RFC 的映射与取消/背压方向已接受；compiler codegen 仍只实现其 IR 能显式表达并验证的子集。
 
 ## AI evaluation
 
@@ -82,12 +82,14 @@ Runtime 必须限制 task 数、stream buffer、执行时间和 Component memory
 
 已验证：10 个动态测试、2 个 Rust compile-fail、WIT parser、Clippy 零 warning、确定性 release 探针。
 
-STEP-0010 已证明 owned/borrowed resource 调用和原生 `async func` 能由锁定版本工具生成、加载和往返，并实测同步 host lowering 会因 async 类型不匹配被拒绝。接受前仍须至少真实往返一个 `future<T>` 和一个 `stream<T>`，并验证 close/cancel/backpressure 传播；不允许用旧 pollable 冒充。
+STEP-0010 已证明 owned/borrowed resource 调用和原生 `async func` 能由锁定版本工具生成、加载和往返，并实测同步 host lowering 会因 async 类型不匹配被拒绝。STEP-0035 已真实往返 `future<u32>` 与 `stream<u32>`，关闭两类 reader，确认 pending future cancel，并验证 `stream<u8>` consumer capacity 1 只接收 1/5 item、capacity 100 接收 5/5 后完成。未使用旧 pollable adapter。
 
 ## Links
 
 - [STEP-0009](../steps/STEP-0009-resource-async-wit-prototypes.md)
 - [report](../reports/resource-async-wit-v0.md)
+- [STEP-0035](../steps/STEP-0035-async-task-stream-backend.md)
+- [backend report](../reports/async-task-stream-backend-v0.md)
 - [WIT reference](https://component-model.bytecodealliance.org/design/wit.html)
 - [Component Model FAQ](https://component-model.bytecodealliance.org/reference/faq.html)
 - [Wasmtime component API](https://docs.wasmtime.dev/api/wasmtime/component/index.html)

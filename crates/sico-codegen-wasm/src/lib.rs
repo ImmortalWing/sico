@@ -17,9 +17,22 @@ use wasm_encoder::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CodegenError {
     InvalidIr(Vec<VerifyError>),
-    ModuleTooLarge { functions: usize },
-    Unsupported { function: String, feature: String },
-    IntegerOutsideProvenI64 { function: String, bytes: usize },
+    ModuleTooLarge {
+        functions: usize,
+    },
+    AsyncUnsupported {
+        function: String,
+        feature: String,
+        contract: &'static str,
+    },
+    Unsupported {
+        function: String,
+        feature: String,
+    },
+    IntegerOutsideProvenI64 {
+        function: String,
+        bytes: usize,
+    },
 }
 
 /// Compiles the proven scalar/control subset to deterministic Core Wasm.
@@ -126,6 +139,9 @@ fn lower_parameter_type(function: &str, ty: &Type) -> Result<ValType, CodegenErr
     match ty {
         Type::Bool => Ok(ValType::I32),
         Type::Int => Err(unsupported(function, "unbounded Int parameter")),
+        Type::Task(_) => Err(async_unsupported(function, "Task")),
+        Type::Future(_) => Err(async_unsupported(function, "Future")),
+        Type::Stream(_) => Err(async_unsupported(function, "Stream")),
         _ => Err(unsupported(function, "non-scalar parameter")),
     }
 }
@@ -135,6 +151,9 @@ fn lower_result_type(function: &str, ty: &Type) -> Result<Vec<ValType>, CodegenE
         Type::Unit => Ok(Vec::new()),
         Type::Bool => Ok(vec![ValType::I32]),
         Type::Int => Ok(vec![ValType::I64]),
+        Type::Task(_) => Err(async_unsupported(function, "Task")),
+        Type::Future(_) => Err(async_unsupported(function, "Future")),
+        Type::Stream(_) => Err(async_unsupported(function, "Stream")),
         _ => Err(unsupported(function, "non-scalar result")),
     }
 }
@@ -255,6 +274,9 @@ fn lower_local_type(function: &str, ty: &Type) -> Result<ValType, CodegenError> 
     match ty {
         Type::Bool => Ok(ValType::I32),
         Type::Int => Ok(ValType::I64),
+        Type::Task(_) => Err(async_unsupported(function, "Task")),
+        Type::Future(_) => Err(async_unsupported(function, "Future")),
+        Type::Stream(_) => Err(async_unsupported(function, "Stream")),
         _ => Err(unsupported(function, "non-scalar local")),
     }
 }
@@ -278,5 +300,19 @@ fn unsupported(function: &str, feature: &str) -> CodegenError {
     CodegenError::Unsupported {
         function: function.to_owned(),
         feature: feature.to_owned(),
+    }
+}
+
+fn async_unsupported(function: &str, feature: &str) -> CodegenError {
+    let contract = match feature {
+        "Task" => "structured Task remains language-local; no WIT Task handle",
+        "Future" => "Future lowering requires an async Component function and cancellation edge",
+        "Stream" => "Stream lowering requires an explicit bound and close/cancel edge",
+        _ => "unsupported asynchronous boundary",
+    };
+    CodegenError::AsyncUnsupported {
+        function: function.to_owned(),
+        feature: feature.to_owned(),
+        contract,
     }
 }

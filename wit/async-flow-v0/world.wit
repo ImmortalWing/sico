@@ -1,0 +1,27 @@
+package sico:async-flow-probe@0.1.0;
+
+interface operations {
+    enum io-error {
+        not-found,
+        denied,
+        cancelled,
+    }
+
+    resource session {
+        constructor(label: string);
+        label: func() -> string;
+    }
+
+    /// Consumes the owned handle. Dropping an unconsumed handle also releases it.
+    close-session: func(value: session);
+
+    /// The borrow cannot escape this call; scheduling belongs to the Runtime.
+    read: async func(value: borrow<session>, key: string) -> result<list<u8>, io-error>;
+
+    /// Incremental items plus a one-shot terminal result, following WASI 0.3 shapes.
+    watch: func(value: borrow<session>) -> tuple<stream<list<u8>>, future<result<_, io-error>>>;
+}
+
+world async-flow-probe {
+    export operations;
+}

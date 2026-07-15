@@ -64,7 +64,7 @@ $expectedDecisions = [ordered]@{
   'docs/rfc/RFC-0001-diagnostics-protocol-v0.md' = 'accepted'
   'docs/rfc/RFC-0002-semantic-index-query-v0.md' = 'accepted'
   'docs/rfc/RFC-0003-numeric-representation-v0.md' = 'proposed'
-  'docs/rfc/RFC-0004-resource-async-mapping-v0.md' = 'proposed'
+  'docs/rfc/RFC-0004-resource-async-mapping-v0.md' = 'accepted'
   'docs/rfc/RFC-0005-labeled-block-syntax-baseline.md' = 'accepted'
 }
 foreach ($relative in $expectedDecisions.Keys) {
