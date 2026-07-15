@@ -1,0 +1,8 @@
+function main() returns Int:  // entry
+  effects:
+    x.y
+  match (x):
+    case Value:
+      return ok(x + 1)  // result
+  end match
+end function

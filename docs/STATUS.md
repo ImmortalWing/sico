@@ -4,16 +4,16 @@
 > - phase: M1 编译器前端与诊断
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0018
-> - next step: STEP-0019
+> - last completed step: STEP-0019
+> - next step: STEP-0020
 
 ## 1. Current objective
 
-下一目标是实现只接受无语法错误 source 的 canonical formatter，验证 54/54 format→parse AST 稳定、二次格式化逐字不变以及 comments/trivia policy。
+下一目标是交付 `sico check`、`format`、`outline` CLI，冻结文件/stdin、text/JSON、stdout/stderr 和退出码行为，并明确报告 M2 type checker 尚未实现。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md) 已完成；12 个 B mutation 各自产生一个稳定主要诊断和预注册 anchor，且没有改变 54 个成功 shape。
+当前没有进行中的 STEP。[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md) 已完成；54/54 B source AST stable 且幂等，12/12 mutation 被拒绝，不产生部分格式化输出。
 
 ## 3. Verified repository facts
 
@@ -43,6 +43,7 @@
 | lossless lexer | 8 tests; B 54/54 | verified |
 | B happy-path parser | 54/54 + 54 snapshots | verified |
 | parser recovery/E1xxx | 12/12 mutation；E1001–E1012 | verified |
+| canonical formatter | 54/54 AST stable + idempotent | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
 M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译器和前端行为仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
@@ -73,6 +74,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 - strict source/span、line index 与 54-file lossless lexer：[`STEP-0016`](./steps/STEP-0016-source-span-lossless-lexer.md)；
 - B happy-path lossless parser 与 AST shape：[`STEP-0017`](./steps/STEP-0017-b-grammar-lossless-parser.md)；
 - parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；
+- canonical formatter、comment/trivia policy 与 error-tree refusal：[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -81,7 +83,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0019 的外部条件。
+当前没有阻塞 STEP-0020 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -97,4 +99,4 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 8. Next step
 
-`STEP-0019`：实现 canonical formatter；验证 54/54 format→parse AST shape stable、二次 format byte-identical、comments/trivia policy，并拒绝格式化 error tree。
+`STEP-0020`：实现 `sico check`、`format`、`outline` 的文件/stdin integration，冻结 stdout/stderr、退出码和 RFC-0001 JSON，并显式区分“syntax success”与“type checker 尚未实现”。

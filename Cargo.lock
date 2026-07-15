@@ -162,7 +162,9 @@ dependencies = [
 name = "sico-format"
 version = "0.0.0"
 dependencies = [
- "sico-syntax",
+ "sico-lexer",
+ "sico-parser",
+ "sico-source",
 ]
 
 [[package]]

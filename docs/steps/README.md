@@ -22,5 +22,6 @@
 | [STEP-0016](./STEP-0016-source-span-lossless-lexer.md) | complete | M1 | 实现统一 source/span、line index 与无损 lexer |
 | [STEP-0017](./STEP-0017-b-grammar-lossless-parser.md) | complete | M1 | 实现 B grammar happy-path rowan tree 与 AST shape |
 | [STEP-0018](./STEP-0018-parser-recovery-syntax-diagnostics.md) | complete | M1 | 实现 parser recovery 与 E1xxx syntax diagnostics |
+| [STEP-0019](./STEP-0019-canonical-formatter.md) | complete | M1 | 实现 parse-success-only canonical formatter |
 
-下一可用编号：`STEP-0019`。
+下一可用编号：`STEP-0020`。

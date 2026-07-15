@@ -21,3 +21,4 @@
 | [`source-span-lossless-lexer-v0`](./source-span-lossless-lexer-v0.md) | complete | STEP-0016 | strict UTF-8、统一 span/line index、21 contract case 与 54-file lossless lexer 验证 |
 | [`b-grammar-lossless-parser-v0`](./b-grammar-lossless-parser-v0.md) | complete | STEP-0017 | 54/54 B lossless parse、AST snapshots 与 M2 semantic reject 隔离 |
 | [`parser-recovery-syntax-diagnostics-v0`](./parser-recovery-syntax-diagnostics-v0.md) | complete | STEP-0018 | 12/12 mutation 根因、E1xxx text/JSON span、error node 与有界 recovery |
+| [`canonical-formatter-v0`](./canonical-formatter-v0.md) | complete | STEP-0019 | 54/54 AST-stable/idempotent canonical layout、comment policy 与 error-tree refusal |

@@ -7,7 +7,9 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-sico-syntax = { path = "../sico-syntax" }
+sico-lexer = { path = "../sico-lexer" }
+sico-parser = { path = "../sico-parser" }
+sico-source = { path = "../sico-source" }
 
 [lints]
 workspace = true

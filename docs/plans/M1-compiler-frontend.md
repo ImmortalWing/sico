@@ -1,6 +1,6 @@
 # M1 plan: compiler frontend and diagnostics
 
-> - status: in progress (STEP-0018 complete)
+> - status: in progress (STEP-0019 complete)
 > - created: 2026-07-15
 > - phase: M1
 > - language baseline: [`RFC-0005`](../rfc/RFC-0005-labeled-block-syntax-baseline.md)
@@ -62,7 +62,7 @@ fuzz/                lexer/parser no-panic/no-hang targets
 
 编号在 STEP-0014 完成后可立即使用。若某步发现必须先做语言决定，则暂停实现、新建 RFC，并在本表插入新 STEP；不得把语法选择藏进 Rust enum 或 parser 分支。
 
-进度：STEP-0015–0018 已完成；12/12 mutation recovery 与真实 E1xxx 证据见 [`STEP-0018`](../steps/STEP-0018-parser-recovery-syntax-diagnostics.md) 和 [`review report`](../reports/parser-recovery-syntax-diagnostics-v0.md)。下一执行项为 STEP-0019。
+进度：STEP-0015–0019 已完成；54/54 AST-stable/idempotent formatter 证据见 [`STEP-0019`](../steps/STEP-0019-canonical-formatter.md) 和 [`review report`](../reports/canonical-formatter-v0.md)。下一执行项为 STEP-0020。
 
 ### 5.1 后续命令行体验目标（M3/M4）
 
