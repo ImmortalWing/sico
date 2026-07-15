@@ -2,18 +2,18 @@
 
 > - updated: 2026-07-15
 > - phase: M2 静态语义
-> - phase status: planned (entry gate satisfied)
+> - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0021
-> - next step: STEP-0022
+> - last completed step: STEP-0022
+> - next step: STEP-0023
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0022：建立完整 B AST/HIR、stable IDs/source maps 与 name/prelude contract；任何无法由现有 oracle 唯一决定的语义先进入 RFC/case。
+下一目标是执行 STEP-0023：实现 core/nominal type、field、local inference 与 invariant 检查，使 numbers + nominal 的 7 valid/9 invalid 产生真实结果。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。M1 已由 [`exit audit`](./reports/m1-exit-audit.md) 判定 complete 并 GO to M2；[`M2 plan`](./plans/M2-static-semantics.md) 已就绪，尚未开始实现语义。
+当前没有进行中的 STEP。[`STEP-0022`](./steps/STEP-0022-full-hir-name-prelude-contract.md) 已完成：54/54 B source deterministic lowering，12/12 error tree blocked；下一步尚未开始。
 
 ## 3. Verified repository facts
 

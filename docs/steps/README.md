@@ -25,5 +25,6 @@
 | [STEP-0019](./STEP-0019-canonical-formatter.md) | complete | M1 | 实现 parse-success-only canonical formatter |
 | [STEP-0020](./STEP-0020-cli-check-format-outline.md) | complete | M1 | 实现 `sico check`、`format` 与 `outline` CLI contract |
 | [STEP-0021](./STEP-0021-fuzz-performance-m1-exit.md) | complete | M1 | 完成 frontend fuzz/limits/performance 与 M1 exit audit |
+| [STEP-0022](./STEP-0022-full-hir-name-prelude-contract.md) | complete | M2 | 建立 full B HIR、source maps 与 name/prelude contract |
 
-下一可用编号：`STEP-0022`。
+下一可用编号：`STEP-0023`。

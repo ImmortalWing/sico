@@ -1,6 +1,6 @@
 # M2 plan: static semantics
 
-> - status: ready after STEP-0021 GO
+> - status: in progress (STEP-0022 complete)
 > - created: 2026-07-15
 > - phase: M2
 > - entry evidence: [`M1 exit audit`](../reports/m1-exit-audit.md)
@@ -48,6 +48,8 @@ crate 名称和内部数据结构是 STEP-0022 工程决定；不得改变 langu
 | STEP-0029 | semantic CLI integration、fuzz/performance 与 M2 exit audit | 25/25 valid，29/29 invalid exact primary code；`sico check` 不再报告 unavailable；全部 M2 gate proven |
 
 编号在 STEP-0021 推送后可用。任何需要语言决定的发现必须插入独立 RFC/STEP，并更新本表；不能通过“先让测试过”提前固定语义。
+
+进度：STEP-0022 已完成；54/54 deterministic HIR、source maps 与 RFC-0007 name/prelude contract 见 [`review report`](../reports/full-hir-name-prelude-v0.md)。下一执行项为 STEP-0023。
 
 ## 5. Test matrix
 

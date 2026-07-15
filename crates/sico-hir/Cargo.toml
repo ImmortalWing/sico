@@ -1,0 +1,15 @@
+[package]
+name = "sico-hir"
+description = "Untyped structural HIR and source maps for Sico"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sico-lexer = { path = "../sico-lexer" }
+sico-parser = { path = "../sico-parser" }
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

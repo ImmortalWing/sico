@@ -1,0 +1,40 @@
+{
+  "schema": "sico.m2.prelude.v0",
+  "status": "accepted-for-p0-corpus",
+  "public_api_stability": "not-promised",
+  "namespaces": {
+    "type": "prelude and module type declarations",
+    "value": "functions, parameters, locals, variants and intrinsic values",
+    "cross_namespace_collision": "requires a new case and RFC decision"
+  },
+  "types": [
+    { "name": "Unit", "arity": 0, "class": "value" },
+    { "name": "Never", "arity": 0, "class": "value" },
+    { "name": "Bool", "arity": 0, "class": "value" },
+    { "name": "Int", "arity": 0, "class": "value" },
+    { "name": "Float32", "arity": 0, "class": "value" },
+    { "name": "Float64", "arity": 0, "class": "value" },
+    { "name": "Char", "arity": 0, "class": "value" },
+    { "name": "Text", "arity": 0, "class": "value" },
+    { "name": "Option", "arity": 1, "class": "value" },
+    { "name": "Result", "arity": 2, "class": "value" },
+    { "name": "List", "arity": 1, "class": "value" },
+    { "name": "Future", "arity": 1, "class": "affine" },
+    { "name": "Task", "arity": 1, "class": "scoped-affine" },
+    { "name": "Stream", "arity": 2, "class": "resource" },
+    { "name": "Component", "arity": 1, "class": "resource" },
+    { "name": "ComponentCall", "arity": 2, "class": "value" }
+  ],
+  "intrinsic_forms": ["true", "false", "none", "Unit", "ok", "error", "try", "await", "spawn", "move", "borrow", "call"],
+  "p0_fixture_members": [
+    { "name": "Float64.from_int", "role": "explicit-conversion", "signature": "(Int) -> Float64" },
+    { "name": "collect_tasks", "role": "scoped-task-consumer", "signature": "(List[Task[T]], order: TaskOrder) -> List[T]" },
+    { "name": "input", "role": "TaskOrder literal" }
+  ],
+  "resolution": {
+    "ordering": ["lexical-local", "function-parameter", "module-declaration", "prelude"],
+    "heuristic_fallback": "forbidden",
+    "unresolved_name": "must remain unresolved; no string similarity binding",
+    "error_dependency": "dependent type diagnostics are suppressed after unresolved binding"
+  }
+}

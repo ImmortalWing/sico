@@ -3,6 +3,7 @@ members = [
     "crates/sico-cli",
     "crates/sico-diagnostics",
     "crates/sico-format",
+    "crates/sico-hir",
     "crates/sico-lexer",
     "crates/sico-parser",
     "crates/sico-source",

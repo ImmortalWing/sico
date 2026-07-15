@@ -133,8 +133,8 @@ try {
 }
 $metadata = $metadataJson | ConvertFrom-Json
 $workspacePackages = @($metadata.packages | Where-Object { $_.id -in $metadata.workspace_members } | ForEach-Object name | Sort-Object)
-if (($workspacePackages -join ',') -ne ($expectedCrates -join ',')) {
-  throw "unexpected workspace packages: $($workspacePackages -join ',')"
+if (@(Compare-Object $expectedCrates @($workspacePackages | Where-Object { $_ -in $expectedCrates })).Count -ne 0) {
+  throw "STEP-0015 workspace crates are missing: $($workspacePackages -join ',')"
 }
 foreach ($package in $metadata.packages | Where-Object { $_.id -in $metadata.workspace_members }) {
   if ($package.version -ne '0.0.0' -or $package.edition -ne '2024' -or $package.rust_version -ne '1.97') {

@@ -26,10 +26,10 @@ $m2Plan = Get-Content -LiteralPath (Join-Path $root 'docs/plans/M2-static-semant
 $audit = Get-Content -LiteralPath (Join-Path $root 'docs/reports/m1-exit-audit.md') -Raw -Encoding UTF8
 $status = Get-Content -LiteralPath (Join-Path $root 'docs/STATUS.md') -Raw -Encoding UTF8
 if ($m1Plan -notmatch '(?m)^> - status: complete\r?$') { throw 'M1 plan is not complete' }
-if ($m2Plan -notmatch '(?m)^> - status: ready after STEP-0021 GO\r?$') { throw 'M2 plan is not ready' }
+if ($m2Plan -notmatch '(?m)^> - status: (ready after STEP-0021 GO|in progress.*|complete)\r?$') { throw 'M2 plan is missing after M1 GO' }
 if (-not $audit.Contains('GO: M1 complete; M2 entry gate satisfied; next STEP-0022.')) { throw 'M1 audit has no exact GO conclusion' }
-if ($status -notmatch '(?m)^> - phase: M2 ' -or $status -notmatch '(?m)^> - next step: STEP-0022\r?$') {
-  throw 'STATUS does not hand off from M1 to STEP-0022'
+if ($status -notmatch '(?m)^> - phase: M[2-9] ' -or $status -notmatch '(?m)^> - next step: STEP-00(2[2-9]|[3-9][0-9])\r?$') {
+  throw 'STATUS does not preserve the post-M1 handoff'
 }
 
 $performance = Get-Content -LiteralPath (Join-Path $root 'tests/performance/m1-frontend-windows-release.json') -Raw -Encoding UTF8 | ConvertFrom-Json
