@@ -4,16 +4,16 @@
 > - phase: M1 编译器前端与诊断
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0019
-> - next step: STEP-0020
+> - last completed step: STEP-0020
+> - next step: STEP-0021
 
 ## 1. Current objective
 
-下一目标是交付 `sico check`、`format`、`outline` CLI，冻结文件/stdin、text/JSON、stdout/stderr 和退出码行为，并明确报告 M2 type checker 尚未实现。
+下一目标是完成 deterministic fuzz/property、size/depth/token limit 与 corpus performance 证据，并逐项审计 M1 exit gate；通过后策划 M2 静态语义执行计划。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md) 已完成；54/54 B source AST stable 且幂等，12/12 mutation 被拒绝，不产生部分格式化输出。
+当前没有进行中的 STEP。[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md) 已完成；真实 binary 的 3 个命令、file/stdin、exit 0/1/2 和 text/JSON contract 已通过进程级测试。
 
 ## 3. Verified repository facts
 
@@ -44,6 +44,7 @@
 | B happy-path parser | 54/54 + 54 snapshots | verified |
 | parser recovery/E1xxx | 12/12 mutation；E1001–E1012 | verified |
 | canonical formatter | 54/54 AST stable + idempotent | verified |
+| `sico` CLI | 3 commands；4 integration groups | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
 M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译器和前端行为仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
@@ -75,6 +76,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 - B happy-path lossless parser 与 AST shape：[`STEP-0017`](./steps/STEP-0017-b-grammar-lossless-parser.md)；
 - parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；
 - canonical formatter、comment/trivia policy 与 error-tree refusal：[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md)；
+- `sico check`/`format`/`outline`、退出码与 M2 capability boundary：[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -83,7 +85,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0020 的外部条件。
+当前没有阻塞 STEP-0021 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -99,4 +101,4 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 8. Next step
 
-`STEP-0020`：实现 `sico check`、`format`、`outline` 的文件/stdin integration，冻结 stdout/stderr、退出码和 RFC-0001 JSON，并显式区分“syntax success”与“type checker 尚未实现”。
+`STEP-0021`：执行 deterministic fuzz/property、深度/大小/token 限额和 corpus performance；逐项完成 M1 exit audit，通过后编写下一阶段静态语义计划。

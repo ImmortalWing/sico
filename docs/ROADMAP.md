@@ -63,7 +63,7 @@ Entry gate：satisfied by STEP-0014。
 
 执行计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)，STEP-0015–0021。
 
-当前证据：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md) 已建立七 crate workspace 并接受 [`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；下一步是 STEP-0016 source/span + lossless lexer。
+当前证据：STEP-0015–0020 已完成 workspace、source/lexer/parser/recovery/E1xxx、canonical formatter 与 `check`/`format`/`outline` CLI；下一步是 STEP-0021 fuzz/performance 与 M1 exit audit。证据见 [`M1 plan`](./plans/M1-compiler-frontend.md)。
 
 ## M2: 静态语义
 
