@@ -1,6 +1,6 @@
 # Sico syntax candidates
 
-> - 状态：两轮 P0 候选设计，等待 STEP-0013 决定
+> - 状态：RFC-0005 已选择 B 作为 M1 baseline；A0/C 保留为对照
 > - 语义基线：[`SEMANTICS.md`](./SEMANTICS.md)
 > - 判定集：[`semantic-cases/`](./semantic-cases/README.md)
 > - 原则：只比较写法，不改变程序含义
@@ -78,9 +78,11 @@ end
 - `_` 容易同时表示忽略载荷与通配分支；
 - 多层嵌套时，结束标记需要向上寻找对应结构。
 
-A0 是语义案例的当前记法，不是已胜出的候选。
+A0 是语义案例的历史记法。RFC-0005 未选择它进入 M1 主 parser，但继续保留为最简对照。
 
 ## 4. 候选 B：Labeled Blocks
+
+RFC-0005 已接受 B 作为 M1 lexer/parser/formatter 的唯一基线；接受范围与复审门槛以 RFC 为准。
 
 示意：
 
@@ -139,6 +141,8 @@ fn name(color: Color) -> Text {
 
 预期优势：token 少、训练语料熟悉度高、match 数据流紧凑。预期代价：标点遗漏可能增加，嵌套括号错误恢复需要实测。
 
+RFC-0005 未选择 C 进入 M1 主 parser；它继续作为紧凑、常见 delimiter 形态的实验对照。
+
 ## 6. 评测指标
 
 ### 6.1 静态结构指标
@@ -189,9 +193,9 @@ fn name(color: Color) -> Text {
 
 记录主要诊断位置、级联诊断数量、解析器恢复到下一个定义所需距离以及 AI 单轮修复率。
 
-## 7. 通过门槛
+## 7. 稳定候选通过门槛
 
-候选进入下一轮前必须满足：
+候选升级为稳定语法前必须满足：
 
 1. 54 个 case ID 一一对应；
 2. accept/reject 矩阵完全一致；
@@ -201,11 +205,11 @@ fn name(color: Color) -> Text {
 6. 删除单个结构符号后可以在当前定义内恢复；
 7. AI 生成和修复评测不显著劣于其他候选。
 
-未达到门槛的候选可以吸收其他候选的局部设计，但必须保留独立历史，不能只保留最终版本而丢失比较证据。
+RFC-0005 只选择 M1 工程基线，不声称已经满足第 6、7 项的真实 parser/model 门槛。未达到门槛的候选可以吸收其他候选的局部设计，但必须先形成新候选语料与 RFC，并保留独立历史。
 
-## 8. 第二轮临时表层形式
+## 8. 第二轮候选表层形式
 
-新增 P0 案例要求三套候选表达相同语义，但以下写法仍是候选，不是正式规范：
+新增 P0 案例要求三套候选表达相同语义。B 列现由 RFC-0005 作为 M1 baseline，A0/C 列仍为实验对照：
 
 | 结构 | A0 | B | C |
 |---|---|---|---|
@@ -217,10 +221,10 @@ fn name(color: Color) -> Text {
 
 第二轮仍不决定模块/import 最终写法、share 与完整借用语法、WIT world/package 声明、adapter 版本范围、UI SDK、文档注释和属性系统。
 
-## 9. 下一步
+## 9. Decision and next evidence
 
 1. STEP-0012 已用独立规则统计全部 54 个案例，见 [`syntax-candidates/METRICS.md`](./syntax-candidates/METRICS.md)；
 2. [`syntax-mutations/`](./syntax-mutations/README.md) 已覆盖 12 类 × 3 候选，正式 parser 数据留待 M1；
 3. [`ai-eval/`](./ai-eval/README.md) v1 已覆盖 96 个任务，真实模型数据等待凭据与成本授权；
-4. STEP-0013 根据已验证静态事实、明确设计优先级和未测量边界选择 M1 parser 基线；
-5. M1 parser 与获授权后的模型实验触发 RFC 规定的复审门槛。
+4. [`RFC-0005`](./docs/rfc/RFC-0005-labeled-block-syntax-baseline.md) 已选择 B，并量化记录冗余代价与 inference/not-measured 边界；
+5. M1 实现只接受 B canonical corpus；parser/formatter 实测与获授权后的模型实验按 RFC 门槛触发复审。

@@ -1,12 +1,12 @@
 # Sico 开发与架构文档
 
 > 状态：开发草案
-> 更新日期：2026-07-14
+> 更新日期：2026-07-15
 > 上位文档：[DIRECTION.md](./DIRECTION.md)
 
 本文档说明 Sico 应如何从语言设计进入可验证的工程实现。它描述编译器、WebAssembly Component 后端、应用包、运行时、Host、安全模型、测试方法和阶段目标。
 
-本文档不负责提前确定尚未讨论完成的表层语法。若本文档与 `DIRECTION.md` 冲突，以 `DIRECTION.md` 中已经确认的方向为准。
+表层语法的 M1 工程基线已由 [`RFC-0005`](docs/rfc/RFC-0005-labeled-block-syntax-baseline.md) 选择为 B Labeled Blocks；模块、属性等未覆盖表层仍是开放项。若本文档与 `DIRECTION.md` 或已接受 RFC 冲突，以后两者为准。
 
 ## 1. 文档约定
 

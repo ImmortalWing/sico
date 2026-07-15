@@ -25,7 +25,7 @@
 | 跨样本问题与语义审计 | complete | [`examples/ISSUES.md`](../examples/ISSUES.md)、[`SEMANTICS-AUDIT.md`](../examples/SEMANTICS-AUDIT.md) |
 | 核心语义草案 | complete as draft | [`SEMANTICS.md`](../SEMANTICS.md)；正式稳定仍需 RFC/案例 |
 | P0 正反例 | complete for 10 groups | [`semantic-cases/`](../semantic-cases/README.md)、[`STEP-0005`](./steps/STEP-0005-remaining-p0-semantic-cases.md) |
-| 三套局部语法候选 | complete for 10 groups | [`SYNTAX.md`](../SYNTAX.md)、[`syntax-candidates/`](../syntax-candidates/README.md) |
+| 三套局部语法候选 | complete for 10 groups | [`SYNTAX.md`](../SYNTAX.md)、[`syntax-candidates/`](../syntax-candidates/README.md)；历史对照保留 |
 | 静态语法体积指标 | complete | [`METRICS.md`](../syntax-candidates/METRICS.md) |
 | 审计体系 | complete | [`STEP-0001`](./steps/STEP-0001-project-state-audit.md) |
 | 应用宿主正式命名 | complete | [`ADR-0001`](./adr/ADR-0001-sico-host-terminology.md)、[`STEP-0002`](./steps/STEP-0002-sico-host-terminology.md) |
@@ -37,7 +37,7 @@
 | 语义索引 JSON v0 | complete for design contract | [`RFC-0002`](./rfc/RFC-0002-semantic-index-query-v0.md)、[`semantic-index/`](../semantic-index/README.md)、[`STEP-0007`](./steps/STEP-0007-semantic-query-json-v0.md) |
 | Wasm Component 最小原型 | complete | [`STEP-0010`](./steps/STEP-0010-component-runtime-host-call.md)、[`report`](./reports/component-runtime-host-call-v0.md) |
 | Runtime 引擎桌面/Android 对比 | complete for M0 decision | [`ADR-0002`](./adr/ADR-0002-runtime-platform-baseline.md)、[`STEP-0011`](./steps/STEP-0011-runtime-desktop-android-feasibility.md)；Android 真机验证留待 M6 前置探针 |
-| 数据驱动语法决定 | planned | STEP-0012 离线证据已完成；STEP-0013 必须标明真实 parser/model 未测量及复审门槛 |
+| 数据驱动语法决定 | complete for M1 baseline | [`RFC-0005`](./rfc/RFC-0005-labeled-block-syntax-baseline.md)、[`STEP-0013`](./steps/STEP-0013-syntax-baseline-decision.md)；选择 B，真实 parser/model 按门槛复审 |
 | M0 退出审计 | planned | 依赖以上所有 M0 项 |
 
 ### M0 exit gate

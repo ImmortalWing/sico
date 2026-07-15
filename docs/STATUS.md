@@ -4,16 +4,16 @@
 > - phase: M0 设计与技术基线
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0012
-> - next step: STEP-0013
+> - last completed step: STEP-0013
+> - next step: STEP-0014
 
 ## 1. Current objective
 
-下一目标是基于完整离线证据选择 M1 parser 的语法基线，并用 RFC 固定取舍与复审门槛。
+下一目标是逐项审计 M0 exit gate、残余风险和 M1 进入条件，形成明确 go/no-go 结论。
 
 ## 2. Current step
 
-[`STEP-0012: 补齐第二轮语法证据`](./steps/STEP-0012-syntax-evidence-completion.md) 已完成。下一步骤编号为 `STEP-0013`，尚未开始。
+[`STEP-0013: 决定 M1 表层语法基线`](./steps/STEP-0013-syntax-baseline-decision.md) 已完成。下一步骤编号为 `STEP-0014`，尚未开始。
 
 ## 3. Verified repository facts
 
@@ -61,14 +61,14 @@
 - resource/async Rust 原型、compile-fail、WASI 0.3 WIT、RFC 和报告：[`prototypes/resource-async/`](../prototypes/resource-async/README.md)；
 - 真实 Component host call、resource、数值记录和原生 async 往返：[`prototypes/component-host-call/`](../prototypes/component-host-call/README.md)；
 - 桌面/Android Runtime 基线、发布政策与 Android 最小探针：[`ADR-0002`](./adr/ADR-0002-runtime-platform-baseline.md)、[`runtime report`](./reports/runtime-desktop-android-v0.md)；
+- M1 B labeled-block 语法基线、候选取舍与复审门槛：[`RFC-0005`](./rfc/RFC-0005-labeled-block-syntax-baseline.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
 
 按当前依赖顺序：
 
-1. 语法候选的数据驱动选择或合并；
-2. M0 退出审计。
+1. M0 退出审计。
 
 ## 6. Blockers
 
@@ -78,7 +78,7 @@
 
 ## 7. Risks
 
-- A0/B/C 目前没有正式词法器或解析器，结构配对不等于语法有效；
+- B 已选为 M1 baseline，但目前没有正式词法器或解析器；结构配对与具名关闭不等于已测恢复能力；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - 语法候选已覆盖 10 组 P0 判定、完整静态指标和离线 AI 任务，但仍没有真实 parser 或模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
@@ -88,4 +88,4 @@
 
 ## 8. Next step
 
-`STEP-0013`：接受、合并或淘汰 A0/B/C，用 RFC 固定 M1 语法基线、证据强度、已知代价和真实 parser/model 复审条件。
+`STEP-0014`：对 M0 全部门槛、RFC/ADR 状态、技术原型、外部阻塞与残余风险做 requirement-by-requirement 退出审计，决定是否进入 M1。
