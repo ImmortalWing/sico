@@ -12,10 +12,16 @@ use serde::{Deserialize, Serialize};
 use sico_host_core::{HostStore, InstallOptions};
 
 mod intent;
+mod lifecycle;
 mod permission;
 pub use intent::{
     AndroidIntent, AndroidIntentAction, IntentDecision, IntentError, copy_package_stream,
     validate_intent,
+};
+pub use lifecycle::{
+    AndroidGuestState, AndroidLifecycle, BackendAvailability, EngineConfigPlan,
+    LifecycleDescriptor, MobileLifecycleError, RuntimeBackend, TerminalReason, engine_config_plan,
+    select_runtime_backend,
 };
 pub use permission::{
     AndroidPermissionError, AndroidPermissionPlan, AndroidScope, UriGrantSession,

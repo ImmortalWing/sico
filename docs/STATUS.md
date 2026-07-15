@@ -3,9 +3,9 @@
 > - updated: 2026-07-16
 > - phase: M6 Sico Android Host
 > - phase status: ready
-> - current step: STEP-0058 (planned)
-> - last completed step: STEP-0057
-> - next step: start STEP-0058
+> - current step: STEP-0059 (planned)
+> - last completed step: STEP-0058
+> - next step: start STEP-0059
 
 ## 1. Current objective
 

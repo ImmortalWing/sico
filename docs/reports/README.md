@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`android-runtime-lifecycle-v0`](./android-runtime-lifecycle-v0.md) | accepted-cross-check | STEP-0058 | Wasmtime Android compile evidence and process-death lifecycle contract |
 | [`android-permission-storage-v0`](./android-permission-storage-v0.md) | accepted | STEP-0057 | exact capability to Android permission/storage mapping |
 | [`android-intent-ingest-v0`](./android-intent-ingest-v0.md) | accepted | STEP-0056 | one-pass bounded content URI ingestion and picker-only deep link |
 | [`mobile-host-bridge-v0`](./mobile-host-bridge-v0.md) | accepted | STEP-0055 | typed bounded mobile bridge over shared Host trust core |
