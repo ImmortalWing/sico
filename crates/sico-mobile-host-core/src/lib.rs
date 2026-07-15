@@ -11,6 +11,12 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sico_host_core::{HostStore, InstallOptions};
 
+mod intent;
+pub use intent::{
+    AndroidIntent, AndroidIntentAction, IntentDecision, IntentError, copy_package_stream,
+    validate_intent,
+};
+
 pub const BRIDGE_SCHEMA: &str = "sico.android.bridge.v0";
 pub const MAX_BRIDGE_BYTES: usize = 64 * 1024;
 pub const MAX_REQUEST_ID_BYTES: usize = 64;

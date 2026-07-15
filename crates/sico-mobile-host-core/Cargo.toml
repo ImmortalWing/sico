@@ -10,10 +10,10 @@ publish.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sico-host-core = { path = "../sico-host-core" }
+sico-package = { path = "../sico-package" }
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
-sico-package = { path = "../sico-package" }
 wasm-encoder.workspace = true
 
 [lints]

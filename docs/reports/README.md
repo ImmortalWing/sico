@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`android-intent-ingest-v0`](./android-intent-ingest-v0.md) | accepted | STEP-0056 | one-pass bounded content URI ingestion and picker-only deep link |
 | [`mobile-host-bridge-v0`](./mobile-host-bridge-v0.md) | accepted | STEP-0055 | typed bounded mobile bridge over shared Host trust core |
 | [`android-host-contract-v0`](./android-host-contract-v0.md) | accepted | STEP-0054 | Android Intent/URI/JNI/lifecycle/ABI threat and evidence boundary |
 | [`m5-exit-audit`](./m5-exit-audit.md) | complete | STEP-0053 | M5 Windows runtime, platform parity, quality/performance and M6 GO |
