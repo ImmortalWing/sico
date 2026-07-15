@@ -19,6 +19,7 @@ use sico_package::{
 
 mod lifecycle;
 mod permission;
+mod ui;
 
 pub use lifecycle::{
     CommandSpec, GuestState, LaunchOutcome, LifecycleError, OpenRequest, ProcessSupervisor,
@@ -27,6 +28,9 @@ pub use lifecycle::{
 pub use permission::{
     PermissionChoice, PermissionError, PermissionOutcome, PermissionPrompt, PermissionSession,
     PermissionStore,
+};
+pub use ui::{
+    EventGate, RenderNode, RenderPlan, UiError, UiEvent, UiEventKind, UiModel, UiNode, UiNodeKind,
 };
 
 static STAGING_ID: AtomicU64 = AtomicU64::new(0);

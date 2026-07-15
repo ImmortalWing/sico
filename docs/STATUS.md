@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M5 Sico Desktop Host
 > - phase status: ready
-> - current step: STEP-0050 (planned)
-> - last completed step: STEP-0049
-> - next step: start STEP-0050
+> - current step: STEP-0051 (planned)
+> - last completed step: STEP-0050
+> - next step: start STEP-0051
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0050：实现 deterministic typed UI model、validation/escaping、accessibility order 与 bounded event queue/rate gate。
+当前目标是执行 STEP-0051：交付 Windows Desktop Host CLI/OS adapter、`.sapp` install/open/uninstall、per-user association plan/apply、native permission dialog 与 packaging smoke。
 
 ## 2. Current step
 
-[`STEP-0049`](./steps/STEP-0049-lifecycle-process-supervision.md) 已实现 single child、256 open queue、timeout/cancel process-tree kill、crash isolation、exact cleanup 与 post-fault healthy relaunch。下一执行项是 STEP-0050 UI boundary。
+[`STEP-0050`](./steps/STEP-0050-minimal-ui-wit-renderer.md) 已实现 typed no-script UI、fixed ceilings、escaping/accessibility preorder、bounded event gate 与 parse-verified UI WIT。下一执行项是 STEP-0051 Windows Host integration。
 
 ## 3. Verified repository facts
 
@@ -135,7 +135,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0050 的外部条件。
+当前没有阻塞 STEP-0051 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -152,4 +152,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0050`：实现 RFC-0020 typed no-script UI tree、node/depth/text/ID/accessibility validation、escaped render plan 与 256/120-per-second event gate。
+`STEP-0051`：实现 Windows Desktop Host binary 与 per-user shell adapter，真实运行 signed `.sapp` install/open/uninstall 和 permission dialog/package smoke；registry mutation 仅由显式命令触发。

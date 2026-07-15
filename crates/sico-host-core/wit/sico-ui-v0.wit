@@ -1,0 +1,36 @@
+package sico:ui@0.1.0;
+
+interface types {
+  enum node-kind {
+    window,
+    column,
+    row,
+    text,
+    button,
+    input,
+    status,
+  }
+
+  record node {
+    id: string,
+    kind: node-kind,
+    text: option<string>,
+    accessibility-label: option<string>,
+    children: list<u32>,
+  }
+
+  variant event {
+    click(string),
+    input(tuple<string, string>),
+  }
+}
+
+interface host {
+  use types.{node, event};
+  render: func(nodes: list<node>) -> result<_, string>;
+  next-event: func() -> option<event>;
+}
+
+world desktop-app {
+  import host;
+}

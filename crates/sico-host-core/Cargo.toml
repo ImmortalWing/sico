@@ -14,6 +14,7 @@ sico-package = { path = "../sico-package" }
 [dev-dependencies]
 ed25519-dalek.workspace = true
 wasm-encoder.workspace = true
+wit-parser.workspace = true
 
 [lints]
 workspace = true

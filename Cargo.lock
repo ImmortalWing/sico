@@ -467,6 +467,7 @@ dependencies = [
  "serde_json",
  "sico-package",
  "wasm-encoder",
+ "wit-parser",
 ]
 
 [[package]]
