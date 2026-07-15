@@ -4,6 +4,7 @@
 
 | Step | 状态 | 阶段 | 标题 |
 |---|---|---|---|
+| [STEP-0057](./STEP-0057-android-permission-storage.md) | complete | M6 | Android permission, URI grant and app-private storage mapping |
 | [STEP-0056](./STEP-0056-android-intent-package-ingest.md) | complete | M6 | content URI package/open/share/deep-link adapter |
 | [STEP-0055](./STEP-0055-mobile-host-jni-boundary.md) | complete | M6 | shared mobile Host core and typed JNI boundary |
 | [STEP-0054](./STEP-0054-android-host-contract.md) | complete | M6 | Android threat/lifecycle/platform/packaging contract |

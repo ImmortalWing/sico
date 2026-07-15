@@ -12,9 +12,14 @@ use serde::{Deserialize, Serialize};
 use sico_host_core::{HostStore, InstallOptions};
 
 mod intent;
+mod permission;
 pub use intent::{
     AndroidIntent, AndroidIntentAction, IntentDecision, IntentError, copy_package_stream,
     validate_intent,
+};
+pub use permission::{
+    AndroidPermissionError, AndroidPermissionPlan, AndroidScope, UriGrantSession,
+    map_android_permissions,
 };
 
 pub const BRIDGE_SCHEMA: &str = "sico.android.bridge.v0";
