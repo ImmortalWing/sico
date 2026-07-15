@@ -1,0 +1,19 @@
+// mutation: MUT-009
+// syntax: C
+// source-case: RES-002
+// expect: reject(SYNTAX_MISSING_USING_CLOSE)
+// recovery: function-close(read_once)
+
+enum ReadError {
+  Failed,
+}
+
+resource Reader {
+  fn read(borrow self) -> Result[Text, ReadError]
+  fn close(self) -> Unit
+}
+
+fn read_once(reader: Reader) -> Result[Text, ReadError] {
+  using reader {
+    return reader.read()
+}

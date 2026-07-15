@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "protocol_id": "sico-ai-eval-v0",
+  "protocol_id": "sico-ai-eval-v1",
   "run": {
-    "run_id": "fixture-fail-v0",
+    "run_id": "fixture-fail-v1",
     "kind": "fixture",
     "synthetic": true,
     "fixture_name": "three-category-intentional-failures",

@@ -14,4 +14,4 @@ B、C 目录与 `semantic-cases/` 镜像：相同相对路径、相同 case ID�
 
 详细规则与评测方法见 [`SYNTAX.md`](../SYNTAX.md)。
 
-首批 30 个案例的源码体积与结构统计见 [`METRICS.md`](./METRICS.md)；新增 24 个第二轮案例尚未纳入该静态快照。
+全部 54 个案例的可复现静态指标见 [`METRICS.md`](./METRICS.md) 与机器快照 [`metrics-v1.json`](./metrics-v1.json)。

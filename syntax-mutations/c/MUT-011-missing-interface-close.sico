@@ -1,0 +1,12 @@
+// mutation: MUT-011
+// syntax: C
+// source-case: COMP-001
+// expect: reject(SYNTAX_MISSING_INTERFACE_CLOSE)
+// recovery: end-of-file
+
+enum FormatError {
+  InvalidInput,
+}
+
+interface Formatter {
+  fn format(input: Text) -> Result[Text, FormatError]

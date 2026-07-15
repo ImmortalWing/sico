@@ -1,0 +1,23 @@
+// mutation: MUT-012
+// syntax: B
+// source-case: REV-001
+// expect: reject(SYNTAX_MISSING_PARAMETER_LIST_CLOSE)
+// recovery: function-body(save)
+
+newtype Revision from Int
+
+enum SaveError:
+  case Stale(expected: Revision, actual: Revision)
+end enum
+
+capability Store:
+  function commit(expected: Revision, value: Text) returns Result[Revision, SaveError]
+end capability
+
+export function save(store: Store, expected: Revision, value: Text returns Result[Revision, SaveError]:
+  effects:
+    store.write
+  capabilities:
+    store
+  return store.commit(expected, value)
+end function

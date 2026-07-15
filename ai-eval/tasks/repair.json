@@ -146,6 +146,150 @@
       "input": "syntax-mutations/c/MUT-006-missing-call-close.sico",
       "expected": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
       "diagnostic": "SYNTAX_MISSING_CALL_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-007",
+      "syntax": "A0",
+      "mutation": "MUT-007",
+      "input": "syntax-mutations/a0/MUT-007-missing-capability-close.sico",
+      "expected": "semantic-cases/effects-capabilities/valid/explicit-boundary.sico",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-007",
+      "syntax": "B",
+      "mutation": "MUT-007",
+      "input": "syntax-mutations/b/MUT-007-missing-capability-close.sico",
+      "expected": "syntax-candidates/b/effects-capabilities/valid/explicit-boundary.sico",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-007",
+      "syntax": "C",
+      "mutation": "MUT-007",
+      "input": "syntax-mutations/c/MUT-007-missing-capability-close.sico",
+      "expected": "syntax-candidates/c/effects-capabilities/valid/explicit-boundary.sico",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-008",
+      "syntax": "A0",
+      "mutation": "MUT-008",
+      "input": "syntax-mutations/a0/MUT-008-missing-resource-close.sico",
+      "expected": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-008",
+      "syntax": "B",
+      "mutation": "MUT-008",
+      "input": "syntax-mutations/b/MUT-008-missing-resource-close.sico",
+      "expected": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-008",
+      "syntax": "C",
+      "mutation": "MUT-008",
+      "input": "syntax-mutations/c/MUT-008-missing-resource-close.sico",
+      "expected": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-009",
+      "syntax": "A0",
+      "mutation": "MUT-009",
+      "input": "syntax-mutations/a0/MUT-009-missing-using-close.sico",
+      "expected": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-009",
+      "syntax": "B",
+      "mutation": "MUT-009",
+      "input": "syntax-mutations/b/MUT-009-missing-using-close.sico",
+      "expected": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-009",
+      "syntax": "C",
+      "mutation": "MUT-009",
+      "input": "syntax-mutations/c/MUT-009-missing-using-close.sico",
+      "expected": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-010",
+      "syntax": "A0",
+      "mutation": "MUT-010",
+      "input": "syntax-mutations/a0/MUT-010-missing-task-group-close.sico",
+      "expected": "semantic-cases/future-task/valid/structured-pair.sico",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-010",
+      "syntax": "B",
+      "mutation": "MUT-010",
+      "input": "syntax-mutations/b/MUT-010-missing-task-group-close.sico",
+      "expected": "syntax-candidates/b/future-task/valid/structured-pair.sico",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-010",
+      "syntax": "C",
+      "mutation": "MUT-010",
+      "input": "syntax-mutations/c/MUT-010-missing-task-group-close.sico",
+      "expected": "syntax-candidates/c/future-task/valid/structured-pair.sico",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-011",
+      "syntax": "A0",
+      "mutation": "MUT-011",
+      "input": "syntax-mutations/a0/MUT-011-missing-interface-close.sico",
+      "expected": "semantic-cases/component-call/valid/wit-safe-interface.sico",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-011",
+      "syntax": "B",
+      "mutation": "MUT-011",
+      "input": "syntax-mutations/b/MUT-011-missing-interface-close.sico",
+      "expected": "syntax-candidates/b/component-call/valid/wit-safe-interface.sico",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-011",
+      "syntax": "C",
+      "mutation": "MUT-011",
+      "input": "syntax-mutations/c/MUT-011-missing-interface-close.sico",
+      "expected": "syntax-candidates/c/component-call/valid/wit-safe-interface.sico",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-A0-MUT-012",
+      "syntax": "A0",
+      "mutation": "MUT-012",
+      "input": "syntax-mutations/a0/MUT-012-missing-parameter-list-close.sico",
+      "expected": "semantic-cases/revision/valid/versioned-commit.sico",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-B-MUT-012",
+      "syntax": "B",
+      "mutation": "MUT-012",
+      "input": "syntax-mutations/b/MUT-012-missing-parameter-list-close.sico",
+      "expected": "syntax-candidates/b/revision/valid/versioned-commit.sico",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"
+    },
+    {
+      "task_id": "REPAIR-C-MUT-012",
+      "syntax": "C",
+      "mutation": "MUT-012",
+      "input": "syntax-mutations/c/MUT-012-missing-parameter-list-close.sico",
+      "expected": "syntax-candidates/c/revision/valid/versioned-commit.sico",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"
     }
   ]
 }

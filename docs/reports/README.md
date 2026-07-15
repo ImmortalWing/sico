@@ -15,3 +15,4 @@
 | [`resource-async-wit-v0`](./resource-async-wit-v0.md) | complete | STEP-0009 | affine resource、Task/Future/Stream 与 WASI 0.3 WIT 原型 |
 | [`component-runtime-host-call-v0`](./component-runtime-host-call-v0.md) | complete | STEP-0010 | 真实 Component host call、resource、数值记录与原生 async 往返 |
 | [`runtime-desktop-android-v0`](./runtime-desktop-android-v0.md) | complete | STEP-0011 | 桌面/Android Runtime、后端、发布政策与最小探针选择 |
+| [`syntax-evidence-v1`](./syntax-evidence-v1.md) | complete | STEP-0012 | 54-case 静态快照、36 mutation 与 96-task AI 离线协议 |

@@ -199,6 +199,204 @@
       "replacement": "Feature(name: \"search\", enabled: true",
       "diagnostic": "SYNTAX_MISSING_CALL_CLOSE",
       "recovery": "function-close(main)"
+    },
+    {
+      "mutation": "MUT-007",
+      "syntax": "A0",
+      "source_case": "CAP-001",
+      "source": "semantic-cases/effects-capabilities/valid/explicit-boundary.sico",
+      "mutant": "syntax-mutations/a0/MUT-007-missing-capability-close.sico",
+      "source_fragment": "end\n\nexport fn announce",
+      "replacement": "\nexport fn announce",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE",
+      "recovery": "next-definition(announce)"
+    },
+    {
+      "mutation": "MUT-007",
+      "syntax": "B",
+      "source_case": "CAP-001",
+      "source": "syntax-candidates/b/effects-capabilities/valid/explicit-boundary.sico",
+      "mutant": "syntax-mutations/b/MUT-007-missing-capability-close.sico",
+      "source_fragment": "end capability\n\nexport function announce",
+      "replacement": "\nexport function announce",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE",
+      "recovery": "next-definition(announce)"
+    },
+    {
+      "mutation": "MUT-007",
+      "syntax": "C",
+      "source_case": "CAP-001",
+      "source": "syntax-candidates/c/effects-capabilities/valid/explicit-boundary.sico",
+      "mutant": "syntax-mutations/c/MUT-007-missing-capability-close.sico",
+      "source_fragment": "}\n\nexport fn announce",
+      "replacement": "\nexport fn announce",
+      "diagnostic": "SYNTAX_MISSING_CAPABILITY_CLOSE",
+      "recovery": "next-definition(announce)"
+    },
+    {
+      "mutation": "MUT-008",
+      "syntax": "A0",
+      "source_case": "RES-002",
+      "source": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/a0/MUT-008-missing-resource-close.sico",
+      "source_fragment": "end\n\nfn read_once",
+      "replacement": "\nfn read_once",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE",
+      "recovery": "next-definition(read_once)"
+    },
+    {
+      "mutation": "MUT-008",
+      "syntax": "B",
+      "source_case": "RES-002",
+      "source": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/b/MUT-008-missing-resource-close.sico",
+      "source_fragment": "end resource\n\nfunction read_once",
+      "replacement": "\nfunction read_once",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE",
+      "recovery": "next-definition(read_once)"
+    },
+    {
+      "mutation": "MUT-008",
+      "syntax": "C",
+      "source_case": "RES-002",
+      "source": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/c/MUT-008-missing-resource-close.sico",
+      "source_fragment": "}\n\nfn read_once",
+      "replacement": "\nfn read_once",
+      "diagnostic": "SYNTAX_MISSING_RESOURCE_CLOSE",
+      "recovery": "next-definition(read_once)"
+    },
+    {
+      "mutation": "MUT-009",
+      "syntax": "A0",
+      "source_case": "RES-002",
+      "source": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/a0/MUT-009-missing-using-close.sico",
+      "source_fragment": "  end\nend",
+      "replacement": "end",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE",
+      "recovery": "function-close(read_once)"
+    },
+    {
+      "mutation": "MUT-009",
+      "syntax": "B",
+      "source_case": "RES-002",
+      "source": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/b/MUT-009-missing-using-close.sico",
+      "source_fragment": "  end using\nend function",
+      "replacement": "end function",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE",
+      "recovery": "function-close(read_once)"
+    },
+    {
+      "mutation": "MUT-009",
+      "syntax": "C",
+      "source_case": "RES-002",
+      "source": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico",
+      "mutant": "syntax-mutations/c/MUT-009-missing-using-close.sico",
+      "source_fragment": "  }\n}",
+      "replacement": "}",
+      "diagnostic": "SYNTAX_MISSING_USING_CLOSE",
+      "recovery": "function-close(read_once)"
+    },
+    {
+      "mutation": "MUT-010",
+      "syntax": "A0",
+      "source_case": "TASK-002",
+      "source": "semantic-cases/future-task/valid/structured-pair.sico",
+      "mutant": "syntax-mutations/a0/MUT-010-missing-task-group-close.sico",
+      "source_fragment": "  end\nend",
+      "replacement": "end",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE",
+      "recovery": "function-close(pair)"
+    },
+    {
+      "mutation": "MUT-010",
+      "syntax": "B",
+      "source_case": "TASK-002",
+      "source": "syntax-candidates/b/future-task/valid/structured-pair.sico",
+      "mutant": "syntax-mutations/b/MUT-010-missing-task-group-close.sico",
+      "source_fragment": "  end task\nend function",
+      "replacement": "end function",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE",
+      "recovery": "function-close(pair)"
+    },
+    {
+      "mutation": "MUT-010",
+      "syntax": "C",
+      "source_case": "TASK-002",
+      "source": "syntax-candidates/c/future-task/valid/structured-pair.sico",
+      "mutant": "syntax-mutations/c/MUT-010-missing-task-group-close.sico",
+      "source_fragment": "  }\n}",
+      "replacement": "}",
+      "diagnostic": "SYNTAX_MISSING_TASK_GROUP_CLOSE",
+      "recovery": "function-close(pair)"
+    },
+    {
+      "mutation": "MUT-011",
+      "syntax": "A0",
+      "source_case": "COMP-001",
+      "source": "semantic-cases/component-call/valid/wit-safe-interface.sico",
+      "mutant": "syntax-mutations/a0/MUT-011-missing-interface-close.sico",
+      "source_fragment": "  fn format(input: Text) -> Result<Text, FormatError>\nend\n",
+      "replacement": "  fn format(input: Text) -> Result<Text, FormatError>\n",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE",
+      "recovery": "end-of-file"
+    },
+    {
+      "mutation": "MUT-011",
+      "syntax": "B",
+      "source_case": "COMP-001",
+      "source": "syntax-candidates/b/component-call/valid/wit-safe-interface.sico",
+      "mutant": "syntax-mutations/b/MUT-011-missing-interface-close.sico",
+      "source_fragment": "  function format(input: Text) returns Result[Text, FormatError]\nend interface\n",
+      "replacement": "  function format(input: Text) returns Result[Text, FormatError]\n",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE",
+      "recovery": "end-of-file"
+    },
+    {
+      "mutation": "MUT-011",
+      "syntax": "C",
+      "source_case": "COMP-001",
+      "source": "syntax-candidates/c/component-call/valid/wit-safe-interface.sico",
+      "mutant": "syntax-mutations/c/MUT-011-missing-interface-close.sico",
+      "source_fragment": "  fn format(input: Text) -> Result[Text, FormatError]\n}\n",
+      "replacement": "  fn format(input: Text) -> Result[Text, FormatError]\n",
+      "diagnostic": "SYNTAX_MISSING_INTERFACE_CLOSE",
+      "recovery": "end-of-file"
+    },
+    {
+      "mutation": "MUT-012",
+      "syntax": "A0",
+      "source_case": "REV-001",
+      "source": "semantic-cases/revision/valid/versioned-commit.sico",
+      "mutant": "syntax-mutations/a0/MUT-012-missing-parameter-list-close.sico",
+      "source_fragment": "export fn save(store: Store, expected: Revision, value: Text) -> Result",
+      "replacement": "export fn save(store: Store, expected: Revision, value: Text -> Result",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE",
+      "recovery": "function-body(save)"
+    },
+    {
+      "mutation": "MUT-012",
+      "syntax": "B",
+      "source_case": "REV-001",
+      "source": "syntax-candidates/b/revision/valid/versioned-commit.sico",
+      "mutant": "syntax-mutations/b/MUT-012-missing-parameter-list-close.sico",
+      "source_fragment": "export function save(store: Store, expected: Revision, value: Text) returns Result",
+      "replacement": "export function save(store: Store, expected: Revision, value: Text returns Result",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE",
+      "recovery": "function-body(save)"
+    },
+    {
+      "mutation": "MUT-012",
+      "syntax": "C",
+      "source_case": "REV-001",
+      "source": "syntax-candidates/c/revision/valid/versioned-commit.sico",
+      "mutant": "syntax-mutations/c/MUT-012-missing-parameter-list-close.sico",
+      "source_fragment": "export fn save(store: Store, expected: Revision, value: Text) -> Result",
+      "replacement": "export fn save(store: Store, expected: Revision, value: Text -> Result",
+      "diagnostic": "SYNTAX_MISSING_PARAMETER_LIST_CLOSE",
+      "recovery": "function-body(save)"
     }
   ]
 }

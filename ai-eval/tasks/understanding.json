@@ -69,6 +69,114 @@
         "parse_success_value": 1,
         "propagated_without_mapping": false
       }
+    },
+    {
+      "pair_id": "UNDERSTAND-CAP-001",
+      "case_id": "CAP-001",
+      "prompt": "Return one JSON object with exactly these fields: capability_type, operation, operation_error_type, exported_function, declared_effects, declared_capabilities. Both declared fields are unordered arrays.",
+      "source": {
+        "A0": "semantic-cases/effects-capabilities/valid/explicit-boundary.sico",
+        "B": "syntax-candidates/b/effects-capabilities/valid/explicit-boundary.sico",
+        "C": "syntax-candidates/c/effects-capabilities/valid/explicit-boundary.sico"
+      },
+      "expected": {
+        "capability_type": "Console",
+        "operation": "write",
+        "operation_error_type": "ConsoleError",
+        "exported_function": "announce",
+        "declared_effects": ["console.write"],
+        "declared_capabilities": ["console"]
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-RES-002",
+      "case_id": "RES-002",
+      "prompt": "Return one JSON object with exactly these fields: resource_type, borrowed_methods, consuming_methods, scoped_value, function, return_error_type. Both method fields are unordered arrays.",
+      "source": {
+        "A0": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+        "B": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+        "C": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico"
+      },
+      "expected": {
+        "resource_type": "Reader",
+        "borrowed_methods": ["read"],
+        "consuming_methods": ["close"],
+        "scoped_value": "reader",
+        "function": "read_once",
+        "return_error_type": "ReadError"
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-TASK-002",
+      "case_id": "TASK-002",
+      "prompt": "Return one JSON object with exactly these fields: async_functions, structured_task_group, spawned_calls, collection_order, awaited_collection. async_functions and spawned_calls are unordered arrays; both boolean fields are JSON booleans.",
+      "source": {
+        "A0": "semantic-cases/future-task/valid/structured-pair.sico",
+        "B": "syntax-candidates/b/future-task/valid/structured-pair.sico",
+        "C": "syntax-candidates/c/future-task/valid/structured-pair.sico"
+      },
+      "expected": {
+        "async_functions": ["compute", "pair"],
+        "structured_task_group": true,
+        "spawned_calls": ["compute(1)", "compute(2)"],
+        "collection_order": "input",
+        "awaited_collection": true
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-STREAM-002",
+      "case_id": "STREAM-002",
+      "prompt": "Return one JSON object with exactly these fields: stream_item_type, stream_error_type, function, collection_limit, awaited, scoped_cleanup. collection_limit is a JSON number and both final fields are JSON booleans.",
+      "source": {
+        "A0": "semantic-cases/stream/valid/bounded-collect.sico",
+        "B": "syntax-candidates/b/stream/valid/bounded-collect.sico",
+        "C": "syntax-candidates/c/stream/valid/bounded-collect.sico"
+      },
+      "expected": {
+        "stream_item_type": "Int",
+        "stream_error_type": "ReadError",
+        "function": "collect_small",
+        "collection_limit": 100,
+        "awaited": true,
+        "scoped_cleanup": true
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-COMP-001",
+      "case_id": "COMP-001",
+      "prompt": "Return one JSON object with exactly these fields: interface, operation, input_type, success_type, domain_error_type, result_is_explicit. result_is_explicit is a JSON boolean.",
+      "source": {
+        "A0": "semantic-cases/component-call/valid/wit-safe-interface.sico",
+        "B": "syntax-candidates/b/component-call/valid/wit-safe-interface.sico",
+        "C": "syntax-candidates/c/component-call/valid/wit-safe-interface.sico"
+      },
+      "expected": {
+        "interface": "Formatter",
+        "operation": "format",
+        "input_type": "Text",
+        "success_type": "Text",
+        "domain_error_type": "FormatError",
+        "result_is_explicit": true
+      }
+    },
+    {
+      "pair_id": "UNDERSTAND-REV-001",
+      "case_id": "REV-001",
+      "prompt": "Return one JSON object with exactly these fields: nominal_type, underlying_type, capability, operation, commit_parameters, exported_function, declared_effects. Both array fields are unordered arrays.",
+      "source": {
+        "A0": "semantic-cases/revision/valid/versioned-commit.sico",
+        "B": "syntax-candidates/b/revision/valid/versioned-commit.sico",
+        "C": "syntax-candidates/c/revision/valid/versioned-commit.sico"
+      },
+      "expected": {
+        "nominal_type": "Revision",
+        "underlying_type": "Int",
+        "capability": "Store",
+        "operation": "commit",
+        "commit_parameters": ["expected", "value"],
+        "exported_function": "save",
+        "declared_effects": ["store.write"]
+      }
     }
   ]
 }

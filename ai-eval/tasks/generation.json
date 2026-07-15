@@ -41,6 +41,66 @@
         "B": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
         "C": "syntax-candidates/c/result-mapping/valid/total-error-map.sico"
       }
+    },
+    {
+      "pair_id": "GEN-CAP-001",
+      "case_id": "CAP-001",
+      "prompt": "Define ConsoleError with variant Denied. Define capability Console with write(text: Text) returning Result of Unit or ConsoleError. Export announce(console: Console) returning the same Result, declaring effect console.write and capability console in that order, then return console.write(\"ready\"). Keep declarations in that order.",
+      "expected": {
+        "A0": "semantic-cases/effects-capabilities/valid/explicit-boundary.sico",
+        "B": "syntax-candidates/b/effects-capabilities/valid/explicit-boundary.sico",
+        "C": "syntax-candidates/c/effects-capabilities/valid/explicit-boundary.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-RES-002",
+      "case_id": "RES-002",
+      "prompt": "Define ReadError with variant Failed. Define resource Reader with read(borrow self) returning Result of Text or ReadError, then close(self) returning Unit. Define read_once(reader: Reader) returning Result of Text or ReadError; use a deterministic cleanup scope for reader and return reader.read(). Keep declarations and methods in that order.",
+      "expected": {
+        "A0": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+        "B": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+        "C": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-TASK-002",
+      "case_id": "TASK-002",
+      "prompt": "Define async compute(value: Int) returning value + 1. Define async pair() returning List of Int. Inside one structured task group spawn compute(1) as first, spawn compute(2) as second, then await and return collect_tasks over [first, second] with order named input. Keep declarations and statements in that order.",
+      "expected": {
+        "A0": "semantic-cases/future-task/valid/structured-pair.sico",
+        "B": "syntax-candidates/b/future-task/valid/structured-pair.sico",
+        "C": "syntax-candidates/c/future-task/valid/structured-pair.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-STREAM-002",
+      "case_id": "STREAM-002",
+      "prompt": "Define ReadError with variant Failed. Define async collect_small(stream: Stream of Int or ReadError) returning Result of List of Int or ReadError. Use a deterministic cleanup scope for stream and return the awaited stream.collect call with named limit 100.",
+      "expected": {
+        "A0": "semantic-cases/stream/valid/bounded-collect.sico",
+        "B": "syntax-candidates/b/stream/valid/bounded-collect.sico",
+        "C": "syntax-candidates/c/stream/valid/bounded-collect.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-COMP-001",
+      "case_id": "COMP-001",
+      "prompt": "Define FormatError with variant InvalidInput. Define interface Formatter with format(input: Text) returning Result of Text or FormatError. Keep declarations in that order.",
+      "expected": {
+        "A0": "semantic-cases/component-call/valid/wit-safe-interface.sico",
+        "B": "syntax-candidates/b/component-call/valid/wit-safe-interface.sico",
+        "C": "syntax-candidates/c/component-call/valid/wit-safe-interface.sico"
+      }
+    },
+    {
+      "pair_id": "GEN-REV-001",
+      "case_id": "REV-001",
+      "prompt": "Define nominal Revision over Int. Define SaveError with Stale carrying named expected: Revision and actual: Revision. Define capability Store with commit(expected: Revision, value: Text) returning Result of Revision or SaveError. Export save(store: Store, expected: Revision, value: Text) returning the same Result, declaring effect store.write and capability store, then return store.commit(expected, value). Keep declarations, fields, and parameters in that order.",
+      "expected": {
+        "A0": "semantic-cases/revision/valid/versioned-commit.sico",
+        "B": "syntax-candidates/b/revision/valid/versioned-commit.sico",
+        "C": "syntax-candidates/c/revision/valid/versioned-commit.sico"
+      }
     }
   ]
 }

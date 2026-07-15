@@ -1,62 +1,54 @@
-# Syntax candidate static metrics
+# Syntax candidate static metrics v1
 
-> - 状态：第一轮静态快照
-> - 范围：30 个 P0 语义案例
-> - 注意：这是源码结构统计，不是 AI 模型 token 统计，也不是最终胜负结论
+> - status: verified full P0 snapshot
+> - scope: 54 mirrored cases per candidate
+> - machine snapshot: [`metrics-v1.json`](./metrics-v1.json)
+> - generator/checker: [`measure-syntax-candidates.ps1`](../tools/measure-syntax-candidates.ps1)
 
-仓库现已有每套 54 个案例。本报告仍冻结为首批 30 个案例的历史快照，新增效果、资源、异步、Stream、Component 和 revision 案例需在独立步骤中重新统计，不能与本表直接拼接。
+这些指标比较相同语义的源码表层，不是模型 tokenizer、parser 恢复或 AI 成功率。所有候选使用同一规则，删除 case 元数据与空行后统计非空源码行、UTF-8 bytes、候选无关词法 token、标点 token 和块关闭标记。
 
-## 1. 统计方法
+## Reproduce
 
-对 A0、B、C 的 `.sico` 文件执行相同处理：
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/measure-syntax-candidates.ps1 -CheckPath syntax-candidates/metrics-v1.json
+```
 
-1. 删除 `// case`、`// syntax`、`// expect`、`// semantics` 元数据行；
-2. 删除空行；
-3. 统计剩余非空源码行；
-4. 统计保留换行和行内空白后的字符数；
-5. 使用候选无关的简单词法表达式统计字符串、数字、标识符、双字符操作符和单字符标点。
+成功输出以 `SYNTAX_METRICS_OK` 开头。若任何候选源码或快照漂移，检查失败。
 
-该 token 只用于比较词法结构密度。真实模型 token 必须用固定模型的 tokenizer 另行计算。
+## Full results
 
-## 2. 结果
-
-| 候选 | 文件 | 源码行 | 字符 | 词法 token | 平均行/案例 | 平均 token/案例 |
-|---|---:|---:|---:|---:|---:|---:|
-| A0 | 30 | 285 | 4,883 | 1,123 | 9.50 | 37.43 |
-| B | 30 | 316 | 6,770 | 1,386 | 10.53 | 46.20 |
-| C | 30 | 246 | 4,766 | 1,265 | 8.20 | 42.17 |
+| Candidate | Files | Lines | UTF-8 bytes | Lexical tokens | Punctuation tokens | Block closers | Labeled closers |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A0 | 54 | 518 | 10,067 | 2,229 | 836 | 149 | 0 |
+| B | 54 | 563 | 13,217 | 2,668 | 910 | 151 | 151 |
+| C | 54 | 488 | 9,990 | 2,494 | 1,266 | 149 | 0 |
 
 相对 A0：
 
-| 候选 | 源码行 | 字符 | 词法 token |
-|---|---:|---:|---:|
-| B | +10.9% | +38.6% | +23.4% |
-| C | -13.7% | -2.4% | +12.6% |
+| Candidate | Lines | UTF-8 bytes | Lexical tokens | Punctuation tokens |
+|---|---:|---:|---:|---:|
+| B | +8.7% | +31.3% | +19.7% | +8.9% |
+| C | -5.8% | -0.8% | +11.9% | +51.4% |
 
-## 3. 当前可得结论
+## Round split
 
-- B 的命名结束标记显著增加字符与 token；它是否值得，必须由错误恢复和单轮修复率证明；
-- C 的源码行和字符最少，但花括号、逗号和表达式标点使词法 token 高于 A0；
-- A0 当前词法 token 最少，但通用 `end`、`_` 和 `=>` 的过载风险不能从体积统计看出；
-- “字符少”不等于“模型 token 少”，更不等于“AI 更容易正确生成”；
-- 现在不能选出胜者，必须继续进行错误注入和 AI 生成/修复实验。
+| Cohort | Candidate | Files | Lines | UTF-8 bytes | Lexical tokens | Punctuation tokens |
+|---|---|---:|---:|---:|---:|---:|
+| round 1 | A0 | 30 | 285 | 4,883 | 1,123 | 421 |
+| round 1 | B | 30 | 316 | 6,770 | 1,386 | 456 |
+| round 1 | C | 30 | 246 | 4,766 | 1,265 | 657 |
+| round 2 | A0 | 24 | 233 | 5,184 | 1,106 | 415 |
+| round 2 | B | 24 | 247 | 6,447 | 1,282 | 454 |
+| round 2 | C | 24 | 242 | 5,224 | 1,229 | 609 |
 
-## 4. 已完成结构检查
+第一轮数值与历史快照一致；v1 首次把 effects/capabilities、resource、Future/Task、Stream、Component 和 revision 的 24 个案例纳入同一生成器。
 
-- A0、B、C 各有 30 个 `.sico`；
-- 相对路径一一对应；
-- case ID、accept/reject 和 semantics 元数据完全一致；
-- B 的 `enum/record/function/match` 开始与带名称结束数量一致；
-- C 的 `{}`、`()`、`[]` 数量在每个文件内一致；
-- 上述检查只验证结构样本，不声称已经完成语法解析或类型检查。
+## Interpretation boundary
 
-## 5. 下一轮数据
+- A0 的 lexical token 最少，但 149 个通用 `end` 都不声明关闭的是哪种结构；
+- B 多 19.7% lexical token，代价主要来自完整关键字和 151 个带结构名称的结束标记；
+- C 的 bytes 最少，但 punctuation token 比 A0 多 51.4%；花括号提供配对种类，却不携带 `function`、`match`、`resource` 等结构名称；
+- `labeled closers = 151` 是可验证的冗余信息量，不证明 parser 或模型一定恢复得更好；
+- 字符、词法 token 和标点均不能冒充固定模型 token，真实 token 必须由已记录版本的 tokenizer 或供应商统计产生。
 
-下一轮应增加：
-
-1. 每个候选的正式词法规则；
-2. 单点错误注入后的主要诊断和级联数量；
-3. 固定模型 tokenizer 的真实 token；
-4. 相同提示下的首次生成成功率；
-5. 相同诊断下的单轮修复率；
-6. 理解类型、匹配和错误流所需 token。
+这些数据足以量化简洁度与结构冗余的取舍，但真实模型生成/修复率和 parser 级联仍保持 `not measured`。

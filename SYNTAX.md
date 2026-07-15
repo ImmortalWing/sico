@@ -1,6 +1,6 @@
 # Sico syntax candidates
 
-> - 状态：第一轮候选设计
+> - 状态：两轮 P0 候选设计，等待 STEP-0013 决定
 > - 语义基线：[`SEMANTICS.md`](./SEMANTICS.md)
 > - 判定集：[`semantic-cases/`](./semantic-cases/README.md)
 > - 原则：只比较写法，不改变程序含义
@@ -17,7 +17,7 @@
 | B | 关键字 + 带名称的结束标记 | 冗余的结构标签能减少错配和级联错误 |
 | C | 花括号 + 表达式式 match | 模型熟悉的紧凑结构能降低 token 和生成成本 |
 
-候选源码位于 [`syntax-candidates/`](./syntax-candidates/README.md)。第一轮只覆盖前 30 个 P0 语义案例，不代表完整语言语法。
+候选源码位于 [`syntax-candidates/`](./syntax-candidates/README.md)。当前每套覆盖全部 54 个 P0 判定案例，但仍不代表完整语言语法。
 
 ## 2. 所有候选必须满足的约束
 
@@ -139,7 +139,7 @@ fn name(color: Color) -> Text {
 
 预期优势：token 少、训练语料熟悉度高、match 数据流紧凑。预期代价：标点遗漏可能增加，嵌套括号错误恢复需要实测。
 
-## 6. 第一轮评测指标
+## 6. 评测指标
 
 ### 6.1 静态结构指标
 
@@ -219,8 +219,8 @@ fn name(color: Color) -> Text {
 
 ## 9. 下一步
 
-1. 对 A、B、C 进行结构计数；第一轮结果已记录在 [`syntax-candidates/METRICS.md`](./syntax-candidates/METRICS.md)；
-2. 定义最小词法器或独立 token 计数规则；
-3. 维护已建立的 [`syntax-mutations/`](./syntax-mutations/README.md) 单点错误注入清单；
-4. 人工复核三套候选是否保持相同语义；
-5. 按 [`ai-eval/`](./ai-eval/README.md) 协议运行 AI 生成、理解和修复实验；协议与离线工具已建立，真实模型数据尚未测量。
+1. STEP-0012 已用独立规则统计全部 54 个案例，见 [`syntax-candidates/METRICS.md`](./syntax-candidates/METRICS.md)；
+2. [`syntax-mutations/`](./syntax-mutations/README.md) 已覆盖 12 类 × 3 候选，正式 parser 数据留待 M1；
+3. [`ai-eval/`](./ai-eval/README.md) v1 已覆盖 96 个任务，真实模型数据等待凭据与成本授权；
+4. STEP-0013 根据已验证静态事实、明确设计优先级和未测量边界选择 M1 parser 基线；
+5. M1 parser 与获授权后的模型实验触发 RFC 规定的复审门槛。

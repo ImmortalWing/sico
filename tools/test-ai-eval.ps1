@@ -74,8 +74,8 @@ try {
     throw 'prompt packet generation is not deterministic'
   }
   $packets = Get-Content -LiteralPath $temporaryFiles[2] -Encoding UTF8 -Raw | ConvertFrom-Json
-  if ($packets.task_count -ne 42) {
-    throw "expected 42 prompt packets, found $($packets.task_count)"
+  if ($packets.task_count -ne 96) {
+    throw "expected 96 prompt packets, found $($packets.task_count)"
   }
   $packetText = Read-NormalizedText $temporaryFiles[2]
   if ($packetText -match 'semantic-cases/' -or $packetText -match 'syntax-candidates/' -or
@@ -108,7 +108,7 @@ try {
   }
   $modelRun = [pscustomobject][ordered]@{
     schema_version = 1
-    protocol_id = 'sico-ai-eval-v0'
+    protocol_id = 'sico-ai-eval-v1'
     run = [pscustomobject][ordered]@{
       run_id = 'transient-model-path-self-test'
       kind = 'model'
@@ -119,7 +119,7 @@ try {
       model = [pscustomobject][ordered]@{
         provider = 'offline-self-test'
         name = 'no-model-called'
-        version = 'transient-v0'
+        version = 'transient-v1'
       }
       date = '2026-07-14'
       parameters = [pscustomobject][ordered]@{
@@ -147,11 +147,11 @@ try {
   }
   $modelPathScore = Get-Content -LiteralPath $temporaryFiles[0] -Encoding UTF8 -Raw | ConvertFrom-Json
   if ($modelPathScore.synthetic -or $modelPathScore.official_comparison -or
-      $modelPathScore.summary.attempts -ne 42 -or $modelPathScore.summary.score -ne 1) {
+      $modelPathScore.summary.attempts -ne 96 -or $modelPathScore.summary.score -ne 1) {
     throw 'complete model metadata path did not produce the expected smoke result'
   }
 
-  Write-Output 'AI_EVAL_TEST_OK pass_score=1 fail_score=0 invalid_model=rejected model_path=accepted packets=42 deterministic=true'
+  Write-Output 'AI_EVAL_TEST_OK pass_score=1 fail_score=0 invalid_model=rejected model_path=accepted packets=96 deterministic=true'
 }
 finally {
   foreach ($path in $temporaryFiles) {

@@ -1,0 +1,16 @@
+// mutation: MUT-010
+// syntax: A0
+// source-case: TASK-002
+// expect: reject(SYNTAX_MISSING_TASK_GROUP_CLOSE)
+// recovery: function-close(pair)
+
+async fn compute(value: Int) -> Int
+  return value + 1
+end
+
+async fn pair() -> List<Int>
+  task group
+    let first = spawn compute(1)
+    let second = spawn compute(2)
+    return await collect_tasks([first, second], order: input)
+end

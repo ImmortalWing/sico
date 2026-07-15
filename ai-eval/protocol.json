@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "protocol_id": "sico-ai-eval-v0",
+  "protocol_id": "sico-ai-eval-v1",
   "minimum_model_repetitions": 30,
   "system_prompt": "You are completing a controlled Sico programming-language evaluation. Follow the supplied syntax guide and task exactly. Do not invent syntax. Return only the requested output, with no Markdown fence, explanation, preface, or trailing commentary.",
   "categories": {

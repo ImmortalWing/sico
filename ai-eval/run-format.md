@@ -1,17 +1,17 @@
-# AI evaluation run format v0
+# AI evaluation run format v1
 
 运行文件是 UTF-8 JSON：
 
 ```json
 {
   "schema_version": 1,
-  "protocol_id": "sico-ai-eval-v0",
+  "protocol_id": "sico-ai-eval-v1",
   "run": {
     "run_id": "provider-model-date-sequence",
     "kind": "model",
     "synthetic": false,
     "scope": "full",
-    "task_ids": ["所有 42 个 task id"],
+    "task_ids": ["所有 96 个 task id"],
     "repetitions": 30,
     "model": {
       "provider": "provider",

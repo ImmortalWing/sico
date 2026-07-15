@@ -53,8 +53,8 @@ if ($manifest.schema_version -ne 1) {
 }
 
 $entries = @($manifest.entries)
-if ($entries.Count -ne 18) {
-  throw "expected 18 entries, found $($entries.Count)"
+if ($entries.Count -ne 36) {
+  throw "expected 36 entries, found $($entries.Count)"
 }
 
 $keys = @{}
@@ -67,6 +67,12 @@ $mutationCounts = @{
   'MUT-004' = 0
   'MUT-005' = 0
   'MUT-006' = 0
+  'MUT-007' = 0
+  'MUT-008' = 0
+  'MUT-009' = 0
+  'MUT-010' = 0
+  'MUT-011' = 0
+  'MUT-012' = 0
 }
 
 foreach ($entry in $entries) {
@@ -138,8 +144,8 @@ foreach ($entry in $entries) {
 }
 
 foreach ($syntax in @('A0', 'B', 'C')) {
-  if ($syntaxCounts[$syntax] -ne 6) {
-    throw "expected 6 entries for $syntax, found $($syntaxCounts[$syntax])"
+  if ($syntaxCounts[$syntax] -ne 12) {
+    throw "expected 12 entries for $syntax, found $($syntaxCounts[$syntax])"
   }
 }
 
@@ -150,8 +156,8 @@ foreach ($mutation in $mutationCounts.Keys) {
 }
 
 $diskMutants = Get-ChildItem (Join-Path $root 'syntax-mutations') -Recurse -Filter '*.sico'
-if ($diskMutants.Count -ne 18) {
-  throw "expected 18 mutant files on disk, found $($diskMutants.Count)"
+if ($diskMutants.Count -ne 36) {
+  throw "expected 36 mutant files on disk, found $($diskMutants.Count)"
 }
 foreach ($file in $diskMutants) {
   if (-not $registeredMutants.ContainsKey($file.FullName)) {
@@ -159,4 +165,4 @@ foreach ($file in $diskMutants) {
   }
 }
 
-Write-Output 'MUTATION_CORPUS_OK entries=18 A0=6 B=6 C=6'
+Write-Output 'MUTATION_CORPUS_OK entries=36 A0=12 B=12 C=12'

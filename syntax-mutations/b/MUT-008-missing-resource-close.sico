@@ -1,0 +1,19 @@
+// mutation: MUT-008
+// syntax: B
+// source-case: RES-002
+// expect: reject(SYNTAX_MISSING_RESOURCE_CLOSE)
+// recovery: next-definition(read_once)
+
+enum ReadError:
+  case Failed
+end enum
+
+resource Reader:
+  function read(borrow self) returns Result[Text, ReadError]
+  function close(self) returns Unit
+
+function read_once(reader: Reader) returns Result[Text, ReadError]:
+  using reader:
+    return reader.read()
+  end using
+end function

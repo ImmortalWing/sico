@@ -7,15 +7,15 @@ $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path $RepositoryRoot).Path
 $protocol = Read-Utf8Json (Join-Path $root 'ai-eval/protocol.json')
-if ($protocol.schema_version -ne 1 -or $protocol.protocol_id -ne 'sico-ai-eval-v0') {
+if ($protocol.schema_version -ne 1 -or $protocol.protocol_id -ne 'sico-ai-eval-v1') {
   throw 'unsupported AI evaluation protocol'
 }
 if ($protocol.minimum_model_repetitions -ne 30) {
-  throw 'v0 requires exactly 30 minimum model repetitions'
+  throw 'v1 requires exactly 30 minimum model repetitions'
 }
 
 $tasks = @(Get-AiEvalTasks $root)
-$expectedCounts = @{ generation = 12; understanding = 12; repair = 18 }
+$expectedCounts = @{ generation = 30; understanding = 30; repair = 36 }
 $categoryCounts = @{ generation = 0; understanding = 0; repair = 0 }
 $syntaxCounts = @{ A0 = 0; B = 0; C = 0 }
 $taskIds = @{}
@@ -84,8 +84,8 @@ foreach ($category in $expectedCounts.Keys) {
   }
 }
 foreach ($syntax in @('A0', 'B', 'C')) {
-  if ($syntaxCounts[$syntax] -ne 14) {
-    throw "expected 14 $syntax tasks, found $($syntaxCounts[$syntax])"
+  if ($syntaxCounts[$syntax] -ne 32) {
+    throw "expected 32 $syntax tasks, found $($syntaxCounts[$syntax])"
   }
 }
 
@@ -118,4 +118,4 @@ foreach ($key in $mutationEntries.Keys) {
   }
 }
 
-Write-Output 'AI_EVAL_DATASET_OK tasks=42 generation=12 understanding=12 repair=18 A0=14 B=14 C=14'
+Write-Output 'AI_EVAL_DATASET_OK protocol=v1 tasks=96 generation=30 understanding=30 repair=36 A0=32 B=32 C=32'

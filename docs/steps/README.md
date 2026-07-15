@@ -15,5 +15,6 @@
 | [STEP-0009](./STEP-0009-resource-async-wit-prototypes.md) | complete | M0 | 验证 resource、async 与 WIT 映射 |
 | [STEP-0010](./STEP-0010-component-runtime-host-call.md) | complete | M0 | 验证 Component Runtime WIT host call 实链 |
 | [STEP-0011](./STEP-0011-runtime-desktop-android-feasibility.md) | complete | M0 | 比较 Component Runtime 桌面与 Android 可行性 |
+| [STEP-0012](./STEP-0012-syntax-evidence-completion.md) | complete | M0 | 补齐第二轮语法静态、mutation 与 AI 离线证据 |
 
-下一可用编号：`STEP-0012`。
+下一可用编号：`STEP-0013`。

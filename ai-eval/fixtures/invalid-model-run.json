@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "protocol_id": "sico-ai-eval-v0",
+  "protocol_id": "sico-ai-eval-v1",
   "run": {
-    "run_id": "fixture-invalid-model-v0",
+    "run_id": "fixture-invalid-model-v1",
     "kind": "model",
     "synthetic": false,
     "scope": "smoke",

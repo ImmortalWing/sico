@@ -1,0 +1,18 @@
+// mutation: MUT-007
+// syntax: A0
+// source-case: CAP-001
+// expect: reject(SYNTAX_MISSING_CAPABILITY_CLOSE)
+// recovery: next-definition(announce)
+
+enum ConsoleError
+  Denied
+end
+
+capability Console
+  fn write(text: Text) -> Result<Unit, ConsoleError>
+
+export fn announce(console: Console) -> Result<Unit, ConsoleError>
+  effects console.write
+  capabilities console
+  return console.write("ready")
+end
