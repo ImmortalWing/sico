@@ -19,3 +19,4 @@
 | [`m0-exit-audit`](./m0-exit-audit.md) | complete | STEP-0014 | M0 全门槛、真实 Rust/Component 重跑、递延登记与 M1 GO 结论 |
 | [`compiler-workspace-lexical-source-v0`](./compiler-workspace-lexical-source-v0.md) | complete | STEP-0015 | 七 crate workspace、锁定依赖、RFC-0006 与 21 个 lexical/source contract case 审查 |
 | [`source-span-lossless-lexer-v0`](./source-span-lossless-lexer-v0.md) | complete | STEP-0016 | strict UTF-8、统一 span/line index、21 contract case 与 54-file lossless lexer 验证 |
+| [`b-grammar-lossless-parser-v0`](./b-grammar-lossless-parser-v0.md) | complete | STEP-0017 | 54/54 B lossless parse、AST snapshots 与 M2 semantic reject 隔离 |

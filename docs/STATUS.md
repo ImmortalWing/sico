@@ -4,16 +4,16 @@
 > - phase: M1 编译器前端与诊断
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0016
-> - next step: STEP-0017
+> - last completed step: STEP-0017
+> - next step: STEP-0018
 
 ## 1. Current objective
 
-下一目标是实现 RFC-0005 B happy-path lossless parser，使 54/54 canonical case 产生稳定 syntax tree 与 AST shape，且不执行 M2 语义拒绝。
+下一目标是为 12 个 B mutation 实现局部 recovery、error/missing node 与 E1xxx 文本/JSON诊断，验证主要根因、anchor、跨度和 construct 外最多 1 个级联。
 
 ## 2. Current step
 
-[`STEP-0016: 实现 source/span 与无损 lexer`](./steps/STEP-0016-source-span-lossless-lexer.md) 已完成：14 个 Rust behavior test、21/21 contract 和 54/54 B lossless lexical corpus 通过。下一步只实现 B happy-path parser。
+[`STEP-0017: 实现 B grammar happy-path 无损 parser`](./steps/STEP-0017-b-grammar-lossless-parser.md) 已完成：54/54 B case、54 AST snapshot 和 byte-identical rowan root 通过；29 个 M2 语义负例均保持 syntax success。
 
 ## 3. Verified repository facts
 
@@ -41,7 +41,8 @@
 | 正式编译器 workspace | 7 crates, build/test pass | verified |
 | source/line index | 6 tests passed | verified |
 | lossless lexer | 8 tests; B 54/54 | verified |
-| parser 实现 | 不存在 | verified |
+| B happy-path parser | 54/54 + 54 snapshots | verified |
+| parser recovery/E1xxx | 不存在 | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
 M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译器和前端行为仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
@@ -70,6 +71,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 - STEP-0015–0021 前端工程计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)；
 - 正式 Rust workspace、lexical/source v0 与 21 个 contract case：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md)、[`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；
 - strict source/span、line index 与 54-file lossless lexer：[`STEP-0016`](./steps/STEP-0016-source-span-lossless-lexer.md)；
+- B happy-path lossless parser 与 AST shape：[`STEP-0017`](./steps/STEP-0017-b-grammar-lossless-parser.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -78,7 +80,7 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0017 的外部条件。
+当前没有阻塞 STEP-0018 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -94,4 +96,4 @@ M0 已完成；仓库已进入 M1 并建立正式 workspace，但可执行编译
 
 ## 8. Next step
 
-`STEP-0017`：实现 RFC-0005 B grammar happy path、rowan lossless tree 与最小 semantic AST shape；54/54 B case 必须解析，同时语义负例仍作为语法成功，不执行 M2 拒绝。
+`STEP-0018`：实现 12 个 B mutation 的主要诊断与有界 recovery；升级真实 E1xxx code，验证 text/JSON byte span、related open span、anchor 与级联上限。

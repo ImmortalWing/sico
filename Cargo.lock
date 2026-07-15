@@ -178,6 +178,7 @@ dependencies = [
 name = "sico-parser"
 version = "0.0.0"
 dependencies = [
+ "rowan",
  "sico-lexer",
  "sico-source",
  "sico-syntax",

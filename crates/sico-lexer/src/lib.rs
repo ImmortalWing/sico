@@ -17,6 +17,7 @@ pub const MAX_LEX_ERRORS: usize = 100;
 
 /// Lossless lexical token category.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u16)]
 pub enum TokenKind {
     Whitespace,
     Newline,
