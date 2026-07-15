@@ -41,3 +41,6 @@
 | [`async-task-stream-backend-v0`](./async-task-stream-backend-v0.md) | complete | STEP-0035 | Future/Stream Runtime contract 与 compiler typed refusal |
 | [`minimal-build-run-cli-v0`](./minimal-build-run-cli-v0.md) | complete | STEP-0036 | source→Component→Wasmtime CLI、exit/channel 与无产物失败契约 |
 | [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |
+| [`sapp-builder-loader-v0`](./sapp-builder-loader-v0.md) | complete | STEP-0039 | canonical `.sapp` builder、strict loader、hash/path/limit verification |
+| [`package-cli-cache-v0`](./package-cli-cache-v0.md) | accepted | STEP-0044 | `.sapp` build/run/inspect、explicit trust、source cache 与 args/stdio |
+| [`m4-exit-audit`](./m4-exit-audit.md) | complete | STEP-0045 | M4 security/property/performance、M0–M3 regression 与 M5 GO |

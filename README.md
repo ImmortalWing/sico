@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目已完成 M0–M3：Rust 编译器可完成 syntax/semantics、typed IR、deterministic Core Wasm/Component，并通过 `sico build/run` 在 Wasmtime 46.0.1 执行同步 scalar `main()`。当前进入 M4 `.sapp` 与安全 Runtime 规划，下一步是 STEP-0038 package threat model/contract。
+项目已完成 M0–M4：Rust 编译器和安全 Runtime 可完成 syntax/semantics、typed IR、deterministic Component、canonical `.sapp`、development trust、capability/storage/limit enforcement，并通过正式 `sico build/run/inspect` 在 Wasmtime 46.0.1 执行。M4 退出审计已 GO，下一步是 M5 STEP-0046 Desktop Host threat/lifecycle/platform contract。
 
 ## 文档
 
@@ -41,4 +41,5 @@ Sico Runtime / Sico Host
 - M0 设计与技术基线已通过退出审计；`Int`/Decimal、resource/async 和真实 Component/Runtime host-call 原型已完成，Runtime v0 选择 Wasmtime，M1 表层语法选择 B Labeled Blocks。
 - M1/M2 已完成 lossless frontend、formatter、稳定诊断、25/25 valid 与 29/29 exact invalid semantic oracle、Semantic Index/query；
 - M3 已完成 typed IR/verifier、lowering、deterministic Core/Component、WIT Result/record/resource、Future/Stream Runtime contract，以及 raw Component `build/run`；
-- M3 退出审计已给出 GO；`.sapp` manifest/hash/signature、capability closure、storage、limits 与 package `inspect` 按 [M4 plan](./docs/plans/M4-sapp-runtime.md) 实施，当前不得把 raw Component 视为最终应用包。
+- M4 已完成 canonical `.sapp`、strict loader、development signature/trust、capability closure、isolated storage/WASI、Runtime limits/faults、package CLI/cache 与 security/property baseline；结论见 [M4 exit audit](./docs/reports/m4-exit-audit.md)。
+- M5 按 [Desktop Host plan](./docs/plans/M5-desktop-host.md) 从 STEP-0046 开始；raw Component 仍只作为 compiler regression boundary，不是应用分发格式。

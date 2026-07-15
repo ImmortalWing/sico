@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-16
-> - phase: M4 `.sapp` 与 Runtime
-> - phase status: in-progress
-> - current step: STEP-0045 (planned)
-> - last completed step: STEP-0044
-> - next step: start STEP-0045
+> - phase: M5 Sico Desktop Host
+> - phase status: ready
+> - current step: STEP-0046 (planned)
+> - last completed step: STEP-0045
+> - next step: start STEP-0046
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0045：完成 package/parser/runtime security property corpus、determinism/performance baseline、M0–M3 regression、M4 exit audit，并规划 M5。
+M4 已通过退出审计。当前目标是执行 STEP-0046：建立 Desktop Host threat/lifecycle/platform matrix，冻结 install/open identity、permission record key、instance/crash/cancel cleanup 与跨平台证据边界。
 
 ## 2. Current step
 
-[`STEP-0044`](./steps/STEP-0044-package-cli-source-cache.md) 已把 `.sapp` 固定为正式 build/run/inspect surface，接入 explicit trust、capability authorization、source cache、args/stdio 与 exit mapping。下一执行项是 STEP-0045 M4 exit gate。
+[`STEP-0045`](./steps/STEP-0045-m4-security-quality-exit.md) 已完成 3,328-case security/determinism properties、Windows release baseline、全 workspace 与 M0–M3 regression；[`M4 exit audit`](./reports/m4-exit-audit.md) 已给出 GO。下一执行项是 STEP-0046 Desktop Host contract。
 
 ## 3. Verified repository facts
 
@@ -71,6 +71,8 @@
 | M3 performance | median 51.055 ms / 3.213 MiB/s；3 × 3,000 builds；no SLA | measured |
 | M4 Runtime limits | 11 dimensions；7 fault classes；6 tests；真实 infinite-loop + host survival | verified |
 | M4 package CLI/cache | deterministic `.sapp`；signed inspect/trusted run；corrupt cache refusal | verified |
+| M4 security properties | 2,048 signed mutations；1,024 Component mutations；256 resource permutations | verified |
+| M4 performance | build/verify/signature median 5.459/8.571/48.177 ms；3 × 1,000；no SLA | measured |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -121,6 +123,9 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - async/task/stream backend contract：[`STEP-0035`](./steps/STEP-0035-async-task-stream-backend.md)、[`RFC-0013`](./rfc/RFC-0013-async-backend-support-v0.md)、[`review report`](./reports/async-task-stream-backend-v0.md)；
 - minimal end-to-end CLI：[`STEP-0036`](./steps/STEP-0036-minimal-end-to-end-cli.md)、[`RFC-0014`](./rfc/RFC-0014-minimal-build-run-cli-v0.md)、[`review report`](./reports/minimal-build-run-cli-v0.md)；
 - M3 quality/exit GO 与 M4 execution plan：[`STEP-0037`](./steps/STEP-0037-m3-quality-exit-audit.md)、[`M3 exit audit`](./reports/m3-exit-audit.md)、[`M4 plan`](./plans/M4-sapp-runtime.md)；
+- `.sapp` format/builder/trust/capability/storage/limits：[`STEP-0038–0043`](./steps/README.md)、[`RFC-0015–0018`](./rfc/README.md)、[`ADR-0003`](./adr/ADR-0003-isolated-storage-wasi-host-v0.md)；
+- package CLI/cache 与 M4 GO：[`STEP-0044`](./steps/STEP-0044-package-cli-source-cache.md)、[`STEP-0045`](./steps/STEP-0045-m4-security-quality-exit.md)、[`M4 exit audit`](./reports/m4-exit-audit.md)；
+- STEP-0046–0053 Desktop Host execution plan：[`M5 plan`](./plans/M5-desktop-host.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -129,7 +134,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0045 的外部条件。
+当前没有阻塞 STEP-0046 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -146,4 +151,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0045`：执行 security property/limit corpus、determinism/performance baseline 与 M0–M3 regression，形成 M4 exit audit 和 M5 execution plan。
+`STEP-0046`：建立 Desktop Host threat/lifecycle/platform matrix，先冻结 install/open、permission、identity、instance、crash/cancel cleanup 与 Windows/macOS/Linux 验证边界，再实现 GUI Host。

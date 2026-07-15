@@ -25,7 +25,7 @@ if ($performance.schema -ne 'sico.m3.component-performance-runs.v0' -or
   throw 'M3 performance evidence is incomplete or overclaims an SLA'
 }
 if (-not $audit.Contains('GO: M3 complete; M4 entry gate satisfied; next STEP-0038.')) { throw 'M3 audit has no exact GO conclusion' }
-if ($m4Plan -notmatch '(?m)^> - status: ready after M3 GO\r?$' -or -not $m4Plan.Contains('STEP-0038')) { throw 'M4 plan is not ready after M3 GO' }
+if ($m4Plan -notmatch '(?m)^> - status: (?:ready after M3 GO|complete)\r?$' -or -not $m4Plan.Contains('STEP-0038')) { throw 'M4 plan has regressed below its M3-ready state' }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'

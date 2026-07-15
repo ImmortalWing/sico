@@ -1,8 +1,8 @@
 # Sico audited roadmap
 
-> - updated: 2026-07-15
+> - updated: 2026-07-16
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M4
+> - current phase: M5
 
 ## Status vocabulary
 
@@ -91,25 +91,27 @@ Entry gate：satisfied by STEP-0014。
 
 ## M4: `.sapp` 与 Runtime
 
-状态：`ready`（next STEP-0038）
+状态：`complete`
 
 主要交付：包格式、manifest、资源、哈希、开发签名、加载验证、权限交集、隔离存储、资源限额和 `build/run/inspect`；固定源码直跑的编译缓存、参数透传、stdio 与退出码契约，并为后续 `sico -c` 和交互式 REPL 提供稳定 Runtime 接口。
 
 进入条件：M3 exit gate 通过。
 
-退出证据：不可信包不能越权；trap 不导致宿主崩溃；包可重复构建和检查。
+退出证据：canonical/strict `.sapp`、development trust、capability closure、isolated storage、11-dimension limits、host survival、package CLI/cache、3,328 security properties 与 M0–M3 regression 全部通过；结论见 [`M4 exit audit`](./reports/m4-exit-audit.md)。
 
-执行计划：[`M4 .sapp and secure Runtime`](./plans/M4-sapp-runtime.md)，STEP-0038–0045；先完成 threat model/package contract，再实现 loader，不把 raw Component 伪装成 `.sapp`。
+执行计划：[`M4 .sapp and secure Runtime`](./plans/M4-sapp-runtime.md)，STEP-0038–0045 全部完成。
 
 ## M5: Sico Desktop Host
 
-状态：`planned`
+状态：`ready`（next STEP-0046）
 
 主要交付：Sico Desktop Host（Windows/macOS/Linux）、文件关联、权限 UI、生命周期、崩溃隔离、最小 UI WIT/SDK 和真实应用。
 
 进入条件：M4 exit gate 通过。
 
 退出证据：同一 `.sapp` 在声明支持的桌面平台保持一致核心行为。
+
+执行计划：[`M5 Sico Desktop Host`](./plans/M5-desktop-host.md)，STEP-0046–0053；先完成 threat/lifecycle/platform contract，再实现 install/open 与 GUI Host。
 
 ## M6: Sico Android Host
 

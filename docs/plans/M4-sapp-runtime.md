@@ -1,6 +1,6 @@
 # M4 plan: `.sapp` and secure Runtime
 
-> - status: ready after M3 GO
+> - status: complete
 > - created: 2026-07-15
 > - phase: M4
 > - entry evidence: [`M3 exit audit`](../reports/m3-exit-audit.md)
@@ -52,6 +52,6 @@
 - security fuzz/property/limit 与非 SLA performance baseline 通过，M0–M3 regression 全绿；
 - Desktop/Android UI host、生产签名/registry/更新仍明确属于 M5+ / M7。
 
-## 6. Immediate next step
+## 6. Completion
 
-`STEP-0038`：先建立 `.sapp` threat model 与恶意 package fixture matrix，再用 RFC 冻结 manifest、canonical archive、hash domain 和版本拒绝规则；在该 gate 通过前不写接受任意 package 的 loader。
+STEP-0038–0045 已全部完成，结论见 [`M4 exit audit`](../reports/m4-exit-audit.md)。下一执行项是 M5 [`STEP-0046`](../steps/README.md)：Desktop Host threat/lifecycle/platform contract。

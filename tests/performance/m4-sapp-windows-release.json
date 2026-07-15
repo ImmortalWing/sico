@@ -1,0 +1,29 @@
+{
+  "schema": "sico.m4.sapp-performance-runs.v0",
+  "date": "2026-07-16",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "host": "x86_64-pc-windows-gnu",
+    "profile": "release"
+  },
+  "corpus": {
+    "component_bytes": 8,
+    "resource_bytes": 1024,
+    "unsigned_package_bytes": 1771,
+    "signed_package_bytes": 2079
+  },
+  "iterations_per_run": 1000,
+  "operations_per_run": 3000,
+  "sla": "not-established",
+  "runs": [
+    { "run": 1, "build_ms": 5.422, "verify_ms": 8.571, "signature_verify_ms": 43.629 },
+    { "run": 2, "build_ms": 5.459, "verify_ms": 8.541, "signature_verify_ms": 48.177 },
+    { "run": 3, "build_ms": 5.567, "verify_ms": 10.050, "signature_verify_ms": 48.438 }
+  ],
+  "median": {
+    "build_ms": 5.459,
+    "verify_ms": 8.571,
+    "signature_verify_ms": 48.177
+  }
+}
