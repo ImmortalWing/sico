@@ -7,6 +7,7 @@
 - [当前状态](./STATUS.md)
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)
+- [阶段执行计划](./plans/README.md)
 
 ## Decision and evidence records
 

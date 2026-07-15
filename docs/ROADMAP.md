@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-15
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M0
+> - current phase: M1
 
 ## Status vocabulary
 
@@ -16,7 +16,7 @@
 
 ## M0: 设计与技术基线
 
-状态：`in-progress`
+状态：`complete`
 
 | Work package | 状态 | 证据/下一步 |
 |---|---|---|
@@ -30,7 +30,7 @@
 | 审计体系 | complete | [`STEP-0001`](./steps/STEP-0001-project-state-audit.md) |
 | 应用宿主正式命名 | complete | [`ADR-0001`](./adr/ADR-0001-sico-host-terminology.md)、[`STEP-0002`](./steps/STEP-0002-sico-host-terminology.md) |
 | 单点错误注入与恢复评测 | complete for design corpus v1 | [`STEP-0012`](./steps/STEP-0012-syntax-evidence-completion.md)、[`report`](./reports/syntax-evidence-v1.md)；36 个 mutation，parser 实测留待 M1 |
-| AI 常见错误分类 | partial | 问题矩阵已有材料，需要独立数据集/分类报告 |
+| AI 常见错误分类 | complete for designed corpus | [`error taxonomy`](../ai-eval/error-taxonomy.json)、[`STEP-0014`](./steps/STEP-0014-m0-exit-audit.md)；12 类，真实频率 not measured |
 | AI 理解与修复基线 | complete for offline protocol v1 | [`STEP-0012`](./steps/STEP-0012-syntax-evidence-completion.md)、[`report`](./reports/syntax-evidence-v1.md)；96 个任务，真实模型数据等待凭据/成本授权 |
 | 剩余 P0 语义案例 | complete | [`STEP-0005`](./steps/STEP-0005-remaining-p0-semantic-cases.md)、[`report`](./reports/remaining-p0-semantic-cases.md) |
 | 诊断协议 v0 | complete for design contract | [`RFC-0001`](./rfc/RFC-0001-diagnostics-protocol-v0.md)、[`diagnostics/`](../diagnostics/README.md)、[`STEP-0006`](./steps/STEP-0006-diagnostics-protocol-v0.md) |
@@ -38,7 +38,7 @@
 | Wasm Component 最小原型 | complete | [`STEP-0010`](./steps/STEP-0010-component-runtime-host-call.md)、[`report`](./reports/component-runtime-host-call-v0.md) |
 | Runtime 引擎桌面/Android 对比 | complete for M0 decision | [`ADR-0002`](./adr/ADR-0002-runtime-platform-baseline.md)、[`STEP-0011`](./steps/STEP-0011-runtime-desktop-android-feasibility.md)；Android 真机验证留待 M6 前置探针 |
 | 数据驱动语法决定 | complete for M1 baseline | [`RFC-0005`](./rfc/RFC-0005-labeled-block-syntax-baseline.md)、[`STEP-0013`](./steps/STEP-0013-syntax-baseline-decision.md)；选择 B，真实 parser/model 按门槛复审 |
-| M0 退出审计 | planned | 依赖以上所有 M0 项 |
+| M0 退出审计 | complete | [`STEP-0014`](./steps/STEP-0014-m0-exit-audit.md)、[`report`](./reports/m0-exit-audit.md)；GO to M1 |
 
 ### M0 exit gate
 
@@ -53,11 +53,15 @@
 
 状态：`planned`
 
+Entry gate：satisfied by STEP-0014。
+
 主要交付：Rust workspace、源码/跨度、词法器、解析与恢复、无损树、语义 AST、格式化器、`sico check`、文本/JSON 诊断、outline、parser fuzzing。
 
-进入条件：M0 exit gate 通过。
+进入条件：M0 exit gate 已由 [`STEP-0014`](./steps/STEP-0014-m0-exit-audit.md) 通过。
 
 退出证据：合法语法案例稳定解析；非法案例产生预期主要诊断；单点错误不会形成不可控级联。
+
+执行计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)，STEP-0015–0021。
 
 ## M2: 静态语义
 

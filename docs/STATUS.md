@@ -1,19 +1,19 @@
 # Sico project status
 
 > - updated: 2026-07-15
-> - phase: M0 设计与技术基线
-> - phase status: in-progress
+> - phase: M1 编译器前端与诊断
+> - phase status: planned
 > - current step: none
-> - last completed step: STEP-0013
-> - next step: STEP-0014
+> - last completed step: STEP-0014
+> - next step: STEP-0015
 
 ## 1. Current objective
 
-下一目标是逐项审计 M0 exit gate、残余风险和 M1 进入条件，形成明确 go/no-go 结论。
+下一目标是按 M1 计划建立正式 Rust workspace，并先固定 source/token/Unicode/identifier/newline/trivia lexical contract。
 
 ## 2. Current step
 
-[`STEP-0013: 决定 M1 表层语法基线`](./steps/STEP-0013-syntax-baseline-decision.md) 已完成。下一步骤编号为 `STEP-0014`，尚未开始。
+[`STEP-0014: M0 退出审计`](./steps/STEP-0014-m0-exit-audit.md) 已完成并给出 GO。下一步骤编号为 `STEP-0015`，尚未开始。
 
 ## 3. Verified repository facts
 
@@ -41,7 +41,7 @@
 | 正式编译器 | 不存在 | verified |
 | 实际 `.sico` 编译结果 | 不存在 | verified |
 
-因此，仓库当前仍是 M0 设计阶段。现有 accept/reject 案例是设计判定，不是编译器实测结果。
+M0 已完成；仓库获准进入 M1，但正式编译器仍不存在。现有 accept/reject 案例仍是设计判定，直到 M1/M2 产生真实 parser/type-checker 结果。
 
 ## 4. Completed assets
 
@@ -62,19 +62,20 @@
 - 真实 Component host call、resource、数值记录和原生 async 往返：[`prototypes/component-host-call/`](../prototypes/component-host-call/README.md)；
 - 桌面/Android Runtime 基线、发布政策与 Android 最小探针：[`ADR-0002`](./adr/ADR-0002-runtime-platform-baseline.md)、[`runtime report`](./reports/runtime-desktop-android-v0.md)；
 - M1 B labeled-block 语法基线、候选取舍与复审门槛：[`RFC-0005`](./rfc/RFC-0005-labeled-block-syntax-baseline.md)；
+- 12 类 AI-oriented 错误 taxonomy（真实频率未测量）：[`error-taxonomy.json`](../ai-eval/error-taxonomy.json)；
+- M0 requirement-by-requirement GO 结论与递延登记：[`M0 exit audit`](./reports/m0-exit-audit.md)；
+- STEP-0015–0021 前端工程计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
 
-按当前依赖顺序：
-
-1. M0 退出审计。
+无。真实 AI、Android、Future/Stream Runtime 与 proposed RFC 接受条件已登记为后续/外部证据，不是 M0 完成声明。
 
 ## 6. Blockers
 
-当前没有阻塞下一步骤的外部条件。
+当前没有阻塞 STEP-0015 的外部条件。
 
-真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞下一项 P0 设计工作。没有真实调用前不产生模型分数。
+真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
 ## 7. Risks
 
@@ -83,9 +84,9 @@
 - 语法候选已覆盖 10 组 P0 判定、完整静态指标和离线 AI 任务，但仍没有真实 parser 或模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
-- 诊断协议已有设计目录和 fixtures，但尚无 compiler 生成真实 code、跨度或级联数据。
+- 诊断协议已有设计目录和 fixtures，但尚无 compiler 生成真实 code、跨度或级联数据；
 - 语义查询协议已有设计 fixtures，但只有两个模块详细展开，没有真实 index/accuracy/latency 数据。
 
 ## 8. Next step
 
-`STEP-0014`：对 M0 全部门槛、RFC/ADR 状态、技术原型、外部阻塞与残余风险做 requirement-by-requirement 退出审计，决定是否进入 M1。
+`STEP-0015`：建立正式 compiler workspace；在 lexer 实现前完成 lexical/source RFC，固定 UTF-8、identifier/Unicode、newline、trivia、token、span 与输入限额。

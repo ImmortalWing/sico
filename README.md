@@ -38,4 +38,4 @@ Sico Runtime / Sico Host
 - WIT 定义组件和宿主能力接口；
 - 通用系统能力优先复用 WASI；
 - 不依赖 JavaScript 或 TypeScript；
-- `Int`/Decimal、resource/async 和真实 Component/Runtime host-call 原型已完成；Runtime v0 选择 Wasmtime，M1 表层语法选择 B Labeled Blocks。当前下一步是 M0 退出审计，尚未开始正式编译器实现。
+- M0 设计与技术基线已通过退出审计；`Int`/Decimal、resource/async 和真实 Component/Runtime host-call 原型已完成，Runtime v0 选择 Wasmtime，M1 表层语法选择 B Labeled Blocks。下一步是 STEP-0015 的正式 Rust workspace 与 lexical/source RFC；编译器实现尚未开始。

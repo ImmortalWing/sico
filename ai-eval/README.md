@@ -64,6 +64,16 @@ generation 和 understanding 使用相同的 10 个语义 pair，覆盖全部 P0
 
 [`fixtures/`](./fixtures/) 中的数据具有 `synthetic: true`，只用于证明工具能识别正确和错误输出，严禁计入模型比较。
 
+## AI-oriented error taxonomy
+
+[`error-taxonomy.json`](./error-taxonomy.json) 将当前设计失败语料分成 12 类，精确覆盖 24 个稳定语义诊断、29 个语义负例和 12 类/36 个语法 mutation。每类记录 compiler prevention 与 AI repair constraint。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-error-taxonomy.ps1
+```
+
+taxonomy 的 `observed_ai_frequency` 固定为 `not-measured`，且禁止排名。它是未来真实模型错误的分类 schema，不是“这些错误在 AI 中已经常见”的频率证据。
+
 ## Versioning
 
 任务、提示或评分语义变化时必须增加协议版本。只修正文档拼写或不影响生成字节的工具缺陷可以保留当前版本，但报告中必须记录工具提交。不同协议版本的分数不能直接合并。

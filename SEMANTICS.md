@@ -7,9 +7,9 @@
 
 ## 1. 文档目的
 
-本文档定义 Sico 程序在不同编译器、Runtime 和平台上必须保持一致的核心语义。它先回答“程序表示什么”，再由候选 B、C 回答“程序应当怎样写”。
+本文档定义 Sico 程序在不同编译器、Runtime 和平台上必须保持一致的核心语义。它先回答“程序表示什么”；M1 的“程序应当怎样写”已由 [`RFC-0005`](./docs/rfc/RFC-0005-labeled-block-syntax-baseline.md) 选择 B Labeled Blocks。
 
-以下内容不是候选 A 源码的语法说明。示例中的 `use`、`with`、`end`、`try`、`async` 等形式仍可替换；编译器实现不得通过先写解析器的方式替语言设计做决定。
+以下内容不是候选 A 源码的语法说明。RFC-0005 未覆盖的 `use`、模块、完整借用、属性等形式仍不能由 parser 临时猜测；编译器实现不得替语言设计做决定。
 
 本文档使用三种状态：
 
@@ -371,7 +371,7 @@ Sico 把计算结果分成以下层次，工具和 Runtime 不得把它们压成
 
 可能挂起的函数在类型中与同步函数不同。一个返回 `T` 的异步函数在调用后产生 `Future<T>`；如果计算可能产生预期失败，则 `T` 本身是 `Result<V, E>`，不再创建第二条隐藏错误通道。
 
-Future 是只能完成一次的 affine 资源。只有显式等待或启动任务才推进异步计算；等待取得它的普通返回值，取消和 trap 按本章其他条目处理。具体关键字仍由候选语法决定。
+Future 是只能完成一次的 affine 资源。只有显式等待或启动任务才推进异步计算；等待取得它的普通返回值，取消和 trap 按本章其他条目处理。M1 关键字以 RFC-0005/B canonical corpus 为准，启动时机与取消观察点仍需单独语义决定。
 
 隐藏在普通同步调用中的阻塞不是可接受实现。Runtime 和宿主接口必须公开可能挂起的边界。
 
@@ -544,34 +544,34 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 | 问题组 | 本文状态 | 主要条目 |
 |---|---|---|
 | T01-T10 类型与数据 | 已形成草案；泛型约束仍开放 | SEM-020—043 |
-| C01-C04 控制流 | 已形成草案；表层块语法仍开放 | SEM-063—066 |
+| C01-C04 控制流 | 已形成草案；M1 块语法由 RFC-0005 选择 B | SEM-063—066 |
 | E01-E04 错误 | 已形成草案 | SEM-070—075 |
 | S01-S03 状态 | 已形成草案 | SEM-050—052、111 |
 | K01-K02 契约 | 已形成草案；验证技术仍开放 | SEM-110、075 |
 | X01-X02 事务 | 已确定边界草案 | SEM-112—113 |
 | FX01-FX03 效果能力 | 已形成草案；效果粒度仍开放 | SEM-080—084 |
 | R01-R04 资源 | 已形成草案 | SEM-090—093 |
-| A01-A07 异步 | 已形成草案；ABI 映射仍开放 | SEM-100—106 |
+| A01-A07 异步 | 已形成草案；WASI 0.3 async func 已往返，Future/Stream 仍开放 | SEM-100—106 |
 | P01-P07 Component | 已确定边界草案 | SEM-120—123 |
 | UI01-UI06 UI | 确认留在 SDK/平台层 | SEM-124 |
-| AI01-AI07 AI 协议 | 已形成语义要求；JSON schema 待定义 | SEM-130—133 |
+| AI01-AI07 AI 协议 | JSON v0 已由 RFC-0002 接受；真实 compiler 指标待 M1/M2 | SEM-130—133 |
 
 ## 17. 仍需单独决策的问题
 
 以下问题不能通过本文首版直接视为完成：
 
-1. `Int` 任意精度实现的性能、WIT 转换与常量资源上限；STEP-0008 已验证 Rust 表示、规范编码和限额，真实 Component 往返仍待 STEP-0010；
+1. `Int` 任意精度实现的跨平台性能与稳定限额诊断；STEP-0008 已验证 Rust 表示/编码/限额，STEP-0010 已完成 4096-bit 数值记录 Component 往返，RFC-0003 仍为 proposed；
 2. Decimal 的精度、舍入上下文和序列化规范；STEP-0008 已提出 coefficient/scale v0 并验证加乘与显式舍入，除法上下文和 RFC 接受仍开放；
 3. 固定宽度整数的正式名称及公开程度；
 4. 泛型约束、接口/trait、方差和编译策略；
 5. 资源借用是否进入表层语言，以及需要怎样的生命周期推导；STEP-0009 已验证调用期 borrow 和 owned move 映射，表层推导仍开放；
 6. 闭包循环与自动内存管理的最低实现模型；
 7. 效果集合的正式分类、粒度和 handler 是否必要；
-8. `Future` 的启动细节、取消观察点和 Component async ABI 映射；STEP-0009 已选择 WASI 0.3 原生 async/future/stream 并通过 WIT parser，真实 Runtime 往返仍待 STEP-0010；
+8. `Future` 的启动细节、取消观察点和 Component async ABI 映射；STEP-0010 已真实往返原生 `async func`，`future<T>`/`stream<T>` Runtime 往返仍未完成；
 9. 契约表达式子集、静态证明器和运行时检查成本；
-10. WIT 接口版本兼容、adapter 生成和 WASI 基线；
-11. 语义索引与 AI 查询协议的 JSON schema；
-12. 候选 B、C 如何用更低歧义的语法表达本文语义。
+10. WIT 接口版本兼容和 adapter 生成；WASI 0.3 是当前目标基线，RFC-0004 在 Future/Stream 往返前保持 proposed；
+11. 语义索引 compiler 生成、准确率、延迟和隐私实测；JSON v0 已由 RFC-0002 接受；
+12. RFC-0005 已选择 B 作为 M1 语法；模块/import、属性、文档注释和完整借用表层仍开放。
 
 这些问题必须使用 RFC、原型或量化实验解决，不能由 Rust 类型、Wasm 限制或候选 A 的写法自动决定。
 
@@ -582,5 +582,5 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 3. 根据同一语义设计候选 B、C，不改变程序行为；54 个一一对应镜像已放入 [`syntax-candidates/`](./syntax-candidates/README.md)；
 4. 按 [`ai-eval/`](./ai-eval/README.md) 比较三套语法的 AI 首次生成成功率、理解 token、诊断 token 和单轮修复率；协议已完成，真实模型数据尚未测量；
 5. 诊断协议 v0 已由 [`RFC-0001`](./docs/rfc/RFC-0001-diagnostics-protocol-v0.md) 接受，语义索引与五类查询 JSON v0 已由 [`RFC-0002`](./docs/rfc/RFC-0002-semantic-index-query-v0.md) 接受；
-6. `Int`/Decimal Rust 原型和 [`RFC-0003`](./docs/rfc/RFC-0003-numeric-representation-v0.md) 已由 STEP-0008 完成；资源、Future 与 WIT 映射进入 STEP-0009，真实 Component 往返进入 STEP-0010；
-7. 只有关键 P0 语义通过验证后，才建立正式编译器前端。
+6. `Int`/Decimal、资源/Future/WIT 和真实 Component 原型已由 STEP-0008–0010 完成；RFC-0003/0004 的剩余接受条件继续并行跟踪；
+7. 关键 P0 设计判定与 M1 语法已经固定；正式前端按 [`M1 plan`](./docs/plans/M1-compiler-frontend.md) 实现，不能越界执行 M2 语义。

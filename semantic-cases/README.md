@@ -22,9 +22,9 @@
 
 非法源码头保留可读的语义诊断键；正式稳定编号、参数和默认短消息由 [`diagnostics/catalog.json`](../diagnostics/catalog.json) 与 [`semantic-case-map.json`](../diagnostics/semantic-case-map.json) 统一管理。机器不得解析 README 或自然语言消息来判断错误类型。
 
-## 2. A0 语义记法
+## 2. A0 语义记法与正式 M1 语法
 
-案例源码暂时使用接近候选 A 的 **A0 语义记法**。它只要求读者能识别定义、类型和控制流，不代表以下表层形式已经定稿：
+本目录继续使用接近候选 A 的 **A0 语义记法**，以保留原始语义 oracle 和候选对照。它只要求读者能识别定义、类型和控制流；正式 M1 parser 不直接接受本目录写法，而接受 [`syntax-candidates/b/`](../syntax-candidates/b/) 的同 ID 镜像。
 
 - `fn`、`return` 和 `end`；
 - `newtype`、`record`、`enum`；
@@ -33,9 +33,9 @@
 - 泛型的 `<...>`；
 - 契约和 invariant 的写法。
 
-候选 B、C 必须重新表达同一案例，并保持 accept/reject 结果、诊断根因和语义摘要一致。
+候选 B、C 必须继续表达同一案例，并保持 accept/reject 结果、诊断根因和语义摘要一致。B 已由 [`RFC-0005`](../docs/rfc/RFC-0005-labeled-block-syntax-baseline.md) 选为 M1 baseline，C 保留为对照。
 
-第一轮 B、C 源码位于 [`syntax-candidates/`](../syntax-candidates/README.md)。
+B、C 源码与完整评测位于 [`syntax-candidates/`](../syntax-candidates/README.md)。
 
 ## 3. P0 案例组
 
