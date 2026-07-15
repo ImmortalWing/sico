@@ -4,16 +4,16 @@
 > - phase: M3 Sico IR 与 Component
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0031
-> - next step: STEP-0032
+> - last completed step: STEP-0032
+> - next step: STEP-0033
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0032：lower effect/capability、affine resource 与 revision flow，并让独立 verifier 检查 ownership/declared-effect invariants。
+下一目标是执行 STEP-0033：让 verified IR 生成 deterministic Core Wasm，并由真实 validator/engine 执行受支持 numeric/control subset。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0031`](./steps/STEP-0031-core-lowering-evaluation-order.md) 已完成；下一项扩展 effect/resource/revision IR flow。
+当前没有进行中的 STEP。[`STEP-0032`](./steps/STEP-0032-effect-resource-revision-flow.md) 已完成；下一项建立 verified-IR-only Core Wasm backend。
 
 ## 3. Verified repository facts
 
@@ -30,7 +30,7 @@
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 31 | measured |
+| Rust `.rs` 文件 | 32 | measured |
 | `Cargo.toml` | 17 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
@@ -57,9 +57,10 @@
 | semantic CLI full oracle | 25/25 valid；29/29 exact invalid；text/JSON | verified |
 | deterministic semantic properties/limits | 2,048 inputs；diagnostics 100；locals 2,000；depth 200 | verified |
 | M2 performance | median 1242.186 ms / 2.808 MiB/s；no SLA | measured |
-| typed Sico IR v0 | 13 types；18 operations；5 terminators | verified |
+| typed Sico IR v0 | 14 types；19 operations；5 terminators | verified |
 | independent IR verifier | 9 mutation classes；diagnostic cap 100 | verified |
 | deterministic core lowering | 12 valid lowered；13 valid typed-refused；29 invalid blocked | verified |
+| effect/resource/revision lowering | 5 flow cases；cumulative valid 17/25；4 verifier mutations | verified |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -104,6 +105,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - STEP-0030–0037 IR/Component 执行计划：[`M3 Sico IR and Component`](./plans/M3-sico-ir-component.md)；
 - typed Sico IR contract/verifier：[`STEP-0030`](./steps/STEP-0030-typed-sico-ir-contract-verifier.md)、[`RFC-0008`](./rfc/RFC-0008-typed-sico-ir-contract-v0.md)、[`review report`](./reports/typed-sico-ir-contract-v0.md)；
 - core lowering/evaluation order：[`STEP-0031`](./steps/STEP-0031-core-lowering-evaluation-order.md)、[`RFC-0009`](./rfc/RFC-0009-core-lowering-evaluation-order-v0.md)、[`review report`](./reports/core-lowering-evaluation-order-v0.md)；
+- effect/resource/revision IR flow：[`STEP-0032`](./steps/STEP-0032-effect-resource-revision-flow.md)、[`RFC-0010`](./rfc/RFC-0010-effect-resource-revision-ir-flow-v0.md)、[`review report`](./reports/effect-resource-revision-ir-flow-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -112,7 +114,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0032 的外部条件。
+当前没有阻塞 STEP-0033 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -128,4 +130,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0032`：实现 capability/effect calls、resource move/borrow/drop/using 与 revision guard lowering；验证无隐式 copy/drop 和不可见 runtime 语义。
+`STEP-0033`：实现 verified-IR-only deterministic Core Wasm backend；真实 validate、byte-identical rebuild 和 numeric/control engine execution。

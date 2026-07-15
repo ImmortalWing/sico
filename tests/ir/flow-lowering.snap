@@ -1,0 +1,5 @@
+CAP-001=f1:announce(b0[const-string,effect-call]>return)
+RES-001=f1:finish(b0[resource-drop]>return)
+RES-002=f1:read_once(b0[resource-borrow,resource-call,resource-drop]>return)
+REV-001=f1:save(b0[effect-call]>return)
+REV-002=f1:apply_loaded(b0[project,project,revision-check]>branch;b1[project,project,construct,variant]>return;b2[variant]>return)

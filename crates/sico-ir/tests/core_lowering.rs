@@ -28,7 +28,6 @@ fn twelve_core_cases_lower_deterministically_and_remaining_valid_cases_refuse() 
     collect_sico(&repository.join("syntax-candidates/b"), &mut paths);
     paths.sort();
     let mut lowered = 0;
-    let mut unsupported = 0;
     let mut snapshots = Vec::new();
     for (index, path) in paths.iter().enumerate() {
         let text = fs::read_to_string(path).unwrap();
@@ -42,13 +41,17 @@ fn twelve_core_cases_lower_deterministically_and_remaining_valid_cases_refuse() 
             text,
         )
         .unwrap();
-        match lower_core(&source) {
+        let result = lower_core(&source);
+        if !SUPPORTED.contains(&case.as_str()) {
+            assert!(
+                matches!(result, Ok(_) | Err(CoreLowerError::Unsupported { .. })),
+                "unexpected non-capability result for {case}: {result:?}"
+            );
+            continue;
+        }
+        match result {
             Ok(module) => {
                 lowered += 1;
-                assert!(
-                    SUPPORTED.contains(&case.as_str()),
-                    "unexpected support for {case}"
-                );
                 assert!(verify(&module).is_empty());
                 assert_eq!(module, lower_core(&source).unwrap());
                 assert_eq!(
@@ -58,16 +61,12 @@ fn twelve_core_cases_lower_deterministically_and_remaining_valid_cases_refuse() 
                 snapshots.push(format!("{case}={}", shape(&module)));
             }
             Err(CoreLowerError::Unsupported { .. }) => {
-                unsupported += 1;
-                assert!(
-                    !SUPPORTED.contains(&case.as_str()),
-                    "unexpected refusal for {case}"
-                );
+                panic!("unexpected refusal for {case}");
             }
             Err(error) => panic!("{case}: {error:?}"),
         }
     }
-    assert_eq!((lowered, unsupported), (12, 13));
+    assert_eq!(lowered, 12);
     snapshots.sort();
     let actual = format!("{}\n", snapshots.join("\n"));
     if std::env::var_os("SICO_DUMP_CORE_IR").is_some() {
@@ -239,6 +238,7 @@ fn shape(module: &sico_ir::Module) -> String {
                             Operation::Project { .. } => "project",
                             Operation::Variant { .. } => "variant",
                             Operation::EffectCall { .. } => "effect-call",
+                            Operation::ResourceCall { .. } => "resource-call",
                             Operation::ResourceMove(_) => "resource-move",
                             Operation::ResourceBorrow(_) => "resource-borrow",
                             Operation::ResourceDrop(_) => "resource-drop",

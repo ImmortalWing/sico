@@ -201,6 +201,7 @@ fn all_phase_types_have_stable_serialization() {
             ok: Box::new(Type::Int),
             error: Box::new(Type::Named("Failure".into())),
         },
+        Type::Capability("Console".into()),
         Type::OwnedResource("File".into()),
         Type::BorrowedResource("File".into()),
         Type::Task(Box::new(Type::Int)),

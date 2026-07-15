@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use sico_hir::{Declaration, HirToken, LineKind, lower};
 use sico_lexer::TokenKind;
@@ -28,18 +28,28 @@ struct Signature {
     async_function: bool,
 }
 
+#[derive(Clone)]
+struct MethodSignature {
+    parameters: Vec<Type>,
+    return_type: Type,
+}
+
 #[derive(Default)]
 struct Definitions {
     functions: BTreeMap<String, Signature>,
     constructors: BTreeMap<String, Type>,
     variants: BTreeMap<String, Type>,
     fields: BTreeMap<(String, String), Type>,
+    capabilities: BTreeSet<String>,
+    resources: BTreeSet<String>,
+    methods: BTreeMap<(String, String), MethodSignature>,
 }
 
 struct FunctionBuilder<'a> {
     definitions: &'a Definitions,
     next_value: u32,
     bindings: BTreeMap<String, (ValueId, Type)>,
+    declared_effects: Vec<String>,
 }
 
 /// Lowers the STEP-0031 core subset after the full M2 gate succeeds.
@@ -87,7 +97,6 @@ pub fn lower_core(source: &SourceFile) -> Result<Module, CoreLowerError> {
 impl Definitions {
     fn from_declarations(declarations: &[Declaration]) -> Self {
         let mut definitions = Self::default();
-        let mut next_function = 1_u32;
         for declaration in declarations {
             match declaration.kind {
                 DeclarationKind::Newtype | DeclarationKind::Record => {
@@ -95,12 +104,27 @@ impl Definitions {
                         declaration.name.clone(),
                         Type::Named(declaration.name.clone()),
                     );
+                }
+                DeclarationKind::Capability => {
+                    definitions.capabilities.insert(declaration.name.clone());
+                }
+                DeclarationKind::Resource => {
+                    definitions.resources.insert(declaration.name.clone());
+                }
+                DeclarationKind::Enum | DeclarationKind::Function | DeclarationKind::Interface => {}
+            }
+        }
+        let mut next_function = 1_u32;
+        for declaration in declarations {
+            match declaration.kind {
+                DeclarationKind::Newtype | DeclarationKind::Record => {
                     if declaration.kind == DeclarationKind::Record {
                         for line in &declaration.lines {
                             if line.kind == LineKind::Field && line.tokens.len() >= 4 {
+                                let ty = definitions.resolve_type(parse_type(&line.tokens[3..]));
                                 definitions.fields.insert(
                                     (declaration.name.clone(), line.tokens[1].text.clone()),
-                                    parse_type(&line.tokens[3..]),
+                                    ty,
                                 );
                             }
                         }
@@ -118,7 +142,11 @@ impl Definitions {
                 }
                 DeclarationKind::Function => {
                     let header = &declaration.lines[0].tokens;
-                    let (parameters, return_type) = parse_signature(header);
+                    let (mut parameters, return_type) = parse_signature(header);
+                    for (_, ty, _) in &mut parameters {
+                        *ty = definitions.resolve_type(ty.clone());
+                    }
+                    let return_type = definitions.resolve_type(return_type);
                     definitions.functions.insert(
                         declaration.name.clone(),
                         Signature {
@@ -134,10 +162,45 @@ impl Definitions {
                 }
                 DeclarationKind::Capability
                 | DeclarationKind::Resource
-                | DeclarationKind::Interface => {}
+                | DeclarationKind::Interface => {
+                    for line in &declaration.lines {
+                        if line.kind != LineKind::FunctionSignature {
+                            continue;
+                        }
+                        let method = method_name(&line.tokens);
+                        let parameters = parse_method_parameters(&line.tokens)
+                            .into_iter()
+                            .map(|ty| definitions.resolve_type(ty))
+                            .collect();
+                        let return_type = definitions.resolve_type(parse_return_type(&line.tokens));
+                        definitions.methods.insert(
+                            (declaration.name.clone(), method),
+                            MethodSignature {
+                                parameters,
+                                return_type,
+                            },
+                        );
+                    }
+                }
             }
         }
         definitions
+    }
+
+    fn resolve_type(&self, ty: Type) -> Type {
+        match ty {
+            Type::Named(name) if self.capabilities.contains(&name) => Type::Capability(name),
+            Type::Named(name) if self.resources.contains(&name) => Type::OwnedResource(name),
+            Type::Option(value) => Type::Option(Box::new(self.resolve_type(*value))),
+            Type::Result { ok, error } => Type::Result {
+                ok: Box::new(self.resolve_type(*ok)),
+                error: Box::new(self.resolve_type(*error)),
+            },
+            Type::Task(value) => Type::Task(Box::new(self.resolve_type(*value))),
+            Type::Future(value) => Type::Future(Box::new(self.resolve_type(*value))),
+            Type::Stream(value) => Type::Stream(Box::new(self.resolve_type(*value))),
+            other => other,
+        }
     }
 }
 
@@ -163,9 +226,6 @@ fn lower_function(
     let mut effects = parse_effects(declaration)?;
     effects.sort();
     effects.dedup();
-    if !effects.is_empty() {
-        return unsupported("effectful function", declaration.range);
-    }
     let bindings = parameters
         .iter()
         .map(|parameter| (parameter.name.clone(), (parameter.id, parameter.ty.clone())))
@@ -174,12 +234,19 @@ fn lower_function(
         definitions,
         next_value: u32::try_from(parameters.len()).expect("source limits bound parameters"),
         bindings,
+        declared_effects: effects.clone(),
     };
     let match_index = declaration
         .lines
         .iter()
         .position(|line| line.kind == LineKind::Match);
-    let blocks = if let Some(index) = match_index {
+    let if_index = declaration
+        .lines
+        .iter()
+        .position(|line| line.kind == LineKind::If);
+    let blocks = if let Some(index) = if_index {
+        lower_revision_if(declaration, index, &mut builder, &signature.return_type)?
+    } else if let Some(index) = match_index {
         lower_match(declaration, index, &mut builder, &signature.return_type)?
     } else {
         vec![lower_straight_line(
@@ -207,6 +274,8 @@ fn lower_straight_line(
 ) -> Result<Block, CoreLowerError> {
     let mut instructions = Vec::new();
     let mut terminator = None;
+    let mut using_resource: Option<ValueId> = None;
+    let mut metadata_lines = false;
     for line in declaration.lines.iter().skip(1) {
         match line.kind {
             LineKind::Let => {
@@ -218,7 +287,19 @@ fn lower_straight_line(
                 builder.bindings.insert(name.to_owned(), (value, ty));
             }
             LineKind::Return => {
-                if *return_type == Type::Unit && line.tokens.len() == 1 {
+                metadata_lines = false;
+                if *return_type == Type::Unit
+                    && (line.tokens.len() == 1
+                        || line.tokens.get(1).is_some_and(|token| token.text == "Unit"))
+                {
+                    if let Some(resource) = using_resource.take() {
+                        builder.emit(
+                            Type::Unit,
+                            Operation::ResourceDrop(resource),
+                            line.range,
+                            &mut instructions,
+                        );
+                    }
                     terminator = Some(Terminator::Return(None));
                 } else {
                     let (value, _) = builder.expression(
@@ -226,21 +307,45 @@ fn lower_straight_line(
                         Some(return_type),
                         &mut instructions,
                     )?;
+                    if let Some(resource) = using_resource.take() {
+                        builder.emit(
+                            Type::Unit,
+                            Operation::ResourceDrop(resource),
+                            line.range,
+                            &mut instructions,
+                        );
+                    }
                     terminator = Some(Terminator::Return(Some(value)));
                 }
             }
-            LineKind::Effects
-            | LineKind::Capabilities
-            | LineKind::End
-            | LineKind::DeclarationHeader
-            | LineKind::FunctionSignature => {}
-            LineKind::If => return unsupported("if control flow", line.range),
-            LineKind::Using => return unsupported("using scope", line.range),
+            LineKind::Effects | LineKind::Capabilities => {
+                metadata_lines = !line
+                    .tokens
+                    .iter()
+                    .any(|token| token.kind == TokenKind::None);
+            }
+            LineKind::End | LineKind::DeclarationHeader | LineKind::FunctionSignature => {}
+            LineKind::If => return unsupported("nested if control flow", line.range),
+            LineKind::Using => {
+                let Some(name) = line.tokens.get(1) else {
+                    return unsupported("using scope", line.range);
+                };
+                let Some((value, Type::OwnedResource(_))) = builder.bindings.get(&name.text) else {
+                    return unsupported("using non-resource", line.range);
+                };
+                using_resource = Some(*value);
+            }
             LineKind::TaskGroup => return unsupported("task group", line.range),
             LineKind::Match | LineKind::MatchArm => {
                 return unsupported("nested match", line.range);
             }
-            LineKind::Expression => return unsupported("expression statement", line.range),
+            LineKind::Expression if metadata_lines => {}
+            LineKind::Expression => {
+                let (_, ty) = builder.expression(&line.tokens, None, &mut instructions)?;
+                if ty != Type::Unit {
+                    return unsupported("non-Unit expression statement", line.range);
+                }
+            }
             LineKind::Field | LineKind::Invariant | LineKind::Variant => {
                 return unsupported("non-function line", line.range);
             }
@@ -331,6 +436,107 @@ fn lower_match(
     };
     blocks.insert(0, entry);
     Ok(blocks)
+}
+
+fn lower_revision_if(
+    declaration: &Declaration,
+    if_index: usize,
+    builder: &mut FunctionBuilder<'_>,
+    return_type: &Type,
+) -> Result<Vec<Block>, CoreLowerError> {
+    if declaration.lines[1..if_index].iter().any(|line| {
+        !matches!(
+            line.kind,
+            LineKind::Effects | LineKind::Capabilities | LineKind::Expression
+        )
+    }) {
+        return unsupported("pre-if statements", declaration.lines[if_index].range);
+    }
+    let if_line = &declaration.lines[if_index];
+    let condition_tokens = &if_line.tokens[1..if_line.tokens.len() - 1];
+    let Some(equal) = top_level_position(condition_tokens, TokenKind::EqualEqual) else {
+        return unsupported("non-revision if condition", if_line.range);
+    };
+    let mut entry_instructions = Vec::new();
+    let (left, left_type) =
+        builder.expression(&condition_tokens[..equal], None, &mut entry_instructions)?;
+    let (right, right_type) = builder.expression(
+        &condition_tokens[equal + 1..],
+        None,
+        &mut entry_instructions,
+    )?;
+    if left_type != right_type || !matches!(left_type, Type::Named(ref name) if name == "Revision")
+    {
+        return unsupported("non-revision equality guard", if_line.range);
+    }
+    let condition = builder.emit(
+        Type::Bool,
+        Operation::RevisionCheck {
+            value: left,
+            expected: right,
+        },
+        token_range(condition_tokens),
+        &mut entry_instructions,
+    );
+    let Some(then_line) = declaration.lines.get(if_index + 1) else {
+        return unsupported("empty revision branch", if_line.range);
+    };
+    if then_line.kind != LineKind::Return {
+        return unsupported("non-return revision branch", then_line.range);
+    }
+    let end_index = declaration
+        .lines
+        .iter()
+        .enumerate()
+        .skip(if_index + 2)
+        .find_map(|(index, line)| (line.kind == LineKind::End).then_some(index))
+        .ok_or_else(|| unsupported_error("unterminated revision branch", if_line.range))?;
+    let Some(else_line) = declaration.lines.get(end_index + 1) else {
+        return unsupported("missing revision fallback", if_line.range);
+    };
+    if else_line.kind != LineKind::Return {
+        return unsupported("non-return revision fallback", else_line.range);
+    }
+    let mut then_instructions = Vec::new();
+    let then_value = builder
+        .expression(
+            &then_line.tokens[1..],
+            Some(return_type),
+            &mut then_instructions,
+        )?
+        .0;
+    let mut else_instructions = Vec::new();
+    let else_value = builder
+        .expression(
+            &else_line.tokens[1..],
+            Some(return_type),
+            &mut else_instructions,
+        )?
+        .0;
+    Ok(vec![
+        Block {
+            id: BlockId(0),
+            instructions: entry_instructions,
+            terminator: Terminator::Branch {
+                condition,
+                then_block: BlockId(1),
+                else_block: BlockId(2),
+            },
+            range: source_range(if_line.range),
+        },
+        Block {
+            id: BlockId(1),
+            instructions: then_instructions,
+            terminator: Terminator::Return(Some(then_value)),
+            range: source_range(then_line.range),
+        },
+        Block {
+            id: BlockId(2),
+            instructions: else_instructions,
+            terminator: Terminator::Return(Some(else_value)),
+            range: source_range(else_line.range),
+        },
+    ])
 }
 
 impl FunctionBuilder<'_> {
@@ -501,6 +707,86 @@ impl FunctionBuilder<'_> {
             );
             return Ok((value, Type::Float64));
         }
+        if tokens[..open].len() == 3 && tokens[1].kind == TokenKind::Dot {
+            let receiver_name = &tokens[0].text;
+            let method = &tokens[2].text;
+            if let Some((receiver, receiver_type)) = self.bindings.get(receiver_name).cloned() {
+                let owner = match &receiver_type {
+                    Type::Capability(name) | Type::OwnedResource(name) => name.clone(),
+                    _ => String::new(),
+                };
+                if let Some(signature) = self
+                    .definitions
+                    .methods
+                    .get(&(owner.clone(), method.clone()))
+                    .cloned()
+                {
+                    if arguments.len() != signature.parameters.len() {
+                        return unsupported("method call arity", token_range(tokens));
+                    }
+                    let mut values = Vec::new();
+                    for (argument, ty) in arguments.iter().zip(&signature.parameters) {
+                        values.push(
+                            self.expression(argument_value(argument), Some(ty), output)?
+                                .0,
+                        );
+                    }
+                    match receiver_type {
+                        Type::Capability(_) => {
+                            values.insert(0, receiver);
+                            let ty = signature.return_type;
+                            let effect = self
+                                .declared_effects
+                                .iter()
+                                .find(|effect| effect.starts_with(&format!("{receiver_name}.")))
+                                .cloned()
+                                .unwrap_or(callee);
+                            let value = self.emit(
+                                ty.clone(),
+                                Operation::EffectCall {
+                                    effect,
+                                    arguments: values,
+                                },
+                                token_range(tokens),
+                                output,
+                            );
+                            return Ok((value, ty));
+                        }
+                        Type::OwnedResource(_) if method == "close" => {
+                            let value = self.emit(
+                                Type::Unit,
+                                Operation::ResourceDrop(receiver),
+                                token_range(tokens),
+                                output,
+                            );
+                            return Ok((value, Type::Unit));
+                        }
+                        Type::OwnedResource(name) => {
+                            let borrowed_type = Type::BorrowedResource(name);
+                            let borrowed = self.emit(
+                                borrowed_type,
+                                Operation::ResourceBorrow(receiver),
+                                token_range(tokens),
+                                output,
+                            );
+                            let ty = signature.return_type;
+                            let value = self.emit(
+                                ty.clone(),
+                                Operation::ResourceCall {
+                                    resource: borrowed,
+                                    method: format!("{owner}.{method}"),
+                                    arguments: values,
+                                },
+                                token_range(tokens),
+                                output,
+                            );
+                            return Ok((value, ty));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
         if callee == "ok" {
             let Some(Type::Result { ok, .. }) = expected else {
                 return unsupported("unconstrained ok", token_range(tokens));
@@ -614,6 +900,39 @@ fn parse_signature(tokens: &[HirToken]) -> (Vec<(String, Type, SourceRange)>, Ty
         .find_map(|(index, token)| (token.kind == TokenKind::Colon).then_some(index))
         .unwrap_or(tokens.len());
     (parameters, parse_type(&tokens[returns + 1..end]))
+}
+
+fn method_name(tokens: &[HirToken]) -> String {
+    let function = position(tokens, TokenKind::Function).expect("method signature has function");
+    tokens[function + 1].text.clone()
+}
+
+fn parse_method_parameters(tokens: &[HirToken]) -> Vec<Type> {
+    let open = position(tokens, TokenKind::LeftParen).expect("method signature has params");
+    let close = matching_close(tokens, open).expect("parser balances method params");
+    split_top_level(&tokens[open + 1..close], TokenKind::Comma)
+        .into_iter()
+        .filter(|parameter| {
+            !parameter.is_empty()
+                && !parameter
+                    .iter()
+                    .any(|token| token.kind == TokenKind::SelfKeyword)
+        })
+        .filter_map(|parameter| {
+            position(parameter, TokenKind::Colon).map(|colon| parse_type(&parameter[colon + 1..]))
+        })
+        .collect()
+}
+
+fn parse_return_type(tokens: &[HirToken]) -> Type {
+    let returns = position(tokens, TokenKind::Returns).expect("signature has return type");
+    let end = tokens
+        .iter()
+        .enumerate()
+        .skip(returns + 1)
+        .find_map(|(index, token)| (token.kind == TokenKind::Colon).then_some(index))
+        .unwrap_or(tokens.len());
+    parse_type(&tokens[returns + 1..end])
 }
 
 fn parse_type(tokens: &[HirToken]) -> Type {

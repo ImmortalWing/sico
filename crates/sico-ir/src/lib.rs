@@ -57,6 +57,7 @@ pub enum Type {
     Named(String),
     Option(Box<Self>),
     Result { ok: Box<Self>, error: Box<Self> },
+    Capability(String),
     OwnedResource(String),
     BorrowedResource(String),
     Task(Box<Self>),
@@ -155,6 +156,11 @@ pub enum Operation {
         effect: String,
         arguments: Vec<ValueId>,
     },
+    ResourceCall {
+        resource: ValueId,
+        method: String,
+        arguments: Vec<ValueId>,
+    },
     ResourceMove(ValueId),
     ResourceBorrow(ValueId),
     ResourceDrop(ValueId),
@@ -188,6 +194,13 @@ impl Operation {
                 payload: arguments, ..
             }
             | Self::EffectCall { arguments, .. } => arguments.clone(),
+            Self::ResourceCall {
+                resource,
+                arguments,
+                ..
+            } => std::iter::once(*resource)
+                .chain(arguments.iter().copied())
+                .collect(),
             Self::Project { base, .. } => vec![*base],
             Self::RevisionCheck { value, expected } => vec![*value, *expected],
         }
@@ -247,6 +260,10 @@ pub enum VerifyErrorKind {
     TypeMismatch,
     InvalidConstant,
     UndeclaredEffect,
+    ResourceViolation,
+    ResourceLeak,
+    BorrowEscape,
+    RevisionGuard,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -422,6 +439,7 @@ impl<'a> Verifier<'a> {
                 &block_ids,
                 &function.return_type,
             );
+            self.verify_affine_and_revision(&block_root, block, &parameters);
         }
     }
 
@@ -492,7 +510,98 @@ impl<'a> Verifier<'a> {
             Operation::EffectCall { effect, .. } if effects.binary_search(effect).is_err() => {
                 self.error(path, VerifyErrorKind::UndeclaredEffect);
             }
+            Operation::ResourceCall { resource, .. } => {
+                if !matches!(available.get(resource), Some(Type::BorrowedResource(_))) {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                }
+            }
+            Operation::RevisionCheck { value, expected } => {
+                match (available.get(value), available.get(expected)) {
+                    (Some(left), Some(right)) if left == right && instruction.ty == Type::Bool => {}
+                    (Some(_), Some(_)) => self.error(path, VerifyErrorKind::TypeMismatch),
+                    _ => self.error(path, VerifyErrorKind::UndefinedValue),
+                }
+            }
             _ => {}
+        }
+    }
+
+    fn verify_affine_and_revision(
+        &mut self,
+        path: &str,
+        block: &Block,
+        parameters: &BTreeMap<ValueId, Type>,
+    ) {
+        let mut types = parameters.clone();
+        let mut live_owned: BTreeSet<_> = parameters
+            .iter()
+            .filter_map(|(id, ty)| matches!(ty, Type::OwnedResource(_)).then_some(*id))
+            .collect();
+        let mut consumed = BTreeSet::new();
+        let mut revision_checks = BTreeSet::new();
+        for instruction in &block.instructions {
+            for operand in instruction.operation.operands() {
+                if consumed.contains(&operand) {
+                    self.error(path, VerifyErrorKind::ResourceViolation);
+                }
+            }
+            match &instruction.operation {
+                Operation::Copy(value)
+                    if matches!(
+                        types.get(value),
+                        Some(Type::OwnedResource(_) | Type::BorrowedResource(_))
+                    ) =>
+                {
+                    self.error(path, VerifyErrorKind::ResourceViolation);
+                }
+                Operation::ResourceMove(value) => match types.get(value) {
+                    Some(Type::OwnedResource(name))
+                        if instruction.ty == Type::OwnedResource(name.clone()) =>
+                    {
+                        consumed.insert(*value);
+                        live_owned.remove(value);
+                    }
+                    _ => self.error(path, VerifyErrorKind::ResourceViolation),
+                },
+                Operation::ResourceBorrow(value) => match types.get(value) {
+                    Some(Type::OwnedResource(name))
+                        if instruction.ty == Type::BorrowedResource(name.clone()) => {}
+                    _ => self.error(path, VerifyErrorKind::ResourceViolation),
+                },
+                Operation::ResourceDrop(value) => match types.get(value) {
+                    Some(Type::OwnedResource(_)) if instruction.ty == Type::Unit => {
+                        consumed.insert(*value);
+                        live_owned.remove(value);
+                    }
+                    _ => self.error(path, VerifyErrorKind::ResourceViolation),
+                },
+                Operation::RevisionCheck { .. } => {
+                    revision_checks.insert(instruction.result);
+                }
+                _ => {}
+            }
+            if matches!(instruction.ty, Type::OwnedResource(_)) {
+                live_owned.insert(instruction.result);
+            }
+            types.insert(instruction.result, instruction.ty.clone());
+        }
+        if let Terminator::Return(Some(value)) = block.terminator {
+            match types.get(&value) {
+                Some(Type::OwnedResource(_)) => {
+                    live_owned.remove(&value);
+                }
+                Some(Type::BorrowedResource(_)) => self.error(path, VerifyErrorKind::BorrowEscape),
+                _ => {}
+            }
+        }
+        if let Terminator::Branch { condition, .. } = block.terminator {
+            revision_checks.remove(&condition);
+        }
+        if !revision_checks.is_empty() {
+            self.error(path, VerifyErrorKind::RevisionGuard);
+        }
+        if !live_owned.is_empty() {
+            self.error(path, VerifyErrorKind::ResourceLeak);
         }
     }
 
