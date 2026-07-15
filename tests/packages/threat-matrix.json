@@ -1,0 +1,24 @@
+{
+  "schema": "sico.sapp.threat-matrix.v0",
+  "case_count": 18,
+  "cases": [
+    {"id":"PKG-001","class":"framing","mutation":"bad-magic","expected":"reject-before-manifest"},
+    {"id":"PKG-002","class":"version","mutation":"unknown-format-version","expected":"reject-before-manifest"},
+    {"id":"PKG-003","class":"framing","mutation":"truncated-length","expected":"reject-before-manifest"},
+    {"id":"PKG-004","class":"framing","mutation":"trailing-bytes","expected":"reject-before-runtime"},
+    {"id":"PKG-005","class":"path","mutation":"absolute-path","expected":"reject-before-content"},
+    {"id":"PKG-006","class":"path","mutation":"parent-segment","expected":"reject-before-content"},
+    {"id":"PKG-007","class":"path","mutation":"backslash-or-colon","expected":"reject-before-content"},
+    {"id":"PKG-008","class":"path","mutation":"windows-device-name","expected":"reject-before-content"},
+    {"id":"PKG-009","class":"path","mutation":"duplicate-or-case-collision","expected":"reject-before-content"},
+    {"id":"PKG-010","class":"limit","mutation":"entry-count-overflow","expected":"reject-before-allocation"},
+    {"id":"PKG-011","class":"limit","mutation":"path-depth-or-length","expected":"reject-before-content"},
+    {"id":"PKG-012","class":"limit","mutation":"entry-or-package-size-bomb","expected":"reject-before-allocation"},
+    {"id":"PKG-013","class":"archive","mutation":"zip-compression-bomb","expected":"reject-as-bad-magic"},
+    {"id":"PKG-014","class":"manifest","mutation":"unknown-field-or-schema","expected":"reject-before-component"},
+    {"id":"PKG-015","class":"integrity","mutation":"component-or-resource-tamper","expected":"reject-before-runtime"},
+    {"id":"PKG-016","class":"signature","mutation":"strip-wrong-key-or-replay","expected":"reject-by-trust-policy"},
+    {"id":"PKG-017","class":"component","mutation":"invalid-or-precompiled-wasm","expected":"reject-before-runtime"},
+    {"id":"PKG-018","class":"capability","mutation":"unknown-or-undeclared-import","expected":"reject-before-host-link"}
+  ]
+}

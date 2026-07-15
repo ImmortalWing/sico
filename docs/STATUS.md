@@ -1,19 +1,19 @@
 # Sico project status
 
-> - updated: 2026-07-15
+> - updated: 2026-07-16
 > - phase: M4 `.sapp` 与 Runtime
-> - phase status: ready
-> - current step: STEP-0038 (planned)
-> - last completed step: STEP-0037 / M3 GO
-> - next step: start STEP-0038
+> - phase status: in-progress
+> - current step: STEP-0039 (planned)
+> - last completed step: STEP-0038
+> - next step: start STEP-0039
 
 ## 1. Current objective
 
-当前目标是启动 STEP-0038：先建立 `.sapp` threat model 与恶意 package fixture matrix，再通过 RFC 冻结 manifest、canonical archive、hash domain 和版本拒绝规则；在该 gate 前不实现接受任意 package 的 loader。
+当前目标是执行 STEP-0039：按照 RFC-0015 实现 deterministic `.sapp` builder、strict loader 与 `inspect`，并用 STEP-0038 的恶意 matrix 证明损坏/篡改包在 Runtime 前被拒绝。
 
 ## 2. Current step
 
-M3 STEP-0030–0037 已全部完成，[`M3 exit audit`](./reports/m3-exit-audit.md) 给出 GO。下一执行项是 [`M4 plan`](./plans/M4-sapp-runtime.md) 的 STEP-0038；当前仅完成计划，尚未创建该步骤文档或实现 package loader。
+[`STEP-0038`](./steps/STEP-0038-sapp-threat-model-package-contract.md) 已接受 [`RFC-0015`](./rfc/RFC-0015-sapp-package-format-v0.md)，固定无压缩 canonical `.sapp` v0 与 18 项恶意 package matrix。下一执行项是 STEP-0039 builder/loader/inspect。
 
 ## 3. Verified repository facts
 
@@ -127,7 +127,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0038 的外部条件。
+当前没有阻塞 STEP-0039 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -144,4 +144,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0038`：建立 `.sapp` threat model 与恶意 package fixture matrix，并通过 RFC 冻结 manifest、canonical archive、hash domain 和版本拒绝规则。
+`STEP-0039`：实现 deterministic `.sapp` builder、strict loader 与 `inspect`，逐项拒绝 malformed、path-confusing、oversized、corrupt 与 tampered package。
