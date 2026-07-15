@@ -17,8 +17,13 @@ use sico_package::{
     verify_trusted,
 };
 
+mod lifecycle;
 mod permission;
 
+pub use lifecycle::{
+    CommandSpec, GuestState, LaunchOutcome, LifecycleError, OpenRequest, ProcessSupervisor,
+    TerminalOutcome,
+};
 pub use permission::{
     PermissionChoice, PermissionError, PermissionOutcome, PermissionPrompt, PermissionSession,
     PermissionStore,

@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M5 Sico Desktop Host
 > - phase status: ready
-> - current step: STEP-0049 (planned)
-> - last completed step: STEP-0048
-> - next step: start STEP-0049
+> - current step: STEP-0050 (planned)
+> - last completed step: STEP-0049
+> - next step: start STEP-0050
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0049：实现 single-instance lifecycle state machine、bounded open queue、guest process supervision、timeout/cancel/crash classification 与 cleanup。
+当前目标是执行 STEP-0050：实现 deterministic typed UI model、validation/escaping、accessibility order 与 bounded event queue/rate gate。
 
 ## 2. Current step
 
-[`STEP-0048`](./steps/STEP-0048-permission-records.md) 已实现 authorized-closure prompt、deny/allow-once/persistent decisions、terminal session expiry 与 corrupt/identity-drift record fail-closed。下一执行项是 STEP-0049 lifecycle supervision。
+[`STEP-0049`](./steps/STEP-0049-lifecycle-process-supervision.md) 已实现 single child、256 open queue、timeout/cancel process-tree kill、crash isolation、exact cleanup 与 post-fault healthy relaunch。下一执行项是 STEP-0050 UI boundary。
 
 ## 3. Verified repository facts
 
@@ -135,7 +135,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0049 的外部条件。
+当前没有阻塞 STEP-0050 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -152,4 +152,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0049`：实现每 app identity 单一受监督 guest、bounded duplicate-open events、close deadline/kill、fault terminal state 与 permission session/temp/storage cleanup。
+`STEP-0050`：实现 RFC-0020 typed no-script UI tree、node/depth/text/ID/accessibility validation、escaped render plan 与 256/120-per-second event gate。
