@@ -13,11 +13,11 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0054：审计 Android toolchain/runner/ABI 与 Runtime availability，冻结 Intent/URI/provider、identity/storage、Activity/process lifecycle 和 packaging threat contract。
+当前目标是解除 M6 Android runner 外部阻塞：取得 licensed SDK/NDK、ADB、x86_64 emulator 与 arm64 device，补齐可构建 APK/JNI/HostActivity，然后恢复 STEP-0060 device parity。
 
 ## 2. Current step
 
-[`STEP-0053`](./steps/STEP-0053-m5-quality-exit-audit.md) 已用代表性 signed app、10,240 properties、Windows release startup baseline 与 M0–M4 regression 完成 M5 GO。下一执行项是 STEP-0054 Android Host contract gate。
+[`STEP-0061`](./steps/STEP-0061-m6-quality-exit-audit.md) 已完成 host-side 审计并判定 NO-GO。当前恢复点是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
 
 ## 3. Verified repository facts
 
@@ -143,7 +143,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0054 contract/audit 工作的外部条件。Android emulator/device、SDK/NDK 与 ABI Runtime availability 尚未在本轮验证；这些是 STEP-0054 必须明确记录的 runner 条件，不能预先视为通过。
+M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB、x86_64 emulator/AVD 或 arm64 device。仓库也尚无可构建 Gradle Android Host、`HostActivity`、JNI `cdylib` 或 APK。用户接受许可并提供 runner 后，仍需先补齐这些实现，不能直接把 cross-check 视为 Runtime evidence。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -160,4 +160,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0054`：冻结 Android threat/lifecycle/platform/packaging contract，并以当前 toolchain、runner、ABI 和 Wasmtime/Pulley 证据决定后续 JNI/Runtime 路径。
+按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 准备 licensed Android runner，恢复 STEP-0060，完成同 digest Android Runtime、Intent/lifecycle/native UI 与性能证据，再重跑 STEP-0061。只有 M6 GO 后才能进入 M7 STEP-0062。

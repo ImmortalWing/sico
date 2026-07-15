@@ -1,0 +1,178 @@
+# Sico 任务交接：M6 Android runner 恢复与 M7 入口
+
+> - 更新时间：2026-07-16
+> - 仓库：`E:\github\sico`
+> - 分支：`main`
+> - 远端：`https://gitcode.com/ImmortalWings/sico.git`
+> - 交接基线：`a7f8d5171b757b4d9b5c619b6456ee5eb6b4d72a`
+> - 工作区状态：交接文档编写前 clean
+
+## 1. 一句话状态
+
+M0–M5 已 GO；M6 STEP-0054–0061 的共享核心、平台契约、host-side 测试和审计已完成，但 M6 仍为 `blocked-external-runner`。不得开始 M7 STEP-0062，直到同一份签名 `.sapp` 在 Desktop 与真实 Android runner 上运行并通过重复的 STEP-0061 GO 审计。
+
+当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
+
+## 2. 已完成工作
+
+| Step | Commit | 已有证据 |
+|---|---|---|
+| STEP-0054 | `210300a` | 30 项 threat matrix、ADR-0005、RFC-0021、Android ABI/runner 证据上限 |
+| STEP-0055 | `37603ed` | 共享 Mobile Host core、64 KiB typed bridge、owned bytes、panic/error mapping |
+| STEP-0056 | `b1c4c8b` | View/Send/picker/deep-link 契约、content URI、一次有界复制、拒绝语料 |
+| STEP-0057 | `9948f64` | 五项 capability 精确映射、临时 URI grant、app-private storage |
+| STEP-0058 | `1115989` | native/Pulley 后端计划、Activity/process 生命周期状态机、终态竞争处理 |
+| STEP-0059 | `a99e448` | native widget 映射、touch/IME 事件、TalkBack 顺序、输入/速率/队列上限 |
+| STEP-0060 | `772e37e` | 同一签名包 Desktop Wasmtime 返回 `42`；Mobile Host metadata 完全一致 |
+| STEP-0061 | `a7f8d51` | 8,192 security properties、全 workspace regression、host bridge 性能和 NO-GO audit |
+
+以上提交已推送到 `origin/main`。
+
+## 3. 当前真实阻塞
+
+本机复查结果：无 Android SDK、NDK、ADB、AVD、emulator、Gradle 或已连接设备。Rust 已安装：
+
+- `aarch64-linux-android`
+- `x86_64-linux-android`
+
+Android SDK/NDK 许可必须由仓库所有者接受，Agent 不得代替用户接受法律条款。目标环境与 runner matrix 见：
+
+- [`environment-2026-07-16.json`](../tests/android-host/environment-2026-07-16.json)
+- [`runner-gate.json`](../tests/android-host/runner-gate.json)
+
+解除外部阻塞所需：
+
+1. 已接受许可的 Android SDK（ADR 当前目标 API 36）；
+2. NDK r27d LTS；
+3. ADB 与 x86_64 emulator/AVD；
+4. 一台 arm64 Android 设备；
+5. 可记录设备型号、系统/API、ABI、运行命令和测试日志的稳定 runner。
+
+## 4. 不要误判为已经完成的部分
+
+当前 `android/host` 不是可构建 Android 应用，只包含 Manifest 和 Kotlin 契约文件：
+
+- 没有 `settings.gradle(.kts)`、根/模块 `build.gradle(.kts)` 或 Gradle wrapper；
+- Manifest 声明了 `.HostActivity`，但仓库中没有 `HostActivity.kt`；
+- `NativeBridge.kt` 会加载 `sico_android_host`，但没有对应 Rust `cdylib`、JNI exports 或 ABI `.so`；
+- 没有 APK/AAB 构建、安装或 instrumentation test；
+- Wasmtime/Pulley 尚未在 Android 上链接或执行；
+- touch、IME、TalkBack 与 lifecycle 只有共享 Rust 测试和 Kotlin contract review，没有设备证据。
+
+因此“Rust Android target `cargo check` 通过”只证明 Android-neutral core 可交叉检查，不能证明 APK、JNI 或 Runtime 可用。
+
+## 5. 恢复 M6 的推荐顺序
+
+### 5.1 固定并记录 runner
+
+由用户完成 SDK/NDK 许可与设备准备后，先记录而不是直接修改 GO 结论：
+
+```powershell
+adb --version
+sdkmanager --list_installed
+emulator -list-avds
+adb devices -l
+rustup target list --installed
+```
+
+新增带日期的环境快照，不覆盖历史 `environment-2026-07-16.json`。在证据完成前，`runner-gate.json` 继续保持 blocked。
+
+### 5.2 补齐可构建 Android Host
+
+1. 建立最小 Kotlin/Android Gradle 工程，保持 `minSdk 28`、`targetSdk 36` 和两个 ABI；
+2. 实现 `HostActivity`，严格复用现有 Intent、permission、lifecycle 和 UI adapter；
+3. 新建隔离的 JNI/FFI crate，例如 `sico-android-jni`；不要移除 `sico-mobile-host-core` 的 `#![forbid(unsafe_code)]`；
+4. JNI crate 只负责拥有/复制 JNI bytes、调用 `MobileHostCore`、捕获 panic 和返回稳定错误；trust/package/identity 决策仍由共享 core 负责；
+5. 为 arm64-v8a 与 x86_64 生成并打包 `.so`，确认 `System.loadLibrary("sico_android_host")` 实际成功；
+6. 接入 Wasmtime native 或 Pulley 后端，以 ADR-0005 的 executable-memory probe 决定，不得静默回退到未审计执行器；
+7. 增加 JVM/unit、instrumentation 和设备端证据采集脚本。
+
+若 JNI crate 必须使用 `unsafe`，只允许在最小 FFI crate 内使用，并为每个边界记录 pointer/length/lifetime/null/exception invariant；共享 Host core 继续禁止 unsafe。
+
+### 5.3 完成 STEP-0060 设备 parity
+
+必须使用 Desktop 测试所生成的同一份 `.sapp` bytes，不得为 Android 重编译：
+
+- Desktop 与 Android 记录相同 SHA-256 revision digest；
+- Android Runtime 返回 `42`；
+- app identity、signer、capability fingerprint 与 Desktop 一致；
+- mutation、伪造 identity、signer/capability drift 全部拒绝；
+- View、Send、picker 与 deep-link-to-picker 四个入口完成 copy-then-reverify；
+- background、process death、timeout、cancel、crash 后 Host UI 仍存活且无 orphan work；
+- touch、IME 和 TalkBack 在设备上通过；
+- x86_64 emulator 与 arm64 device 都有日志。
+
+完成后更新 STEP-0060 状态、parity report 和验证器，使其从 `STEP_0060_PARTIAL` 转为真实 `STEP_0060_OK`。
+
+### 5.4 重跑 STEP-0061 退出审计
+
+补充 Android cold/warm startup 非 SLA 基线、设备矩阵和安全用例，然后运行：
+
+```powershell
+$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
+& "$HOME/.cargo/bin/cargo.exe" fmt --all -- --check
+& "$HOME/.cargo/bin/cargo.exe" clippy --offline --locked --workspace --all-targets --all-features -- -D warnings
+& "$HOME/.cargo/bin/cargo.exe" test --offline --locked --workspace --all-targets --all-features
+& "$HOME/.cargo/bin/cargo.exe" check --offline --locked -p sico-mobile-host-core --target aarch64-linux-android
+& "$HOME/.cargo/bin/cargo.exe" check --offline --locked -p sico-mobile-host-core --target x86_64-linux-android
+```
+
+注意：当前以下验证器故意冻结了 blocked/partial 结论，设备证据完成后必须连同文档一起更新，不能只改输出文本：
+
+- `tools/validate-step-0054.ps1` 预期 SDK/runner unavailable；
+- `tools/validate-step-0060.ps1` 预期 `partial-runtime-evidence`；
+- `tools/validate-step-0061.ps1` 预期 NO-GO 和 blocked runner。
+
+只有所有 M6 exit gate 有真实证据时，才把 M6 plan、ROADMAP、STATUS、README 与 audit 同步改为 GO/complete。
+
+## 6. M7 交接边界
+
+M6 GO 后从 STEP-0062 开始，不跳号、不直接进入 registry 或 production signing：
+
+1. STEP-0062：生态/发布 threat model 与兼容契约；
+2. STEP-0063：production publisher identity、key custody/rotation/revocation；
+3. STEP-0064：signed registry publish/discovery/download；
+4. STEP-0065：安全更新与回滚；
+5. STEP-0066：标准库与依赖稳定边界；
+6. STEP-0067：LSP、编辑器与调试流程；
+7. STEP-0068：AI tooling protocol 与获授权的真实评测；
+8. STEP-0069：第三方 Component/真实应用试点与 M7 exit audit。
+
+以下操作仍需用户明确授权或提供材料：
+
+- production publisher 法律身份、生产密钥托管与恢复策略；
+- 公共 registry 域名、namespace、服务账户、法律条款与公开发布；
+- 真实 AI API 凭据和成本预算；
+- 应用商店签名、账户和发布。
+
+开发签名密钥不得提升或复用为 production publisher key。
+
+## 7. 关键文件入口
+
+- 当前状态：[`STATUS.md`](./STATUS.md)
+- 路线图：[`ROADMAP.md`](./ROADMAP.md)
+- M6 计划：[`M6-android-host.md`](./plans/M6-android-host.md)
+- M6 审计：[`m6-exit-audit.md`](./reports/m6-exit-audit.md)
+- M7 计划：[`M7-ecosystem-release.md`](./plans/M7-ecosystem-release.md)
+- Android ADR：[`ADR-0005`](./adr/ADR-0005-android-host-runtime-lifecycle-boundary-v0.md)
+- JNI/Intent RFC：[`RFC-0021`](./rfc/RFC-0021-android-intent-jni-contract-v0.md)
+- Mobile Host core：[`sico-mobile-host-core`](../crates/sico-mobile-host-core/src/lib.rs)
+- Kotlin adapter：[`android/host`](../android/host/src/main/kotlin/dev/sico/host)
+- M6 property test：[`android_security_properties.rs`](../crates/sico-mobile-host-core/tests/android_security_properties.rs)
+- Desktop/Mobile parity test：[`desktop_android_parity.rs`](../crates/sico-mobile-host-core/tests/desktop_android_parity.rs)
+
+## 8. 接手者完成检查表
+
+- [ ] 工作区 clean，`main` 与远端基线一致；
+- [ ] 阅读 ADR-0005、RFC-0021、M6 audit 和 runner gate；
+- [ ] 用户已接受 Android SDK/NDK 许可；
+- [ ] Gradle Android Host、HostActivity 和隔离 JNI crate 可构建；
+- [ ] arm64-v8a 与 x86_64 `.so` 均能加载；
+- [ ] 同一 `.sapp` digest 在 Desktop/Android 返回相同结果和 authority metadata；
+- [ ] Intent/lifecycle/native UI/device performance matrix 有原始日志；
+- [ ] STEP-0060 从 partial 转为 complete；
+- [ ] STEP-0061 从 NO-GO 转为 GO；
+- [ ] STATUS、ROADMAP、README、M6/M7 plan 与验证器同步；
+- [ ] 每个非平凡步骤单独提交并推送；
+- [ ] M6 GO 后才启动 STEP-0062。

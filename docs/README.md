@@ -4,6 +4,7 @@
 
 ## Current state
 
+- [当前任务交接](./TASK-HANDOFF.md)
 - [当前状态](./STATUS.md)
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)
