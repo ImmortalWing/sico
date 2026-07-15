@@ -1,0 +1,19 @@
+[package]
+name = "sico-host-core"
+description = "Shared secure install/open core for Sico Desktop Host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sico-package = { path = "../sico-package" }
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+wasm-encoder.workspace = true
+
+[lints]
+workspace = true

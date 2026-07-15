@@ -5,6 +5,7 @@ members = [
     "crates/sico-diagnostics",
     "crates/sico-format",
     "crates/sico-hir",
+    "crates/sico-host-core",
     "crates/sico-index",
     "crates/sico-ir",
     "crates/sico-lexer",
