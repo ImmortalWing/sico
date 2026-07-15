@@ -1,0 +1,18 @@
+{
+  "schema": "sico.android.environment.v0",
+  "date": "2026-07-16",
+  "host": "x86_64-pc-windows-gnu",
+  "hypervisor_present": true,
+  "java": "25.0.2",
+  "rust": "1.97.0",
+  "rust_targets": ["aarch64-linux-android", "x86_64-linux-android"],
+  "android_sdk": "unavailable-license-not-accepted",
+  "android_ndk": "unavailable-license-not-accepted",
+  "adb": "unavailable",
+  "emulator": "unavailable",
+  "device_or_avd": "unavailable",
+  "gradle": "unavailable",
+  "wasmtime_android_upstream": "supported-less-well-tested",
+  "aarch64_android_upstream_tier": "ci-tested",
+  "local_evidence_ceiling": "cross-compile-check-only"
+}
