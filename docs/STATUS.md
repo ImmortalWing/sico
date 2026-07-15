@@ -3,17 +3,17 @@
 > - updated: 2026-07-16
 > - phase: M4 `.sapp` 与 Runtime
 > - phase status: in-progress
-> - current step: STEP-0040 (planned)
-> - last completed step: STEP-0039
-> - next step: start STEP-0040
+> - current step: STEP-0041 (planned)
+> - last completed step: STEP-0040
+> - next step: start STEP-0041
 
 ## 1. Current objective
 
-当前目标是执行 STEP-0040：为 verified unsigned archive 增加 domain-separated Ed25519 development signature、strict trust policy 与 valid/invalid/wrong-key/replay fixtures。
+当前目标是执行 STEP-0041：建立 source effects、manifest requests、Component imports 与 host grants 的能力闭包/交集，任何 unknown、missing 或 undeclared capability 默认拒绝。
 
 ## 2. Current step
 
-[`STEP-0039`](./steps/STEP-0039-deterministic-sapp-builder-loader-inspect.md) 已实现 `sico-package` deterministic builder、strict loader 与 verified inspection core，malformed/path/hash/Component mutation 在 Runtime 前拒绝。下一执行项是 STEP-0040 development signing/trust。
+[`STEP-0040`](./steps/STEP-0040-development-signing-trust-policy.md) 已实现 domain-separated Ed25519 development signing、strict verification 与 `TrustedPackage` trust gate。下一执行项是 STEP-0041 capability closure/intersection。
 
 ## 3. Verified repository facts
 
@@ -127,7 +127,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0040 的外部条件。
+当前没有阻塞 STEP-0041 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -144,4 +144,4 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 ## 8. Next step
 
-`STEP-0040`：实现 domain-separated Ed25519 development signing 与 strict trust policy，覆盖 wrong-key、tamper、stripping 和 cross-app/version replay。
+`STEP-0041`：验证 source/manifest/import 三方闭包，并只授予与 host grant 的交集；unknown/undeclared import 在 host link 前拒绝。

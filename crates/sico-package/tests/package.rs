@@ -1,7 +1,11 @@
+use std::collections::BTreeSet;
+
+use ed25519_dalek::SigningKey;
 use sico_codegen_wasm::compile_component;
 use sico_ir::lower_core;
 use sico_package::{
-    BuildInput, PackageError, ResourceInput, RuntimeLimits, build_unsigned, verify,
+    BuildInput, PackageError, ResourceInput, RuntimeLimits, TrustPolicy, TrustStatus,
+    build_unsigned, sign_development, verify, verify_trusted,
 };
 use sico_source::{SourceFile, SourceId};
 
@@ -106,4 +110,77 @@ fn unknown_manifest_field_is_rejected_before_component() {
     forged.extend_from_slice(mutated.as_bytes());
     forged.extend_from_slice(&package[manifest_end..]);
     assert!(matches!(verify(&forged), Err(PackageError::Manifest(_))));
+}
+
+#[test]
+fn development_signatures_are_deterministic_and_policy_checked() {
+    let unsigned = build_unsigned(input()).unwrap();
+    let seed = [7_u8; 32];
+    let signed = sign_development(&unsigned, &seed).unwrap();
+    assert_eq!(signed, sign_development(&unsigned, &seed).unwrap());
+
+    let public_key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+    let trusted = verify_trusted(
+        &signed,
+        &TrustPolicy::RequireDevelopment(BTreeSet::from([public_key])),
+    )
+    .unwrap();
+    assert!(matches!(trusted.trust, TrustStatus::Development { .. }));
+
+    let other_key = SigningKey::from_bytes(&[8_u8; 32])
+        .verifying_key()
+        .to_bytes();
+    assert_eq!(
+        verify_trusted(
+            &signed,
+            &TrustPolicy::RequireDevelopment(BTreeSet::from([other_key]))
+        )
+        .unwrap_err(),
+        PackageError::UntrustedKey
+    );
+    assert_eq!(
+        verify_trusted(
+            &unsigned,
+            &TrustPolicy::RequireDevelopment(BTreeSet::from([public_key]))
+        )
+        .unwrap_err(),
+        PackageError::MissingSignature
+    );
+    assert_eq!(
+        verify_trusted(&unsigned, &TrustPolicy::AllowUnsignedDevelopment)
+            .unwrap()
+            .trust,
+        TrustStatus::UnsignedDevelopment
+    );
+}
+
+#[test]
+fn signature_replay_across_version_is_rejected() {
+    let seed = [11_u8; 32];
+    let first = sign_development(&build_unsigned(input()).unwrap(), &seed).unwrap();
+    let mut second_input = input();
+    second_input.app_version = "0.1.1".to_owned();
+    let second = sign_development(&build_unsigned(second_input).unwrap(), &seed).unwrap();
+    let marker = b"{\"schema\":\"sico.sapp.signature.v0\"";
+    let first_start = find(&first, marker);
+    let second_start = find(&second, marker);
+    assert_eq!(first.len() - first_start, second.len() - second_start);
+    let mut replayed = first;
+    replayed[first_start..].copy_from_slice(&second[second_start..]);
+
+    let public_key = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+    assert!(matches!(
+        verify_trusted(
+            &replayed,
+            &TrustPolicy::RequireDevelopment(BTreeSet::from([public_key]))
+        ),
+        Err(PackageError::InvalidSignature(_))
+    ));
+}
+
+fn find(haystack: &[u8], needle: &[u8]) -> usize {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .unwrap()
 }

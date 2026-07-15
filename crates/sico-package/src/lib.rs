@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
@@ -22,6 +23,7 @@ const MAGIC: &[u8; 8] = b"SAPP\r\n\x1a\n";
 const MANIFEST_PATH: &str = "manifest.json";
 const COMPONENT_PATH: &str = "app.component.wasm";
 const SIGNATURE_PATH: &str = "signature.json";
+const SIGNATURE_DOMAIN: &[u8] = b"SICO-SAPP-DEV-SIGNATURE-V0\0";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -113,6 +115,33 @@ pub struct VerifiedPackage {
     unsigned_bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TrustedPackage {
+    pub package: VerifiedPackage,
+    pub trust: TrustStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TrustStatus {
+    UnsignedDevelopment,
+    Development { public_key: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TrustPolicy {
+    RequireDevelopment(BTreeSet<[u8; 32]>),
+    AllowUnsignedDevelopment,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignatureRecord {
+    schema: String,
+    scheme: String,
+    public_key: String,
+    signature: String,
+}
+
 impl VerifiedPackage {
     #[must_use]
     pub fn unsigned_bytes(&self) -> &[u8] {
@@ -140,6 +169,10 @@ pub enum PackageError {
     DigestMismatch(String),
     LengthMismatch(String),
     ResourceSetMismatch,
+    AlreadySigned,
+    MissingSignature,
+    InvalidSignature(String),
+    UntrustedKey,
 }
 
 impl std::fmt::Display for PackageError {
@@ -177,6 +210,14 @@ impl std::fmt::Display for PackageError {
             Self::ResourceSetMismatch => {
                 formatter.write_str("manifest and archive resource sets differ")
             }
+            Self::AlreadySigned => formatter.write_str("package already has a signature"),
+            Self::MissingSignature => {
+                formatter.write_str("package requires a development signature")
+            }
+            Self::InvalidSignature(message) => {
+                write!(formatter, "development signature is invalid: {message}")
+            }
+            Self::UntrustedKey => formatter.write_str("development signing key is not trusted"),
         }
     }
 }
@@ -333,6 +374,97 @@ pub fn verify(bytes: &[u8]) -> Result<VerifiedPackage, PackageError> {
     })
 }
 
+/// Adds a deterministic domain-separated Ed25519 development signature.
+///
+/// The 32-byte signing seed remains caller-owned. Only its public key and the
+/// signature are written to the package.
+///
+/// # Errors
+///
+/// Rejects malformed or already signed packages.
+pub fn sign_development(unsigned: &[u8], signing_seed: &[u8; 32]) -> Result<Vec<u8>, PackageError> {
+    let verified = verify(unsigned)?;
+    if verified.signature.is_some() {
+        return Err(PackageError::AlreadySigned);
+    }
+    let signing_key = SigningKey::from_bytes(signing_seed);
+    let mut message = Vec::with_capacity(SIGNATURE_DOMAIN.len() + unsigned.len());
+    message.extend_from_slice(SIGNATURE_DOMAIN);
+    message.extend_from_slice(unsigned);
+    let signature = signing_key.sign(&message);
+    let record = SignatureRecord {
+        schema: "sico.sapp.signature.v0".to_owned(),
+        scheme: "ed25519-dev-v0".to_owned(),
+        public_key: encode_hex(signing_key.verifying_key().as_bytes()),
+        signature: encode_hex(&signature.to_bytes()),
+    };
+    let signature_bytes = serde_json::to_vec(&record)
+        .map_err(|error| PackageError::InvalidSignature(error.to_string()))?;
+    let mut entries = parse_archive(unsigned)?;
+    entries.push(Entry {
+        path: SIGNATURE_PATH.to_owned(),
+        bytes: signature_bytes,
+    });
+    encode_archive(&entries)
+}
+
+/// Applies an explicit development trust policy after structural verification.
+///
+/// # Errors
+///
+/// Rejects missing, malformed, non-canonical, cryptographically invalid, or
+/// untrusted signatures according to `policy`.
+pub fn verify_trusted(bytes: &[u8], policy: &TrustPolicy) -> Result<TrustedPackage, PackageError> {
+    let package = verify(bytes)?;
+    let Some(signature_bytes) = package.signature.as_deref() else {
+        return match policy {
+            TrustPolicy::AllowUnsignedDevelopment => Ok(TrustedPackage {
+                package,
+                trust: TrustStatus::UnsignedDevelopment,
+            }),
+            TrustPolicy::RequireDevelopment(_) => Err(PackageError::MissingSignature),
+        };
+    };
+    let record: SignatureRecord = serde_json::from_slice(signature_bytes)
+        .map_err(|error| PackageError::InvalidSignature(error.to_string()))?;
+    let canonical = serde_json::to_vec(&record)
+        .map_err(|error| PackageError::InvalidSignature(error.to_string()))?;
+    if canonical != signature_bytes {
+        return Err(PackageError::InvalidSignature(
+            "signature JSON is not canonical".to_owned(),
+        ));
+    }
+    if record.schema != "sico.sapp.signature.v0" || record.scheme != "ed25519-dev-v0" {
+        return Err(PackageError::InvalidSignature(
+            "unknown schema or scheme".to_owned(),
+        ));
+    }
+    let public_key = decode_hex::<32>(&record.public_key)?;
+    let signature = Signature::from_bytes(&decode_hex::<64>(&record.signature)?);
+    let verifying_key = VerifyingKey::from_bytes(&public_key)
+        .map_err(|error| PackageError::InvalidSignature(error.to_string()))?;
+    if verifying_key.is_weak() {
+        return Err(PackageError::InvalidSignature("weak public key".to_owned()));
+    }
+    let mut message = Vec::with_capacity(SIGNATURE_DOMAIN.len() + package.unsigned_bytes.len());
+    message.extend_from_slice(SIGNATURE_DOMAIN);
+    message.extend_from_slice(&package.unsigned_bytes);
+    verifying_key
+        .verify_strict(&message, &signature)
+        .map_err(|error| PackageError::InvalidSignature(error.to_string()))?;
+    if let TrustPolicy::RequireDevelopment(keys) = policy
+        && !keys.contains(&public_key)
+    {
+        return Err(PackageError::UntrustedKey);
+    }
+    Ok(TrustedPackage {
+        package,
+        trust: TrustStatus::Development {
+            public_key: record.public_key,
+        },
+    })
+}
+
 fn validate_manifest(manifest: &Manifest) -> Result<(), PackageError> {
     if manifest.schema != "sico.sapp.manifest.v0" {
         return Err(PackageError::Manifest("unknown schema".to_owned()));
@@ -432,6 +564,40 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         write!(output, "{byte:02x}").expect("writing to String cannot fail");
     }
     output
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        write!(output, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    output
+}
+
+fn decode_hex<const N: usize>(text: &str) -> Result<[u8; N], PackageError> {
+    if text.len() != N * 2
+        || !text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(PackageError::InvalidSignature(
+            "hex length or alphabet is invalid".to_owned(),
+        ));
+    }
+    let mut output = [0_u8; N];
+    for (index, pair) in text.as_bytes().chunks_exact(2).enumerate() {
+        output[index] = (hex_nibble(pair[0]) << 4) | hex_nibble(pair[1]);
+    }
+    Ok(output)
+}
+
+const fn hex_nibble(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        _ => 0,
+    }
 }
 
 fn encode_archive(entries: &[Entry]) -> Result<Vec<u8>, PackageError> {
