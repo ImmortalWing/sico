@@ -1,6 +1,6 @@
 # M1 plan: compiler frontend and diagnostics
 
-> - status: in progress (STEP-0015 complete)
+> - status: in progress (STEP-0016 complete)
 > - created: 2026-07-15
 > - phase: M1
 > - language baseline: [`RFC-0005`](../rfc/RFC-0005-labeled-block-syntax-baseline.md)
@@ -62,7 +62,7 @@ fuzz/                lexer/parser no-panic/no-hang targets
 
 编号在 STEP-0014 完成后可立即使用。若某步发现必须先做语言决定，则暂停实现、新建 RFC，并在本表插入新 STEP；不得把语法选择藏进 Rust enum 或 parser 分支。
 
-进度：STEP-0015 已完成，证据见 [`step record`](../steps/STEP-0015-compiler-workspace-lexical-source.md) 与 [`review report`](../reports/compiler-workspace-lexical-source-v0.md)；下一执行项为 STEP-0016。
+进度：STEP-0015–0016 已完成；source/span/lexer 证据见 [`STEP-0016`](../steps/STEP-0016-source-span-lossless-lexer.md) 与 [`review report`](../reports/source-span-lossless-lexer-v0.md)。下一执行项为 STEP-0017。
 
 ## 6. Test matrix
 

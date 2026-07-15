@@ -12,5 +12,8 @@ sico-syntax = { path = "../sico-syntax" }
 unicode-ident.workspace = true
 unicode-normalization.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true
