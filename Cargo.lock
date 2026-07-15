@@ -200,6 +200,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-semantics"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "sico-hir",
+ "sico-lexer",
+ "sico-parser",
+ "sico-source",
+]
+
+[[package]]
 name = "sico-source"
 version = "0.0.0"
 dependencies = [

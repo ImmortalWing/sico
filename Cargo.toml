@@ -6,6 +6,7 @@ members = [
     "crates/sico-hir",
     "crates/sico-lexer",
     "crates/sico-parser",
+    "crates/sico-semantics",
     "crates/sico-source",
     "crates/sico-syntax",
 ]

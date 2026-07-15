@@ -1,0 +1,19 @@
+[package]
+name = "sico-semantics"
+description = "Static semantic analysis for Sico HIR"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sico-hir = { path = "../sico-hir" }
+sico-lexer = { path = "../sico-lexer" }
+sico-parser = { path = "../sico-parser" }
+sico-source = { path = "../sico-source" }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

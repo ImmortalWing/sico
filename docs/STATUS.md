@@ -4,16 +4,16 @@
 > - phase: M2 静态语义
 > - phase status: in-progress
 > - current step: none
-> - last completed step: STEP-0022
-> - next step: STEP-0023
+> - last completed step: STEP-0023
+> - next step: STEP-0024
 
 ## 1. Current objective
 
-下一目标是执行 STEP-0023：实现 core/nominal type、field、local inference 与 invariant 检查，使 numbers + nominal 的 7 valid/9 invalid 产生真实结果。
+下一目标是执行 STEP-0024：实现 match/control flow 与 Option/Result/error mapping，使 match + result 的 6 valid/8 invalid 产生真实结果。
 
 ## 2. Current step
 
-当前没有进行中的 STEP。[`STEP-0022`](./steps/STEP-0022-full-hir-name-prelude-contract.md) 已完成：54/54 B source deterministic lowering，12/12 error tree blocked；下一步尚未开始。
+当前没有进行中的 STEP。[`STEP-0023`](./steps/STEP-0023-core-nominal-types.md) 已完成；下一执行项 STEP-0024 将只扩展 match/result oracle 所需规则。
 
 ## 3. Verified repository facts
 
@@ -38,7 +38,7 @@
 | 真实 WebAssembly Component | 2 | verified |
 | Component sync/async 重跑 | 2 + 2 passed | verified |
 | 4096-bit/Decimal ABI roundtrip | 512 bytes + true | verified |
-| 正式编译器 workspace | 7 crates, build/test pass | verified |
+| 正式编译器 workspace | 8 crates, build/test pass | verified |
 | source/line index | 6 tests passed | verified |
 | lossless lexer | 8 tests; B 54/54 | verified |
 | B happy-path parser | 54/54 + 54 snapshots | verified |
@@ -48,9 +48,9 @@
 | deterministic frontend properties | 8,192 inputs | verified |
 | parser limits | depth 256；diagnostics 100 | verified |
 | M1 performance | median 1061 ms / 4.190 MiB/s；no SLA | measured |
-| 实际 `.sico` type-check 结果 | 不存在 | verified |
+| 实际 `.sico` core/nominal type-check | 7 valid pass；9 invalid exact primary | verified |
 
-M0/M1 已完成；仓库有真实 source/lexer/parser/recovery/formatter/CLI，但没有 type checker。25/29 accept/reject 仍是 M2 oracle，不能解释为已产生语义编译结果。
+M0/M1 已完成；仓库已有真实 source/lexer/parser/recovery/formatter/CLI，以及 numbers/nominal 子集的 type checker。其余 18 valid/20 invalid 仍是 M2 oracle，不能解释为已产生语义编译结果。
 
 ## 4. Completed assets
 
@@ -82,6 +82,8 @@ M0/M1 已完成；仓库有真实 source/lexer/parser/recovery/formatter/CLI，�
 - `sico check`/`format`/`outline`、退出码与 M2 capability boundary：[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md)；
 - frontend fuzz/limits/performance 与 M1 GO：[`STEP-0021`](./steps/STEP-0021-fuzz-performance-m1-exit.md)、[`M1 exit audit`](./reports/m1-exit-audit.md)；
 - STEP-0022–0029 静态语义执行计划：[`M2 static semantics`](./plans/M2-static-semantics.md)；
+- full B HIR/name/prelude contract：[`STEP-0022`](./steps/STEP-0022-full-hir-name-prelude-contract.md)、[`review report`](./reports/full-hir-name-prelude-v0.md)；
+- core/nominal type checker：[`STEP-0023`](./steps/STEP-0023-core-nominal-types.md)、[`review report`](./reports/core-nominal-types-v0.md)；
 - 长期自治执行目标：[`AGENT_GOAL.md`](../AGENT_GOAL.md)。
 
 ## 5. Incomplete M0 work
@@ -90,7 +92,7 @@ M0/M1 已完成；仓库有真实 source/lexer/parser/recovery/formatter/CLI，�
 
 ## 6. Blockers
 
-当前没有阻塞 STEP-0022 的外部条件。
+当前没有阻塞 STEP-0024 的外部条件。
 
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
@@ -98,12 +100,12 @@ M0/M1 已完成；仓库有真实 source/lexer/parser/recovery/formatter/CLI，�
 
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
-- 语法候选已有真实 B parser 数据，但仍无 type checker 或真实模型实测；
+- 只有 numbers/nominal 子集已有真实 type checker；match/result 及其后语义仍待实现，且仍无真实模型实测；
 - WIT 0.253 已真实往返 resource、数值记录和 `async func`；`future<T>`/`stream<T>` 仍只有 parser 与 Rust 状态机证据；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
-- E1001–E1012 已有真实 parser code、跨度和 recovery 数据；E2xxx 及以后仍无 type checker 实现；
+- E1001–E1012 与 E2001/E2002/E2010/E2011/E2020 已有真实 compiler code、跨度和 bounded cascade；E3xxx 及以后仍待实现；
 - 语义查询协议已有设计 fixtures，但只有两个模块详细展开，没有真实 index/accuracy/latency 数据。
 
 ## 8. Next step
 
-`STEP-0022`：建立 full B AST/HIR、stable IDs/source maps 和 name/prelude contract；对 54 个 B case 形成 lowering snapshots，并先 RFC 化任何语义歧义。
+`STEP-0024`：实现 match/control flow 与 Option/Result/error mapping；只验收对应 6 valid/8 invalid oracle，不提前实现 effect/resource/revision。
