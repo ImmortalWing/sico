@@ -3,14 +3,14 @@
 > - updated: 2026-07-16
 > - phase: M7 platform-independent track; M6 mobile track deferred
 > - phase status: in-progress with mobile-platform gates
-> - current step: STEP-0068 (AI tooling protocol and measured evaluation)
-> - last completed sequential step: STEP-0067
-> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0067)
-> - next step: implement structured inspect/fix APIs and reproducible offline evaluation
+> - current step: STEP-0069 (third-party pilot and M7 exit audit)
+> - last completed sequential step: STEP-0068 (offline complete; live model not authorized)
+> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0068)
+> - next step: complete local third-party-style pilot/release drill and audit remaining external gates
 
 ## 0. M6 exit state
 
-STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no Android build toolchain, buildable Host or runner; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. Android and Harmony tracks are deferred. Platform-independent M7 work may proceed, and STEP-0062 is complete, but mobile and final project exit claims remain gated.
+STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no Android build toolchain, buildable Host or runner; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. Android and Harmony tracks are deferred. Platform-independent M7 STEP-0062–0068 is complete locally, but production, live-model, mobile and final project exit claims remain gated.
 
 ## 1. Current objective
 
@@ -18,7 +18,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 2. Current step
 
-[`STEP-0067`](./steps/STEP-0067-language-server-editor-workflow.md) 已实现 bounded stdio LSP、compiler diagnostics/Semantic Index、canonical formatting 与 shell-free check/run；Runtime 无源码暂停/单步/检查 hook，因此 debug 保持显式 refusal。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation。
+[`STEP-0068`](./steps/STEP-0068-ai-tooling-measured-evaluation.md) 已实现 compiler-backed inspect/fix、54-source/12-fix 离线测量与 96-task harness 回归；无凭据/成本授权，因此真实模型 runs 为 0。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation。
 
 ## 3. Verified repository facts
 
@@ -163,4 +163,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-执行 STEP-0068 的 AI tooling protocol 与 measured evaluation：复用 diagnostics、Semantic Index 与 LSP 的有界结构化接口，扩展 inspect/fix API 和离线 corpus；没有凭据与成本授权时不调用真实模型。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复。
+执行 STEP-0069 的本地 third-party-style Component/真实应用 pilot、release drill 与 M7 exit audit；能在仓库内完成的全部验证先闭环，真正第三方参与、生产发布、移动 runner 与真实模型调用继续作为外部 gate。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复。

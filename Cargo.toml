@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/sico-cli",
+    "crates/sico-ai-tools",
     "crates/sico-codegen-wasm",
     "crates/sico-diagnostics",
     "crates/sico-desktop-host",

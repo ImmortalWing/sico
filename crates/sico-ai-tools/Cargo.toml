@@ -1,0 +1,25 @@
+[package]
+name = "sico-ai-tools"
+description = "Bounded structured inspect and fix validation protocol for Sico AI tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sico-ai-tool"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+sico-diagnostics = { path = "../sico-diagnostics" }
+sico-format = { path = "../sico-format" }
+sico-index = { path = "../sico-index" }
+sico-parser = { path = "../sico-parser" }
+sico-semantics = { path = "../sico-semantics" }
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

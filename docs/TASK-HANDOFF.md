@@ -5,11 +5,11 @@
 > - 分支：`main`
 > - 远端：`https://gitcode.com/ImmortalWings/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
-> - 工作区状态：STEP-0067 提交后应为 clean
+> - 工作区状态：STEP-0068 提交后应为 clean
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。平台无关 M7 已完成 STEP-0062–0067 的生态契约、publisher/registry/update/dependency 与 bounded LSP 本地闭环；STEP-0070/0071 已保存平台手册，但真实生产发布、最终 M7 与目标平台支持仍需各自证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。平台无关 M7 已完成 STEP-0062–0068 的生态契约、publisher/registry/update/dependency、bounded LSP 与 compiler-backed AI tooling 本地闭环；STEP-0070/0071 已保存平台手册，但真实生产发布、真实模型、最终 M7 与目标平台支持仍需各自证据。
 
 当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
 
@@ -136,7 +136,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 4. STEP-0065：安全更新与回滚（本地 monotonic/staging/advisory/recovery 闭环已完成）；
 5. STEP-0066：标准库与依赖稳定边界（本地 resolver/lock/compatibility/capability 闭环已完成）；
 6. STEP-0067：LSP、编辑器与调试流程（bounded stdio LSP、compiler/index/format、shell-free run 与 explicit debug refusal 已完成）；
-7. STEP-0068：AI tooling protocol 与获授权的真实评测；
+7. STEP-0068：AI tooling protocol 与评测（compiler-backed offline 已完成；真实模型待凭据和成本授权）；
 8. STEP-0069：第三方 Component/真实应用试点与 M7 exit audit。
 
 以下操作仍需用户明确授权或提供材料：
@@ -173,6 +173,8 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - Dependency lock RFC：[`RFC-0026`](./rfc/RFC-0026-dependency-lock-compatibility-v0.md)
 - Language server RFC：[`RFC-0027`](./rfc/RFC-0027-language-server-editor-protocol-v0.md)
 - Language server core：[`sico-language-server`](../crates/sico-language-server/src/lib.rs)
+- AI tooling RFC：[`RFC-0028`](./rfc/RFC-0028-ai-tooling-inspect-fix-v0.md)
+- AI tooling core：[`sico-ai-tools`](../crates/sico-ai-tools/src/lib.rs)
 
 ## 8. 接手者完成检查表
 
@@ -193,6 +195,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [x] STEP-0065 secure update/recovery 本地闭环完成，且无公共服务或移动安装器操作；
 - [x] STEP-0066 dependency/standard-library stability 本地闭环完成，且无外部包源操作；
 - [x] STEP-0067 bounded LSP/editor workflow 已完成，且无 shell/process/network side effect；
+- [x] STEP-0068 compiler-backed AI tooling/offline evaluation 已完成，且未把 fixture 冒充模型成绩；
 - [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
 - [ ] production identity/key custody/public service 遇到所有者决策边界时停止；

@@ -82,7 +82,8 @@
 | [STEP-0065](./STEP-0065-secure-update-rollback.md) | complete | M7 | 实现 monotonic update、staged activation、advisory 与显式 recovery 闭环 |
 | [STEP-0066](./STEP-0066-dependency-standard-library-stability.md) | complete | M7 | 实现 source-aware resolution、canonical lock、compatibility 与 capability closure |
 | [STEP-0067](./STEP-0067-language-server-editor-workflow.md) | complete | M7 | 实现 bounded stdio LSP、compiler diagnostics/index、format 与 shell-free run/debug contract |
+| [STEP-0068](./STEP-0068-ai-tooling-measured-evaluation.md) | complete-offline | M7 | 实现 compiler-backed inspect/fix、54-source/12-fix 测量与 live-model gate |
 | [STEP-0070](./STEP-0070-mobile-platform-development-handbooks.md) | complete | M6/M7 docs | 保存 Android 与鸿蒙详细开发/验收手册，不改变移动 NO-GO |
 | [STEP-0071](./STEP-0071-linux-development-handbook.md) | complete | M5/M7 docs | 保存 Linux Desktop Host 详细开发/验收手册，不改变 Linux 证据等级 |
 
-下一顺序实施步骤：`STEP-0068`；下一未分配编号：`STEP-0072`（STEP-0068–0069 已由 M7 计划分配）。
+下一顺序实施步骤：`STEP-0069`；下一未分配编号：`STEP-0072`（STEP-0069 已由 M7 计划分配）。

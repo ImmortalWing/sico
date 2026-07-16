@@ -3,7 +3,7 @@
 > - status: verified offline harness
 > - protocol: `sico-ai-eval-v1`
 > - related step: [`STEP-0004`](../docs/steps/STEP-0004-ai-evaluation-protocol-v0.md)
-> - extended by: [`STEP-0012`](../docs/steps/STEP-0012-syntax-evidence-completion.md), [`syntax evidence v1`](../docs/reports/syntax-evidence-v1.md)
+> - extended by: [`STEP-0012`](../docs/steps/STEP-0012-syntax-evidence-completion.md), [`syntax evidence v1`](../docs/reports/syntax-evidence-v1.md), [`STEP-0068`](../docs/steps/STEP-0068-ai-tooling-measured-evaluation.md)
 
 本目录定义 A0、B、C 候选语法的可复现 AI 生成、理解和错误修复评测。评测核心不绑定模型供应商：仓库生成固定提示包，外部适配器调用模型并保存原始输出，仓库中的离线评分器只读取结果文件。
 
@@ -73,6 +73,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-error-taxonom
 ```
 
 taxonomy 的 `observed_ai_frequency` 固定为 `not-measured`，且禁止排名。它是未来真实模型错误的分类 schema，不是“这些错误在 AI 中已经常见”的频率证据。
+
+## Compiler-backed tooling v0
+
+[`tooling-protocol.md`](./tooling-protocol.md) 增加本地、无副作用的 `inspect` 与 `validate_fix` JSON 协议。它复用正式 compiler diagnostics、Semantic Index 和 canonical formatter，并以 source digest、精确诊断 multiset、单段 edit 和 256-byte change cap 防止 stale 或宽泛修复。
+
+该工具已离线检查 54 个 B source（25 clean、29 diagnosed）并验证 12 个 B repair oracle；这些是工具链测量，不是模型分数。A0/C 继续作为设计历史与 v1 比较任务保留。真实模型评测仍必须遵循本页的 provider metadata、raw output、30 次重复、凭据和成本授权门槛。
 
 ## Versioning
 
