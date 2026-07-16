@@ -29,7 +29,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | STEP-0064 | signed registry publish/discovery/download | **complete**: four signed schemas, namespace lifecycle, immutable local transport, 3 checkpoints, 1,231 mutations and strict download reverify |
 | STEP-0065 | secure update and rollback | **complete**: consistent snapshots, monotonic journal, staged activation, advisories, explicit recovery and 1,592 mutations |
 | STEP-0066 | standard-library and package dependency stability | **complete**: source-aware resolver, canonical lock, SemVer, compatibility, capability closure, yank/revocation and 1,140 mutations |
-| STEP-0067 | LSP, editor and debugging workflow | diagnostics/index-driven completion, navigation, format, run/debug and bounded protocol tests |
+| STEP-0067 | LSP, editor and debugging workflow | **complete**: bounded stdio LSP, compiler diagnostics/index, UTF-16 navigation, format, shell-free run and explicit debug refusal |
 | STEP-0068 | AI tooling protocol and measured evaluation | structured inspect/fix APIs, offline corpus, explicitly authorized live evaluation |
 | STEP-0069 | third-party Component and real-app pilot, M7 exit audit | external workflow, release drill, security/performance/regression and project-completion review |
 
@@ -41,4 +41,4 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 5. Immediate next action
 
-Proceed to STEP-0067 LSP/editor/debug workflow using existing compiler diagnostics, formatter and Semantic Index contracts; keep all protocol tests local and bounded.
+Proceed to STEP-0068 structured AI inspect/fix protocol and reproducible offline evaluation. Do not invoke a live model without explicit credentials and cost authorization.

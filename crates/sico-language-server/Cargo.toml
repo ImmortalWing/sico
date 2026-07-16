@@ -1,0 +1,23 @@
+[package]
+name = "sico-language-server"
+description = "Bounded LSP and editor workflow adapter for Sico"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sico-lsp"
+path = "src/main.rs"
+
+[dependencies]
+serde_json.workspace = true
+sico-diagnostics = { path = "../sico-diagnostics" }
+sico-format = { path = "../sico-format" }
+sico-index = { path = "../sico-index" }
+sico-parser = { path = "../sico-parser" }
+sico-semantics = { path = "../sico-semantics" }
+sico-source = { path = "../sico-source" }
+
+[lints]
+workspace = true

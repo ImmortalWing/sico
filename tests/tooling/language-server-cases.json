@@ -1,0 +1,29 @@
+{
+  "schema": "sico.tooling.language-server-cases.v0",
+  "cases": [
+    { "id": "LSP-001", "area": "lifecycle", "expect": "initialize advertises only implemented capabilities" },
+    { "id": "LSP-002", "area": "lifecycle", "expect": "request before initialize is rejected" },
+    { "id": "LSP-003", "area": "lifecycle", "expect": "shutdown and exit are ordered" },
+    { "id": "LSP-004", "area": "framing", "expect": "ASCII CRLF Content-Length framing roundtrips" },
+    { "id": "LSP-005", "area": "framing", "expect": "duplicate or malformed headers are rejected" },
+    { "id": "LSP-006", "area": "framing", "expect": "non-UTF-8 content type is rejected" },
+    { "id": "LSP-007", "area": "limits", "expect": "one MiB message and document limit is enforced" },
+    { "id": "LSP-008", "area": "limits", "expect": "eight KiB header limit is enforced before allocation growth" },
+    { "id": "LSP-009", "area": "limits", "expect": "128 document and eight MiB workspace limits are enforced" },
+    { "id": "LSP-010", "area": "sync", "expect": "stale document versions are rejected without mutation" },
+    { "id": "LSP-011", "area": "sync", "expect": "v0 accepts exactly one full-document change" },
+    { "id": "LSP-012", "area": "sync", "expect": "close clears diagnostics and in-memory content" },
+    { "id": "LSP-013", "area": "coordinates", "expect": "UTF-8 byte offsets convert to zero-based UTF-16 positions" },
+    { "id": "LSP-014", "area": "coordinates", "expect": "mid-surrogate positions are rejected" },
+    { "id": "LSP-015", "area": "diagnostics", "expect": "parser E1xxx diagnostics retain stable compiler identity" },
+    { "id": "LSP-016", "area": "diagnostics", "expect": "semantic diagnostics come from sico-semantics" },
+    { "id": "LSP-017", "area": "index", "expect": "document symbols come from compiler Semantic Index" },
+    { "id": "LSP-018", "area": "index", "expect": "completion is deterministic and capped at 256" },
+    { "id": "LSP-019", "area": "navigation", "expect": "unique definitions and hover resolve from compiler symbols" },
+    { "id": "LSP-020", "area": "navigation", "expect": "ambiguous unqualified symbols fail closed" },
+    { "id": "LSP-021", "area": "navigation", "expect": "lexical references require one compiler-owned symbol" },
+    { "id": "LSP-022", "area": "format", "expect": "formatting uses the canonical formatter and refuses invalid source" },
+    { "id": "LSP-023", "area": "workflow", "expect": "check and run return argv with shell false" },
+    { "id": "LSP-024", "area": "workflow", "expect": "debug fails explicitly until Runtime debug hooks exist" }
+  ]
+}

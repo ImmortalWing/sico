@@ -3,10 +3,10 @@
 > - updated: 2026-07-16
 > - phase: M7 platform-independent track; M6 mobile track deferred
 > - phase status: in-progress with mobile-platform gates
-> - current step: STEP-0067 (LSP, editor and debugging workflow)
-> - last completed sequential step: STEP-0066
-> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0066)
-> - next step: implement diagnostics/index-driven local language server and editor/debug workflow
+> - current step: STEP-0068 (AI tooling protocol and measured evaluation)
+> - last completed sequential step: STEP-0067
+> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0067)
+> - next step: implement structured inspect/fix APIs and reproducible offline evaluation
 
 ## 0. M6 exit state
 
@@ -18,7 +18,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 2. Current step
 
-[`STEP-0066`](./steps/STEP-0066-dependency-standard-library-stability.md) 已实现 exact-source dependency resolution、canonical lock、independent compatibility、standard-library API digest 与 capability closure；没有访问公共包源。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation。
+[`STEP-0067`](./steps/STEP-0067-language-server-editor-workflow.md) 已实现 bounded stdio LSP、compiler diagnostics/Semantic Index、canonical formatting 与 shell-free check/run；Runtime 无源码暂停/单步/检查 hook，因此 debug 保持显式 refusal。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation。
 
 ## 3. Verified repository facts
 
@@ -163,4 +163,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-执行 STEP-0067 的 LSP/editor/debug workflow：复用 compiler diagnostics、formatter 与 Semantic Index，提供 bounded local protocol、navigation、format 和 run/debug contract。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复。
+执行 STEP-0068 的 AI tooling protocol 与 measured evaluation：复用 diagnostics、Semantic Index 与 LSP 的有界结构化接口，扩展 inspect/fix API 和离线 corpus；没有凭据与成本授权时不调用真实模型。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复。

@@ -32,7 +32,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0024`](./RFC-0024-signed-registry-metadata-v0.md) | accepted | 固定 signed namespace/release/channel/checkpoint 与不可信 transport 复验 |
 | [`RFC-0025`](./RFC-0025-secure-update-recovery-v0.md) | accepted | 固定 consistent update、monotonic state、advisory 与显式 recovery |
 | [`RFC-0026`](./RFC-0026-dependency-lock-compatibility-v0.md) | accepted | 固定 source-aware dependency、canonical lock、compatibility 与 capability closure |
+| [`RFC-0027`](./RFC-0027-language-server-editor-protocol-v0.md) | accepted | 固定 bounded stdio LSP、UTF-16、compiler-owned editor features 与 run/debug boundary |
 
-下一可用编号：`RFC-0027`。
+下一可用编号：`RFC-0028`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。
