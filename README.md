@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目已完成 M0–M5。M6 host-side 契约与测试已完成，但 Android SDK/NDK、构建工程和 runner 均缺失，退出结论仍为 NO-GO。按 2026-07-16 的路线调整，Android 与尚未规划的 Harmony 路径后推；M7 的平台无关轨已完成 STEP-0062 生态/发布威胁模型与兼容契约，但不得据此宣称移动端或最终 M7 完成。
+项目已完成 M0–M5。M6 host-side 契约与测试已完成，但 Android SDK/NDK、构建工程和 runner 均缺失，退出结论仍为 NO-GO。按 2026-07-16 的路线调整，Android 与尚未规划的 Harmony 路径后推；M7 平台无关轨已完成 STEP-0062 契约和 STEP-0063 publisher identity/key lifecycle 本地闭环，但不得据此宣称移动端、真实生产发布或最终 M7 完成。
 
 ## 文档
 

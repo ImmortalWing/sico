@@ -4,6 +4,7 @@ members = [
     "crates/sico-codegen-wasm",
     "crates/sico-diagnostics",
     "crates/sico-desktop-host",
+    "crates/sico-ecosystem",
     "crates/sico-format",
     "crates/sico-hir",
     "crates/sico-host-core",

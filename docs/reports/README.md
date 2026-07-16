@@ -52,6 +52,7 @@
 | [`component-wit-boundary-v0`](./component-wit-boundary-v0.md) | complete | STEP-0034 | compiler Component lift 与 WIT Result/record/resource boundary |
 | [`async-task-stream-backend-v0`](./async-task-stream-backend-v0.md) | complete | STEP-0035 | Future/Stream Runtime contract 与 compiler typed refusal |
 | [`minimal-build-run-cli-v0`](./minimal-build-run-cli-v0.md) | complete | STEP-0036 | source→Component→Wasmtime CLI、exit/channel 与无产物失败契约 |
+| [`publisher-identity-key-lifecycle-v0`](./publisher-identity-key-lifecycle-v0.md) | complete | STEP-0063 | canonical publisher policy、五角色阈值、2,048 mutation 与 rotation/revocation/recovery |
 | [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |
 | [`sapp-builder-loader-v0`](./sapp-builder-loader-v0.md) | complete | STEP-0039 | canonical `.sapp` builder、strict loader、hash/path/limit verification |
 | [`package-cli-cache-v0`](./package-cli-cache-v0.md) | accepted | STEP-0044 | `.sapp` build/run/inspect、explicit trust、source cache 与 args/stdio |

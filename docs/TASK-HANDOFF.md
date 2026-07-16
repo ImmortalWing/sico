@@ -9,7 +9,7 @@
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。按仓库所有者 2026-07-16 的路线调整，Android 和 Harmony 路径后推，平台无关 M7 工作可先行；STEP-0062 已完成，STEP-0070 已保存移动平台手册，STEP-0071 已保存 Linux 手册，但最终 M7/目标平台支持仍需各平台真实证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。平台无关 M7 工作可先行；STEP-0062/0063 已完成生态契约与本地 publisher key lifecycle，STEP-0070/0071 已保存平台手册，但真实生产发布、最终 M7 与目标平台支持仍需各自证据。
 
 当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
 
@@ -131,7 +131,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 平台无关轨可继续，但不直接进入公开 registry、真实 production signing 或移动支持声明：
 
 1. STEP-0062：生态/发布 threat model 与兼容契约（已完成）；
-2. STEP-0063：production publisher identity、key custody/rotation/revocation；
+2. STEP-0063：production publisher identity、key custody/rotation/revocation（本地 policy/fixtures 已完成；真实身份与 custody 待所有者）；
 3. STEP-0064：signed registry publish/discovery/download；
 4. STEP-0065：安全更新与回滚；
 5. STEP-0066：标准库与依赖稳定边界；
@@ -166,6 +166,8 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - 鸿蒙详细开发手册：[`HARMONY-DEVELOPMENT.md`](./platforms/HARMONY-DEVELOPMENT.md)
 - 移动平台共用验收清单：[`MOBILE-SHARED-CHECKLIST.md`](./platforms/MOBILE-SHARED-CHECKLIST.md)
 - Linux 详细开发手册：[`LINUX-DEVELOPMENT.md`](./platforms/LINUX-DEVELOPMENT.md)
+- Ecosystem trust core：[`sico-ecosystem`](../crates/sico-ecosystem/src/lib.rs)
+- Publisher policy RFC：[`RFC-0023`](./rfc/RFC-0023-production-publisher-policy-v0.md)
 
 ## 8. 接手者完成检查表
 
@@ -181,6 +183,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [ ] STATUS、ROADMAP、README、M6/M7 plan 与验证器同步；
 - [ ] 每个非平凡步骤单独提交并推送；
 - [x] STEP-0062 平台无关契约完成，且 M6 仍保持 blocked；
+- [x] STEP-0063 publisher policy/key lifecycle 本地闭环完成，且无真实 production credential；
 - [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
 - [ ] production identity/key custody/public service 遇到所有者决策边界时停止；

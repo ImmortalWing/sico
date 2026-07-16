@@ -28,7 +28,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0020`](./RFC-0020-desktop-ui-permission-contract-v0.md) | accepted | 固定 Desktop permission record 与 typed bounded UI model |
 | [`RFC-0021`](./RFC-0021-android-intent-jni-contract-v0.md) | accepted | 固定 Android Intent/URI 与 typed bounded JNI bridge contract |
 | [`RFC-0022`](./RFC-0022-ecosystem-compatibility-contract-v0.md) | accepted | 固定 production release identity、canonical metadata、依赖锁与独立兼容面 |
+| [`RFC-0023`](./RFC-0023-production-publisher-policy-v0.md) | accepted | 固定 production publisher policy、角色阈值、精确身份与 rotation/revocation/recovery |
 
-下一可用编号：`RFC-0023`。
+下一可用编号：`RFC-0024`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

@@ -25,7 +25,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | Step | Deliverable | Exit evidence |
 |---|---|---|
 | STEP-0062 | ecosystem/release threat model and compatibility contract | **complete**: 32-threat/12-surface matrices; ADR-0006 and RFC-0022 accepted |
-| STEP-0063 | production publisher identity and key lifecycle | offline/root vs online signing, rotation, revocation, recovery and audit fixtures |
+| STEP-0063 | production publisher identity and key lifecycle | **complete**: canonical policy, five role thresholds, exact claims, rotation/revocation/recovery and 2,048 mutations |
 | STEP-0064 | signed registry publish/discovery/download | deterministic metadata, namespace ownership, transparency and end-to-end local reverify |
 | STEP-0065 | secure update and rollback | signed channels, monotonic policy, rollback recovery, partial/corrupt update corpus |
 | STEP-0066 | standard-library and package dependency stability | version/compatibility policy, deterministic resolution and capability closure across dependencies |
@@ -41,4 +41,4 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 5. Immediate next action
 
-Proceed to STEP-0063 production publisher identity and key lifecycle within local contract/fixture scope. Stop for repository-owner decisions before selecting legal publisher identity, production root custody, public transparency identity or external services. If that decision blocks implementation, STEP-0066/0067/0068 platform-neutral work may proceed with the dependency recorded.
+Proceed to STEP-0064 signed registry publish/discovery/download using local filesystem transport and test-only publisher policies. Stop before public namespace, domain, service account, legal terms, public transparency identity or external publish operations.

@@ -3,10 +3,10 @@
 > - updated: 2026-07-16
 > - phase: M7 platform-independent track; M6 mobile track deferred
 > - phase status: in-progress with mobile-platform gates
-> - current step: STEP-0063 (production identity/key lifecycle boundary)
-> - last completed sequential step: STEP-0062
+> - current step: STEP-0064 (signed registry local implementation)
+> - last completed sequential step: STEP-0063
 > - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0063)
-> - next step: define local production identity/key fixtures; request owner decisions before real credentials or public services
+> - next step: implement deterministic signed registry records and local publish/discover/download with mandatory local re-verification
 
 ## 0. M6 exit state
 
@@ -18,7 +18,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 2. Current step
 
-[`STEP-0062`](./steps/STEP-0062-ecosystem-release-contract.md) 已冻结 32 项生态威胁、12 个兼容面和 registry-untrusted/role-separated trust 边界。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 已保存 Android/鸿蒙/Linux 详细开发与验收手册，但没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
+[`STEP-0063`](./steps/STEP-0063-production-publisher-identity-key-lifecycle.md) 已实现本地 canonical publisher policy、五角色阈值、精确 identity claims 与 rotation/revocation/recovery；没有创建真实生产凭据或外部服务。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
 
 ## 3. Verified repository facts
 
@@ -163,4 +163,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-执行 STEP-0063 的本地 production identity/key lifecycle contract 与 fixtures；在法律身份、真实 root custody、公开透明身份或外部服务前请求仓库所有者决定。若该子轨等待决定，则按 [`M7 plan`](./plans/M7-ecosystem-release.md) 推进 STEP-0066/0067/0068 的平台无关工作。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复，Harmony 先建立独立可行性/契约步骤再实现。
+执行 STEP-0064 的本地 signed registry publish/discover/download，继续使用 test-only publisher policy 和本地文件 transport；在公共 namespace、域名、账户、法律条款、透明服务或外部发布前停止。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复，Harmony 先建立独立可行性/契约步骤再实现。
