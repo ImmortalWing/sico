@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`ecosystem-release-contract-v0`](./ecosystem-release-contract-v0.md) | complete | STEP-0062 | 32-threat ecosystem trust boundary, 12 compatibility surfaces and split-track evidence |
 | [`m6-exit-audit`](./m6-exit-audit.md) | blocked-external-runner | STEP-0061 | host evidence complete; Android Runtime/UI/startup gate NO-GO |
 | [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |
 | [`android-native-ui-adapter-v0`](./android-native-ui-adapter-v0.md) | accepted-cross-check | STEP-0059 | native widgets, IME and accessibility mapping |

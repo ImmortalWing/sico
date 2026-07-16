@@ -1,0 +1,19 @@
+{
+  "schema": "sico.ecosystem.compatibility-matrix.v0",
+  "date": "2026-07-16",
+  "status": "contract-only",
+  "surfaces": [
+    {"id":"COMPAT-001","surface":"sico-language","identifier":"language_semantics","compatible_change":"clarification preserving accepted programs and behavior","breaking_change":"syntax, typing or runtime semantic change","unknown_behavior":"reject unsupported major"},
+    {"id":"COMPAT-002","surface":"compiler","identifier":"compiler_version","compatible_change":"bug fix preserving declared language and output contracts","breaking_change":"drops an accepted input or changes deterministic output contract","unknown_behavior":"diagnose unsupported language contract"},
+    {"id":"COMPAT-003","surface":"sico-ir","identifier":"ir_schema","compatible_change":"none inside canonical v0 schema","breaking_change":"field, operation, type or verifier rule change","unknown_behavior":"reject"},
+    {"id":"COMPAT-004","surface":"component-world","identifier":"component_world","compatible_change":"backward-compatible WIT addition under a new declared world version","breaking_change":"type, resource, import or behavior change","unknown_behavior":"reject before instantiation"},
+    {"id":"COMPAT-005","surface":"wasi","identifier":"wasi_contract","compatible_change":"explicitly supported additive interface version","breaking_change":"changed interface identity or required semantics","unknown_behavior":"reject before linking"},
+    {"id":"COMPAT-006","surface":"sapp-container","identifier":"package_format","compatible_change":"none inside format version 1 canonical framing","breaking_change":"framing, ordering, limits or entry semantics change","unknown_behavior":"reject before parsing payloads"},
+    {"id":"COMPAT-007","surface":"sapp-manifest","identifier":"manifest_schema","compatible_change":"none inside sico.sapp.manifest.v0","breaking_change":"field or meaning change","unknown_behavior":"reject unknown field or schema"},
+    {"id":"COMPAT-008","surface":"production-signature","identifier":"publisher_policy","compatible_change":"authorized key rotation under the same signed root policy","breaking_change":"new root, threshold, issuer or subject policy","unknown_behavior":"reject as untrusted"},
+    {"id":"COMPAT-009","surface":"registry-metadata","identifier":"release_schema","compatible_change":"new record type under a new explicitly supported schema","breaking_change":"existing canonical field or signature meaning change","unknown_behavior":"reject and retain last trusted state"},
+    {"id":"COMPAT-010","surface":"application-release","identifier":"app_version","compatible_change":"SemVer patch or minor only when public app/component contract remains compatible","breaking_change":"SemVer major or declared incompatible contract change","unknown_behavior":"do not resolve"},
+    {"id":"COMPAT-011","surface":"capabilities","identifier":"capability_contract","compatible_change":"new optional capability name not requested by existing packages","breaking_change":"existing capability meaning, scope or default changes","unknown_behavior":"default deny"},
+    {"id":"COMPAT-012","surface":"host-platform","identifier":"host_contract","compatible_change":"platform adapter preserves normative package, identity, permission and lifecycle behavior","breaking_change":"platform-specific behavior weakens a normative trust or capability rule","unknown_behavior":"mark platform unsupported; do not infer parity"}
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "sico.ecosystem.threat-matrix.v0",
+  "date": "2026-07-16",
+  "status": "contract-only",
+  "cases": [
+    {"id":"ECO-PUBLISHER-001","area":"publisher","threat":"development key promoted to production identity","invariant":"production trust roots are distinct from sico.sapp.signature.v0 development keys","evidence":"RFC-0022","implementation":"STEP-0063"},
+    {"id":"ECO-PUBLISHER-002","area":"publisher","threat":"single online key compromise authorizes every release","invariant":"root, release, recovery, rotation and revocation roles are separated with explicit thresholds","evidence":"ADR-0006","implementation":"STEP-0063"},
+    {"id":"ECO-PUBLISHER-003","area":"publisher","threat":"identity-provider or CI claim is accepted without policy binding","invariant":"issuer, subject, workflow and repository claims are matched against a signed publisher policy","evidence":"RFC-0022","implementation":"STEP-0063"},
+    {"id":"ECO-PUBLISHER-004","area":"publisher","threat":"compromised or expired signer silently remains authoritative","invariant":"rotation and revocation are signed, versioned, time-bounded and recoverable from an offline root","evidence":"ADR-0006","implementation":"STEP-0063"},
+
+    {"id":"ECO-NAMESPACE-001","area":"namespace","threat":"first-upload squatting captures a public app id","invariant":"namespace ownership is an explicit signed registry grant rather than an inference from package app.id","evidence":"RFC-0022","implementation":"STEP-0064"},
+    {"id":"ECO-NAMESPACE-002","area":"namespace","threat":"Unicode or case variants impersonate an existing namespace","invariant":"public names use canonical lowercase ASCII labels and are compared byte-for-byte","evidence":"RFC-0022","implementation":"STEP-0064"},
+    {"id":"ECO-NAMESPACE-003","area":"namespace","threat":"namespace transfer changes publisher without consumer visibility","invariant":"transfer is a separately signed event retaining old and new owner identities plus an audit reference","evidence":"ADR-0006","implementation":"STEP-0064"},
+    {"id":"ECO-NAMESPACE-004","area":"namespace","threat":"deleted namespace is immediately reused for unrelated code","invariant":"tombstones and reuse policy are monotonic and included in discovery evidence","evidence":"RFC-0022","implementation":"STEP-0064"},
+
+    {"id":"ECO-REGISTRY-001","area":"registry","threat":"registry serves bytes different from advertised content","invariant":"clients fetch by digest, verify byte length and digest, then repeat local strict package verification","evidence":"ADR-0006","implementation":"STEP-0064"},
+    {"id":"ECO-REGISTRY-002","area":"registry","threat":"mutable tag or channel is treated as immutable identity","invariant":"names and channels resolve only to signed immutable release records and package digests","evidence":"RFC-0022","implementation":"STEP-0064"},
+    {"id":"ECO-REGISTRY-003","area":"registry","threat":"mirror or CDN injects authority through transport metadata","invariant":"transport, cache headers and mirrors are never trust roots","evidence":"ADR-0006","implementation":"STEP-0064"},
+    {"id":"ECO-REGISTRY-004","area":"registry","threat":"split-view registry hides or forks publication history","invariant":"signed checkpoints and inclusion evidence are independently cacheable and auditable","evidence":"ADR-0006","implementation":"STEP-0064"},
+
+    {"id":"ECO-UPDATE-001","area":"update","threat":"older signed metadata is replayed","invariant":"trusted root, snapshot and release sequence numbers never decrease","evidence":"RFC-0022","implementation":"STEP-0065"},
+    {"id":"ECO-UPDATE-002","area":"update","threat":"stale but valid metadata freezes a client","invariant":"online metadata expires and clients retain last trusted version and expiry state","evidence":"ADR-0006","implementation":"STEP-0065"},
+    {"id":"ECO-UPDATE-003","area":"update","threat":"metadata from different repository states is mixed","invariant":"one signed snapshot binds the exact release records and package digests used in a transaction","evidence":"RFC-0022","implementation":"STEP-0065"},
+    {"id":"ECO-UPDATE-004","area":"update","threat":"partial download replaces a working revision","invariant":"download, verify and install occur in staging and activation is atomic after every trust gate passes","evidence":"ADR-0006","implementation":"STEP-0065"},
+
+    {"id":"ECO-DEPENDENCY-001","area":"dependency","threat":"mutable version ranges produce different builds","invariant":"published releases bind an immutable canonical dependency lock graph","evidence":"RFC-0022","implementation":"STEP-0066"},
+    {"id":"ECO-DEPENDENCY-002","area":"dependency","threat":"dependency confusion selects an unintended registry or namespace","invariant":"each dependency identity includes registry, namespace, package name, version and digest","evidence":"RFC-0022","implementation":"STEP-0066"},
+    {"id":"ECO-DEPENDENCY-003","area":"dependency","threat":"transitive package gains undeclared host authority","invariant":"effective capabilities are the verified closure of root and locked dependencies and still intersect host grants","evidence":"RFC-0022","implementation":"STEP-0066"},
+    {"id":"ECO-DEPENDENCY-004","area":"dependency","threat":"yanked or revoked dependency silently changes an existing lock","invariant":"yank affects new resolution while revocation is an explicit signed security decision evaluated by policy","evidence":"RFC-0022","implementation":"STEP-0066"},
+
+    {"id":"ECO-DISCLOSURE-001","area":"disclosure","threat":"security report channel leaks credentials or user data","invariant":"public metadata contains no secrets and disclosure intake defines redaction and retention rules","evidence":"ADR-0006","implementation":"STEP-0063"},
+    {"id":"ECO-DISCLOSURE-002","area":"disclosure","threat":"attacker suppresses a security advisory","invariant":"advisories are signed append-only records addressable independently of mutable release pages","evidence":"RFC-0022","implementation":"STEP-0065"},
+    {"id":"ECO-DISCLOSURE-003","area":"disclosure","threat":"advisory ambiguously identifies affected artifacts","invariant":"affected ranges are accompanied by exact release and package digests where known","evidence":"RFC-0022","implementation":"STEP-0065"},
+    {"id":"ECO-DISCLOSURE-004","area":"disclosure","threat":"untrusted registry text is rendered as active content","invariant":"descriptions and advisories are bounded inert text with no script, markup execution or shell interpolation","evidence":"ADR-0006","implementation":"STEP-0064"},
+
+    {"id":"ECO-ROLLBACK-001","area":"rollback","threat":"automatic rollback installs a compromised older release","invariant":"rollback requires an explicit signed recovery authorization or local user recovery policy","evidence":"RFC-0022","implementation":"STEP-0065"},
+    {"id":"ECO-ROLLBACK-002","area":"rollback","threat":"rollback crosses publisher identity or app id","invariant":"recovery remains within the immutable production app identity unless a separately authorized migration exists","evidence":"ADR-0006","implementation":"STEP-0065"},
+    {"id":"ECO-ROLLBACK-003","area":"rollback","threat":"failed update destroys the last known-good revision","invariant":"hosts retain a verified prior revision until new activation and recovery checks complete","evidence":"ADR-0006","implementation":"STEP-0065"},
+    {"id":"ECO-ROLLBACK-004","area":"rollback","threat":"rollback restores obsolete permission grants","invariant":"capability fingerprint drift always causes re-evaluation even for previously installed revisions","evidence":"RFC-0022","implementation":"STEP-0065"},
+
+    {"id":"ECO-COMPAT-001","area":"compatibility","threat":"one version string is used for language, package and API compatibility","invariant":"every compatibility surface has an independent explicit identifier","evidence":"RFC-0022","implementation":"STEP-0066"},
+    {"id":"ECO-COMPAT-002","area":"compatibility","threat":"unknown schema fields are guessed or ignored","invariant":"security-relevant canonical records reject unknown schema versions, fields and enum values","evidence":"RFC-0022","implementation":"STEP-0064"},
+    {"id":"ECO-COMPAT-003","area":"compatibility","threat":"app version ordering accepts non-SemVer ambiguous strings","invariant":"published app releases use canonical SemVer 2.0.0 without leading zeroes and compare precedence by the specification","evidence":"RFC-0022","implementation":"STEP-0066"},
+    {"id":"ECO-COMPAT-004","area":"compatibility","threat":"client installs a release requiring unsupported runtime or WIT contracts","invariant":"release records declare exact minimum and supported compatibility identifiers before package download or execution","evidence":"RFC-0022","implementation":"STEP-0066"}
+  ]
+}

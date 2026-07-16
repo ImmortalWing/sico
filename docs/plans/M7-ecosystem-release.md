@@ -1,10 +1,10 @@
 # M7 plan: Ecosystem, tooling and release
 
-> - status: planned, blocked until M6 GO
+> - status: in-progress, platform-independent track
 > - created: 2026-07-16
 > - phase: M7
-> - entry requirement: M6 Android runner exit gate GO
-> - execution boundary: stable Desktop and Android Host package/runtime contracts
+> - entry requirement: M4/M5 package and Desktop Host contracts; repository-owner authorization to defer mobile tracks
+> - execution boundary: platform-independent work may proceed; mobile and final exit claims remain gated
 
 ## 1. Outcome
 
@@ -12,7 +12,9 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 2. Entry and decision gates
 
-- Do not start implementation until the same exact signed `.sapp` runs on verified Desktop and Android runners.
+- STEP-0062–0068 may implement platform-independent contracts, fixtures and tools without claiming Android or Harmony support.
+- M6 remains `blocked-external-runner`; the same exact signed `.sapp` still requires verified Desktop and Android execution before Android support or M6 completion is claimed.
+- HarmonyOS/OpenHarmony has no accepted plan or implementation. It is deferred scope, not a supported or blocked-complete platform.
 - Production publisher identity, key custody, rotation and revocation require repository-owner decisions and must not reuse development keys.
 - Registry publishing, legal terms, public namespaces and security disclosure channels require explicit authorization.
 - Package/update metadata remains deterministic, signed and rollback-safe; registry data never weakens local Host verification.
@@ -22,7 +24,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 | Step | Deliverable | Exit evidence |
 |---|---|---|
-| STEP-0062 | ecosystem/release threat model and compatibility contract | publisher, namespace, registry, update, dependency, disclosure and rollback matrix; ADR/RFC accepted |
+| STEP-0062 | ecosystem/release threat model and compatibility contract | **complete**: 32-threat/12-surface matrices; ADR-0006 and RFC-0022 accepted |
 | STEP-0063 | production publisher identity and key lifecycle | offline/root vs online signing, rotation, revocation, recovery and audit fixtures |
 | STEP-0064 | signed registry publish/discovery/download | deterministic metadata, namespace ownership, transparency and end-to-end local reverify |
 | STEP-0065 | secure update and rollback | signed channels, monotonic policy, rollback recovery, partial/corrupt update corpus |
@@ -31,6 +33,12 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | STEP-0068 | AI tooling protocol and measured evaluation | structured inspect/fix APIs, offline corpus, explicitly authorized live evaluation |
 | STEP-0069 | third-party Component and real-app pilot, M7 exit audit | external workflow, release drill, security/performance/regression and project-completion review |
 
-## 4. Immediate next action
+## 4. Mobile platform gates
 
-M7 is not executable yet. Provision a licensed Android SDK/NDK plus x86_64 emulator and arm64 device, resume STEP-0060 device parity, then repeat STEP-0061. A GO result unlocks STEP-0062.
+- Android: retain the STEP-0060/0061 blocker until a buildable Gradle/JNI Host, licensed SDK/NDK, x86_64 emulator and arm64 device provide same-digest Runtime/UI/lifecycle evidence.
+- Harmony: require a future audited feasibility/contract step before implementation; do not assume Android adapters or evidence transfer.
+- Final M7/project exit: require every platform named as supported to have its own build/runtime evidence. Platform-neutral work cannot satisfy this gate.
+
+## 5. Immediate next action
+
+Proceed to STEP-0063 production publisher identity and key lifecycle within local contract/fixture scope. Stop for repository-owner decisions before selecting legal publisher identity, production root custody, public transparency identity or external services. If that decision blocks implementation, STEP-0066/0067/0068 platform-neutral work may proceed with the dependency recorded.

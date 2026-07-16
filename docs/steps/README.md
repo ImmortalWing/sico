@@ -60,5 +60,22 @@
 | [STEP-0043](./STEP-0043-runtime-limits-fault-taxonomy.md) | complete | M4 | 实现 Runtime limits/fault taxonomy |
 | [STEP-0044](./STEP-0044-package-cli-source-cache.md) | complete | M4 | 实现 package CLI/source cache contract |
 | [STEP-0045](./STEP-0045-m4-security-quality-exit.md) | complete | M4 | 完成 M4 security/quality/exit audit |
+| [STEP-0046](./STEP-0046-desktop-host-threat-lifecycle-contract.md) | complete | M5 | 冻结 Desktop Host threat/lifecycle contract |
+| [STEP-0047](./STEP-0047-shared-host-install-open.md) | complete | M5 | 实现共享 Host install/open |
+| [STEP-0048](./STEP-0048-permission-records.md) | complete | M5 | 实现权限记录与 prompt contract |
+| [STEP-0049](./STEP-0049-lifecycle-process-supervision.md) | complete | M5 | 实现 lifecycle/process supervision |
+| [STEP-0050](./STEP-0050-minimal-ui-wit-renderer.md) | complete | M5 | 实现最小 UI WIT/renderer |
+| [STEP-0051](./STEP-0051-windows-desktop-host-integration.md) | complete | M5 | 集成 Windows Desktop Host |
+| [STEP-0052](./STEP-0052-desktop-platform-adapters-parity.md) | complete | M5 | 固定 desktop platform adapters/parity |
+| [STEP-0053](./STEP-0053-m5-quality-exit-audit.md) | complete | M5 | 完成 M5 quality/exit audit |
+| [STEP-0054](./STEP-0054-android-host-contract.md) | complete | M6 | 冻结 Android Host contract |
+| [STEP-0055](./STEP-0055-mobile-host-jni-boundary.md) | complete | M6 | 实现 Mobile Host/JNI boundary contract |
+| [STEP-0056](./STEP-0056-android-intent-package-ingest.md) | complete | M6 | 实现 Android Intent/package ingestion contract |
+| [STEP-0057](./STEP-0057-android-permission-storage.md) | complete | M6 | 映射 Android permission/storage |
+| [STEP-0058](./STEP-0058-android-runtime-lifecycle.md) | complete | M6 | 冻结 Android Runtime/lifecycle contract |
+| [STEP-0059](./STEP-0059-android-native-ui-adapter.md) | complete | M6 | 适配 Android native UI contract |
+| [STEP-0060](./STEP-0060-desktop-android-parity-app.md) | partial-runtime-evidence | M6 | 验证 Desktop/Mobile core parity；Android runner deferred |
+| [STEP-0061](./STEP-0061-m6-quality-exit-audit.md) | complete / NO-GO | M6 | 完成 M6 host audit，保留外部 runner 阻塞 |
+| [STEP-0062](./STEP-0062-ecosystem-release-contract.md) | complete | M7 | 冻结 ecosystem/release trust 与 compatibility contract |
 
-下一可用编号：`STEP-0046`。
+下一可用编号：`STEP-0063`。

@@ -42,4 +42,4 @@
 
 ## 5. Immediate next step
 
-Provision a licensed Android SDK/NDK, ADB, x86_64 emulator and arm64 device. Resume STEP-0060 with same-digest Android execution, lifecycle and native UI evidence, then repeat STEP-0061. M7 remains blocked until that audit returns GO.
+Provision a licensed Android SDK/NDK, ADB, x86_64 emulator and arm64 device. Resume STEP-0060 with same-digest Android execution, lifecycle and native UI evidence, then repeat STEP-0061. This gate still controls M6 and Android support claims; ADR-0006 later authorized platform-independent M7 work while mobile tracks are deferred.

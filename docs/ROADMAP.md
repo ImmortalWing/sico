@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-16
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M6
+> - current phase: M7 platform-independent track; M6 mobile deferred
 
 ## Status vocabulary
 
@@ -127,15 +127,15 @@ Entry gate：satisfied by STEP-0014。
 
 ## M7: 生态、工具与发布
 
-状态：`planned-blocked`（等待 M6 GO）
+状态：`in-progress`（platform-independent track；mobile/final exit gated）
 
 主要交付：标准库稳定边界、包发布与发现、身份/签名/安全更新、LSP、AI 工具协议、真实应用和第三方 Component 试点。
 
-进入条件：M4-M6 的发布、运行和平台能力稳定。
+进入条件：平台无关工作由 M4/M5 的 package/Desktop contracts 支撑；移动发布声明仍要求相应平台证据。
 
 退出证据：外部开发者无需修改编译器或 Runtime 即可完成开发、检查、构建、发布、安装、运行和调试。
 
-执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069；在 M6 Android runner gate GO 前不开始实现。
+执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。STEP-0062 已完成生态威胁模型、role-separated trust 与 12-surface compatibility contract。STEP-0063–0068 可推进平台无关实现；Android/Harmony 和最终项目退出证据保持独立 gate。
 
 ## Immediate dependency chain
 

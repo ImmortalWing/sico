@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目已完成 M0–M5。M6 STEP-0054–0061 的 Android-neutral Host、Intent、permission、lifecycle、native UI contract、Desktop/Mobile parity 与审计已完成，但退出结论为 NO-GO：当前缺少 licensed Android SDK/NDK、ADB、emulator/device，尚无 Android Runtime 与原生 UI 真机证据。下一步是恢复 STEP-0060 device validation；M7 计划已形成但仍被 M6 GO 门槛阻塞。
+项目已完成 M0–M5。M6 host-side 契约与测试已完成，但 Android SDK/NDK、构建工程和 runner 均缺失，退出结论仍为 NO-GO。按 2026-07-16 的路线调整，Android 与尚未规划的 Harmony 路径后推；M7 的平台无关轨已完成 STEP-0062 生态/发布威胁模型与兼容契约，但不得据此宣称移动端或最终 M7 完成。
 
 ## 文档
 
@@ -44,4 +44,4 @@ Sico Runtime / Sico Host
 - M4 已完成 canonical `.sapp`、strict loader、development signature/trust、capability closure、isolated storage/WASI、Runtime limits/faults、package CLI/cache 与 security/property baseline；结论见 [M4 exit audit](./docs/reports/m4-exit-audit.md)。
 - M5 已完成 Windows runtime-verified Desktop Host 与 macOS/Linux contract artifacts；结论见 [M5 exit audit](./docs/reports/m5-exit-audit.md)。
 - M6 [Android Host plan](./docs/plans/M6-android-host.md) 的 host-side work 已执行至 STEP-0061；按 [M6 exit audit](./docs/reports/m6-exit-audit.md) 提供 Android runner 后恢复 STEP-0060。raw Component 仍只作为 compiler regression boundary，不是应用分发格式。
-- M7 [ecosystem and release plan](./docs/plans/M7-ecosystem-release.md) 已规划 STEP-0062–0069，但在 M6 GO 前不开始实现。
+- M7 [ecosystem and release plan](./docs/plans/M7-ecosystem-release.md) 采用分轨推进：STEP-0062 平台无关契约已完成，STEP-0063–0068 可在各自授权边界内继续；Android、Harmony 与最终退出证据仍单独受控。

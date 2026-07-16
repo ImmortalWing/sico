@@ -4,6 +4,8 @@
 > - date: 2026-07-16
 > - phase: M6
 
+> Sequencing note (2026-07-16): M6 remains NO-GO. ADR-0006 supersedes only the original whole-M7 sequencing restriction and permits platform-independent work while mobile support and final exit stay gated.
+
 NO-GO: M6 blocked at Android runner exit gate; resume STEP-0060 device validation before M7.
 
 ## Requirement audit
@@ -29,4 +31,4 @@ The exact required matrix is recorded in `tests/android-host/runner-gate.json`: 
 
 ## M7 disposition
 
-The M7 execution plan is drafted but remains blocked by M6 GO. No M7 implementation step is authorized until the Android runner gate passes.
+The original audit blocked all M7 implementation. ADR-0006 later narrowed that sequencing rule: platform-independent STEP-0062–0068 work may proceed, while M6, Android support and the final M7/project exit remain blocked on real platform evidence.

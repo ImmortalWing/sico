@@ -1,15 +1,15 @@
-# Sico 任务交接：M6 Android runner 恢复与 M7 入口
+# Sico 任务交接：移动平台后推与 M7 平台无关轨
 
 > - 更新时间：2026-07-16
 > - 仓库：`E:\github\sico`
 > - 分支：`main`
 > - 远端：`https://gitcode.com/ImmortalWings/sico.git`
-> - 交接基线：`a7f8d5171b757b4d9b5c619b6456ee5eb6b4d72a`
-> - 工作区状态：交接文档编写前 clean
+> - 交接基线：以包含本文件的当前 `git HEAD` 为准
+> - 工作区状态：STEP-0062 提交后应为 clean
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 STEP-0054–0061 的共享核心、平台契约、host-side 测试和审计已完成，但 M6 仍为 `blocked-external-runner`。不得开始 M7 STEP-0062，直到同一份签名 `.sapp` 在 Desktop 与真实 Android runner 上运行并通过重复的 STEP-0061 GO 审计。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。按仓库所有者 2026-07-16 的路线调整，Android 和 Harmony 路径后推，平台无关 M7 工作可先行；STEP-0062 已完成，但最终 M7/移动支持仍需各平台真实证据。
 
 当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
 
@@ -30,7 +30,7 @@ M0–M5 已 GO；M6 STEP-0054–0061 的共享核心、平台契约、host-side 
 
 ## 3. 当前真实阻塞
 
-本机复查结果：无 Android SDK、NDK、ADB、AVD、emulator、Gradle 或已连接设备。Rust 已安装：
+本机复查结果：无 Android SDK、NDK、ADB、AVD、emulator、Gradle、Java 或已连接设备；仓库也没有可构建 Android Host。当前 stable Rust 为 1.97.0，但 Android Rust targets 未安装。旧快照曾记录以下 targets，不代表当前环境：
 
 - `aarch64-linux-android`
 - `x86_64-linux-android`
@@ -126,11 +126,11 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 
 只有所有 M6 exit gate 有真实证据时，才把 M6 plan、ROADMAP、STATUS、README 与 audit 同步改为 GO/complete。
 
-## 6. M7 交接边界
+## 6. M7 分轨交接边界
 
-M6 GO 后从 STEP-0062 开始，不跳号、不直接进入 registry 或 production signing：
+平台无关轨可继续，但不直接进入公开 registry、真实 production signing 或移动支持声明：
 
-1. STEP-0062：生态/发布 threat model 与兼容契约；
+1. STEP-0062：生态/发布 threat model 与兼容契约（已完成）；
 2. STEP-0063：production publisher identity、key custody/rotation/revocation；
 3. STEP-0064：signed registry publish/discovery/download；
 4. STEP-0065：安全更新与回滚；
@@ -175,4 +175,6 @@ M6 GO 后从 STEP-0062 开始，不跳号、不直接进入 registry 或 product
 - [ ] STEP-0061 从 NO-GO 转为 GO；
 - [ ] STATUS、ROADMAP、README、M6/M7 plan 与验证器同步；
 - [ ] 每个非平凡步骤单独提交并推送；
-- [ ] M6 GO 后才启动 STEP-0062。
+- [x] STEP-0062 平台无关契约完成，且 M6 仍保持 blocked；
+- [ ] production identity/key custody/public service 遇到所有者决策边界时停止；
+- [ ] Android 与 Harmony 仅在各自工具链、实现和 runner 具备后恢复。

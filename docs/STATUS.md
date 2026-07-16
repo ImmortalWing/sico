@@ -1,23 +1,23 @@
 # Sico project status
 
 > - updated: 2026-07-16
-> - phase: M6 Sico Android Host
-> - phase status: blocked-external-runner
-> - current step: STEP-0060 (device validation blocked)
-> - last completed step: STEP-0061 (NO-GO audit)
-> - next step: provision licensed Android runner and resume STEP-0060
+> - phase: M7 platform-independent track; M6 mobile track deferred
+> - phase status: in-progress with mobile-platform gates
+> - current step: STEP-0063 (production identity/key lifecycle boundary)
+> - last completed step: STEP-0062
+> - next step: define local production identity/key fixtures; request owner decisions before real credentials or public services
 
 ## 0. M6 exit state
 
-STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no licensed Android SDK/NDK, ADB, emulator or device; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. M7 STEP-0062–0069 is planned but blocked until the runner gate passes.
+STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no Android build toolchain, buildable Host or runner; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. Android and Harmony tracks are deferred. Platform-independent M7 work may proceed, and STEP-0062 is complete, but mobile and final project exit claims remain gated.
 
 ## 1. Current objective
 
-当前目标是解除 M6 Android runner 外部阻塞：取得 licensed SDK/NDK、ADB、x86_64 emulator 与 arm64 device，补齐可构建 APK/JNI/HostActivity，然后恢复 STEP-0060 device parity。
+当前目标是推进不依赖移动 runner 的生态、工具与发布工作。生产身份、密钥托管和公开服务遇到所有者决策边界时停止该子轨，并优先推进标准库/依赖、LSP 或 AI tooling；Android STEP-0060/0061 与 Harmony 可行性路径保留为后置平台轨。
 
 ## 2. Current step
 
-[`STEP-0061`](./steps/STEP-0061-m6-quality-exit-audit.md) 已完成 host-side 审计并判定 NO-GO。当前恢复点是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
+[`STEP-0062`](./steps/STEP-0062-ecosystem-release-contract.md) 已冻结 32 项生态威胁、12 个兼容面和 registry-untrusted/role-separated trust 边界。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
 
 ## 3. Verified repository facts
 
@@ -145,6 +145,8 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 
 M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB、x86_64 emulator/AVD 或 arm64 device。仓库也尚无可构建 Gradle Android Host、`HostActivity`、JNI `cdylib` 或 APK。用户接受许可并提供 runner 后，仍需先补齐这些实现，不能直接把 cross-check 视为 Runtime evidence。
 
+2026-07-16 复查还确认当前 stable Rust 1.97.0 未安装 Android targets；仓库固定的 version-named toolchain 未单独安装，但同版本 stable toolchain 可用于平台无关工作。Harmony 没有 SDK、DevEco、仓库计划或实现；当前状态是 deferred scope，而不是已完成或已验证的目标。
+
 真实 AI API 批量评测仍需要模型凭据和成本授权；协议和离线工具已经完成，因此该条件不阻塞 STEP-0015/M1。没有真实调用前不产生模型分数。
 
 ## 7. Risks
@@ -160,4 +162,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 准备 licensed Android runner，恢复 STEP-0060，完成同 digest Android Runtime、Intent/lifecycle/native UI 与性能证据，再重跑 STEP-0061。只有 M6 GO 后才能进入 M7 STEP-0062。
+执行 STEP-0063 的本地 production identity/key lifecycle contract 与 fixtures；在法律身份、真实 root custody、公开透明身份或外部服务前请求仓库所有者决定。若该子轨等待决定，则按 [`M7 plan`](./plans/M7-ecosystem-release.md) 推进 STEP-0066/0067/0068 的平台无关工作。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复，Harmony 先建立独立可行性/契约步骤再实现。

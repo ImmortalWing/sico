@@ -1,0 +1,32 @@
+{
+  "schema": "sico.platform.environment-recheck.v0",
+  "date": "2026-07-16",
+  "host": "x86_64-pc-windows-gnu",
+  "rust": {
+    "path_on_process_path": false,
+    "stable_toolchain": "1.97.0",
+    "pinned_named_toolchain_installed": false,
+    "installed_targets": ["wasm32-unknown-unknown", "wasm32-wasip2", "x86_64-pc-windows-gnu"],
+    "android_targets_installed": false,
+    "workaround": "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu"
+  },
+  "android": {
+    "sdk": false,
+    "ndk": false,
+    "adb": false,
+    "avd": false,
+    "emulator": false,
+    "gradle": false,
+    "java": false,
+    "connected_device": false,
+    "repository_buildable_host": false
+  },
+  "harmony": {
+    "deveco_studio": false,
+    "sdk": false,
+    "hdc": false,
+    "repository_plan": false,
+    "repository_implementation": false
+  },
+  "conclusion": "mobile-platform-tracks-deferred; platform-independent ecosystem work may proceed without claiming M6 or mobile support"
+}
