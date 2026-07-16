@@ -38,8 +38,8 @@ if ($rfc -notmatch '(?m)^> - status: accepted\r?$' -or -not $rfc.Contains('regis
     throw 'RFC-0022 is incomplete'
 }
 if ($step -notmatch '(?m)^> - status: complete\r?$') { throw 'STEP-0062 is not complete' }
-if ($plan -notmatch '(?m)^> - status: in-progress, platform-independent track\r?$' -or -not $plan.Contains('Mobile platform gates')) {
-    throw 'M7 split-track plan is incomplete'
+if ($plan -notmatch '(?m)^> - status: local-complete, blocked-external-evidence\r?$' -or -not $plan.Contains('Mobile platform gates')) {
+    throw 'M7 completion disposition is incomplete'
 }
 if ($runner.status -ne 'blocked-external-runner' -or $runner.available.licensed_sdk -or $runner.available.adb) {
     throw 'M6 Android runner gate must remain blocked'
@@ -52,4 +52,3 @@ if ($environment.rust.stable_toolchain -ne '1.97.0' -or $environment.rust.androi
 }
 
 Write-Output 'STEP_0062_OK threats=32 areas=8 compatibility_surfaces=12 trust=role-separated registry=untrusted mobile=deferred m6=blocked next=STEP-0063'
-

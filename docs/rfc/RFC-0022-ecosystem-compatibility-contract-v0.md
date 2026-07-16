@@ -100,7 +100,7 @@ STEP-0062 acceptance requires:
 - a reproducible validator that also proves M6 remains blocked and the platform recheck does not claim mobile evidence;
 - no production credential, public namespace or external publish side effect.
 
-Implementation acceptance remains deferred to STEP-0063–0066. Final M7 acceptance remains deferred to STEP-0069 and cannot use Desktop-only evidence to claim mobile support.
+STEP-0063–0066 subsequently accepted the repository-local implementation. STEP-0069 records the final disposition: the local M7 track is complete, while product acceptance remains blocked on independent, production and target-platform evidence; Desktop-only evidence cannot claim mobile support.
 
 ## Links
 
@@ -109,4 +109,3 @@ Implementation acceptance remains deferred to STEP-0063–0066. Final M7 accepta
 - [TUF specification v1.0.35](https://theupdateframework.github.io/specification/v1.0.35/)
 - [Sigstore overview](https://docs.sigstore.dev/)
 - [OCI Distribution Specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
-

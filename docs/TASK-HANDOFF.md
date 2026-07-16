@@ -3,9 +3,10 @@
 > - 更新时间：2026-07-16
 > - 仓库：`E:\github\sico`
 > - 分支：`main`
+> - 当前版本：`v0.0.1`
 > - 远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；`github=https://github.com/ImmortalWing/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
-> - 工作区状态：STEP-0069 提交后应为 clean
+> - 工作区状态：版本准备提交后应为 clean；推送与远端标签由所有者明确触发
 
 ## 1. 一句话状态
 

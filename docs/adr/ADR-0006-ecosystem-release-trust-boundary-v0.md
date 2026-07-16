@@ -6,6 +6,8 @@
 > - supersedes: -
 > - superseded-by: -
 
+> Disposition update (2026-07-16): STEP-0062–0069 repository-local work, including the clean-room pilot, is complete. The decision's external gate remains in force for an actual independent pilot, production services and every claimed target platform; see the M7 exit audit.
+
 ## Context
 
 M4 established canonical `.sapp` bytes, strict local verification and development signatures. M5 established immutable installed revisions and app identity derived from app id plus signer. Those controls do not establish a production publisher, namespace ownership, registry freshness, revocation or secure update policy. An untrusted registry can replay, omit, fork or substitute metadata even when individual blobs are content-addressed.
@@ -48,7 +50,7 @@ Sigstore-style identity certificates and transparency proofs remain an allowed p
 5. Release selection uses signed immutable records and monotonic trusted state. Snapshot/release versions cannot decrease; online metadata expires; one snapshot binds a consistent repository view.
 6. Activation is staged and atomic. The last verified revision remains recoverable until the new revision passes every gate. Automatic rollback is not an exception to signature, identity or capability checks.
 7. Transparency/inclusion evidence is required for public publication design, but it supplements rather than replaces publisher authorization and local verification.
-8. Android and Harmony platform delivery are deferred tracks. STEP-0062–0068 may proceed where their evidence is platform-neutral; STEP-0069 and the final M7 exit remain blocked on declared platform pilots, including the unresolved M6 gate unless a later accepted roadmap decision changes product support.
+8. Android and Harmony platform delivery are deferred tracks. Platform-neutral repository work may proceed, including STEP-0069's clean-room drill, but an actual independent/platform pilot and the final M7 exit remain blocked on external evidence, including the unresolved M6 gate unless a later accepted roadmap decision changes product support.
 
 ## Consequences
 
@@ -76,4 +78,3 @@ Cost: production publication needs multiple signed record types, retained client
 - [`RFC-0022`](../rfc/RFC-0022-ecosystem-compatibility-contract-v0.md)
 - [`RFC-0015`](../rfc/RFC-0015-sapp-package-format-v0.md)
 - [`RFC-0016`](../rfc/RFC-0016-development-signing-trust-v0.md)
-

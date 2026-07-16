@@ -12,7 +12,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 2. Entry and decision gates
 
-- STEP-0062–0068 may implement platform-independent contracts, fixtures and tools without claiming Android or Harmony support.
+- STEP-0062–0068 implemented platform-independent contracts, fixtures and tools, and STEP-0069 completed the local clean-room drill. None of this evidence claims Android or Harmony support.
 - M6 remains `blocked-external-runner`; the same exact signed `.sapp` still requires verified Desktop and Android execution before Android support or M6 completion is claimed.
 - HarmonyOS/OpenHarmony has no accepted plan or implementation. It is deferred scope, not a supported or blocked-complete platform.
 - Production publisher identity, key custody, rotation and revocation require repository-owner decisions and must not reuse development keys.

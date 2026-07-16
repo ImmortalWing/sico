@@ -52,7 +52,7 @@ git diff --check
 
 No Android or Harmony build command is claimed as executed. The validator freezes documentation completeness and the truthful blocked/proposed status only.
 
-Validation result: `STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=23 harmony_links=28 current=STEP-0063 next=STEP-0071`. Local links, `git diff --check`, Rust formatting, Clippy with warnings denied and the complete offline locked workspace test suite passed.
+Latest regression result: `STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=23 harmony_links=28 sequence=closed-local next=external-evidence-or-STEP-0072`. Local links, `git diff --check`, Rust formatting, Clippy with warnings denied and the complete offline locked workspace test suite passed. The original out-of-order documentation sequence is retained in Git history rather than presented as the current step.
 
 ## 7. Risks and follow-ups
 
