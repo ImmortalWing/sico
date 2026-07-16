@@ -62,4 +62,4 @@ if ($environment.android.sdk -or $environment.android.ndk -or $environment.andro
     throw 'environment recheck no longer matches the documentation-only blocked/proposed claim'
 }
 
-Write-Output "STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=$androidLinks harmony_links=$harmonyLinks current=STEP-0063 next=STEP-0071"
+Write-Output "STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=$androidLinks harmony_links=$harmonyLinks current=STEP-0063 next=STEP-0072"

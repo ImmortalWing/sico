@@ -1,0 +1,40 @@
+{
+  "schema": "sico.linux-documentation-contract.v0",
+  "reviewedOn": "2026-07-16",
+  "claim": "documentation-only",
+  "status": "contract-verified-not-runtime-verified",
+  "existing": {
+    "desktopHostCrate": true,
+    "associationArtifacts": true,
+    "associationApply": false,
+    "nativePermissionDialog": false,
+    "nativeUiRenderer": false,
+    "linuxRunnerEvidence": false,
+    "fileOpenIsCurrentlyRunnable": false
+  },
+  "targets": {
+    "primary": "x86_64-unknown-linux-gnu",
+    "secondaryProposed": "aarch64-unknown-linux-gnu",
+    "libc": "glibc",
+    "minimumGlibcMustBeFrozen": true
+  },
+  "desktop": {
+    "toolkitProposed": "GTK4",
+    "sessions": ["GNOME-Wayland", "KDE-Wayland", "X11-fallback"],
+    "mime": "application/vnd.sico.sapp",
+    "extension": ".sapp",
+    "openFieldCode": "%f",
+    "invokesShell": false,
+    "mustNotSetDefaultSilently": true
+  },
+  "implementationOrder": [
+    "split-linux-artifact-generator",
+    "xdg-default-path-and-trust-runtime-config",
+    "association-apply-remove",
+    "copy-before-verify-ingress",
+    "gtk4-permission-and-ui",
+    "single-instance-ipc-and-process-supervision",
+    "runtime-and-desktop-matrix",
+    "packaging-and-release-evidence"
+  ]
+}

@@ -45,4 +45,4 @@ Sico Runtime / Sico Host
 - M5 已完成 Windows runtime-verified Desktop Host 与 macOS/Linux contract artifacts；结论见 [M5 exit audit](./docs/reports/m5-exit-audit.md)。
 - M6 [Android Host plan](./docs/plans/M6-android-host.md) 的 host-side work 已执行至 STEP-0061；按 [M6 exit audit](./docs/reports/m6-exit-audit.md) 提供 Android runner 后恢复 STEP-0060。raw Component 仍只作为 compiler regression boundary，不是应用分发格式。
 - M7 [ecosystem and release plan](./docs/plans/M7-ecosystem-release.md) 采用分轨推进：STEP-0062 平台无关契约已完成，STEP-0063–0068 可在各自授权边界内继续；Android、Harmony 与最终退出证据仍单独受控。
-- 延后平台的恢复说明已保存在 [Android 与鸿蒙开发手册](./docs/platforms/README.md)；这些手册是 STEP-0070 的文档产物，不代表 APK/HAP、JNI/Node-API 或真机 Runtime 已实现。
+- 延后平台的恢复说明已保存在 [Android、鸿蒙与 Linux 平台开发手册](./docs/platforms/README.md)；STEP-0070/0071 文档不代表 APK/HAP、JNI/Node-API、Linux GTK/关联或目标平台 Runtime 已实现。

@@ -5,7 +5,7 @@
 > - phase status: in-progress with mobile-platform gates
 > - current step: STEP-0063 (production identity/key lifecycle boundary)
 > - last completed sequential step: STEP-0062
-> - last completed support step: STEP-0070 (mobile development documentation; implementation sequence remains STEP-0063)
+> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0063)
 > - next step: define local production identity/key fixtures; request owner decisions before real credentials or public services
 
 ## 0. M6 exit state
@@ -18,7 +18,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 2. Current step
 
-[`STEP-0062`](./steps/STEP-0062-ecosystem-release-contract.md) 已冻结 32 项生态威胁、12 个兼容面和 registry-untrusted/role-separated trust 边界。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 已保存 Android/鸿蒙详细开发与验收手册，但没有改变平台状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
+[`STEP-0062`](./steps/STEP-0062-ecosystem-release-contract.md) 已冻结 32 项生态威胁、12 个兼容面和 registry-untrusted/role-separated trust 边界。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 已保存 Android/鸿蒙/Linux 详细开发与验收手册，但没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
 
 ## 3. Verified repository facts
 

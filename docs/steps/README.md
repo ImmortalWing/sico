@@ -78,5 +78,6 @@
 | [STEP-0061](./STEP-0061-m6-quality-exit-audit.md) | complete / NO-GO | M6 | 完成 M6 host audit，保留外部 runner 阻塞 |
 | [STEP-0062](./STEP-0062-ecosystem-release-contract.md) | complete | M7 | 冻结 ecosystem/release trust 与 compatibility contract |
 | [STEP-0070](./STEP-0070-mobile-platform-development-handbooks.md) | complete | M6/M7 docs | 保存 Android 与鸿蒙详细开发/验收手册，不改变移动 NO-GO |
+| [STEP-0071](./STEP-0071-linux-development-handbook.md) | complete | M5/M7 docs | 保存 Linux Desktop Host 详细开发/验收手册，不改变 Linux 证据等级 |
 
-下一顺序实施步骤：`STEP-0063`；下一未分配编号：`STEP-0071`（STEP-0063–0069 已由 M7 计划分配）。
+下一顺序实施步骤：`STEP-0063`；下一未分配编号：`STEP-0072`（STEP-0063–0069 已由 M7 计划分配）。
