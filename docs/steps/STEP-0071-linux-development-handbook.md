@@ -53,7 +53,7 @@ git diff --check
 
 No Linux build, GTK session, file association or Runtime command is claimed as executed. Windows-hosted Rust regression only proves that the existing shared contracts remain intact.
 
-Latest regression result: `STEP_0071_OK linux=contract-verified-not-runtime-verified links=27 blockers=artifact-generator,xdg-open-config sequence=closed-local next=external-evidence-or-STEP-0072`. Local links, STEP-0070 regression, `git diff --check`, Rust formatting, Clippy with warnings denied and the complete offline locked workspace test suite passed. The original out-of-order documentation sequence is retained in Git history rather than presented as the current step.
+Latest regression result: `STEP_0071_OK linux=contract-verified-not-runtime-verified links=27 blockers=artifact-generator,xdg-open-config sequence=closed-local next=external-evidence-or-STEP-0073`. Local links, STEP-0070 regression, `git diff --check`, Rust formatting, Clippy with warnings denied and the complete offline locked workspace test suite passed. The original out-of-order documentation sequence is retained in Git history rather than presented as the current step.
 
 ## 7. Risks and follow-ups
 

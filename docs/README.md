@@ -4,6 +4,9 @@
 
 ## Current state
 
+- [用户手册](../README.md)
+- [详细用户手册目录](./user-guide/README.md)
+- [Sico 开发手册](./development/README.md)
 - [当前任务交接](./TASK-HANDOFF.md)
 - [当前状态](./STATUS.md)
 - [阶段路线图](./ROADMAP.md)

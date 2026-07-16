@@ -56,4 +56,4 @@ foreach ($needle in $requiredOpenArgs) {
 }
 
 $links = ([regex]::Matches($handbook, 'https://')).Count
-Write-Output "STEP_0071_OK linux=contract-verified-not-runtime-verified links=$links blockers=artifact-generator,xdg-open-config sequence=closed-local next=external-evidence-or-STEP-0072"
+Write-Output "STEP_0071_OK linux=contract-verified-not-runtime-verified links=$links blockers=artifact-generator,xdg-open-config sequence=closed-local next=external-evidence-or-STEP-0073"

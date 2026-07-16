@@ -6,7 +6,7 @@
 > - 当前版本：`v0.0.1`
 > - 远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；`github=https://github.com/ImmortalWing/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
-> - 工作区状态：版本准备提交后应为 clean；推送与远端标签由所有者明确触发
+> - 工作区状态：STEP-0072 提交后应为 clean；推送与远端标签由所有者明确触发
 
 ## 1. 一句话状态
 
@@ -176,6 +176,8 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - Language server core：[`sico-language-server`](../crates/sico-language-server/src/lib.rs)
 - AI tooling RFC：[`RFC-0028`](./rfc/RFC-0028-ai-tooling-inspect-fix-v0.md)
 - AI tooling core：[`sico-ai-tools`](../crates/sico-ai-tools/src/lib.rs)
+- 用户手册：[`README.md`](../README.md)、[`docs/user-guide`](./user-guide/README.md)
+- 开发手册：[`docs/development`](./development/README.md)
 - 洁净室 pilot：[`pilots/third-party-component`](../pilots/third-party-component/README.md)
 - M7 退出审计：[`m7-exit-audit.md`](./reports/m7-exit-audit.md)
 
@@ -202,5 +204,6 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [x] STEP-0069 两版洁净室 release drill/Wasmtime/security/performance 与项目审计已完成，且未冒充真实第三方证据；
 - [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
+- [x] STEP-0072 已建立根用户入口、独立开发手册、十项细分用户手册与机器文档契约；
 - [x] production identity/key custody/public service 已在所有者决策边界停止，未生成或复用生产密钥；
 - [x] Android、Harmony 与 Linux 证据等级保持未升级，等待各自工具链、实现和 runner。

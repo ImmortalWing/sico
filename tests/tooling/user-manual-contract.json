@@ -1,0 +1,35 @@
+{
+  "schema": "sico.user-manual-contract.v0",
+  "version": "0.0.1",
+  "root_readme_role": "user-entry",
+  "development_manual": "docs/development/README.md",
+  "manuals": [
+    "README.md",
+    "INSTALLATION.md",
+    "GETTING-STARTED.md",
+    "LANGUAGE-BASICS.md",
+    "CLI.md",
+    "BUILD-RUN.md",
+    "PACKAGES-AND-TRUST.md",
+    "EDITOR.md",
+    "AI-TOOLS.md",
+    "TROUBLESHOOTING.md",
+    "LIMITATIONS.md"
+  ],
+  "cli_commands": ["check", "format", "outline", "build", "run", "inspect"],
+  "verified_quick_start": {
+    "source": "tests/end-to-end/answer.sico",
+    "result": 42,
+    "package_version": "0.0.1",
+    "unsigned_development": true,
+    "development_signed": true
+  },
+  "evidence_boundaries": {
+    "production": "external-gated",
+    "android": "blocked-not-implemented",
+    "harmony": "proposed-not-implemented",
+    "linux": "contract-verified-not-runtime-verified",
+    "live_model_runs": 0,
+    "source_debugging": "unavailable"
+  }
+}

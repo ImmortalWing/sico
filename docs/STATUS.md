@@ -5,7 +5,7 @@
 > - phase status: blocked-external-evidence
 > - current step: external evidence acquisition after STEP-0069 local closure
 > - last completed sequential step: STEP-0069 (local complete; M7/product NO-GO)
-> - last completed support step: STEP-0071 (Linux development documentation)
+> - last completed support step: STEP-0072 (user/development manual information architecture)
 > - next step: resume only with third-party/production/live-model/platform evidence or a new roadmap decision
 
 ## 0. M6 exit state
@@ -19,6 +19,8 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 ## 2. Current step
 
 [`STEP-0069`](./steps/STEP-0069-third-party-pilot-m7-exit.md) 已用独立于 `examples/` 的两版洁净室应用完成 LSP/AI、Component、签名包、本地 registry、Host upgrade 和 Wasmtime `42`，并拒绝四类攻击。[`M7 exit audit`](./reports/m7-exit-audit.md) 结论为 `blocked-external-evidence`。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。
+
+[`STEP-0072`](./steps/STEP-0072-user-manual-information-architecture.md) 已把根 README 改为用户入口，将原开发状态内容迁入独立开发手册，并建立安装、入门、语言、CLI、Runtime、trust、LSP、AI、排障与限制的细分用户手册；文档变化不提高任何平台或 production 证据等级。
 
 ## 3. Verified repository facts
 
