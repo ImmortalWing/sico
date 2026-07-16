@@ -5,11 +5,11 @@
 > - 分支：`main`
 > - 远端：`https://gitcode.com/ImmortalWings/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
-> - 工作区状态：STEP-0062 提交后应为 clean
+> - 工作区状态：STEP-0070 提交后应为 clean
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。按仓库所有者 2026-07-16 的路线调整，Android 和 Harmony 路径后推，平台无关 M7 工作可先行；STEP-0062 已完成，但最终 M7/移动支持仍需各平台真实证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。按仓库所有者 2026-07-16 的路线调整，Android 和 Harmony 路径后推，平台无关 M7 工作可先行；STEP-0062 已完成，STEP-0070 已保存两平台详细开发手册，但最终 M7/移动支持仍需各平台真实证据。
 
 当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
 
@@ -161,6 +161,10 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - Kotlin adapter：[`android/host`](../android/host/src/main/kotlin/dev/sico/host)
 - M6 property test：[`android_security_properties.rs`](../crates/sico-mobile-host-core/tests/android_security_properties.rs)
 - Desktop/Mobile parity test：[`desktop_android_parity.rs`](../crates/sico-mobile-host-core/tests/desktop_android_parity.rs)
+- 移动平台开发文档索引：[`platforms/README.md`](./platforms/README.md)
+- Android 详细开发手册：[`ANDROID-DEVELOPMENT.md`](./platforms/ANDROID-DEVELOPMENT.md)
+- 鸿蒙详细开发手册：[`HARMONY-DEVELOPMENT.md`](./platforms/HARMONY-DEVELOPMENT.md)
+- 移动平台共用验收清单：[`MOBILE-SHARED-CHECKLIST.md`](./platforms/MOBILE-SHARED-CHECKLIST.md)
 
 ## 8. 接手者完成检查表
 
@@ -176,5 +180,6 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [ ] STATUS、ROADMAP、README、M6/M7 plan 与验证器同步；
 - [ ] 每个非平凡步骤单独提交并推送；
 - [x] STEP-0062 平台无关契约完成，且 M6 仍保持 blocked；
+- [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [ ] production identity/key custody/public service 遇到所有者决策边界时停止；
 - [ ] Android 与 Harmony 仅在各自工具链、实现和 runner 具备后恢复。

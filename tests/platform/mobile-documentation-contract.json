@@ -1,0 +1,34 @@
+{
+  "schema": "sico.mobile-documentation-contract.v0",
+  "reviewedOn": "2026-07-16",
+  "claim": "documentation-only",
+  "common": {
+    "bridgeEnvelopeBytes": 65536,
+    "packageBytes": 67108864,
+    "inputEventBytes": 4096,
+    "copyBeforeVerify": true,
+    "platformEvidenceIsNotTransferable": true
+  },
+  "android": {
+    "status": "blocked-not-implemented",
+    "contract": "frozen-v0",
+    "minSdk": 28,
+    "compileSdk": 36,
+    "targetSdk": 36,
+    "ndk": "27.3.13750724",
+    "abis": ["arm64-v8a", "x86_64"],
+    "rustTargets": ["aarch64-linux-android", "x86_64-linux-android"],
+    "requiredEvidence": ["x86_64-emulator", "arm64-device"]
+  },
+  "harmony": {
+    "status": "proposed-not-implemented",
+    "contract": "not-frozen",
+    "variantMustBeSelected": true,
+    "variants": ["HarmonyOS", "OpenHarmony"],
+    "preferredModel": "Stage",
+    "bridge": "ArkTS-NodeAPI-C++-stable-C-ABI-Rust",
+    "initialAbis": ["arm64-v8a", "x86_64"],
+    "rustTargets": ["aarch64-unknown-linux-ohos", "x86_64-unknown-linux-ohos"],
+    "requiredEvidence": ["arm64-device"]
+  }
+}

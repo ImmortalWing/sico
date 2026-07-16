@@ -9,6 +9,7 @@
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)
 - [阶段执行计划](./plans/README.md)
+- [Android 与鸿蒙开发手册](./platforms/README.md)
 
 ## Decision and evidence records
 

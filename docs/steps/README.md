@@ -77,5 +77,6 @@
 | [STEP-0060](./STEP-0060-desktop-android-parity-app.md) | partial-runtime-evidence | M6 | 验证 Desktop/Mobile core parity；Android runner deferred |
 | [STEP-0061](./STEP-0061-m6-quality-exit-audit.md) | complete / NO-GO | M6 | 完成 M6 host audit，保留外部 runner 阻塞 |
 | [STEP-0062](./STEP-0062-ecosystem-release-contract.md) | complete | M7 | 冻结 ecosystem/release trust 与 compatibility contract |
+| [STEP-0070](./STEP-0070-mobile-platform-development-handbooks.md) | complete | M6/M7 docs | 保存 Android 与鸿蒙详细开发/验收手册，不改变移动 NO-GO |
 
-下一可用编号：`STEP-0063`。
+下一顺序实施步骤：`STEP-0063`；下一未分配编号：`STEP-0071`（STEP-0063–0069 已由 M7 计划分配）。
