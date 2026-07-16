@@ -11,7 +11,7 @@ $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
-  & $CargoPath build --offline --locked --release -p sico-cli -p sico-desktop-host
+  & $CargoPath build --offline --locked --release -p sico-cli -p sico-app-cli -p sico-desktop-host
   if ($LASTEXITCODE -ne 0) { throw 'M5 release binaries failed to build' }
   if (Test-Path -LiteralPath $work) {
     $resolved = (Resolve-Path -LiteralPath $work).Path
@@ -20,16 +20,20 @@ try {
   }
   New-Item -ItemType Directory -Path $work | Out-Null
   $seed = Join-Path $work 'development-seed.hex'
+  $component = Join-Path $work 'hello-desktop.component.wasm'
   $package = Join-Path $work 'hello-desktop.sapp'
   $key = Join-Path $work 'trusted-key.hex'
   $store = Join-Path $work 'store'
   [IO.File]::WriteAllText($seed, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f`n")
   $sico = Join-Path $root 'target/release/sico.exe'
+  $sicoApp = Join-Path $root 'target/release/sico-app.exe'
   $hostExe = Join-Path $root 'target/release/sico-desktop-host.exe'
   $runtime = & (Join-Path $root 'tools/ensure-wasmtime.ps1')
-  & $sico build --sign-key $seed --output $package (Join-Path $root 'examples/desktop/hello-desktop.sico') | Out-Null
+  & $sico build --output $component (Join-Path $root 'examples/desktop/hello-desktop.sico') | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'representative Component build failed' }
+  & $sicoApp pack --sign-key $seed --output $package $component | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'representative package build failed' }
-  $inspected = (& $sico inspect --json $package | ConvertFrom-Json)
+  $inspected = (& $sicoApp inspect --json $package | ConvertFrom-Json)
   [IO.File]::WriteAllText($key, "$($inspected.trust.public_key)`n")
   & $hostExe open $package --store $store --trusted-key $key --runtime $runtime | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'representative host warmup failed' }

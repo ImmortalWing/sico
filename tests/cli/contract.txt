@@ -1,4 +1,4 @@
-exit=0 command=check channel=stdout status=syntax-ok,type-checker-unavailable inputs=file,stdin
+exit=0 command=check channel=stdout status=syntax-and-semantics-ok inputs=file,stdin
 exit=1 command=check channel=stderr format=text status=registered-diagnostic
 exit=1 command=check channel=stdout format=rfc-0001-json status=registered-diagnostic
 exit=0 command=format channel=stdout mode=default status=canonical-source
@@ -6,9 +6,5 @@ exit=1 command=format channel=stderr mode=check status=layout-diff
 exit=0 command=format channel=none mode=write status=file-rewritten
 exit=1 command=format channel=stderr mode=error-tree status=no-partial-output
 exit=0 command=outline channel=stdout format=text,json status=parser-top-level-only
-exit=0 command=build channel=stdout artifact=raw-component overwrite=refused inputs=file,stdin
-exit=0 command=run channel=runtime-stdout,stderr artifact=temporary-cleaned runtime=wasmtime entry=sync-scalar-main
-exit=1 command=build,run channel=stderr status=registered-source-diagnostic,no-artifact,no-runtime
-exit=2 command=build,run channel=stderr status=io,entry,unsupported-backend,runtime-error
-exit=2 command=usage,io,source-contract,unregistered-frontend channel=stderr status=tool-error
-unavailable=sapp,inspect,cache,args,capability-host,sandbox,-c,repl
+exit=0 command=build channel=stdout artifact=component-wasm overwrite=refused inputs=file,stdin
+unavailable=run,inspect,pack,-c,repl ownership=sico-app-or-future

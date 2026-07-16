@@ -1,79 +1,83 @@
-# 构建、运行与缓存
+# 编译、打包与运行
 
-## 正式用户产物
+当前模块化管线明确分为三步：
 
 ```text
-source.sico → syntax/semantics → typed Sico IR → WebAssembly Component → .sapp
+source.sico
+    │ sico build
+    ▼
+WebAssembly Component
+    │ sico-app pack
+    ▼
+.sapp
+    │ sico-app run / sico-desktop-host open
+    ▼
+Wasmtime / platform Host
 ```
 
-`.sapp` 是用户应用分发格式，包含 canonical manifest、Component、资源、hash 和可选 development signature。`--raw-component` 只保留给编译器回归，不携带应用级 trust/capability contract。
-
-## 从源码直接运行
+## 编译 Component
 
 ```powershell
-sico run --app-id dev.example.demo --app-version 0.0.1 app.sico
+sico build -o demo.component.wasm app.sico
 ```
 
-流程会编译、构建本地 development package、验证 package 和 capability closure，再交给 Wasmtime。源文件不是因为位于本地就跳过语法、语义或 package verification。
+同一源码和编译器版本产生确定性 Component。语言 CLI 不读取签名密钥、不选择 Runtime，也不创建应用缓存。
 
-## 源码缓存
-
-源码运行默认使用 domain-separated SHA-256 key。缓存位置由以下规则选择：
-
-1. `--cache-dir <DIR>`；
-2. `SICO_CACHE_DIR`；
-3. OS 临时目录下的 Sico cache。
-
-禁用缓存：
+## 构建应用包
 
 ```powershell
-sico run --no-cache app.sico
+sico-app pack `
+  --app-id dev.example.demo `
+  --app-version 0.0.2 `
+  -o demo.sapp `
+  demo.component.wasm
 ```
 
-cache hit 会重新执行 strict verification 和 app identity/version 比对。损坏或 stale cache 会被拒绝，不会自动覆盖后继续执行。`.sapp` 输入不进入源码缓存。
+`.sapp` 包含 canonical manifest、Component、资源、hash 和可选 development signature。同一输入与配置产生确定性 package bytes。写入使用临时文件并拒绝覆盖现有产物。
 
-## 构建 package
-
-```powershell
-sico build --app-id dev.example.demo --app-version 0.0.1 -o demo.sapp app.sico
-```
-
-同一输入和配置产生 deterministic package bytes。构建失败或目标已存在时不会留下半成品，也不会覆盖旧文件。
-
-## 运行 package
+## 运行应用包
 
 unsigned development package：
 
 ```powershell
-sico run --allow-unsigned-dev demo.sapp
+sico-app run --allow-unsigned-dev demo.sapp
 ```
 
 development-signed package：
 
 ```powershell
-sico run --trusted-key trusted-public-key.hex demo.sapp
+sico-app run --trusted-key trusted-public-key.hex demo.sapp
 ```
 
-详细签名流程见[包、签名与信任](./PACKAGES-AND-TRUST.md)。
+Runtime 查找顺序为 `--runtime`、`SICO_WASMTIME`、`PATH`。
 
-## Runtime stdout/stderr
+## 为什么不再直接运行源码
 
-- stdout 只转发 guest stdout/result；
-- guest stderr 先转发到 stderr，Host/tool error 也使用 stderr；
-- cache hit/miss 不污染 guest channel；
+`main` 不提供 `sico run app.sico`。显式的编译、打包、授权和运行步骤使以下边界可审计：
+
+- 编译器不获得签名密钥或 Host 权限；
+- Runtime 不隐式编译源码；
+- `.sapp` 是唯一应用信任输入；
+- 平台 Host 只消费已经验证和授权的包。
+
+旧的一体化 source-run/cache 流程保存在 `v0.0.1` 与归档分支中。
+
+## stdout、stderr 与退出码
+
+- guest stdout/result 转发到 stdout；
+- guest stderr 与 Host/tool error 使用 stderr；
 - Runtime stdin 当前关闭；
-- 非空应用参数尚不支持。
+- 非空应用参数当前拒绝；
+- timeout、资源超限和 trap 使用稳定的非零退出码。
 
 ## 能力授权
 
-Host grant 不能创造 guest 没有请求的能力：
-
 ```powershell
-sico run --grant storage.read-write --storage-root .\app-storage demo.sapp
+sico-app run `
+  --allow-unsigned-dev `
+  --grant storage.read-write `
+  --storage-root .\app-storage `
+  demo.sapp
 ```
 
-具体 capability 名称必须来自 package 的已验证声明/import closure。storage grant 缺少 `--storage-root` 会被拒绝。不要为了让程序运行而盲目添加 grant；先用 `sico inspect --json` 查看请求。
-
-## Runtime 限额
-
-manifest 限额只能收紧 Host ceiling，不能扩大权限。timeout、资源超限和 trap 使用稳定退出码。当前同步 scalar Runtime 是已验证路径；一般 imports、完整 async transport 和源级调试仍受限制。
+Host grant 不能创造 package 没有请求的能力。先用 `sico-app inspect --json` 查看已验证请求；storage grant 缺少 `--storage-root` 会被拒绝。

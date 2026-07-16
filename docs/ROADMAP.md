@@ -14,6 +14,14 @@
 | `blocked` | 存在明确外部阻塞 |
 | `superseded` | 已被新步骤或决定替代 |
 
+## Cross-cutting repository architecture
+
+| Work package | 状态 | 证据/下一步 |
+|---|---|---|
+| v0.0.1 开发历史归档 | complete | `codex/archive-v0.0.1-development-history` 已同步两个远端 |
+| OpenJDK-style modular monorepo | complete | [`ADR-0007`](./adr/ADR-0007-openjdk-style-modular-monorepo.md)、[`STEP-0073`](./steps/STEP-0073-openjdk-style-modular-monorepo.md) |
+| 语言/应用/Host 命令所有权 | complete | `sico`、`sico-app`、`sico-desktop-host`；机器边界 validator |
+
 ## M0: 设计与技术基线
 
 状态：`complete`

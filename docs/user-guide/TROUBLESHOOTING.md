@@ -1,33 +1,18 @@
 # 故障排查
 
-## `sico` 找不到
-
-确认已经构建，并使用绝对/相对路径：
+## 找不到 `sico` 或 `sico-app`
 
 ```powershell
+cargo build --locked --release -p sico-cli -p sico-app-cli
 .\target\release\sico.exe --version
+.\target\release\sico-app.exe --version
 ```
 
 或把 `target/release` 加入当前会话 `PATH`。
 
-## Rust 工具链不可用
-
-安装仓库固定工具链：
-
-```powershell
-rustup toolchain install 1.97.0-x86_64-pc-windows-gnu --profile minimal --component clippy,rustfmt
-```
-
-检查：
-
-```powershell
-rustup toolchain list
-rustc --version
-```
-
 ## Runtime 找不到
 
-错误通常发生在 `sico run`：
+错误发生在 `sico-app run`：
 
 ```powershell
 $env:SICO_WASMTIME = & .\tools\ensure-wasmtime.ps1
@@ -38,15 +23,15 @@ Test-Path $env:SICO_WASMTIME
 
 ## `source contract error InvalidUtf8`
 
-源码必须是 UTF-8，无 BOM。不要保存为 ANSI、UTF-16 或带 BOM 的 UTF-8。裸 CR 和禁止控制字符也会被拒绝。
+源码必须是 UTF-8（无 BOM），不能是 ANSI、UTF-16 或带 BOM 的 UTF-8。裸 CR 和禁止控制字符也会被拒绝。
 
 ## `refusing to overwrite`
 
-`sico build` 不覆盖已有产物。确认旧文件是否仍需保留，再手工移动/删除，或选择新的 `--output`。
+`sico build` 和 `sico-app pack` 都拒绝覆盖已有产物。确认旧文件是否需要保留，再手工移动、删除或选择新输出路径。
 
 ## `entry function main() is missing`
 
-可运行应用必须定义：
+当前可运行子集要求：
 
 ```sico
 function main() returns Int:
@@ -54,44 +39,39 @@ function main() returns Int:
 end function
 ```
 
-## `Unsupported` 或 backend refusal
+## backend refusal
 
-`sico check` 覆盖的语言比当前 codegen 更广。records、Result、function call、resource/async 等源码可能检查通过但不能构建。先缩小为同步 scalar `main()`，并查看[语言支持边界](./LANGUAGE-BASICS.md)。
+`sico check` 覆盖的语言范围比当前 codegen 更广。records、Result、部分调用、resource/async 源码可能检查通过但无法构建。参见[语言支持边界](./LANGUAGE-BASICS.md)。
 
 ## package 要求 `--trusted-key`
 
-development-signed `.sapp` 不会自动被本机信任。传入匹配的 public key 文件：
-
 ```powershell
-sico run --trusted-key trusted-public-key.hex app.sapp
+sico-app run --trusted-key trusted-public-key.hex app.sapp
 ```
 
-unsigned development package 使用 `--allow-unsigned-dev`，但仅限可信本地构建。
+自己构建的 unsigned development 包可显式使用 `--allow-unsigned-dev`。
 
 ## capability 被拒绝
 
-用 `sico inspect --json` 查看 package 实际请求。`--grant` 只能授予已请求能力；storage 还需要 `--storage-root`。
+```powershell
+sico-app inspect --json app.sapp
+```
 
-## corrupt source cache
+`--grant` 只能授予已经请求的能力；storage 还需要 `--storage-root`。
 
-缓存验证失败时 Sico 会拒绝执行，不会自动覆盖。确认没有并发或磁盘损坏后，删除明确的 cache directory，或用 `--no-cache` 重跑。不要把删除 cache 当成绕过 package trust 的方式。
+## 旧文档中的 `sico run`、源码缓存或 `--raw-component`
+
+这些属于 `v0.0.1` 的一体化开发流程。当前 `main` 使用 `sico build`、`sico-app pack`、`sico-app run`，且不提供隐式源码运行缓存。需要复现旧行为时检出 `v0.0.1` 或归档分支。
 
 ## Windows 错误 740
 
-部分测试 executable 名称可能触发 Windows installer-name heuristic，在 Rust 测试代码运行前要求 elevation。项目验证脚本使用 `__COMPAT_LAYER=RunAsInvoker` 避免该启发式；它不会提升权限。普通用户不应以管理员身份运行不可信 `.sapp`。
+部分测试可执行文件名称可能触发 Windows installer-name heuristic。仓库验证脚本在需要时使用 `__COMPAT_LAYER=RunAsInvoker`；它不会提升权限。不要以管理员身份运行不可信 `.sapp`。
 
-## 获取机器可读错误
-
-源码诊断使用：
+## 获取机器可读输出
 
 ```powershell
 sico check --json app.sico
+sico-app inspect --json app.sapp
 ```
 
-包信息使用：
-
-```powershell
-sico inspect --json app.sapp
-```
-
-自动化优先使用退出码和 schema 字段，不要依赖完整自然语言文本。
+自动化应使用退出码和 schema 字段，不应解析完整自然语言文本。

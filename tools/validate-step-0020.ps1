@@ -10,13 +10,13 @@ $contract = @(Get-Content -LiteralPath (Join-Path $root 'tests/cli/contract.txt'
 if ($contract.Count -ne 10) {
   throw "unexpected CLI contract row count: $($contract.Count)"
 }
-foreach ($command in @('check', 'format', 'outline')) {
+foreach ($command in @('check', 'format', 'outline', 'build')) {
   if (-not ($contract -match "command=.*$command")) {
     throw "CLI contract does not mention $command"
   }
 }
-if (-not ($contract -match 'type-checker') -or -not ($contract -match 'unavailable=run,build,-c,repl')) {
-  throw 'CLI contract must expose the M1/M2 and M3/M4 capability boundary'
+if (-not ($contract -match 'syntax-and-semantics') -or -not ($contract -match 'unavailable=run,inspect,pack,-c,repl')) {
+  throw 'CLI contract must expose the language/application capability boundary'
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
@@ -28,4 +28,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output 'STEP_0020_OK commands=3 input_modes=file,stdin exits=0,1,2 check=text,json format=stdout,check,write outline=text,json integrations=4 type_checker=unavailable run_build_repl=unavailable'
+Write-Output 'STEP_0020_OK commands=4 input_modes=file,stdin exits=0,1,2 check=text,json format=stdout,check,write outline=text,json build=component-wasm run_inspect_pack=sico-app'

@@ -1,0 +1,5 @@
+exit=0 command=pack channel=stdout input=component-wasm artifact=sapp deterministic=true overwrite=refused
+exit=0 command=inspect channel=stdout format=text,json execution=false
+exit=0 command=run channel=runtime-stdout,stderr input=sapp trust=explicit runtime=wasmtime
+exit=2 command=run channel=stderr status=missing-trust,invalid-package,runtime-error
+unavailable=source-input,source-cache,implicit-compile ownership=sico-language-cli

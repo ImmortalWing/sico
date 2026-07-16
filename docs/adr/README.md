@@ -10,7 +10,8 @@ ADR 记录工程与架构决定，例如 Component Runtime 引擎、`.sapp` 物�
 | [ADR-0004](./ADR-0004-desktop-host-identity-lifecycle-platform-v0.md) | accepted | Desktop app/revision identity、single-instance lifecycle 与 platform evidence boundary |
 | [ADR-0005](./ADR-0005-android-host-runtime-lifecycle-boundary-v0.md) | accepted | Android Intent/URI、JNI、Runtime、lifecycle 与 ABI evidence boundary |
 | [ADR-0006](./ADR-0006-ecosystem-release-trust-boundary-v0.md) | accepted | role-separated production trust、untrusted registry 与 mobile-deferred split track |
+| [ADR-0007](./ADR-0007-openjdk-style-modular-monorepo.md) | accepted | OpenJDK-style 单仓模块化、依赖边界与命令所有权 |
 
-下一可用编号：`ADR-0007`。
+下一可用编号：`ADR-0008`。
 
 创建时使用 [`ADR template`](../templates/ADR.md)，并在本页登记状态和替代关系。

@@ -2,8 +2,8 @@
 
 本手册面向编译器、Runtime、Host、工具链和平台适配器的开发者。只想编写和运行 Sico 程序，请从根目录的[用户手册](../../README.md)开始。
 
-> - 当前版本：`v0.0.1`
-> - Rust workspace：`0.0.1`
+> - 当前开发版本：`0.0.2-dev`
+> - 已发布归档：`v0.0.1`
 > - 工具链：`1.97.0-x86_64-pc-windows-gnu`
 > - 当前结论：仓库本地轨已闭环；跨平台生产产品仍为 `blocked-external-evidence`
 
@@ -26,6 +26,7 @@
 
 ## 架构入口
 
+- [模块边界与命令所有权](./MODULE-BOUNDARIES.md)
 - [完整架构与开发设计](../../DEVELOPMENT.md)
 - [方向与非目标](../../DIRECTION.md)
 - [语义草案](../../SEMANTICS.md)
@@ -41,7 +42,7 @@
 
 | 路径 | 用途 |
 |---|---|
-| `crates/` | 编译器、CLI、LSP、AI 工具、Runtime、Host 与生态实现 |
+| `crates/` | 编译器、语言 CLI、应用 CLI、LSP、AI 工具、Runtime、Host 与生态实现；归属由模块契约冻结 |
 | `examples/` | 设计步骤历史与编译器回归基线，不随发布试点改写 |
 | `pilots/` | 真实工作流式洁净室试点；不等于独立第三方证据 |
 | `syntax-candidates/` | 已接受 B 语法和历史候选语料 |
@@ -57,6 +58,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 cargo fmt --all -- --check
 cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --offline --workspace --all-targets --all-features
+.\tools\validate-module-boundaries.ps1
 .\tools\validate-step-0069.ps1
 ```
 

@@ -917,13 +917,13 @@ AI 修改已有项目时，推荐流程是：
 ### 15.1 计划命令
 
 ```text
-sico check      解析并检查项目
-sico fmt        生成唯一规范格式
-sico test       运行语言和应用测试
-sico build      生成 Component 与 .sapp
-sico run        在开发 Runtime 中运行
-sico inspect    查看包、imports、exports 和权限
-sico explain    展开错误编号
+sico check        解析并检查源码
+sico format       生成唯一规范格式
+sico outline      输出顶层结构
+sico build        生成 WebAssembly Component
+sico-app pack     从 Component 生成 .sapp
+sico-app inspect  查看包、imports、exports 和权限
+sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 ```
 
 实际参数在 CLI RFC 中确定。所有命令应支持机器可读模式，并使用一致的退出码规则。

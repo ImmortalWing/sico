@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "sico-ai-tools"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde",
  "serde_json",
@@ -416,8 +416,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-app-cli"
+version = "0.0.2-dev"
+dependencies = [
+ "clap",
+ "serde_json",
+ "sico-codegen-wasm",
+ "sico-ir",
+ "sico-package",
+ "sico-runtime",
+ "sico-source",
+]
+
+[[package]]
 name = "sico-cli"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "clap",
  "serde_json",
@@ -426,9 +439,7 @@ dependencies = [
  "sico-format",
  "sico-ir",
  "sico-lexer",
- "sico-package",
  "sico-parser",
- "sico-runtime",
  "sico-semantics",
  "sico-source",
  "sico-syntax",
@@ -437,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "sico-codegen-wasm"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "sico-ir",
  "sico-source",
@@ -448,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "sico-desktop-host"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "clap",
  "ed25519-dalek",
@@ -464,7 +475,7 @@ dependencies = [
 
 [[package]]
 name = "sico-diagnostics"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde_json",
  "sico-parser",
@@ -473,7 +484,7 @@ dependencies = [
 
 [[package]]
 name = "sico-ecosystem"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "ed25519-dalek",
  "serde",
@@ -485,7 +496,7 @@ dependencies = [
 
 [[package]]
 name = "sico-format"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "sico-lexer",
  "sico-parser",
@@ -494,7 +505,7 @@ dependencies = [
 
 [[package]]
 name = "sico-hir"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "sico-lexer",
  "sico-parser",
@@ -503,7 +514,7 @@ dependencies = [
 
 [[package]]
 name = "sico-host-core"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "ed25519-dalek",
  "serde",
@@ -515,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "sico-index"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde",
  "serde_json",
@@ -525,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "sico-ir"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde",
  "serde_json",
@@ -538,7 +549,7 @@ dependencies = [
 
 [[package]]
 name = "sico-language-server"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde_json",
  "sico-diagnostics",
@@ -551,7 +562,7 @@ dependencies = [
 
 [[package]]
 name = "sico-lexer"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde_json",
  "sico-source",
@@ -562,7 +573,7 @@ dependencies = [
 
 [[package]]
 name = "sico-mobile-host-core"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "ed25519-dalek",
  "serde",
@@ -578,7 +589,7 @@ dependencies = [
 
 [[package]]
 name = "sico-package"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "ed25519-dalek",
  "serde",
@@ -594,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "sico-parser"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "rowan",
  "serde_json",
@@ -605,7 +616,7 @@ dependencies = [
 
 [[package]]
 name = "sico-runtime"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "sico-codegen-wasm",
  "sico-ir",
@@ -616,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "sico-semantics"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "serde_json",
  "sico-hir",
@@ -627,14 +638,14 @@ dependencies = [
 
 [[package]]
 name = "sico-source"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "text-size",
 ]
 
 [[package]]
 name = "sico-syntax"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "rowan",
  "sico-source",
@@ -642,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "sico-third-party-pilot"
-version = "0.0.1"
+version = "0.0.2-dev"
 dependencies = [
  "ed25519-dalek",
  "serde_json",

@@ -26,7 +26,7 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'M5 workspace Clippy failed' }
   & $CargoPath test --offline --locked --workspace --all-targets --all-features
   if ($LASTEXITCODE -ne 0) { throw 'M5 workspace tests failed' }
-  & $CargoPath build --offline --locked --release -p sico-cli -p sico-desktop-host
+  & $CargoPath build --offline --locked --release -p sico-cli -p sico-app-cli -p sico-desktop-host
   if ($LASTEXITCODE -ne 0) { throw 'M5 release app tools failed' }
   if (Test-Path -LiteralPath $work) {
     $resolved = (Resolve-Path -LiteralPath $work).Path
@@ -35,15 +35,19 @@ try {
   }
   New-Item -ItemType Directory -Path $work | Out-Null
   $seed = Join-Path $work 'seed.hex'
+  $component = Join-Path $work 'hello-desktop.component.wasm'
   $package = Join-Path $work 'hello-desktop.sapp'
   $key = Join-Path $work 'trusted-key.hex'
   $store = Join-Path $work 'store'
   [IO.File]::WriteAllText($seed, "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f`n")
   $sico = Join-Path $root 'target/release/sico.exe'
+  $sicoApp = Join-Path $root 'target/release/sico-app.exe'
   $hostExe = Join-Path $root 'target/release/sico-desktop-host.exe'
-  & $sico build --sign-key $seed --output $package (Join-Path $root 'examples/desktop/hello-desktop.sico') | Out-Null
+  & $sico build --output $component (Join-Path $root 'examples/desktop/hello-desktop.sico') | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'representative Component build failed' }
+  & $sicoApp pack --sign-key $seed --output $package $component | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'representative signed package build failed' }
-  $inspected = (& $sico inspect --json $package | ConvertFrom-Json)
+  $inspected = (& $sicoApp inspect --json $package | ConvertFrom-Json)
   [IO.File]::WriteAllText($key, "$($inspected.trust.public_key)`n")
   $result = & $hostExe open $package --store $store --trusted-key $key --runtime $env:SICO_TEST_WASMTIME
   if ($LASTEXITCODE -ne 0 -or "$result".Trim() -ne '42') { throw 'representative Desktop Host result mismatch' }
@@ -57,4 +61,3 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 Write-Output 'STEP_0053_OK app=signed-sico-plus-typed-ui result=42 properties=10240 startup_runs=3 startup_iterations=20 startup_median_mean_ms=32.344 workspace=fmt,clippy,test audit=GO next=STEP-0054'
-

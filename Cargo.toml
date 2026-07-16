@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/sico-app-cli",
     "crates/sico-cli",
     "crates/sico-ai-tools",
     "crates/sico-codegen-wasm",
@@ -32,7 +33,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.0.1"
+version = "0.0.2-dev"
 edition = "2024"
 rust-version = "1.97"
 publish = false

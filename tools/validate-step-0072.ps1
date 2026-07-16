@@ -13,21 +13,28 @@ $contract = Read-RepoFile 'tests/tooling/user-manual-contract.json' | ConvertFro
 $rootReadme = Read-RepoFile 'README.md'
 $development = Read-RepoFile 'docs/development/README.md'
 $cliSource = Read-RepoFile 'crates/sico-cli/src/lib.rs'
+$appCliSource = Read-RepoFile 'crates/sico-app-cli/src/lib.rs'
 $workspace = Read-RepoFile 'Cargo.toml'
 $step = Read-RepoFile 'docs/steps/STEP-0072-user-manual-information-architecture.md'
 
-if ($contract.schema -ne 'sico.user-manual-contract.v0' -or $contract.version -ne '0.0.1' -or $contract.root_readme_role -ne 'user-entry') { throw 'user manual contract identity drifted' }
+if ($contract.schema -ne 'sico.user-manual-contract.v1' -or $contract.version -ne '0.0.2-dev' -or $contract.root_readme_role -ne 'user-entry') { throw 'user manual contract identity drifted' }
 if (@($contract.manuals).Count -ne 11 -or @($contract.manuals | Sort-Object -Unique).Count -ne 11) { throw 'user manual index must contain eleven unique files' }
 foreach ($manual in $contract.manuals) {
     $null = Read-RepoFile (Join-Path 'docs/user-guide' $manual)
 }
-if (@($contract.cli_commands).Count -ne 6 -or @($contract.cli_commands | Sort-Object -Unique).Count -ne 6) { throw 'CLI command contract drifted' }
-foreach ($command in $contract.cli_commands) {
+if (@($contract.language_cli_commands).Count -ne 4 -or @($contract.language_cli_commands | Sort-Object -Unique).Count -ne 4) { throw 'language CLI command contract drifted' }
+foreach ($command in $contract.language_cli_commands) {
     $implemented = 'Command::new("{0}")' -f $command
-    if (-not $cliSource.Contains($implemented)) { throw "CLI implementation missing documented command: $command" }
+    if (-not $cliSource.Contains($implemented)) { throw "language CLI implementation missing documented command: $command" }
     if (-not $rootReadme.Contains("sico $command")) { throw "root user entry missing command: $command" }
 }
-if (-not $workspace.Contains('version = "0.0.1"') -or -not $rootReadme.Contains('`v0.0.1`')) { throw 'documented version does not match workspace' }
+if (@($contract.application_cli_commands).Count -ne 3 -or @($contract.application_cli_commands | Sort-Object -Unique).Count -ne 3) { throw 'application CLI command contract drifted' }
+foreach ($command in $contract.application_cli_commands) {
+    $implemented = 'Command::new("{0}")' -f $command
+    if (-not $appCliSource.Contains($implemented)) { throw "application CLI implementation missing documented command: $command" }
+    if (-not $rootReadme.Contains("sico-app $command")) { throw "root user entry missing application command: $command" }
+}
+if (-not $workspace.Contains('version = "0.0.2-dev"') -or -not $rootReadme.Contains('`0.0.2-dev`')) { throw 'documented version does not match workspace' }
 if (-not $rootReadme.StartsWith('# Sico ') -or -not $rootReadme.Contains('docs/user-guide/README.md') -or -not $rootReadme.Contains('docs/development/README.md')) { throw 'root README is not the user entry' }
 if (-not $development.StartsWith('# Sico ') -or -not $development.Contains('../../DEVELOPMENT.md') -or -not $development.Contains('../user-guide/README.md')) { throw 'development handbook migration is incomplete' }
 
@@ -36,7 +43,7 @@ $trust = Read-RepoFile 'docs/user-guide/PACKAGES-AND-TRUST.md'
 $editor = Read-RepoFile 'docs/user-guide/EDITOR.md'
 $ai = Read-RepoFile 'docs/user-guide/AI-TOOLS.md'
 $limits = Read-RepoFile 'docs/user-guide/LIMITATIONS.md'
-foreach ($needle in 'function main() returns Int:','sico check hello.sico','sico run hello.sico','sico build --app-id','sico inspect hello.sapp','--allow-unsigned-dev') {
+foreach ($needle in 'function main() returns Int:','sico check hello.sico','sico build -o hello.component.wasm','sico-app pack','sico-app inspect hello.sapp','sico-app run --allow-unsigned-dev') {
     if (-not $gettingStarted.Contains($needle)) { throw "quick start invariant missing: $needle" }
 }
 foreach ($needle in 'development-valid-untrusted','CSPRNG','production key','--trusted-key') {
@@ -66,4 +73,4 @@ if ($badLinks.Count -ne 0) {
     throw "broken Markdown links:$([Environment]::NewLine)$details"
 }
 
-Write-Output 'STEP_0072_OK version=0.0.1 manuals=11 commands=6 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'
+Write-Output 'STEP_0072_OK version=0.0.2-dev manuals=11 language_commands=4 app_commands=3 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'

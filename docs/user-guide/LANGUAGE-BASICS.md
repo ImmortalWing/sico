@@ -1,6 +1,6 @@
 # 语言基础与可运行子集
 
-Sico `v0.0.1` 使用 B Labeled Blocks 语法。语言前端已经能检查比 Runtime codegen 更丰富的类型和控制流，因此必须区分“检查通过”和“可以构建运行”。
+Sico `main`（`0.0.2-dev`）使用 B Labeled Blocks 语法。语言前端已经能检查比 Runtime codegen 更丰富的类型和控制流，因此必须区分“检查通过”和“可以构建运行”。
 
 ## 源文件规则
 
@@ -33,7 +33,7 @@ function identity(value: Int) returns Int:
 end function
 ```
 
-参数使用 `name: Type`，返回类型写在 `returns` 后。语义检查支持函数声明和调用，但 `v0.0.1` 的 scalar codegen 仍会对部分函数调用或复杂 operation 返回明确的 `Unsupported`；不要仅凭 `sico check` 成功就假定可运行。
+参数使用 `name: Type`，返回类型写在 `returns` 后。语义检查支持函数声明和调用，但当前 scalar codegen 仍会对部分函数调用或复杂 operation 返回明确的 `Unsupported`；不要仅凭 `sico check` 成功就假定可运行。
 
 ## 变量与控制流
 

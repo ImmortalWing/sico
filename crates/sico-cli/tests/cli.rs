@@ -7,7 +7,6 @@ use std::{
 };
 
 use serde_json::Value;
-use sico_package::verify;
 
 static TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -177,20 +176,19 @@ fn outline_freezes_order_kinds_ranges_and_json() {
 }
 
 #[test]
-fn build_emits_deterministic_package_and_preserves_raw_boundary() {
+fn build_emits_a_deterministic_component() {
     let source = root().join("tests/end-to-end/answer.sico");
-    let first = temp_file("answer-1.sapp");
-    let second = temp_file("answer-2.sapp");
-    let third = temp_file("answer-stdin.sapp");
+    let first = temp_file("answer-1.component.wasm");
+    let second = temp_file("answer-2.component.wasm");
+    let third = temp_file("answer-stdin.component.wasm");
 
     let output = run(["build", "--output", path(&first), path(&source)], None);
     assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
     assert!(stdout(&output).starts_with("built "));
     assert!(output.stderr.is_empty());
     let first_bytes = fs::read(&first).unwrap();
-    let package = verify(&first_bytes).unwrap();
     wasmparser::Validator::new()
-        .validate_all(&package.component)
+        .validate_all(&first_bytes)
         .unwrap();
 
     let output = run(["build", "--output", path(&second), path(&source)], None);
@@ -249,155 +247,10 @@ fn build_emits_deterministic_package_and_preserves_raw_boundary() {
     assert!(stderr(&output).contains("entry function main() is missing"));
     assert!(!no_entry.exists());
 
-    let raw = temp_file("answer-raw.component.wasm");
-    let output = run(
-        [
-            "build",
-            "--raw-component",
-            "--output",
-            path(&raw),
-            path(&source),
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    wasmparser::Validator::new()
-        .validate_all(&fs::read(&raw).unwrap())
-        .unwrap();
-
     fs::remove_file(first).unwrap();
     fs::remove_file(second).unwrap();
     fs::remove_file(third).unwrap();
-    fs::remove_file(raw).unwrap();
     fs::remove_file(no_main).unwrap();
-}
-
-#[test]
-fn inspect_signing_trust_and_argument_contract() {
-    let Some(runtime) = std::env::var_os("SICO_TEST_WASMTIME") else {
-        return;
-    };
-    let runtime = runtime.to_str().unwrap();
-    let source = root().join("tests/end-to-end/answer.sico");
-    let seed = temp_file("development-seed.hex");
-    fs::write(
-        &seed,
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\n",
-    )
-    .unwrap();
-    let package = temp_file("signed-answer.sapp");
-    let output = run(
-        [
-            "build",
-            "--sign-key",
-            path(&seed),
-            "--output",
-            path(&package),
-            path(&source),
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-
-    let output = run(["inspect", "--json", path(&package)], None);
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    let inspected: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(inspected["schema"], "sico.sapp.inspect.v0");
-    assert_eq!(inspected["app"]["id"], "dev.sico.app");
-    assert_eq!(inspected["trust"]["status"], "development-valid-untrusted");
-    let public_key = inspected["trust"]["public_key"].as_str().unwrap();
-    let trusted_key = temp_file("trusted-public-key.hex");
-    fs::write(&trusted_key, format!("{public_key}\n")).unwrap();
-
-    let output = run(["run", "--runtime", runtime, path(&package)], None);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("requires --trusted-key"));
-
-    let output = run(
-        [
-            "run",
-            "--runtime",
-            runtime,
-            "--trusted-key",
-            path(&trusted_key),
-            path(&package),
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    assert_eq!(stdout(&output).trim(), "42");
-
-    let output = run(
-        [
-            "run",
-            "--runtime",
-            runtime,
-            "--trusted-key",
-            path(&trusted_key),
-            path(&package),
-            "--",
-            "argument",
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("does not accept application arguments"));
-
-    let mut tampered = fs::read(&package).unwrap();
-    let index = tampered.len() / 2;
-    tampered[index] ^= 1;
-    let broken = temp_file("tampered.sapp");
-    fs::write(&broken, tampered).unwrap();
-    let output = run(["inspect", path(&broken)], None);
-    assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("package verification failed"));
-
-    fs::remove_file(seed).unwrap();
-    fs::remove_file(package).unwrap();
-    fs::remove_file(trusted_key).unwrap();
-    fs::remove_file(broken).unwrap();
-}
-
-#[test]
-fn source_run_cache_is_auditable_and_corruption_is_not_executed() {
-    let Some(runtime) = std::env::var_os("SICO_TEST_WASMTIME") else {
-        return;
-    };
-    let runtime = runtime.to_str().unwrap();
-    let source = root().join("tests/end-to-end/answer.sico");
-    let cache = temp_file("source-cache");
-    let output = run(
-        [
-            "run",
-            "--runtime",
-            runtime,
-            "--cache-dir",
-            path(&cache),
-            path(&source),
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(0), "{}", stderr(&output));
-    let cached: Vec<_> = fs::read_dir(&cache)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect();
-    assert_eq!(cached.len(), 1);
-    fs::write(&cached[0], b"corrupt cache").unwrap();
-    let output = run(
-        [
-            "run",
-            "--runtime",
-            runtime,
-            "--cache-dir",
-            path(&cache),
-            path(&source),
-        ],
-        None,
-    );
-    assert_eq!(output.status.code(), Some(2));
-    assert!(stderr(&output).contains("refusing corrupt source cache"));
-    fs::remove_dir_all(cache).unwrap();
 }
 
 #[test]

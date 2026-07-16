@@ -19,8 +19,6 @@ sico-lexer = { path = "../sico-lexer" }
 sico-parser = { path = "../sico-parser" }
 sico-codegen-wasm = { path = "../sico-codegen-wasm" }
 sico-ir = { path = "../sico-ir" }
-sico-package = { path = "../sico-package" }
-sico-runtime = { path = "../sico-runtime" }
 sico-semantics = { path = "../sico-semantics" }
 sico-source = { path = "../sico-source" }
 sico-syntax = { path = "../sico-syntax" }
