@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 
 mod registry;
 pub use registry::*;
+mod update;
+pub use update::*;
 
 pub const POLICY_SCHEMA: &str = "sico.publisher.policy.v0";
 pub const POLICY_UPDATE_SCHEMA: &str = "sico.publisher.policy-update.v0";
@@ -582,7 +584,7 @@ fn validate_policy_shape(
     validate_disclosure(&policy.disclosure)
 }
 
-fn validate_identity(identity: &ProductionIdentity) -> Result<(), PolicyError> {
+pub(crate) fn validate_identity(identity: &ProductionIdentity) -> Result<(), PolicyError> {
     validate_name(&identity.registry_id, 64, "registry id")?;
     validate_name(&identity.namespace, 128, "namespace")?;
     validate_name(&identity.package_name, 64, "package name")?;

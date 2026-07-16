@@ -27,7 +27,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | STEP-0062 | ecosystem/release threat model and compatibility contract | **complete**: 32-threat/12-surface matrices; ADR-0006 and RFC-0022 accepted |
 | STEP-0063 | production publisher identity and key lifecycle | **complete**: canonical policy, five role thresholds, exact claims, rotation/revocation/recovery and 2,048 mutations |
 | STEP-0064 | signed registry publish/discovery/download | **complete**: four signed schemas, namespace lifecycle, immutable local transport, 3 checkpoints, 1,231 mutations and strict download reverify |
-| STEP-0065 | secure update and rollback | signed channels, monotonic policy, rollback recovery, partial/corrupt update corpus |
+| STEP-0065 | secure update and rollback | **complete**: consistent snapshots, monotonic journal, staged activation, advisories, explicit recovery and 1,592 mutations |
 | STEP-0066 | standard-library and package dependency stability | version/compatibility policy, deterministic resolution and capability closure across dependencies |
 | STEP-0067 | LSP, editor and debugging workflow | diagnostics/index-driven completion, navigation, format, run/debug and bounded protocol tests |
 | STEP-0068 | AI tooling protocol and measured evaluation | structured inspect/fix APIs, offline corpus, explicitly authorized live evaluation |
@@ -41,4 +41,4 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 5. Immediate next action
 
-Proceed to STEP-0065 secure update/rollback using STEP-0064 immutable records, local filesystem transport and test-only policies. Implement persisted monotonic trust, freeze/rollback checks, partial/corrupt update recovery and atomic activation without public operations.
+Proceed to STEP-0066 standard-library and dependency stability. Freeze compatibility identifiers, implement deterministic source-aware resolution and canonical immutable lock graphs, then verify dependency confusion, yank/revocation and transitive capability closure without external package services.

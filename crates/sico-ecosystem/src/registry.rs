@@ -632,7 +632,7 @@ pub fn verify_checkpoint_json(
     Ok(checkpoint)
 }
 
-fn verify_checkpoint_unlinked(
+pub(crate) fn verify_checkpoint_unlinked(
     bytes: &[u8],
     authority: &RegistryAuthority,
     verification_time: Option<u64>,
@@ -685,7 +685,7 @@ fn sorted_subset(older: &[String], newer: &[String]) -> bool {
     true
 }
 
-fn validate_authority(authority: &RegistryAuthority) -> Result<(), RegistryError> {
+pub(crate) fn validate_authority(authority: &RegistryAuthority) -> Result<(), RegistryError> {
     validate_name(&authority.registry_id, 64, "registry id")?;
     if authority.keys.is_empty()
         || authority.keys.len() > 16
@@ -965,7 +965,7 @@ fn validate_digest_set(values: &[String]) -> Result<(), RegistryError> {
     Ok(())
 }
 
-fn verify_authority_threshold(
+pub(crate) fn verify_authority_threshold(
     authority: &RegistryAuthority,
     signatures: &[MetadataSignature],
     payload: &[u8],

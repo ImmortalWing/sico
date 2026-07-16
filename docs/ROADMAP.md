@@ -135,7 +135,7 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：外部开发者无需修改编译器或 Runtime 即可完成开发、检查、构建、发布、安装、运行和调试。
 
-执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。STEP-0062–0064 已完成生态威胁模型、publisher lifecycle 与 signed local registry；STEP-0065–0068 可继续平台无关实现。Android/Harmony 和最终项目退出证据保持独立 gate。
+执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。STEP-0062–0065 已完成生态威胁模型、publisher lifecycle、signed local registry 与 secure update/recovery；STEP-0066–0068 可继续平台无关实现。Android/Harmony 和最终项目退出证据保持独立 gate。
 
 ## Immediate dependency chain
 

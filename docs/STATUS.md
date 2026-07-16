@@ -3,10 +3,10 @@
 > - updated: 2026-07-16
 > - phase: M7 platform-independent track; M6 mobile track deferred
 > - phase status: in-progress with mobile-platform gates
-> - current step: STEP-0065 (secure update and rollback)
-> - last completed sequential step: STEP-0064
-> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0064)
-> - next step: implement local secure update selection, persisted anti-rollback state and atomic recovery
+> - current step: STEP-0066 (standard-library and dependency stability)
+> - last completed sequential step: STEP-0065
+> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0065)
+> - next step: freeze standard-library compatibility and implement deterministic dependency lock/resolution
 
 ## 0. M6 exit state
 
@@ -18,7 +18,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 2. Current step
 
-[`STEP-0064`](./steps/STEP-0064-signed-local-registry.md) 已实现本地 signed namespace/release/channel/checkpoint、内容寻址 publish/discover/download 与严格下载复验；没有分配公开 namespace、创建 registry 账户或接触外部透明服务。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
+[`STEP-0065`](./steps/STEP-0065-secure-update-rollback.md) 已实现本地 monotonic update state、consistent transaction、staged activation、append-only advisory 与显式 recovery；没有接触公共更新服务或移动安装器。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation；完整交接见 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md)。
 
 ## 3. Verified repository facts
 
@@ -163,4 +163,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-执行 STEP-0065 的本地 secure update/rollback：消费 STEP-0064 immutable release/checkpoint，持久化受信版本，验证 freeze/rollback/partial/corrupt update 与原子恢复；继续使用 test-only policy 和本地文件 transport。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复，Harmony 先建立独立可行性/契约步骤再实现。
+执行 STEP-0066 的 standard-library/dependency stability：冻结兼容标识、实现确定性 source-aware resolution 与 canonical immutable lock graph，并验证依赖混淆、yank/revocation 和 transitive capability closure。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复，Harmony 先建立独立可行性/契约步骤再实现。
