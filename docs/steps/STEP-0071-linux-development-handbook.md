@@ -37,7 +37,7 @@ Implementation must first split the Linux artifact generator from Windows `.exe`
 - Added a validator that checks the handbook against current code gaps.
 - Updated platform, project, status, handoff and STEP indexes.
 
-STEP-0071 is an out-of-order support documentation step. STEP-0063 remains the current sequential M7 implementation step; STEP-0063 through STEP-0069 keep their allocated meanings.
+STEP-0071 was an out-of-order support documentation step created before the STEP-0063–0069 implementation sequence completed. Those steps kept their allocated meanings and are now closed locally; the handbook still does not upgrade Linux evidence.
 
 ## 6. Validation
 

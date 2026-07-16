@@ -36,7 +36,7 @@ Harmony documentation remains proposed. It requires a platform-variant decision 
 - Added a machine-readable documentation/status contract.
 - Added a validator and documentation indexes.
 
-STEP-0070 is intentionally an out-of-order documentation support step requested while STEP-0063 remains the current M7 implementation step. STEP-0063 through STEP-0069 retain their allocated meanings.
+STEP-0070 was intentionally an out-of-order documentation support step requested before the STEP-0063–0069 implementation sequence completed. Those sequential steps retained their allocated meanings and are now closed locally; the handbooks still do not change mobile evidence status.
 
 ## 6. Validation
 

@@ -50,7 +50,7 @@ foreach ($needle in 'copy-before-verify','64 KiB','64 MiB','arm64','Runtime','GO
 if (-not $index.Contains('ANDROID-DEVELOPMENT.md') -or -not $index.Contains('HARMONY-DEVELOPMENT.md') -or -not $index.Contains('mobile-documentation-contract.json')) {
     throw 'platform documentation index is incomplete'
 }
-if ($step -notmatch '(?m)^> - status: complete\r?$' -or -not $step.Contains('STEP-0063 remains the current M7 implementation step')) {
+if ($step -notmatch '(?m)^> - status: complete\r?$' -or -not $step.Contains('sequential steps retained their allocated meanings and are now closed locally')) {
     throw 'STEP-0070 record is incomplete or changes the current M7 sequence'
 }
 
@@ -62,4 +62,4 @@ if ($environment.android.sdk -or $environment.android.ndk -or $environment.andro
     throw 'environment recheck no longer matches the documentation-only blocked/proposed claim'
 }
 
-Write-Output "STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=$androidLinks harmony_links=$harmonyLinks current=STEP-0063 next=STEP-0072"
+Write-Output "STEP_0070_OK android=blocked-not-implemented harmony=proposed-not-implemented android_links=$androidLinks harmony_links=$harmonyLinks sequence=closed-local next=external-evidence-or-STEP-0072"

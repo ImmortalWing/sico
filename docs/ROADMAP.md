@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-16
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M7 platform-independent track; M6 mobile deferred
+> - current phase: M7 local track complete, product exit blocked; M6 mobile deferred
 
 ## Status vocabulary
 
@@ -127,7 +127,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M7: 生态、工具与发布
 
-状态：`in-progress`（platform-independent track；mobile/final exit gated）
+状态：`local-complete / blocked-external-evidence`（product exit NO-GO）
 
 主要交付：标准库稳定边界、包发布与发现、身份/签名/安全更新、LSP、AI 工具协议、真实应用和第三方 Component 试点。
 
@@ -135,7 +135,7 @@ Entry gate：satisfied by STEP-0014。
 
 退出证据：外部开发者无需修改编译器或 Runtime 即可完成开发、检查、构建、发布、安装、运行和调试。
 
-执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。STEP-0062–0068 已完成 trust、registry、update、dependency stability、bounded LSP 与 compiler-backed AI tooling；STEP-0069 执行本地 pilot/exit audit，并保留第三方、生产和平台证据 gate。Android/Harmony 和最终项目退出证据保持独立 gate。
+执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。仓库本地轨已完成 trust、registry、update、dependency stability、bounded LSP、compiler-backed AI tooling 及两版 pilot/exit audit。真实第三方、生产服务、live model、Android/Harmony/Linux runner 与最终项目退出继续作为独立外部 gate；结论见 [`M7 exit audit`](./reports/m7-exit-audit.md)。
 
 ## Immediate dependency chain
 

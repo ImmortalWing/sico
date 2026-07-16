@@ -1,0 +1,26 @@
+{
+  "schema": "sico.m7.pilot-release-drill.v0",
+  "date": "2026-07-16",
+  "environment": {
+    "os": "Windows",
+    "rust": "1.97.0",
+    "host": "x86_64-pc-windows-gnu",
+    "profile": "debug",
+    "runtime": "Wasmtime 46.0.1"
+  },
+  "workload": "two clean-room revisions through Component, signed sapp, local registry, Host upgrade and Wasmtime",
+  "iterations": 1,
+  "sla": "not-established",
+  "evidence_level": "repository-authored-clean-room",
+  "result": 42,
+  "runtime_verified": true,
+  "security_rejections": 4,
+  "measurements_ms": {
+    "build": 16,
+    "registry": 461,
+    "host": 253,
+    "runtime": 2957,
+    "total": 3704
+  },
+  "interpretation": "reproducibility baseline only; one debug run is not an SLA or cross-platform benchmark"
+}

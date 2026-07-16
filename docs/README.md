@@ -9,6 +9,7 @@
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)
 - [阶段执行计划](./plans/README.md)
+- [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)
 
 ## Decision and evidence records

@@ -1,0 +1,25 @@
+[package]
+name = "sico-third-party-pilot"
+description = "Clean-room-style external consumer pilot for the Sico release workflow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+
+[dev-dependencies]
+ed25519-dalek.workspace = true
+sico-ai-tools = { path = "../../crates/sico-ai-tools" }
+sico-codegen-wasm = { path = "../../crates/sico-codegen-wasm" }
+sico-ecosystem = { path = "../../crates/sico-ecosystem" }
+sico-host-core = { path = "../../crates/sico-host-core" }
+sico-ir = { path = "../../crates/sico-ir" }
+sico-language-server = { path = "../../crates/sico-language-server" }
+sico-package = { path = "../../crates/sico-package" }
+sico-runtime = { path = "../../crates/sico-runtime" }
+sico-source = { path = "../../crates/sico-source" }
+
+[lints]
+workspace = true

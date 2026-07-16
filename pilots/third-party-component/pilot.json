@@ -1,0 +1,29 @@
+{
+  "schema": "sico.third-party-pilot.v0",
+  "pilot_id": "local-clean-room-2026-07-16",
+  "evidence_level": "repository-authored-clean-room",
+  "expected_result": 42,
+  "releases": ["1.0.0", "1.1.0"],
+  "local_stages": [
+    "lsp-diagnostics-and-symbols",
+    "ai-structured-inspect",
+    "source-to-component",
+    "development-package-signing",
+    "production-policy-fixture",
+    "signed-namespace-release-channel-checkpoint",
+    "discover-download-reverify",
+    "host-install-upgrade-open",
+    "wasmtime-result",
+    "tamper-replay-downgrade-refusal",
+    "ui-contract-validation"
+  ],
+  "external_evidence": {
+    "independent_third_party": "not-performed",
+    "production_identity_and_key_custody": "not-authorized",
+    "public_registry_and_release": "not-authorized",
+    "live_model_evaluation": "not-authorized",
+    "android_runner": "unavailable",
+    "harmony_runner": "unavailable",
+    "linux_native_runner": "unavailable"
+  }
+}

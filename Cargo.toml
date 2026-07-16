@@ -20,6 +20,7 @@ members = [
     "crates/sico-semantics",
     "crates/sico-source",
     "crates/sico-syntax",
+    "pilots/third-party-component",
 ]
 resolver = "3"
 exclude = [

@@ -3,15 +3,15 @@
 > - 更新时间：2026-07-16
 > - 仓库：`E:\github\sico`
 > - 分支：`main`
-> - 远端：`https://gitcode.com/ImmortalWings/sico.git`
+> - 远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；`github=https://github.com/ImmortalWing/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
-> - 工作区状态：STEP-0068 提交后应为 clean
+> - 工作区状态：STEP-0069 提交后应为 clean
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。平台无关 M7 已完成 STEP-0062–0068 的生态契约、publisher/registry/update/dependency、bounded LSP 与 compiler-backed AI tooling 本地闭环；STEP-0070/0071 已保存平台手册，但真实生产发布、真实模型、最终 M7 与目标平台支持仍需各自证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成生态契约、publisher/registry/update/dependency、bounded LSP、compiler-backed AI tooling 与两版洁净室 release drill；M7/产品退出仍是 `blocked-external-evidence`。STEP-0070/0071 已保存平台手册，但真实第三方、生产发布、真实模型与目标平台支持仍需各自证据。
 
-当前权威结论：[`M6 exit audit`](./reports/m6-exit-audit.md)。后续计划：[`M7 ecosystem and release`](./plans/M7-ecosystem-release.md)。
+当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 
 ## 2. 已完成工作
 
@@ -137,7 +137,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 5. STEP-0066：标准库与依赖稳定边界（本地 resolver/lock/compatibility/capability 闭环已完成）；
 6. STEP-0067：LSP、编辑器与调试流程（bounded stdio LSP、compiler/index/format、shell-free run 与 explicit debug refusal 已完成）；
 7. STEP-0068：AI tooling protocol 与评测（compiler-backed offline 已完成；真实模型待凭据和成本授权）；
-8. STEP-0069：第三方 Component/真实应用试点与 M7 exit audit。
+8. STEP-0069：仓库内洁净室 Component/真实应用试点与 M7 exit audit（本地已完成；真实第三方证据待外部参与者）。
 
 以下操作仍需用户明确授权或提供材料：
 
@@ -175,6 +175,8 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - Language server core：[`sico-language-server`](../crates/sico-language-server/src/lib.rs)
 - AI tooling RFC：[`RFC-0028`](./rfc/RFC-0028-ai-tooling-inspect-fix-v0.md)
 - AI tooling core：[`sico-ai-tools`](../crates/sico-ai-tools/src/lib.rs)
+- 洁净室 pilot：[`pilots/third-party-component`](../pilots/third-party-component/README.md)
+- M7 退出审计：[`m7-exit-audit.md`](./reports/m7-exit-audit.md)
 
 ## 8. 接手者完成检查表
 
@@ -196,7 +198,8 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [x] STEP-0066 dependency/standard-library stability 本地闭环完成，且无外部包源操作；
 - [x] STEP-0067 bounded LSP/editor workflow 已完成，且无 shell/process/network side effect；
 - [x] STEP-0068 compiler-backed AI tooling/offline evaluation 已完成，且未把 fixture 冒充模型成绩；
+- [x] STEP-0069 两版洁净室 release drill/Wasmtime/security/performance 与项目审计已完成，且未冒充真实第三方证据；
 - [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
-- [ ] production identity/key custody/public service 遇到所有者决策边界时停止；
-- [ ] Android、Harmony 与 Linux 仅在各自工具链、实现和 runner 具备后升级证据等级。
+- [x] production identity/key custody/public service 已在所有者决策边界停止，未生成或复用生产密钥；
+- [x] Android、Harmony 与 Linux 证据等级保持未升级，等待各自工具链、实现和 runner。

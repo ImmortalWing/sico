@@ -58,6 +58,9 @@
 | [`dependency-standard-library-v0`](./dependency-standard-library-v0.md) | complete | STEP-0066 | source-aware resolution、canonical lock、compatibility 与 capability closure |
 | [`language-server-editor-workflow-v0`](./language-server-editor-workflow-v0.md) | complete | STEP-0067 | bounded stdio LSP、UTF-16、compiler diagnostics/index、format 与 run/debug boundary |
 | [`ai-tooling-measured-evaluation-v0`](./ai-tooling-measured-evaluation-v0.md) | complete-offline | STEP-0068 | compiler-backed inspect/fix、54-source/12-fix 测量与 live-model authorization gate |
+| [`m7-pilot-release-drill`](./m7-pilot-release-drill.md) | complete-local | STEP-0069 | 两版洁净室 Component/registry/Host/Wasmtime 发布升级与四类安全拒绝 |
+| [`m7-exit-audit`](./m7-exit-audit.md) | blocked-external-evidence | STEP-0069 | M7 本地轨完成、产品 NO-GO 与七项外部 gate |
+| [`project-completion-audit`](./project-completion-audit.md) | blocked-external-evidence | STEP-0069 | 仓库本地闭环和支持产品未完成边界 |
 | [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |
 | [`sapp-builder-loader-v0`](./sapp-builder-loader-v0.md) | complete | STEP-0039 | canonical `.sapp` builder、strict loader、hash/path/limit verification |
 | [`package-cli-cache-v0`](./package-cli-cache-v0.md) | accepted | STEP-0044 | `.sapp` build/run/inspect、explicit trust、source cache 与 args/stdio |

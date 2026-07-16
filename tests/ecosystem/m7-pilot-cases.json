@@ -1,0 +1,31 @@
+{
+  "schema": "sico.ecosystem.m7-pilot-cases.v0",
+  "date": "2026-07-16",
+  "evidence_level": "repository-authored-clean-room",
+  "cases": [
+    {"id":"PILOT-001","area":"editor","expected":"accept","case":"LSP initializes with UTF-16 positions"},
+    {"id":"PILOT-002","area":"editor","expected":"accept","case":"compiler diagnostics accept revision one"},
+    {"id":"PILOT-003","area":"editor","expected":"accept","case":"compiler semantic index exposes the main symbol"},
+    {"id":"PILOT-004","area":"ai","expected":"accept","case":"structured inspect accepts the exact source digest"},
+    {"id":"PILOT-005","area":"ai","expected":"accept","case":"structured inspect returns no compiler diagnostics"},
+    {"id":"PILOT-006","area":"ui","expected":"accept","case":"strict companion UI model validates three nodes"},
+    {"id":"PILOT-007","area":"build","expected":"accept","case":"revision one lowers and compiles to a Component"},
+    {"id":"PILOT-008","area":"build","expected":"accept","case":"revision two lowers and compiles to a distinct Component"},
+    {"id":"PILOT-009","area":"package","expected":"accept","case":"revision one builds a development-signed sapp"},
+    {"id":"PILOT-010","area":"package","expected":"accept","case":"revision two builds a development-signed sapp"},
+    {"id":"PILOT-011","area":"publisher","expected":"accept","case":"production policy fixture validates role thresholds and disclosure classes"},
+    {"id":"PILOT-012","area":"registry","expected":"accept","case":"signed namespace grant binds fixture publisher"},
+    {"id":"PILOT-013","area":"registry","expected":"accept","case":"release one publishes and downloads exact package bytes"},
+    {"id":"PILOT-014","area":"registry","expected":"accept","case":"release two publishes and becomes the stable channel head"},
+    {"id":"PILOT-015","area":"registry","expected":"accept","case":"two signed checkpoints form a verified chain"},
+    {"id":"PILOT-016","area":"host","expected":"accept","case":"Host installs revision one under explicit development trust"},
+    {"id":"PILOT-017","area":"host","expected":"accept","case":"Host upgrades to revision two and opens its immutable bytes"},
+    {"id":"PILOT-018","area":"runtime","expected":"accept","case":"selected Wasmtime executes the opened package and returns 42"},
+    {"id":"PILOT-019","area":"security","expected":"reject","case":"tampered downloaded package bytes fail exact verification"},
+    {"id":"PILOT-020","area":"security","expected":"reject","case":"unapproved Host downgrade fails"},
+    {"id":"PILOT-021","area":"security","expected":"reject","case":"tampered registry checkpoint fails signature verification"},
+    {"id":"PILOT-022","area":"security","expected":"reject","case":"replayed stable channel sequence fails publication"},
+    {"id":"PILOT-023","area":"evidence","expected":"reject","case":"repository-authored pilot must not be labeled independent third-party evidence"},
+    {"id":"PILOT-024","area":"evidence","expected":"reject","case":"local fixture identity registry model and platform runs must not be labeled production evidence"}
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema": "sico.ui.model.v0",
+  "root": {
+    "id": "pilot-window",
+    "kind": "window",
+    "text": null,
+    "accessibility_label": "Sico release pilot",
+    "children": [
+      {
+        "id": "title",
+        "kind": "text",
+        "text": "Sico clean-room release pilot",
+        "accessibility_label": null,
+        "children": []
+      },
+      {
+        "id": "status",
+        "kind": "text",
+        "text": "Verified result: 42",
+        "accessibility_label": null,
+        "children": []
+      }
+    ]
+  }
+}

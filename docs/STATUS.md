@@ -1,32 +1,32 @@
 # Sico project status
 
 > - updated: 2026-07-16
-> - phase: M7 platform-independent track; M6 mobile track deferred
-> - phase status: in-progress with mobile-platform gates
-> - current step: STEP-0069 (third-party pilot and M7 exit audit)
-> - last completed sequential step: STEP-0068 (offline complete; live model not authorized)
-> - last completed support step: STEP-0071 (Linux development documentation; implementation sequence remains STEP-0068)
-> - next step: complete local third-party-style pilot/release drill and audit remaining external gates
+> - phase: M7 local track complete; M6/mobile and product exit deferred
+> - phase status: blocked-external-evidence
+> - current step: external evidence acquisition after STEP-0069 local closure
+> - last completed sequential step: STEP-0069 (local complete; M7/product NO-GO)
+> - last completed support step: STEP-0071 (Linux development documentation)
+> - next step: resume only with third-party/production/live-model/platform evidence or a new roadmap decision
 
 ## 0. M6 exit state
 
-STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no Android build toolchain, buildable Host or runner; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. Android and Harmony tracks are deferred. Platform-independent M7 STEP-0062–0068 is complete locally, but production, live-model, mobile and final project exit claims remain gated.
+STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`, Mobile Host metadata parity and full workspace regression are complete. M6 remains NO-GO because this environment has no Android build toolchain, buildable Host or runner; no Android Runtime, native touch/IME/TalkBack or startup evidence is claimed. Android and Harmony tracks are deferred. M7 STEP-0062–0069 is complete locally, including a two-release Wasmtime pilot; production, third-party, live-model, mobile/Linux-native and final product exit claims remain gated.
 
 ## 1. Current objective
 
-当前目标是推进不依赖移动 runner 的生态、工具与发布工作。生产身份、密钥托管和公开服务遇到所有者决策边界时停止该子轨，并优先推进标准库/依赖、LSP 或 AI tooling；Android STEP-0060/0061 与 Harmony 可行性路径保留为后置平台轨。
+仓库内可执行的 M7 目标已经闭环。当前目标是保持证据边界和可复现性，等待真实第三方、生产身份/公开服务、live-model 授权或目标平台 runner；Android STEP-0060/0061、Harmony 与 Linux native 路径保留为后置平台轨。
 
 ## 2. Current step
 
-[`STEP-0068`](./steps/STEP-0068-ai-tooling-measured-evaluation.md) 已实现 compiler-backed inspect/fix、54-source/12-fix 离线测量与 96-task harness 回归；无凭据/成本授权，因此真实模型 runs 为 0。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。M6 恢复点仍是 [`STEP-0060`](./steps/STEP-0060-desktop-android-parity-app.md) 的 Android device validation。
+[`STEP-0069`](./steps/STEP-0069-third-party-pilot-m7-exit.md) 已用独立于 `examples/` 的两版洁净室应用完成 LSP/AI、Component、签名包、本地 registry、Host upgrade 和 Wasmtime `42`，并拒绝四类攻击。[`M7 exit audit`](./reports/m7-exit-audit.md) 结论为 `blocked-external-evidence`。[`STEP-0070`](./steps/STEP-0070-mobile-platform-development-handbooks.md) 与 [`STEP-0071`](./steps/STEP-0071-linux-development-handbook.md) 只保存平台手册，没有改变平台证据状态。
 
 ## 3. Verified repository facts
 
-基线检查时间：2026-07-15。
+基线检查时间：2026-07-16。
 
 | 事实 | 结果 | 状态 |
 |---|---:|---|
-| `.sico` 文件 | 211 | measured |
+| `.sico` 文件 | 214 | measured |
 | 代表性程序 | 10 | verified by `examples/` |
 | P0 A0 语义案例 | 54 | verified by semantic case validator |
 | 候选 B 案例 | 54 | verified by semantic case validator |
@@ -35,8 +35,8 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 38 | measured |
-| `Cargo.toml` | 19 | measured |
+| Rust `.rs` 文件 | 83 | measured |
+| `Cargo.toml` | 27 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
@@ -163,4 +163,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-执行 STEP-0069 的本地 third-party-style Component/真实应用 pilot、release drill 与 M7 exit audit；能在仓库内完成的全部验证先闭环，真正第三方参与、生产发布、移动 runner 与真实模型调用继续作为外部 gate。Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 后置恢复。
+没有未完成且当前已授权/可在本机独立完成的顺序步骤。按 [`M7 exit audit`](./reports/m7-exit-audit.md) 获取真实第三方、production/public service、live-model 或目标平台 runner 证据后恢复对应轨；Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 和平台手册后置恢复。新功能必须先建立新的 roadmap/STEP，不得把洁净室 fixture 改标为外部证据。

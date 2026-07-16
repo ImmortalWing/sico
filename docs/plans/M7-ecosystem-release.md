@@ -1,6 +1,6 @@
 # M7 plan: Ecosystem, tooling and release
 
-> - status: in-progress, platform-independent track
+> - status: local-complete, blocked-external-evidence
 > - created: 2026-07-16
 > - phase: M7
 > - entry requirement: M4/M5 package and Desktop Host contracts; repository-owner authorization to defer mobile tracks
@@ -31,7 +31,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | STEP-0066 | standard-library and package dependency stability | **complete**: source-aware resolver, canonical lock, SemVer, compatibility, capability closure, yank/revocation and 1,140 mutations |
 | STEP-0067 | LSP, editor and debugging workflow | **complete**: bounded stdio LSP, compiler diagnostics/index, UTF-16 navigation, format, shell-free run and explicit debug refusal |
 | STEP-0068 | AI tooling protocol and measured evaluation | **complete-offline**: compiler-backed inspect/fix, 54-source/12-fix measurements, 96-task regression; live model not authorized |
-| STEP-0069 | third-party Component and real-app pilot, M7 exit audit | external workflow, release drill, security/performance/regression and project-completion review |
+| STEP-0069 | third-party-style Component and real-app pilot, M7 exit audit | **complete-local / blocked-external-evidence**: two releases, Wasmtime `42`, four refusals, 24 cases and project audit; actual third party remains external |
 
 ## 4. Mobile platform gates
 
@@ -39,6 +39,6 @@ Enable an external developer to develop, check, build, publish, discover, instal
 - Harmony: require a future audited feasibility/contract step before implementation; do not assume Android adapters or evidence transfer.
 - Final M7/project exit: require every platform named as supported to have its own build/runtime evidence. Platform-neutral work cannot satisfy this gate.
 
-## 5. Immediate next action
+## 5. External resumption action
 
-Proceed to STEP-0069 local third-party-style Component/real-app pilot, release drill and M7 exit audit. Preserve external gates for actual third-party participation, production services, live models and platform runners.
+The repository-local sequence is closed. Resume only when an independent participant, production identity/public service authorization, live-model credentials/budget or a target-platform runner is available. Follow the M7 exit audit and saved platform handbooks; never promote clean-room fixtures into external evidence.

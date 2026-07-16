@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的正规编程语言。
 
-项目已完成 M0–M5。M6 host-side 契约与测试已完成，但 Android SDK/NDK、构建工程和 runner 均缺失，退出结论仍为 NO-GO。按 2026-07-16 的路线调整，Android 与 Harmony 路径后推；M7 平台无关轨已完成 STEP-0062–0068 的 trust/registry/update/dependency/LSP/AI tooling 本地闭环，但不得据此宣称移动端、真实生产发布、真实模型成绩或最终 M7 完成。
+项目已完成 M0–M5。M6 host-side 契约与测试已完成，但 Android SDK/NDK、构建工程和 runner 均缺失，退出结论仍为 NO-GO。按 2026-07-16 的路线调整，Android 与 Harmony 路径后推；M7 STEP-0062–0069 的仓库本地实现与洁净室发布演练已闭环，但真实第三方、生产发布、真实模型和目标平台证据仍缺失，因此 M7/产品退出结论是 `blocked-external-evidence`，不是 GO。
 
 ## 文档
 
@@ -44,5 +44,5 @@ Sico Runtime / Sico Host
 - M4 已完成 canonical `.sapp`、strict loader、development signature/trust、capability closure、isolated storage/WASI、Runtime limits/faults、package CLI/cache 与 security/property baseline；结论见 [M4 exit audit](./docs/reports/m4-exit-audit.md)。
 - M5 已完成 Windows runtime-verified Desktop Host 与 macOS/Linux contract artifacts；结论见 [M5 exit audit](./docs/reports/m5-exit-audit.md)。
 - M6 [Android Host plan](./docs/plans/M6-android-host.md) 的 host-side work 已执行至 STEP-0061；按 [M6 exit audit](./docs/reports/m6-exit-audit.md) 提供 Android runner 后恢复 STEP-0060。raw Component 仍只作为 compiler regression boundary，不是应用分发格式。
-- M7 [ecosystem and release plan](./docs/plans/M7-ecosystem-release.md) 采用分轨推进：STEP-0062–0068 平台无关 trust/registry/update/dependency/LSP/AI tooling 已完成；STEP-0069、Android、Harmony 与最终退出证据仍单独受控。
+- M7 [ecosystem and release plan](./docs/plans/M7-ecosystem-release.md) 的 STEP-0062–0069 仓库本地轨已完成；[M7 exit audit](./docs/reports/m7-exit-audit.md) 保留真实第三方、production/public service、live model、Android、Harmony 与 Linux native runner 外部 gate。
 - 延后平台的恢复说明已保存在 [Android、鸿蒙与 Linux 平台开发手册](./docs/platforms/README.md)；STEP-0070/0071 文档不代表 APK/HAP、JNI/Node-API、Linux GTK/关联或目标平台 Runtime 已实现。

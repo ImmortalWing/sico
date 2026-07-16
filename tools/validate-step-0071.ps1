@@ -39,7 +39,7 @@ if (([regex]::Matches($handbook, 'https://')).Count -lt 20) {
     throw 'Linux handbook official reference coverage is unexpectedly low'
 }
 if (-not $index.Contains('LINUX-DEVELOPMENT.md')) { throw 'platform documentation index does not include Linux' }
-if ($step -notmatch '(?m)^> - status: complete\r?$' -or -not $step.Contains('STEP-0063 remains the current sequential M7 implementation step')) {
+if ($step -notmatch '(?m)^> - status: complete\r?$' -or -not $step.Contains('steps kept their allocated meanings and are now closed locally')) {
     throw 'STEP-0071 record is incomplete or changes sequential M7 work'
 }
 
@@ -56,4 +56,4 @@ foreach ($needle in $requiredOpenArgs) {
 }
 
 $links = ([regex]::Matches($handbook, 'https://')).Count
-Write-Output "STEP_0071_OK linux=contract-verified-not-runtime-verified links=$links blockers=artifact-generator,xdg-open-config current=STEP-0063 next=STEP-0072"
+Write-Output "STEP_0071_OK linux=contract-verified-not-runtime-verified links=$links blockers=artifact-generator,xdg-open-config sequence=closed-local next=external-evidence-or-STEP-0072"
