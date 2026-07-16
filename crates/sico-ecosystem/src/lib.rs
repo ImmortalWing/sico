@@ -8,6 +8,9 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod registry;
+pub use registry::*;
+
 pub const POLICY_SCHEMA: &str = "sico.publisher.policy.v0";
 pub const POLICY_UPDATE_SCHEMA: &str = "sico.publisher.policy-update.v0";
 pub const MAX_POLICY_BYTES: usize = 128 * 1024;
