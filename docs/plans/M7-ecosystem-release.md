@@ -28,7 +28,7 @@ Enable an external developer to develop, check, build, publish, discover, instal
 | STEP-0063 | production publisher identity and key lifecycle | **complete**: canonical policy, five role thresholds, exact claims, rotation/revocation/recovery and 2,048 mutations |
 | STEP-0064 | signed registry publish/discovery/download | **complete**: four signed schemas, namespace lifecycle, immutable local transport, 3 checkpoints, 1,231 mutations and strict download reverify |
 | STEP-0065 | secure update and rollback | **complete**: consistent snapshots, monotonic journal, staged activation, advisories, explicit recovery and 1,592 mutations |
-| STEP-0066 | standard-library and package dependency stability | version/compatibility policy, deterministic resolution and capability closure across dependencies |
+| STEP-0066 | standard-library and package dependency stability | **complete**: source-aware resolver, canonical lock, SemVer, compatibility, capability closure, yank/revocation and 1,140 mutations |
 | STEP-0067 | LSP, editor and debugging workflow | diagnostics/index-driven completion, navigation, format, run/debug and bounded protocol tests |
 | STEP-0068 | AI tooling protocol and measured evaluation | structured inspect/fix APIs, offline corpus, explicitly authorized live evaluation |
 | STEP-0069 | third-party Component and real-app pilot, M7 exit audit | external workflow, release drill, security/performance/regression and project-completion review |
@@ -41,4 +41,4 @@ Enable an external developer to develop, check, build, publish, discover, instal
 
 ## 5. Immediate next action
 
-Proceed to STEP-0066 standard-library and dependency stability. Freeze compatibility identifiers, implement deterministic source-aware resolution and canonical immutable lock graphs, then verify dependency confusion, yank/revocation and transitive capability closure without external package services.
+Proceed to STEP-0067 LSP/editor/debug workflow using existing compiler diagnostics, formatter and Semantic Index contracts; keep all protocol tests local and bounded.

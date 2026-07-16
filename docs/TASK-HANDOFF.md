@@ -134,7 +134,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 2. STEP-0063：production publisher identity、key custody/rotation/revocation（本地 policy/fixtures 已完成；真实身份与 custody 待所有者）；
 3. STEP-0064：signed registry publish/discovery/download（本地 signed metadata、不可变 transport 与严格复验已完成；公开服务待授权）；
 4. STEP-0065：安全更新与回滚（本地 monotonic/staging/advisory/recovery 闭环已完成）；
-5. STEP-0066：标准库与依赖稳定边界；
+5. STEP-0066：标准库与依赖稳定边界（本地 resolver/lock/compatibility/capability 闭环已完成）；
 6. STEP-0067：LSP、编辑器与调试流程；
 7. STEP-0068：AI tooling protocol 与获授权的真实评测；
 8. STEP-0069：第三方 Component/真实应用试点与 M7 exit audit。
@@ -170,6 +170,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - Publisher policy RFC：[`RFC-0023`](./rfc/RFC-0023-production-publisher-policy-v0.md)
 - Signed registry RFC：[`RFC-0024`](./rfc/RFC-0024-signed-registry-metadata-v0.md)
 - Secure update RFC：[`RFC-0025`](./rfc/RFC-0025-secure-update-recovery-v0.md)
+- Dependency lock RFC：[`RFC-0026`](./rfc/RFC-0026-dependency-lock-compatibility-v0.md)
 
 ## 8. 接手者完成检查表
 
@@ -188,6 +189,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [x] STEP-0063 publisher policy/key lifecycle 本地闭环完成，且无真实 production credential；
 - [x] STEP-0064 signed registry publish/discover/download 本地闭环完成，且无公开 namespace、账户或外部发布；
 - [x] STEP-0065 secure update/recovery 本地闭环完成，且无公共服务或移动安装器操作；
+- [x] STEP-0066 dependency/standard-library stability 本地闭环完成，且无外部包源操作；
 - [x] STEP-0070 Android/鸿蒙开发手册与共用验收清单已保存；
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
 - [ ] production identity/key custody/public service 遇到所有者决策边界时停止；

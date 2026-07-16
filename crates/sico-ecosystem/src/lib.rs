@@ -12,6 +12,8 @@ mod registry;
 pub use registry::*;
 mod update;
 pub use update::*;
+mod dependency;
+pub use dependency::*;
 
 pub const POLICY_SCHEMA: &str = "sico.publisher.policy.v0";
 pub const POLICY_UPDATE_SCHEMA: &str = "sico.publisher.policy-update.v0";
