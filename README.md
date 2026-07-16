@@ -11,7 +11,15 @@ Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代�
 
 ## 快速开始
 
-安装 Git、Rust `1.97.0` 与 PowerShell，然后在仓库根目录执行：
+普通用户从 Release 下载 `sico-init-v<VERSION>-x86_64-pc-windows-gnu.exe`，双击即可完成安装和用户 PATH 配置，不需要管理员权限或 Rust/Cargo。安装完成后重新打开终端：
+
+```powershell
+sico --version
+```
+
+SDK ZIP 内仍保留 `install-windows.cmd/.ps1`，供自动化、机器级安装和卸载使用。详见[安装与构建](./docs/user-guide/INSTALLATION.md)。
+
+从源码开发时，安装 Git、Rust `1.97.0` 与 PowerShell，然后在仓库根目录执行：
 
 ```powershell
 cargo build --locked --release -p sico-cli -p sico-app-cli
@@ -25,6 +33,20 @@ $env:PATH = "$PWD\target\release;$env:PATH"
 function main() returns Int:
   return 40 + 2
 end function
+```
+
+开发时可以用一个命令完成临时编译、打包和运行：
+
+```powershell
+.\tools\sico-dev.ps1 .\hello.sico
+```
+
+脚本使用显式的本地 unsigned development trust，运行结束后删除临时 Component 和 `.sapp`；它只是开发期编排入口，不改变 `sico`、`sico-app` 和 Runtime 的模块边界。
+
+在独立窗口中运行且希望查看结果后再关闭时使用：
+
+```powershell
+.\tools\sico-dev.ps1 .\hello.sico -Pause
 ```
 
 显式完成编译、打包、检查和运行：
@@ -79,6 +101,7 @@ sico-app run --allow-unsigned-dev hello.sapp
 
 - [开发手册](./docs/development/README.md)
 - [模块边界](./docs/development/MODULE-BOUNDARIES.md)
+- [Windows 手动发布](./docs/development/RELEASING.md)
 - [完整架构与设计](./DEVELOPMENT.md)
 - [项目状态与审计记录](./docs/README.md)
 

@@ -15,6 +15,40 @@ WebAssembly Component
 Wasmtime / platform Host
 ```
 
+## 开发期快捷运行
+
+在仓库根目录执行一个命令即可临时编译、打包并运行源码：
+
+```powershell
+.\tools\sico-dev.ps1 .\demo.sico
+```
+
+脚本只适合运行自己创建且来源可信的本地源码。它创建唯一的临时工作目录，以 `--allow-unsigned-dev` 运行，并在退出时删除 Component 和 `.sapp`。
+
+从独立 PowerShell 窗口或快捷方式启动、需要在结果后等待确认时执行：
+
+```powershell
+.\tools\sico-dev.ps1 .\demo.sico -Pause
+```
+
+`-Pause` 会在运行成功后等待按 Enter。已有 PowerShell 会话不需要该参数，脚本结束后会直接返回当前提示符，不会关闭会话。
+
+保留中间产物用于排查时执行：
+
+```powershell
+.\tools\sico-dev.ps1 .\demo.sico -KeepArtifacts -Verbose
+```
+
+需要能力授权时可以继续传递开发参数：
+
+```powershell
+.\tools\sico-dev.ps1 .\demo.sico `
+  -Grant storage.read-write `
+  -StorageRoot .\app-storage
+```
+
+快捷脚本是仓库级编排工具，不是 `sico` 编译器子命令，也不会让编译器依赖 package、Runtime 或 Host。
+
 ## 编译 Component
 
 ```powershell

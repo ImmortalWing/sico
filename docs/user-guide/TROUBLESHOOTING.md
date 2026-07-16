@@ -2,6 +2,18 @@
 
 ## 找不到 `sico` 或 `sico-app`
 
+如果使用 Windows SDK 安装器，请关闭并重新打开终端，然后检查持久 PATH：
+
+```powershell
+[Environment]::GetEnvironmentVariable('Path', 'User') -split ';' |
+  Where-Object { $_ -like '*\Programs\Sico\bin' }
+Test-Path "$env:LOCALAPPDATA\Programs\Sico\bin\sico.exe"
+```
+
+没有结果时，回到 SDK 解压目录重新运行 `.\install-windows.cmd`。
+
+从源码开发时执行：
+
 ```powershell
 cargo build --locked --release -p sico-cli -p sico-app-cli
 .\target\release\sico.exe --version

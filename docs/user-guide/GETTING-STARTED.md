@@ -10,6 +10,14 @@ end function
 
 以下命令假设 `target/release` 已加入当前会话 `PATH`。
 
+只想立即查看运行结果时，在仓库根目录执行：
+
+```powershell
+.\tools\sico-dev.ps1 .\hello.sico
+```
+
+该开发脚本依次调用 `sico build`、`sico-app pack` 和 `sico-app run`，并在成功或失败后清理临时产物。需要检查中间产物时加 `-KeepArtifacts`。
+
 ## 1. 检查和格式化
 
 ```powershell

@@ -27,6 +27,7 @@
 ## 架构入口
 
 - [模块边界与命令所有权](./MODULE-BOUNDARIES.md)
+- [Windows 手动发布](./RELEASING.md)
 - [完整架构与开发设计](../../DEVELOPMENT.md)
 - [方向与非目标](../../DIRECTION.md)
 - [语义草案](../../SEMANTICS.md)
@@ -49,7 +50,7 @@
 | `semantic-cases/` | 语义正反例与精确诊断预期 |
 | `tests/` | 端到端、平台、生态、安全和性能证据 |
 | `docs/` | STEP、ADR、RFC、计划、报告、用户及平台手册 |
-| `tools/` | 可重复验证与测量脚本 |
+| [`tools/`](../../tools/README.md) | 用户入口、发布编排、可重复验证与测量脚本 |
 
 ## 构建与全量验证
 

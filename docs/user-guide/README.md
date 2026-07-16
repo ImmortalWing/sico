@@ -4,7 +4,7 @@
 
 ## 推荐阅读顺序
 
-1. [安装与构建](./INSTALLATION.md)：从源码构建 `sico`、`sico-app`、`sico-lsp` 和 `sico-ai-tool`。
+1. [安装与构建](./INSTALLATION.md)：安装 Windows SDK，或从源码构建 `sico`、`sico-app`、`sico-lsp` 和 `sico-ai-tool`。
 2. [五分钟入门](./GETTING-STARTED.md)：检查、格式化、构建、检查包并运行第一个程序。
 3. [语言基础与可运行子集](./LANGUAGE-BASICS.md)：当前语法和 compiler/Runtime 支持边界。
 4. [CLI 参考](./CLI.md)：所有命令、参数、输入输出和退出码。
@@ -17,9 +17,9 @@
 
 ## 文档约定
 
-- 命令示例以仓库根目录为当前目录。
+- SDK 用户的命令示例可在任意目录执行；源码开发命令以仓库根目录为当前目录。
 - Windows 是当前唯一 runtime-verified 的 Desktop Host 平台。
-- `target/release/sico.exe` 与 `sico-app.exe` 可在加入 `PATH` 后简写为 `sico` 与 `sico-app`。
+- 终端安装器会持久配置 PATH；源码构建的 `target/release/sico.exe` 与 `sico-app.exe` 也可在临时加入 PATH 后简写。
 - 用户应用分发格式是 `.sapp`；语言 CLI 只生成 WebAssembly Component。
 - “签名有效”不等于“本机信任”，development key 也不等于 production publisher。
 
