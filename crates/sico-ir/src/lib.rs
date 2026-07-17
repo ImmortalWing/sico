@@ -125,6 +125,12 @@ pub struct Instruction {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConstructField {
+    pub name: String,
+    pub value: ValueId,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "op", content = "data", rename_all = "snake_case")]
 pub enum Operation {
     ConstInt(String),
@@ -163,7 +169,7 @@ pub enum Operation {
     },
     Construct {
         name: String,
-        fields: Vec<ValueId>,
+        fields: Vec<ConstructField>,
     },
     Project {
         base: ValueId,
@@ -216,13 +222,11 @@ impl Operation {
             | Self::LessFixed { left, right } => vec![*left, *right],
             Self::Call { arguments, .. }
             | Self::Intrinsic { arguments, .. }
-            | Self::Construct {
-                fields: arguments, ..
-            }
             | Self::Variant {
                 payload: arguments, ..
             }
             | Self::EffectCall { arguments, .. } => arguments.clone(),
+            Self::Construct { fields, .. } => fields.iter().map(|field| field.value).collect(),
             Self::ResourceCall {
                 resource,
                 arguments,
@@ -543,6 +547,9 @@ impl<'a> Verifier<'a> {
                     self.error(path, VerifyErrorKind::UnknownTarget);
                 }
             }
+            Operation::Construct { .. } | Operation::Project { .. } | Operation::Variant { .. } => {
+                self.verify_data_operation(path, instruction, available);
+            }
             Operation::Try(value) => match available.get(value) {
                 Some(Type::Result { ok, .. }) if ok.as_ref() == &instruction.ty => {}
                 Some(_) => self.error(path, VerifyErrorKind::TypeMismatch),
@@ -564,6 +571,39 @@ impl<'a> Verifier<'a> {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn verify_data_operation(
+        &mut self,
+        path: &str,
+        instruction: &Instruction,
+        available: &BTreeMap<ValueId, Type>,
+    ) {
+        let valid = match &instruction.operation {
+            Operation::Construct { name, fields } => {
+                instruction.ty == Type::Named(name.clone())
+                    && fields.iter().all(|field| !field.name.is_empty())
+                    && fields
+                        .iter()
+                        .map(|field| &field.name)
+                        .collect::<BTreeSet<_>>()
+                        .len()
+                        == fields.len()
+            }
+            Operation::Project { base, field } => {
+                matches!(available.get(base), Some(Type::Named(_))) && !field.is_empty()
+            }
+            Operation::Variant { name, .. } => {
+                matches!(
+                    (&instruction.ty, name.as_str()),
+                    (Type::Result { .. }, "ok" | "error") | (Type::Option(_), "some" | "none")
+                ) || (matches!(&instruction.ty, Type::Named(_)) && name.split_once('.').is_some())
+            }
+            _ => unreachable!("data operation caller"),
+        };
+        if !valid {
+            self.error(path, VerifyErrorKind::TypeMismatch);
         }
     }
 
@@ -729,6 +769,19 @@ impl<'a> Verifier<'a> {
                         self.error(path, VerifyErrorKind::UnknownTarget);
                     }
                     self.range(path, arm.range);
+                    for (pattern, value) in arm.patterns.iter().zip(values) {
+                        let compatible = match pattern {
+                            Pattern::Wildcard | Pattern::Binding(_) => true,
+                            Pattern::Bool(_) => available.get(value) == Some(&Type::Bool),
+                            Pattern::Variant { .. } => matches!(
+                                available.get(value),
+                                Some(Type::Named(_) | Type::Option(_) | Type::Result { .. })
+                            ),
+                        };
+                        if !compatible {
+                            self.error(path, VerifyErrorKind::TypeMismatch);
+                        }
+                    }
                 }
             }
             Terminator::Unreachable => {}

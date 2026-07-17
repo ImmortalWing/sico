@@ -92,7 +92,27 @@ fn expression_operands_and_constructor_fields_lower_left_to_right_once() {
     assert!(matches!(operations[3], Operation::ConstInt(value) if value == "3"));
     assert!(matches!(operations[4], Operation::ConstInt(value) if value == "4"));
     assert!(matches!(operations[5], Operation::AddInt { .. }));
-    assert!(matches!(operations[6], Operation::Construct { name, .. } if name == "Pair"));
+    assert!(matches!(
+        operations[6],
+        Operation::Construct { name, fields }
+            if name == "Pair"
+                && fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>()
+                    == ["left", "right"]
+    ));
+
+    let mut duplicate = module;
+    let Operation::Construct { fields, .. } =
+        &mut duplicate.functions[0].blocks[0].instructions[6].operation
+    else {
+        panic!("expected construct")
+    };
+    let duplicate_name = fields[0].name.clone();
+    fields[1].name = duplicate_name;
+    assert!(
+        verify(&duplicate)
+            .iter()
+            .any(|error| error.kind == VerifyErrorKind::TypeMismatch)
+    );
 }
 
 #[test]
@@ -260,6 +280,18 @@ fn intrinsic_try_and_match_mutations_are_rejected_independently() {
         verify(&matched)
             .iter()
             .any(|error| error.kind == VerifyErrorKind::UnknownTarget)
+    );
+
+    let mut wrong_pattern = lower_core(&match_source).unwrap();
+    let Terminator::Match { arms, .. } = &mut wrong_pattern.functions[0].blocks[0].terminator
+    else {
+        panic!("expected match")
+    };
+    arms[0].patterns[0] = sico_ir::Pattern::Bool(true);
+    assert!(
+        verify(&wrong_pattern)
+            .iter()
+            .any(|error| error.kind == VerifyErrorKind::TypeMismatch)
     );
 
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");

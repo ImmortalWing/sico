@@ -8,7 +8,7 @@
 - [详细用户手册目录](./user-guide/README.md)
 - [Sico 开发手册](./development/README.md)
 - [当前任务交接](./TASK-HANDOFF.md)
-- [M8 STEP-0077 可执行接手文档](./handoffs/M8-STEP-0077.md)
+- [M8 STEP-0079 可执行接手文档](./handoffs/M8-STEP-0079.md)
 - [当前状态](./STATUS.md)
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)

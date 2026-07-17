@@ -9,11 +9,11 @@
 > - 开发归档：`codex/archive-v0.0.1-development-history` 为历史归档分支；当前推送目标仅为已配置的 `origin`
 > - 工作区状态：以包含本文件的当前提交为 clean baseline
 
-当前 M8 的逐文件状态、验证边界与下一条命令见 [`M8 STEP-0078 接手文档`](./handoffs/M8-STEP-0078.md)。
+当前 M8 的逐文件状态、验证边界与下一条命令见 [`M8 STEP-0079 接手文档`](./handoffs/M8-STEP-0079.md)。
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 契约已冻结；STEP-0076 裁决为 `composition-go`；STEP-0077 已完成独立 `I64/U64` dynamic scalars、typed overflow/underflow、2,048 × 8 Core runtime oracle 与 11 个 Wasmtime Component 边界用例，且未静默缩窄 `Int`。下一项 STEP-0078 实现 general function/control codegen；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 契约已冻结；STEP-0076 裁决为 `composition-go`；STEP-0077 已完成独立 `I64/U64` dynamic scalars与 typed overflow/underflow；STEP-0078 已完成 direct calls、dispatcher CFG、内部 record/variant codegen、7 个 Wasmtime 结果与 bounded-fuel loop trap，且未静默缩窄 `Int`。下一项 STEP-0079 实现 bounded Script aggregate Canonical ABI；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 

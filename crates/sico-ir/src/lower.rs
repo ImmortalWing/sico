@@ -7,8 +7,8 @@ use sico_semantics::{AnalyzeError, SemanticDiagnostic};
 use sico_source::{SourceFile, TextRange};
 
 use crate::{
-    Block, BlockId, EntryError, Function, FunctionId, Instruction, MatchArm, Module, Operation,
-    Parameter, Pattern, SourceRange, Terminator, Type, ValueId, VerifyError,
+    Block, BlockId, ConstructField, EntryError, Function, FunctionId, Instruction, MatchArm,
+    Module, Operation, Parameter, Pattern, SourceRange, Terminator, Type, ValueId, VerifyError,
     require_semantic_success, verify,
 };
 
@@ -876,16 +876,20 @@ impl FunctionBuilder<'_> {
         }
         if let Some(ty) = self.definitions.constructors.get(&callee).cloned() {
             let mut values = Vec::new();
-            for argument in arguments {
+            for (index, argument) in arguments.into_iter().enumerate() {
+                let field =
+                    named_argument(argument).map_or_else(|| format!("#{index}"), str::to_owned);
                 let expected_field = named_argument(argument).and_then(|field| {
                     self.definitions
                         .fields
                         .get(&(callee.clone(), field.to_owned()))
                 });
-                values.push(
-                    self.expression(argument_value(argument), expected_field, output)?
+                values.push(ConstructField {
+                    name: field,
+                    value: self
+                        .expression(argument_value(argument), expected_field, output)?
                         .0,
-                );
+                });
             }
             let value = self.emit(
                 ty.clone(),

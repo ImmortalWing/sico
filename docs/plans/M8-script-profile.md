@@ -1,6 +1,6 @@
 # M8 plan: Script Profile v0
 
-> - status: in-progress; STEP-0075–0077 complete, STEP-0078 planned
+> - status: in-progress; STEP-0075–0078 complete, STEP-0079 planned
 > - created: 2026-07-17
 > - phase: M8
 > - entry requirement: M3/M4 Component, package, trust and Runtime contracts; STEP-0074 one-command development baseline
@@ -58,7 +58,7 @@ These are non-SLA local measurements. The benchmark must be captured in an M8 re
 | STEP-0075 | M8/RFC/ADR/WIT contract and honest baseline | accepted contract or explicit unresolved blockers; reproducible benchmark method; no invented implementation claims |
 | STEP-0076 | hard-coded Program + Adapter vertical prototype | complete: direct/composed 20 × 6/6; composed cold P95 15.8033 ms, worst warm P95 0.2038 ms; `composition-go` |
 | STEP-0077 | fixed-width dynamic scalar representation | complete: `I64/U64`, typed overflow/underflow, dynamic parameters/locals/results, 2,048 × 8 Core oracle and 11 Wasmtime Component cases |
-| STEP-0078 | general executable control and function codegen | `Call`, non-constant values, multi-block branch/jump/match, construct/project/variant and verified Wasm |
+| STEP-0078 | general executable control and function codegen | complete: direct calls; dispatcher CFG with back-edges; internal construct/project/variant; 7 Wasmtime cases plus bounded-fuel loop trap |
 | STEP-0079 | Script aggregate Canonical ABI | Text/Bytes/List/Text list/record/Result memory, lift/lower, bounded allocation and randomized host/guest roundtrip |
 | STEP-0080 | compiler Script profile, adapter composition and manifest v1 | `sico build --profile script-v0`; exact WIT/adapter digests; composed command imports and package closure verified |
 | STEP-0081 | structured in-process `sico-runner` | typed Wasmtime fault mapping, WASI context, limits, no ambient env/fs/network, host survival after malicious guests |

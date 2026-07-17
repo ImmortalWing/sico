@@ -34,6 +34,7 @@ function instantiate(name) {
 const numeric = instantiate("numeric");
 const control = instantiate("control");
 const fixed = instantiate("fixed-width-core");
+const general = instantiate("general-core");
 const answer = numeric.exports.main();
 const whenTrue = control.exports.select(1);
 const whenFalse = control.exports.select(0);
@@ -42,6 +43,32 @@ if (answer !== 42n || whenTrue !== 7n || whenFalse !== 9n) {
   throw new Error(
     `unexpected results: numeric=${answer}, true=${whenTrue}, false=${whenFalse}`,
   );
+}
+
+const generalResults = {
+  call: general.exports.call_identity(123n),
+  jump: general.exports.jump_chain(-9n),
+  matchTrue: general.exports.bool_match(1),
+  matchFalse: general.exports.bool_match(0),
+  record: general.exports.record_project(),
+  variant: general.exports.variant_match(),
+  cycleExit: general.exports.cycle_gate(1),
+};
+const expectedGeneral = {
+  call: 123n,
+  jump: -9n,
+  matchTrue: 41n,
+  matchFalse: 42n,
+  record: 22n,
+  variant: 1n,
+  cycleExit: 7n,
+};
+for (const [name, expected] of Object.entries(expectedGeneral)) {
+  if (generalResults[name] !== expected) {
+    throw new Error(
+      `general ${name}: expected=${expected} actual=${generalResults[name]}`,
+    );
+  }
 }
 
 const I64_MIN = -(1n << 63n);
@@ -140,6 +167,18 @@ if (componentOutIndex >= 0) {
   fs.writeFileSync(output, Buffer.from(component, "hex"));
 }
 
+
+const generalOutIndex = process.argv.indexOf("--general-out");
+if (generalOutIndex >= 0) {
+  const output = process.argv[generalOutIndex + 1];
+  const core = snapshots.get("general-core");
+  if (output === undefined || core === undefined) {
+    throw new Error("--general-out requires a path and general-core snapshot");
+  }
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, Buffer.from(core, "hex"));
+}
+
 process.stdout.write(
-  `CORE_WASM_RUNTIME_OK engine=node-${process.version} numeric=${answer} control_true=${whenTrue} control_false=${whenFalse} fixed_properties=2048x8 boundaries=${boundaries.length}\n`,
+  `CORE_WASM_RUNTIME_OK engine=node-${process.version} numeric=${answer} control_true=${whenTrue} control_false=${whenFalse} fixed_properties=2048x8 boundaries=${boundaries.length} general=call,jump,bool-match,record,variant,cycle-exit\n`,
 );

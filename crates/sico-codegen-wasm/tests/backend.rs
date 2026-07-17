@@ -2,8 +2,8 @@ use std::{fmt::Write as _, fs, path::Path};
 
 use sico_codegen_wasm::{CodegenError, compile, compile_component};
 use sico_ir::{
-    Block, BlockId, Function, FunctionId, Instruction, Module, Operation, Parameter, SourceRange,
-    Terminator, Type, ValueId,
+    Block, BlockId, ConstructField, Function, FunctionId, Instruction, MatchArm, Module, Operation,
+    Parameter, Pattern, SourceRange, Terminator, Type, ValueId,
 };
 use sico_source::{SourceFile, SourceId};
 
@@ -56,6 +56,98 @@ fn dynamic_fixed_width_core_and_component_are_deterministic_and_validate() {
     assert_eq!(component, compile_component(&ir).unwrap());
     validate(&component);
     snapshot("fixed-width-component", &component);
+}
+
+#[test]
+fn general_calls_cfg_and_internal_data_are_deterministic_and_validate() {
+    let ir = general_module();
+    let core = compile(&ir).unwrap();
+    assert_eq!(core, compile(&ir).unwrap());
+    validate(&core);
+    snapshot("general-core", &core);
+
+    let component = compile_component(&ir).unwrap();
+    assert_eq!(component, compile_component(&ir).unwrap());
+    validate(&component);
+    snapshot("general-component", &component);
+
+    let mut binding = ir;
+    let Terminator::Match { arms, .. } = &mut binding.functions[3].blocks[0].terminator else {
+        panic!("expected match")
+    };
+    arms[0].patterns[0] = Pattern::Binding("value".into());
+    assert!(matches!(
+        compile(&binding),
+        Err(CodegenError::Unsupported { feature, .. }) if feature == "match binding transport"
+    ));
+
+    let mut bad_projection = general_module();
+    bad_projection.functions[4].return_type = Type::Bool;
+    bad_projection.functions[4].blocks[0].instructions[3].ty = Type::Bool;
+    assert!(matches!(
+        compile(&bad_projection),
+        Err(CodegenError::Unsupported { feature, .. })
+            if feature == "projected field does not match its declared Wasm layout"
+    ));
+}
+
+#[test]
+fn fixed_width_source_call_reaches_the_general_backend() {
+    let source = SourceFile::from_text(
+        SourceId::new(0),
+        "call.sico",
+        "function identity(value: I64) returns I64:\n  return value\nend function\n\nfunction through_call(value: I64) returns I64:\n  return identity(value)\nend function\n",
+    )
+    .unwrap();
+    let ir = sico_ir::lower_core(&source).unwrap();
+    assert!(matches!(
+        ir.functions[1].blocks[0].instructions[0].operation,
+        Operation::Call {
+            function: FunctionId(1),
+            ..
+        }
+    ));
+    let bytes = compile_component(&ir).unwrap();
+    assert_eq!(bytes, compile_component(&ir).unwrap());
+    validate(&bytes);
+}
+
+#[test]
+#[ignore = "maintainer-only deterministic snapshot refresh"]
+fn update_wasm_snapshots() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let entries = [
+        ("control", compile(&select_module()).unwrap()),
+        (
+            "control-component",
+            compile_component(&select_module()).unwrap(),
+        ),
+        ("numeric", compile(&numeric_module()).unwrap()),
+        (
+            "numeric-component",
+            compile_component(&numeric_module()).unwrap(),
+        ),
+        ("fixed-width-core", compile(&fixed_width_module()).unwrap()),
+        (
+            "fixed-width-component",
+            compile_component(&fixed_width_module()).unwrap(),
+        ),
+        ("general-core", compile(&general_module()).unwrap()),
+        (
+            "general-component",
+            compile_component(&general_module()).unwrap(),
+        ),
+    ];
+    let contents = entries
+        .iter()
+        .map(|(name, bytes)| format!("{name}={}", hex(bytes)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(
+        repository.join("tests/wasm/artifacts.hex"),
+        format!("{contents}\n"),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -367,6 +459,283 @@ fn fixed_width_module() -> Module {
     module
 }
 
+#[allow(clippy::too_many_lines)]
+fn general_module() -> Module {
+    let range = SourceRange { start: 0, end: 0 };
+    let parameter = |name: &str, ty: Type| Parameter {
+        id: ValueId(0),
+        name: name.into(),
+        ty,
+        range,
+    };
+    let mut module = Module::new("general.sico", 0);
+    module.functions.push(Function {
+        id: FunctionId(1),
+        name: "identity_i64".into(),
+        parameters: vec![parameter("value", Type::I64)],
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: Vec::new(),
+            terminator: Terminator::Return(Some(ValueId(0))),
+            range,
+        }],
+        range,
+    });
+    module.functions.push(Function {
+        id: FunctionId(2),
+        name: "call_identity".into(),
+        parameters: vec![parameter("value", Type::I64)],
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: vec![Instruction {
+                result: ValueId(1),
+                ty: Type::I64,
+                operation: Operation::Call {
+                    function: FunctionId(1),
+                    arguments: vec![ValueId(0)],
+                },
+                range,
+            }],
+            terminator: Terminator::Return(Some(ValueId(1))),
+            range,
+        }],
+        range,
+    });
+    module.functions.push(Function {
+        id: FunctionId(3),
+        name: "jump_chain".into(),
+        parameters: vec![parameter("value", Type::I64)],
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![
+            Block {
+                id: BlockId(0),
+                instructions: Vec::new(),
+                terminator: Terminator::Jump(BlockId(1)),
+                range,
+            },
+            Block {
+                id: BlockId(1),
+                instructions: Vec::new(),
+                terminator: Terminator::Jump(BlockId(2)),
+                range,
+            },
+            Block {
+                id: BlockId(2),
+                instructions: Vec::new(),
+                terminator: Terminator::Return(Some(ValueId(0))),
+                range,
+            },
+        ],
+        range,
+    });
+    module.functions.push(bool_match_function(4, range));
+    module.functions.push(record_project_function(5, range));
+    module.functions.push(variant_match_function(6, range));
+    module.functions.push(cycle_gate_function(7, range));
+    module
+}
+
+fn bool_match_function(id: u32, range: SourceRange) -> Function {
+    Function {
+        id: FunctionId(id),
+        name: "bool_match".into(),
+        parameters: vec![Parameter {
+            id: ValueId(0),
+            name: "value".into(),
+            ty: Type::Bool,
+            range,
+        }],
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![
+            Block {
+                id: BlockId(0),
+                instructions: Vec::new(),
+                terminator: Terminator::Match {
+                    values: vec![ValueId(0)],
+                    arms: vec![
+                        MatchArm {
+                            patterns: vec![Pattern::Bool(true)],
+                            target: BlockId(1),
+                            range,
+                        },
+                        MatchArm {
+                            patterns: vec![Pattern::Bool(false)],
+                            target: BlockId(2),
+                            range,
+                        },
+                    ],
+                },
+                range,
+            },
+            return_i64_block(1, 1, 41, range),
+            return_i64_block(2, 2, 42, range),
+        ],
+        range,
+    }
+}
+
+fn record_project_function(id: u32, range: SourceRange) -> Function {
+    Function {
+        id: FunctionId(id),
+        name: "record_project".into(),
+        parameters: Vec::new(),
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: vec![
+                Instruction {
+                    result: ValueId(0),
+                    ty: Type::I64,
+                    operation: Operation::ConstI64(11),
+                    range,
+                },
+                Instruction {
+                    result: ValueId(1),
+                    ty: Type::I64,
+                    operation: Operation::ConstI64(22),
+                    range,
+                },
+                Instruction {
+                    result: ValueId(2),
+                    ty: Type::Named("Pair".into()),
+                    operation: Operation::Construct {
+                        name: "Pair".into(),
+                        fields: vec![
+                            ConstructField {
+                                name: "left".into(),
+                                value: ValueId(0),
+                            },
+                            ConstructField {
+                                name: "right".into(),
+                                value: ValueId(1),
+                            },
+                        ],
+                    },
+                    range,
+                },
+                Instruction {
+                    result: ValueId(3),
+                    ty: Type::I64,
+                    operation: Operation::Project {
+                        base: ValueId(2),
+                        field: "right".into(),
+                    },
+                    range,
+                },
+            ],
+            terminator: Terminator::Return(Some(ValueId(3))),
+            range,
+        }],
+        range,
+    }
+}
+
+fn variant_match_function(id: u32, range: SourceRange) -> Function {
+    Function {
+        id: FunctionId(id),
+        name: "variant_match".into(),
+        parameters: Vec::new(),
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![
+            Block {
+                id: BlockId(0),
+                instructions: vec![Instruction {
+                    result: ValueId(0),
+                    ty: Type::Named("Flag".into()),
+                    operation: Operation::Variant {
+                        name: "Flag.On".into(),
+                        payload: Vec::new(),
+                    },
+                    range,
+                }],
+                terminator: Terminator::Match {
+                    values: vec![ValueId(0)],
+                    arms: vec![
+                        MatchArm {
+                            patterns: vec![Pattern::Variant {
+                                name: "Flag.Off".into(),
+                                payload: Vec::new(),
+                            }],
+                            target: BlockId(1),
+                            range,
+                        },
+                        MatchArm {
+                            patterns: vec![Pattern::Variant {
+                                name: "Flag.On".into(),
+                                payload: Vec::new(),
+                            }],
+                            target: BlockId(2),
+                            range,
+                        },
+                    ],
+                },
+                range,
+            },
+            return_i64_block(1, 1, 0, range),
+            return_i64_block(2, 2, 1, range),
+        ],
+        range,
+    }
+}
+
+fn cycle_gate_function(id: u32, range: SourceRange) -> Function {
+    Function {
+        id: FunctionId(id),
+        name: "cycle_gate".into(),
+        parameters: vec![Parameter {
+            id: ValueId(0),
+            name: "exit".into(),
+            ty: Type::Bool,
+            range,
+        }],
+        return_type: Type::I64,
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![
+            Block {
+                id: BlockId(0),
+                instructions: Vec::new(),
+                terminator: Terminator::Branch {
+                    condition: ValueId(0),
+                    then_block: BlockId(1),
+                    else_block: BlockId(0),
+                },
+                range,
+            },
+            return_i64_block(1, 1, 7, range),
+        ],
+        range,
+    }
+}
+
+fn return_i64_block(id: u32, result: u32, value: i64, range: SourceRange) -> Block {
+    Block {
+        id: BlockId(id),
+        instructions: vec![Instruction {
+            result: ValueId(result),
+            ty: Type::I64,
+            operation: Operation::ConstI64(value),
+            range,
+        }],
+        terminator: Terminator::Return(Some(ValueId(result))),
+        range,
+    }
+}
+
 fn fixed_function(
     index: usize,
     name: &str,
@@ -424,13 +793,7 @@ fn validate(bytes: &[u8]) {
 }
 
 fn snapshot(name: &str, bytes: &[u8]) {
-    let actual = bytes.iter().fold(
-        String::with_capacity(bytes.len() * 2),
-        |mut output, byte| {
-            write!(output, "{byte:02x}").unwrap();
-            output
-        },
-    );
+    let actual = hex(bytes);
     if std::env::var_os("SICO_DUMP_WASM").is_some() {
         println!("{name}={actual}");
     } else {
@@ -443,4 +806,14 @@ fn snapshot(name: &str, bytes: &[u8]) {
             "missing artifact snapshot for {name}"
         );
     }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut output, byte| {
+            write!(output, "{byte:02x}").unwrap();
+            output
+        },
+    )
 }

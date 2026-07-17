@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M8 STEP-0078`](./M8-STEP-0078.md) | planned / ready | general executable control/function codegen；复用 fixed-width dynamic values |
+| [`M8 STEP-0079`](./M8-STEP-0079.md) | planned / ready | Script aggregate Canonical ABI；Text/Bytes/List/record/Result bounded lift/lower |
 
-已完成的上一接手快照：[`M8 STEP-0077`](./M8-STEP-0077.md)。
+本目录只保留当前活跃接手文档；已完成 step 的事实记录位于 `docs/steps` 与 `docs/reports`。

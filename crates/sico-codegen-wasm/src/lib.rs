@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 
 use sico_ir::{
-    Block, BlockId, Function as IrFunction, Module as IrModule, Operation, Terminator, Type,
-    ValueId, VerifyError, verify,
+    Block, BlockId, Function as IrFunction, FunctionId, Module as IrModule, Operation, Pattern,
+    Terminator, Type, ValueId, VerifyError, verify,
 };
 use wasm_encoder::{
     BlockType, CanonicalOption, CodeSection, ComponentBuilder, ComponentExportKind,
@@ -63,6 +63,19 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
     let mut functions = FunctionSection::new();
     let mut exports = ExportSection::new();
     let mut code = CodeSection::new();
+    let function_indices = module
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(index, function)| {
+            u32::try_from(index)
+                .map(|index| (function.id, index))
+                .map_err(|_| CodegenError::ModuleTooLarge {
+                    functions: module.functions.len(),
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    let variant_tags = VariantTags::new(module)?;
     for (index, function) in module.functions.iter().enumerate() {
         if !function.effects.is_empty() {
             return Err(unsupported(
@@ -82,7 +95,12 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
         types.ty().function(params, results);
         functions.function(function_index);
         exports.export(&function.name, ExportKind::Func, function_index);
-        code.function(&compile_function(function, abi)?);
+        code.function(&compile_function(
+            function,
+            abi,
+            &function_indices,
+            &variant_tags,
+        )?);
     }
     let mut output = Module::new();
     output.section(&types);
@@ -281,63 +299,88 @@ fn lower_result_type(
     }
 }
 
-fn compile_function(function: &IrFunction, abi: CoreAbi) -> Result<Function, CodegenError> {
-    let (locals, layout) = LocalLayout::new(function)?;
+fn compile_function(
+    function: &IrFunction,
+    abi: CoreAbi,
+    function_indices: &BTreeMap<FunctionId, u32>,
+    variant_tags: &VariantTags,
+) -> Result<Function, CodegenError> {
+    let (locals, layout, dispatcher) = LocalLayout::new(function)?;
     let mut body = Function::new(locals);
-    let mut constants = BTreeMap::new();
-    let entry = block(function, function.entry)?;
-    compile_instructions(function, entry, &layout, &mut body, &mut constants)?;
-    match &entry.terminator {
-        Terminator::Return(value) => emit_return(function, &layout, &mut body, *value, abi)?,
-        Terminator::Branch {
-            condition,
-            then_block,
-            else_block,
-        } => {
-            body.instruction(&Instruction::LocalGet(
-                layout.scalar(&function.name, *condition)?,
-            ));
-            body.instruction(&Instruction::If(BlockType::Empty));
-            compile_return_block(
-                function,
-                *then_block,
-                &layout,
-                &mut body,
-                &mut constants,
-                abi,
-            )?;
-            body.instruction(&Instruction::Else);
-            compile_return_block(
-                function,
-                *else_block,
-                &layout,
-                &mut body,
-                &mut constants,
-                abi,
-            )?;
-            body.instruction(&Instruction::End);
-            body.instruction(&Instruction::Unreachable);
-        }
-        Terminator::Jump(_) | Terminator::Match { .. } | Terminator::Unreachable => {
-            return Err(unsupported(&function.name, "entry terminator"));
-        }
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(function.entry.0)
+            .map_err(|_| unsupported(&function.name, "block id outside i32"))?,
+    ));
+    body.instruction(&Instruction::LocalSet(dispatcher));
+    body.instruction(&Instruction::Block(BlockType::Empty));
+    body.instruction(&Instruction::Loop(BlockType::Empty));
+    let context = CompileContext {
+        function,
+        layout: &layout,
+        abi,
+        dispatcher,
+        function_indices,
+        variant_tags,
+    };
+    for current in &function.blocks {
+        body.instruction(&Instruction::LocalGet(dispatcher));
+        body.instruction(&Instruction::I32Const(
+            i32::try_from(current.id.0)
+                .map_err(|_| unsupported(&function.name, "block id outside i32"))?,
+        ));
+        body.instruction(&Instruction::I32Eq);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        let mut constants = BTreeMap::new();
+        compile_instructions(&context, current, &mut body, &mut constants)?;
+        compile_terminator(
+            function,
+            &current.terminator,
+            &layout,
+            &mut body,
+            abi,
+            dispatcher,
+            variant_tags,
+        )?;
+        body.instruction(&Instruction::End);
     }
+    body.instruction(&Instruction::Unreachable);
+    body.instruction(&Instruction::End);
+    body.instruction(&Instruction::End);
+    body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
     Ok(body)
 }
 
-struct LocalLayout {
-    slots: BTreeMap<ValueId, Vec<u32>>,
+#[derive(Clone)]
+struct ValueLayout {
+    slots: Vec<u32>,
+    types: Vec<ValType>,
+    fields: BTreeMap<String, Vec<usize>>,
+    variant: bool,
 }
 
+struct LocalLayout {
+    values: BTreeMap<ValueId, ValueLayout>,
+}
+
+type WasmLocals = Vec<(u32, ValType)>;
+
 impl LocalLayout {
-    fn new(function: &IrFunction) -> Result<(Vec<(u32, ValType)>, Self), CodegenError> {
-        let mut slots = BTreeMap::new();
+    fn new(function: &IrFunction) -> Result<(WasmLocals, Self, u32), CodegenError> {
+        let mut values = BTreeMap::new();
         for (index, parameter) in function.parameters.iter().enumerate() {
             let index = u32::try_from(index).map_err(|_| CodegenError::ModuleTooLarge {
                 functions: function.parameters.len(),
             })?;
-            slots.insert(parameter.id, vec![index]);
+            values.insert(
+                parameter.id,
+                ValueLayout {
+                    slots: vec![index],
+                    types: vec![lower_parameter_type(&function.name, &parameter.ty)?],
+                    fields: BTreeMap::new(),
+                    variant: false,
+                },
+            );
         }
         let mut next =
             u32::try_from(function.parameters.len()).map_err(|_| CodegenError::ModuleTooLarge {
@@ -345,25 +388,52 @@ impl LocalLayout {
             })?;
         let mut locals = Vec::new();
         for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-            let types = lower_local_types(&function.name, &instruction.ty)?;
-            let mut value_slots = Vec::with_capacity(types.len());
-            for ty in types {
-                value_slots.push(next);
+            let mut value_layout = inferred_local_layout(function, instruction, &values)?;
+            for ty in &value_layout.types {
+                value_layout.slots.push(next);
                 next = next
                     .checked_add(1)
                     .ok_or_else(|| unsupported(&function.name, "too many Wasm locals"))?;
-                locals.push((1, ty));
+                locals.push((1, *ty));
             }
-            slots.insert(instruction.result, value_slots);
+            values.insert(instruction.result, value_layout);
         }
-        Ok((locals, Self { slots }))
+        let dispatcher = next;
+        locals.push((1, ValType::I32));
+        Ok((locals, Self { values }, dispatcher))
+    }
+
+    fn layout(&self, function: &str, value: ValueId) -> Result<&ValueLayout, CodegenError> {
+        self.values
+            .get(&value)
+            .ok_or_else(|| unsupported(function, "missing local after verification"))
     }
 
     fn get(&self, function: &str, value: ValueId) -> Result<&[u32], CodegenError> {
-        self.slots
-            .get(&value)
-            .map(Vec::as_slice)
-            .ok_or_else(|| unsupported(function, "missing local after verification"))
+        Ok(&self.layout(function, value)?.slots)
+    }
+
+    fn field(&self, function: &str, value: ValueId, field: &str) -> Result<Vec<u32>, CodegenError> {
+        let layout = self.layout(function, value)?;
+        let Some(indices) = layout.fields.get(field) else {
+            return Err(unsupported(function, "unknown internal aggregate field"));
+        };
+        Ok(indices.iter().map(|index| layout.slots[*index]).collect())
+    }
+
+    fn tag(&self, function: &str, value: ValueId) -> Result<u32, CodegenError> {
+        let layout = self.layout(function, value)?;
+        if !layout.variant {
+            return Err(unsupported(
+                function,
+                "variant pattern over non-variant value",
+            ));
+        }
+        layout
+            .slots
+            .first()
+            .copied()
+            .ok_or_else(|| unsupported(function, "missing variant tag"))
     }
 
     fn scalar(&self, function: &str, value: ValueId) -> Result<u32, CodegenError> {
@@ -374,30 +444,278 @@ impl LocalLayout {
     }
 }
 
-fn compile_return_block(
+fn inferred_local_layout(
     function: &IrFunction,
-    id: BlockId,
-    layout: &LocalLayout,
-    body: &mut Function,
-    constants: &mut BTreeMap<ValueId, i64>,
-    abi: CoreAbi,
-) -> Result<(), CodegenError> {
-    let block = block(function, id)?;
-    compile_instructions(function, block, layout, body, constants)?;
-    let Terminator::Return(value) = block.terminator else {
-        return Err(unsupported(&function.name, "non-return branch block"));
+    instruction: &sico_ir::Instruction,
+    available: &BTreeMap<ValueId, ValueLayout>,
+) -> Result<ValueLayout, CodegenError> {
+    let mut layout = ValueLayout {
+        slots: Vec::new(),
+        types: Vec::new(),
+        fields: BTreeMap::new(),
+        variant: false,
     };
-    emit_return(function, layout, body, value, abi)?;
+    match &instruction.operation {
+        Operation::Copy(source) => {
+            let Some(source) = available.get(source) else {
+                return Err(unsupported(
+                    &function.name,
+                    "copy layout after verification",
+                ));
+            };
+            layout.types.clone_from(&source.types);
+            layout.fields.clone_from(&source.fields);
+            layout.variant = source.variant;
+        }
+        Operation::Construct { fields, .. } => {
+            for field in fields {
+                let Some(source) = available.get(&field.value) else {
+                    return Err(unsupported(
+                        &function.name,
+                        "construct layout after verification",
+                    ));
+                };
+                let start = layout.types.len();
+                layout.types.extend_from_slice(&source.types);
+                layout
+                    .fields
+                    .insert(field.name.clone(), (start..layout.types.len()).collect());
+            }
+        }
+        Operation::Project { base, field } => {
+            let Some(base) = available.get(base) else {
+                return Err(unsupported(
+                    &function.name,
+                    "project layout after verification",
+                ));
+            };
+            let Some(indices) = base.fields.get(field) else {
+                return Err(unsupported(
+                    &function.name,
+                    "aggregate parameter or unknown field layout deferred to STEP-0079",
+                ));
+            };
+            layout
+                .types
+                .extend(indices.iter().map(|index| base.types[*index]));
+            let expected = lower_local_types(&function.name, &instruction.ty)?;
+            if layout.types != expected {
+                return Err(unsupported(
+                    &function.name,
+                    "projected field does not match its declared Wasm layout",
+                ));
+            }
+        }
+        Operation::Variant { payload, .. } => {
+            layout.types.push(ValType::I32);
+            layout.variant = true;
+            for value in payload {
+                let Some(payload) = available.get(value) else {
+                    return Err(unsupported(
+                        &function.name,
+                        "variant layout after verification",
+                    ));
+                };
+                layout.types.extend_from_slice(&payload.types);
+            }
+        }
+        _ => layout.types = lower_local_types(&function.name, &instruction.ty)?,
+    }
+    Ok(layout)
+}
+
+fn set_dispatcher(
+    function: &IrFunction,
+    body: &mut Function,
+    dispatcher: u32,
+    target: BlockId,
+) -> Result<(), CodegenError> {
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(target.0).map_err(|_| unsupported(&function.name, "block id outside i32"))?,
+    ));
+    body.instruction(&Instruction::LocalSet(dispatcher));
     Ok(())
 }
 
-fn compile_instructions(
+fn compile_terminator(
     function: &IrFunction,
-    block: &Block,
+    terminator: &Terminator,
     layout: &LocalLayout,
+    body: &mut Function,
+    abi: CoreAbi,
+    dispatcher: u32,
+    variant_tags: &VariantTags,
+) -> Result<(), CodegenError> {
+    match terminator {
+        Terminator::Return(value) => emit_return(function, layout, body, *value, abi),
+        Terminator::Jump(target) => {
+            set_dispatcher(function, body, dispatcher, *target)?;
+            body.instruction(&Instruction::Br(1));
+            Ok(())
+        }
+        Terminator::Branch {
+            condition,
+            then_block,
+            else_block,
+        } => {
+            body.instruction(&Instruction::LocalGet(
+                layout.scalar(&function.name, *condition)?,
+            ));
+            body.instruction(&Instruction::If(BlockType::Empty));
+            set_dispatcher(function, body, dispatcher, *then_block)?;
+            body.instruction(&Instruction::Else);
+            set_dispatcher(function, body, dispatcher, *else_block)?;
+            body.instruction(&Instruction::End);
+            body.instruction(&Instruction::Br(1));
+            Ok(())
+        }
+        Terminator::Match { values, arms } => {
+            body.instruction(&Instruction::I32Const(-1));
+            body.instruction(&Instruction::LocalSet(dispatcher));
+            for arm in arms {
+                body.instruction(&Instruction::LocalGet(dispatcher));
+                body.instruction(&Instruction::I32Const(-1));
+                body.instruction(&Instruction::I32Eq);
+                body.instruction(&Instruction::If(BlockType::Empty));
+                emit_match_condition(function, layout, body, values, &arm.patterns, variant_tags)?;
+                body.instruction(&Instruction::If(BlockType::Empty));
+                set_dispatcher(function, body, dispatcher, arm.target)?;
+                body.instruction(&Instruction::End);
+                body.instruction(&Instruction::End);
+            }
+            body.instruction(&Instruction::LocalGet(dispatcher));
+            body.instruction(&Instruction::I32Const(-1));
+            body.instruction(&Instruction::I32Eq);
+            body.instruction(&Instruction::If(BlockType::Empty));
+            body.instruction(&Instruction::Unreachable);
+            body.instruction(&Instruction::End);
+            body.instruction(&Instruction::Br(1));
+            Ok(())
+        }
+        Terminator::Unreachable => {
+            body.instruction(&Instruction::Unreachable);
+            Ok(())
+        }
+    }
+}
+
+fn emit_match_condition(
+    function: &IrFunction,
+    layout: &LocalLayout,
+    body: &mut Function,
+    values: &[ValueId],
+    patterns: &[Pattern],
+    variant_tags: &VariantTags,
+) -> Result<(), CodegenError> {
+    body.instruction(&Instruction::I32Const(1));
+    for (value, pattern) in values.iter().zip(patterns) {
+        match pattern {
+            Pattern::Wildcard => {
+                body.instruction(&Instruction::I32Const(1));
+            }
+            Pattern::Binding(_) => {
+                return Err(unsupported(&function.name, "match binding transport"));
+            }
+            Pattern::Bool(expected) => {
+                body.instruction(&Instruction::LocalGet(
+                    layout.scalar(&function.name, *value)?,
+                ));
+                body.instruction(&Instruction::I32Const(i32::from(*expected)));
+                body.instruction(&Instruction::I32Eq);
+            }
+            Pattern::Variant { name, payload } => {
+                if payload
+                    .iter()
+                    .any(|pattern| !matches!(pattern, Pattern::Wildcard))
+                {
+                    return Err(unsupported(&function.name, "match payload inspection"));
+                }
+                body.instruction(&Instruction::LocalGet(layout.tag(&function.name, *value)?));
+                body.instruction(&Instruction::I32Const(
+                    variant_tags.get(&function.name, name)?,
+                ));
+                body.instruction(&Instruction::I32Eq);
+            }
+        }
+        body.instruction(&Instruction::I32And);
+    }
+    Ok(())
+}
+
+struct VariantTags(BTreeMap<String, i32>);
+
+impl VariantTags {
+    fn new(module: &IrModule) -> Result<Self, CodegenError> {
+        let mut names = std::collections::BTreeSet::new();
+        for function in &module.functions {
+            for current in &function.blocks {
+                for instruction in &current.instructions {
+                    if let Operation::Variant { name, .. } = &instruction.operation {
+                        names.insert(name.clone());
+                    }
+                }
+                if let Terminator::Match { arms, .. } = &current.terminator {
+                    for arm in arms {
+                        for pattern in &arm.patterns {
+                            collect_variant_patterns(pattern, &mut names);
+                        }
+                    }
+                }
+            }
+        }
+        let tags = names
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| {
+                i32::try_from(index).map(|tag| (name, tag)).map_err(|_| {
+                    CodegenError::ModuleTooLarge {
+                        functions: module.functions.len(),
+                    }
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self(tags))
+    }
+
+    fn get(&self, function: &str, name: &str) -> Result<i32, CodegenError> {
+        self.0
+            .get(name)
+            .copied()
+            .ok_or_else(|| unsupported(function, "unknown variant tag"))
+    }
+}
+
+fn collect_variant_patterns(pattern: &Pattern, names: &mut std::collections::BTreeSet<String>) {
+    if let Pattern::Variant { name, payload } = pattern {
+        names.insert(name.clone());
+        for pattern in payload {
+            collect_variant_patterns(pattern, names);
+        }
+    }
+}
+
+struct CompileContext<'a> {
+    function: &'a IrFunction,
+    layout: &'a LocalLayout,
+    abi: CoreAbi,
+    dispatcher: u32,
+    function_indices: &'a BTreeMap<FunctionId, u32>,
+    variant_tags: &'a VariantTags,
+}
+
+#[allow(clippy::too_many_lines)]
+fn compile_instructions(
+    context: &CompileContext<'_>,
+    block: &Block,
     body: &mut Function,
     constants: &mut BTreeMap<ValueId, i64>,
 ) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let abi = context.abi;
+    let dispatcher = context.dispatcher;
+    let function_indices = context.function_indices;
+    let variant_tags = context.variant_tags;
     for instruction in &block.instructions {
         match &instruction.operation {
             Operation::ConstInt(value) => {
@@ -454,6 +772,14 @@ fn compile_instructions(
                     layout.scalar(&function.name, instruction.result)?,
                 ));
             }
+            Operation::Copy(source) => {
+                copy_slots(
+                    &function.name,
+                    body,
+                    layout.get(&function.name, *source)?,
+                    layout.get(&function.name, instruction.result)?,
+                )?;
+            }
             Operation::AddInt { left, right } => {
                 let (Some(left_value), Some(right_value)) =
                     (constants.get(left), constants.get(right))
@@ -493,8 +819,123 @@ fn compile_instructions(
             Operation::LessFixed { left, right } => {
                 emit_fixed_comparison(function, layout, instruction, *left, *right, false, body)?;
             }
+            Operation::Call {
+                function: target,
+                arguments,
+            } => {
+                if instruction.ty == Type::Int {
+                    return Err(unsupported(&function.name, "non-constant Int call result"));
+                }
+                for argument in arguments {
+                    let [slot] = layout.get(&function.name, *argument)? else {
+                        return Err(unsupported(
+                            &function.name,
+                            "aggregate call argument deferred to STEP-0079",
+                        ));
+                    };
+                    body.instruction(&Instruction::LocalGet(*slot));
+                }
+                let target = function_indices
+                    .get(target)
+                    .copied()
+                    .ok_or_else(|| unsupported(&function.name, "call target after verification"))?;
+                body.instruction(&Instruction::Call(target));
+                let result = layout.get(&function.name, instruction.result)?;
+                if abi == CoreAbi::ComponentLift && is_checked_fixed_result(&instruction.ty) {
+                    let [tag, payload] = result else {
+                        return Err(unsupported(&function.name, "checked call result layout"));
+                    };
+                    body.instruction(&Instruction::LocalSet(dispatcher));
+                    body.instruction(&Instruction::LocalGet(dispatcher));
+                    body.instruction(&Instruction::I32Load8U(MemArg {
+                        offset: 0,
+                        align: 0,
+                        memory_index: 0,
+                    }));
+                    body.instruction(&Instruction::LocalSet(*tag));
+                    body.instruction(&Instruction::LocalGet(dispatcher));
+                    body.instruction(&Instruction::I64Load(MemArg {
+                        offset: 8,
+                        align: 3,
+                        memory_index: 0,
+                    }));
+                    body.instruction(&Instruction::LocalSet(*payload));
+                } else {
+                    for slot in result.iter().rev() {
+                        body.instruction(&Instruction::LocalSet(*slot));
+                    }
+                }
+            }
+            Operation::Construct { fields, .. } => {
+                let mut destination = 0;
+                let result = layout.get(&function.name, instruction.result)?;
+                for field in fields {
+                    let source = layout.get(&function.name, field.value)?;
+                    let end = destination + source.len();
+                    copy_slots(
+                        &function.name,
+                        body,
+                        source,
+                        result.get(destination..end).ok_or_else(|| {
+                            unsupported(&function.name, "construct destination layout")
+                        })?,
+                    )?;
+                    destination = end;
+                }
+            }
+            Operation::Project { base, field } => {
+                copy_slots(
+                    &function.name,
+                    body,
+                    &layout.field(&function.name, *base, field)?,
+                    layout.get(&function.name, instruction.result)?,
+                )?;
+            }
+            Operation::Variant { name, payload } => {
+                let result = layout.get(&function.name, instruction.result)?;
+                let Some((tag, destination)) = result.split_first() else {
+                    return Err(unsupported(&function.name, "variant destination layout"));
+                };
+                body.instruction(&Instruction::I32Const(
+                    variant_tags.get(&function.name, name)?,
+                ));
+                body.instruction(&Instruction::LocalSet(*tag));
+                let mut offset = 0;
+                for value in payload {
+                    let source = layout.get(&function.name, *value)?;
+                    let end = offset + source.len();
+                    copy_slots(
+                        &function.name,
+                        body,
+                        source,
+                        destination
+                            .get(offset..end)
+                            .ok_or_else(|| unsupported(&function.name, "variant payload layout"))?,
+                    )?;
+                    offset = end;
+                }
+            }
             _ => return Err(unsupported(&function.name, "operation")),
         }
+    }
+    Ok(())
+}
+
+fn copy_slots(
+    function: &str,
+    body: &mut Function,
+    source: &[u32],
+    destination: &[u32],
+) -> Result<(), CodegenError> {
+    if source.len() != destination.len() {
+        return Err(unsupported(
+            function,
+            "incompatible internal aggregate layout",
+        ));
+    }
+    for (source, destination) in source.iter().zip(destination) {
+        body.instruction(&Instruction::LocalGet(*source));
+        body.instruction(&Instruction::LocalSet(*destination));
     }
     Ok(())
 }
@@ -644,14 +1085,6 @@ fn emit_fixed_comparison(
         layout.scalar(&function.name, instruction.result)?,
     ));
     Ok(())
-}
-
-fn block(function: &IrFunction, id: BlockId) -> Result<&Block, CodegenError> {
-    function
-        .blocks
-        .iter()
-        .find(|block| block.id == id)
-        .ok_or_else(|| unsupported(&function.name, "missing block after verification"))
 }
 
 fn emit_return(

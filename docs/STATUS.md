@@ -3,10 +3,10 @@
 > - updated: 2026-07-17
 > - phase: M8 Script Profile backend foundation; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0078 general executable control and function codegen (planned)
-> - last completed active step: STEP-0077 (M8 fixed-width dynamic scalars complete)
+> - current step: STEP-0079 Script aggregate Canonical ABI (planned)
+> - last completed active step: STEP-0078 (general executable control and function codegen complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: start STEP-0078 by freezing verified CFG and internal aggregate representation, then implement general Call/branch/jump/match codegen over dynamic Bool/I64/U64 values
+> - next step: freeze the WIT-driven bounded aggregate layout/ownership table, then implement checked Text/Bytes/List/record/Result lift/lower and randomized host/guest roundtrips
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约；[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已完成 Program/Adapter `composition-go`。[`STEP-0077`](./steps/STEP-0077-fixed-width-dynamic-scalars.md) 已贯通独立 `I64/U64` semantics、verified IR、dynamic Core Wasm 与 Component：Node 完成 2,048 × 8 runtime oracle，Wasmtime 46.0.1 完成 11 个 Component 边界用例，overflow/underflow 保持 typed `Result`，`Int` 未被静默缩窄。下一项 [`STEP-0078`](./steps/STEP-0078-general-executable-control-codegen.md) 负责 general Call/CFG/match/internal aggregate codegen。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 仍等待后续 compiler/package/runner/security gate；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约；[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已完成 Program/Adapter `composition-go`；[`STEP-0077`](./steps/STEP-0077-fixed-width-dynamic-scalars.md) 已贯通独立 `I64/U64` dynamic scalars 与 typed overflow/underflow；[`STEP-0078`](./steps/STEP-0078-general-executable-control-codegen.md) 已完成 direct calls、dispatcher CFG、内部 record/variant codegen、7 个 Wasmtime 结果与 bounded-fuel loop trap，`Int` 未被静默缩窄。下一项 [`STEP-0079`](./steps/STEP-0079-script-aggregate-canonical-abi.md) 负责 bounded Text/Bytes/List/record/Result Canonical ABI。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 仍等待后续 compiler/package/runner/security gate；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
 
 ## 3. Verified repository facts
 
@@ -171,4 +171,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0078：先冻结 verified CFG 与 internal aggregate slot/layout/refusal 边界，再实现 dynamic `Bool/I64/U64` 上的 general Call、branch/jump/match 与 construct/project/variant codegen；不得把 arbitrary-precision `Int` 偷换为 i64，也不得把 numeric `Result` 私有返回区误报为通用 Canonical ABI。完成后按 STEP-0079–0084 推进 aggregate ABI、runner、CLI、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。
+下一项执行 STEP-0079：先从 Script WIT 冻结 aggregate layout、ownership、post-return 与 bounded arena，再按 Text、Bytes、List、records、Result 顺序实现 checked lift/lower、恶意 memory mutation 和至少 10,000 个 seeded roundtrips；不得把 STEP-0078 flat locals 或 numeric `Result` 私有返回区误报为通用 Canonical ABI。完成后按 STEP-0080–0084 推进 compiler profile/adapter、runner、CLI/cache、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。
