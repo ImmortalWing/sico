@@ -1,13 +1,13 @@
 # Script Profile prototype v0 runtime evidence
 
-> - status: prototype-runtime-evidence / composition-pending
+> - status: prototype-runtime-evidence / direct-path snapshot
 > - date: 2026-07-17
 > - related step: STEP-0076
 > - evidence kind: immutable raw run record
 
 ## Summary
 
-STEP-0076 的 direct-runner 纵向原型已在 Wasmtime 46.0.1 上真实运行，六个机器用例全部通过。原型不再是"导入 host-run 再导出"的模拟结构——Wasmtime 46.0.1 不支持再导出导入函数——而是自包含 Program Component：硬编码 guest Core Wasm + 真实 Canonical ABI lift/lower。本文件保存原始 JSON、环境元数据与测量方法；它不构成 STEP-0076 完成声明，Program/Adapter composition 裁决仍未执行。
+STEP-0076 的 direct-runner 纵向原型已在 Wasmtime 46.0.1 上真实运行，六个机器用例全部通过。原型不再是"导入 host-run 再导出"的模拟结构——Wasmtime 46.0.1 不支持再导出导入函数——而是自包含 Program Component：硬编码 guest Core Wasm + 真实 Canonical ABI lift/lower。本文件保存 direct path 当时的原始 JSON、环境元数据与测量方法；单独看它不构成 STEP-0076 完成声明。随后完成的 composition 裁决与步骤完成证据见 [`script-profile-composition-v0.md`](./script-profile-composition-v0.md)。
 
 ## Environment metadata
 

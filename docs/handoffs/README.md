@@ -4,4 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M8 STEP-0076`](./M8-STEP-0076.md) | in-progress | Script Profile direct runner、Program/Adapter 原型与架构裁决 |
+| [`M8 STEP-0077`](./M8-STEP-0077.md) | planned / ready | fixed-width dynamic scalars；保持 Int 不被静默缩窄 |
+
+已完成的上一接手快照：[`M8 STEP-0076`](./M8-STEP-0076.md)。

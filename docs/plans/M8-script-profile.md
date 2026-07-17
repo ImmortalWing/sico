@@ -1,6 +1,6 @@
 # M8 plan: Script Profile v0
 
-> - status: in-progress; STEP-0075 complete, STEP-0076 in progress
+> - status: in-progress; STEP-0075–0076 complete, STEP-0077 planned
 > - created: 2026-07-17
 > - phase: M8
 > - entry requirement: M3/M4 Component, package, trust and Runtime contracts; STEP-0074 one-command development baseline
@@ -56,7 +56,7 @@ These are non-SLA local measurements. The benchmark must be captured in an M8 re
 | Step | Deliverable | Exit evidence |
 |---|---|---|
 | STEP-0075 | M8/RFC/ADR/WIT contract and honest baseline | accepted contract or explicit unresolved blockers; reproducible benchmark method; no invented implementation claims |
-| STEP-0076 | hard-coded Program + Adapter vertical prototype | Unicode args, binary stdin, separated output, exit/error, 1 MiB roundtrip, Wasmtime 46.0.1; cold P95 < 200 ms and warm P95 < 120 ms |
+| STEP-0076 | hard-coded Program + Adapter vertical prototype | complete: direct/composed 20 × 6/6; composed cold P95 15.8033 ms, worst warm P95 0.2038 ms; `composition-go` |
 | STEP-0077 | fixed-width dynamic scalar representation | `I64/U64`, checked arithmetic/comparison, dynamic parameters/locals and oracle/property tests |
 | STEP-0078 | general executable control and function codegen | `Call`, non-constant values, multi-block branch/jump/match, construct/project/variant and verified Wasm |
 | STEP-0079 | Script aggregate Canonical ABI | Text/Bytes/List/Text list/record/Result memory, lift/lower, bounded allocation and randomized host/guest roundtrip |

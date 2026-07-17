@@ -82,6 +82,12 @@ Costs:
 
 STEP-0076 must first demonstrate the Program/Adapter contract under the selected Wasmtime CLI. Before this ADR can be accepted, the embedded runner must prove typed timeout/fuel/memory/trap/capability results, bounded stdio, no default env/fs/network, cache mutation refusal, fresh-Store isolation and host survival after malicious guests. Binary size, cold/warm latency and build-time effects are recorded rather than assumed.
 
+### STEP-0076 architecture gate result
+
+STEP-0076 returned `composition-go` on 2026-07-17 using the Wasmtime 46.0.1 Component API. The Adapter avoids unsupported imported-function re-export by canonical-lowering the Program function into private Adapter memory, invoking a core trampoline and canonical-lifting its own `run` export. An outer Component explicitly instantiates and wires Program + Adapter.
+
+Direct and composed paths each passed 20 × 6/6; composed cold P95 was 15.8033 ms, the worst recorded per-run warm P95 was 0.2038 ms, and the 915-byte Adapter had one stable digest. The preferred architecture is therefore retained and direct invocation remains the fallback. This ADR stays `proposed` until the embedded runner and security evidence listed above are complete; the prototype does not yet include WASI CLI adaptation, package closure or production Runtime limits.
+
 ## Revisit conditions
 
 - Component composition cannot satisfy the WIT or performance gate;
@@ -98,4 +104,6 @@ The fallback is direct runner invocation of the same Program WIT, not a compiler
 - [`M9 plan`](../plans/M9-streaming-async-interactive.md)
 - [`RFC-0029`](../rfc/RFC-0029-script-profile-v0.md)
 - [`STEP-0075`](../steps/STEP-0075-script-profile-contract.md)
+- [`STEP-0076`](../steps/STEP-0076-script-profile-vertical-prototype.md)
+- [`composition evidence`](../reports/script-profile-composition-v0.md)
 - [`ADR-0007`](./ADR-0007-openjdk-style-modular-monorepo.md)

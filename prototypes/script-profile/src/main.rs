@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
@@ -14,6 +15,8 @@ use wasmtime::{Config, Engine, Store};
 const STDIN_LIMIT: usize = 8 * 1024 * 1024;
 const WARM_ITERATIONS: usize = 40;
 const TYPES_IMPORT: &str = "sico:script/types@0.1.0";
+const PROGRAM_RUN_IMPORT: &str = "program-run";
+const ADAPTER_ID: &str = "sico:script/adapter@0.1.0";
 
 type AnyError = Box<dyn Error + Send + Sync>;
 type AnyResult<T> = Result<T, AnyError>;
@@ -100,46 +103,15 @@ fn main() -> AnyResult<()> {
     config.wasm_component_model(true);
     let engine = Engine::new(&config)?;
 
-    let cold_started = Instant::now();
-    let mut component_bytes = 0usize;
-    let mut component_sizes = BTreeMap::new();
-    let components = Components {
-        join_args: compile_component(
-            &engine,
-            Mode::JoinArgs,
-            "join-args",
-            &mut component_bytes,
-            &mut component_sizes,
-        )?,
-        echo_stdin: compile_component(
-            &engine,
-            Mode::EchoStdin,
-            "echo-stdin",
-            &mut component_bytes,
-            &mut component_sizes,
-        )?,
-        split_channels: compile_component(
-            &engine,
-            Mode::SplitChannels,
-            "split-channels",
-            &mut component_bytes,
-            &mut component_sizes,
-        )?,
-        script_error: compile_component(
-            &engine,
-            Mode::ScriptError,
-            "script-error",
-            &mut component_bytes,
-            &mut component_sizes,
-        )?,
-    };
-    let cold_compile = cold_started.elapsed();
-
-    let mut passed = 0usize;
-    for case in &cases.cases {
-        run_case(&engine, &components, case)?;
-        passed += 1;
+    let adapter_bytes = build_adapter_component();
+    if adapter_bytes != build_adapter_component() {
+        return Err("adapter encoding is not deterministic".into());
     }
+
+    let direct = compile_components(&engine, None)?;
+    let composed = compile_components(&engine, Some(&adapter_bytes))?;
+    let direct_passed = run_cases(&engine, &direct.components, &cases.cases)?;
+    let composed_passed = run_cases(&engine, &composed.components, &cases.cases)?;
 
     let benchmark_case = cases
         .cases
@@ -147,48 +119,314 @@ fn main() -> AnyResult<()> {
         .find(|case| case.name == "binary-stdin")
         .ok_or("missing binary-stdin benchmark case")?;
     let benchmark_input = case_input(benchmark_case)?;
-    let mut warm_samples = Vec::with_capacity(WARM_ITERATIONS);
-    for _ in 0..WARM_ITERATIONS {
-        let started = Instant::now();
-        let result = invoke(
-            &engine,
-            component_for(&components, &benchmark_case.mode),
-            &benchmark_input,
-        )?;
-        validate_result(benchmark_case, &benchmark_input.stdin, &result)?;
-        warm_samples.push(started.elapsed());
-    }
-    warm_samples.sort_unstable();
+    let direct_warm = benchmark_warm(
+        &engine,
+        &direct.components,
+        benchmark_case,
+        &benchmark_input,
+    )?;
+    let composed_warm = benchmark_warm(
+        &engine,
+        &composed.components,
+        benchmark_case,
+        &benchmark_input,
+    )?;
 
     let report = serde_json::json!({
-        "prototype": "script-profile-direct-runner-v0",
+        "prototype": "script-profile-program-adapter-composition-v0",
         "wasmtime": "46.0.1",
-        "component_bytes": component_bytes,
-        "components": component_sizes,
-        "cases_passed": passed,
-        "cases_total": cases.cases.len(),
-        "cold_component_compile_ms": milliseconds(cold_compile),
-        "warm_instantiate_call_median_ms": milliseconds(percentile(&warm_samples, 50)),
-        "warm_instantiate_call_p95_ms": milliseconds(percentile(&warm_samples, 95)),
-        "warm_iterations": WARM_ITERATIONS,
-        "scope": "hard-coded guest Core Wasm Programs with real Canonical ABI lift/lower through a direct in-process Wasmtime runner; Script types named through a local sico:script/types@0.1.0 instance import; no adapter composition"
+        "adapter": {
+            "identity": ADAPTER_ID,
+            "bytes": adapter_bytes.len(),
+            "sha256": hex_digest(&adapter_bytes),
+        },
+        "direct": path_report(&direct, direct_passed, cases.cases.len(), &direct_warm),
+        "composed": path_report(&composed, composed_passed, cases.cases.len(), &composed_warm),
+        "decision": "composition-go",
+        "scope": "hard-coded guest Program Components composed with a deterministic versioned Adapter Component; the Adapter canonical-lowers the Program function into an isolated core trampoline and canonical-lifts its run export; both paths use the same Script values and Wasmtime 46.0.1 in-process runner"
     });
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+struct CompiledPath {
+    components: Components,
+    cold_compile: Duration,
+    component_bytes: usize,
+    component_sizes: BTreeMap<String, usize>,
+}
+
+fn compile_components(engine: &Engine, adapter: Option<&[u8]>) -> AnyResult<CompiledPath> {
+    let started = Instant::now();
+    let mut component_bytes = 0usize;
+    let mut component_sizes = BTreeMap::new();
+    let components = Components {
+        join_args: compile_component(
+            engine,
+            Mode::JoinArgs,
+            "join-args",
+            adapter,
+            &mut component_bytes,
+            &mut component_sizes,
+        )?,
+        echo_stdin: compile_component(
+            engine,
+            Mode::EchoStdin,
+            "echo-stdin",
+            adapter,
+            &mut component_bytes,
+            &mut component_sizes,
+        )?,
+        split_channels: compile_component(
+            engine,
+            Mode::SplitChannels,
+            "split-channels",
+            adapter,
+            &mut component_bytes,
+            &mut component_sizes,
+        )?,
+        script_error: compile_component(
+            engine,
+            Mode::ScriptError,
+            "script-error",
+            adapter,
+            &mut component_bytes,
+            &mut component_sizes,
+        )?,
+    };
+    Ok(CompiledPath {
+        components,
+        cold_compile: started.elapsed(),
+        component_bytes,
+        component_sizes,
+    })
+}
+
+fn run_cases(engine: &Engine, components: &Components, cases: &[Case]) -> AnyResult<usize> {
+    for case in cases {
+        run_case(engine, components, case)?;
+    }
+    Ok(cases.len())
+}
+
+fn benchmark_warm(
+    engine: &Engine,
+    components: &Components,
+    case: &Case,
+    input: &ScriptInput,
+) -> AnyResult<Vec<Duration>> {
+    let mut samples = Vec::with_capacity(WARM_ITERATIONS);
+    for _ in 0..WARM_ITERATIONS {
+        let started = Instant::now();
+        let result = invoke(engine, component_for(components, &case.mode), input)?;
+        validate_result(case, &input.stdin, &result)?;
+        samples.push(started.elapsed());
+    }
+    samples.sort_unstable();
+    Ok(samples)
+}
+
+fn path_report(
+    path: &CompiledPath,
+    passed: usize,
+    total: usize,
+    warm: &[Duration],
+) -> serde_json::Value {
+    serde_json::json!({
+        "cases_passed": passed,
+        "cases_total": total,
+        "cold_component_compile_ms": milliseconds(path.cold_compile),
+        "component_bytes": path.component_bytes,
+        "components": path.component_sizes,
+        "warm_instantiate_call_median_ms": milliseconds(percentile(warm, 50)),
+        "warm_instantiate_call_p95_ms": milliseconds(percentile(warm, 95)),
+        "warm_iterations": WARM_ITERATIONS,
+    })
 }
 
 fn compile_component(
     engine: &Engine,
     mode: Mode,
     name: &str,
+    adapter: Option<&[u8]>,
     component_bytes: &mut usize,
     component_sizes: &mut BTreeMap<String, usize>,
 ) -> AnyResult<Component> {
-    let bytes = build_program_component(&mode);
+    let program = build_program_component(&mode);
+    let bytes = match adapter {
+        Some(adapter) => build_composed_component(&program, adapter),
+        None => program,
+    };
+    let rebuilt = match adapter {
+        Some(adapter) => build_composed_component(&build_program_component(&mode), adapter),
+        None => build_program_component(&mode),
+    };
+    if bytes != rebuilt {
+        return Err(format!("{name}: component encoding is not deterministic").into());
+    }
     let component = Component::new(engine, &bytes)?;
     *component_bytes += bytes.len();
     component_sizes.insert(name.to_owned(), bytes.len());
     Ok(component)
+}
+
+/// Builds the versioned Adapter candidate. It imports the Program function,
+/// canonical-lowers it into the Adapter's private memory, calls it through a
+/// core trampoline, and canonical-lifts the trampoline as the Adapter `run`.
+/// The trampoline is required because Wasmtime 46.0.1 cannot re-export an
+/// imported component function.
+fn build_adapter_component() -> Vec<u8> {
+    let mut builder = ComponentBuilder::default();
+    let types_ty = builder.type_instance(Some("script-types"), &script_types_instance());
+    let types_instance = builder.import(TYPES_IMPORT, ComponentTypeRef::Instance(types_ty));
+    let input_ty = builder.alias_export(types_instance, "script-input", ComponentExportKind::Type);
+    let result_ty =
+        builder.alias_export(types_instance, "script-result", ComponentExportKind::Type);
+    let (run_ty, mut run) = builder.type_function(Some("run"));
+    run.params([("input", ComponentValType::Type(input_ty))]);
+    run.result(Some(ComponentValType::Type(result_ty)));
+    let program_run = builder.import(PROGRAM_RUN_IMPORT, ComponentTypeRef::Func(run_ty));
+
+    let memory_module = wat::parse_str(adapter_memory_wat()).expect("adapter memory WAT is valid");
+    let memory_module = builder.core_module_raw(Some("adapter-memory"), &memory_module);
+    let memory_instance = builder.core_instantiate(
+        Some("adapter-memory-instance"),
+        memory_module,
+        Vec::<(&str, ModuleArg)>::new(),
+    );
+    let memory = builder.core_alias_export(
+        Some("adapter-memory"),
+        memory_instance,
+        "memory",
+        ExportKind::Memory,
+    );
+    let realloc = builder.core_alias_export(
+        Some("adapter-realloc"),
+        memory_instance,
+        "realloc",
+        ExportKind::Func,
+    );
+    let lowered = builder.lower_func(
+        Some("program-run-lowered"),
+        program_run,
+        [
+            wasm_encoder::CanonicalOption::UTF8,
+            wasm_encoder::CanonicalOption::Memory(memory),
+            wasm_encoder::CanonicalOption::Realloc(realloc),
+        ],
+    );
+    let adapter_imports = builder.core_instantiate_exports(
+        Some("adapter-imports"),
+        [
+            ("memory", ExportKind::Memory, memory),
+            ("realloc", ExportKind::Func, realloc),
+        ],
+    );
+    let program_imports = builder.core_instantiate_exports(
+        Some("program-imports"),
+        [("run", ExportKind::Func, lowered)],
+    );
+    let trampoline =
+        wat::parse_str(adapter_trampoline_wat()).expect("adapter trampoline WAT is valid");
+    let trampoline = builder.core_module_raw(Some("adapter-trampoline"), &trampoline);
+    let trampoline_instance = builder.core_instantiate(
+        Some("adapter-trampoline-instance"),
+        trampoline,
+        [
+            ("adapter", ModuleArg::Instance(adapter_imports)),
+            ("program", ModuleArg::Instance(program_imports)),
+        ],
+    );
+    let run_core = builder.core_alias_export(
+        Some("adapter-run"),
+        trampoline_instance,
+        "run",
+        ExportKind::Func,
+    );
+    let run = builder.lift_func(
+        Some("run"),
+        run_core,
+        run_ty,
+        [
+            wasm_encoder::CanonicalOption::UTF8,
+            wasm_encoder::CanonicalOption::Memory(memory),
+            wasm_encoder::CanonicalOption::Realloc(realloc),
+        ],
+    );
+    builder.export("run", ComponentExportKind::Func, run, None);
+    builder.finish()
+}
+
+fn adapter_memory_wat() -> &'static str {
+    r#"(module
+  (memory (export "memory") 64)
+  (global $heap (mut i32) (i32.const 2048))
+  (func (export "realloc") (param $old-ptr i32) (param $old-size i32) (param $align i32) (param $new-size i32) (result i32)
+    (local $new-ptr i32)
+    (local.set $new-ptr
+      (i32.and
+        (i32.add (global.get $heap) (i32.sub (local.get $align) (i32.const 1)))
+        (i32.sub (i32.const 0) (local.get $align))))
+    (if (i32.ne (local.get $old-ptr) (i32.const 0))
+      (then
+        (memory.copy
+          (local.get $new-ptr)
+          (local.get $old-ptr)
+          (select
+            (local.get $old-size)
+            (local.get $new-size)
+            (i32.lt_u (local.get $old-size) (local.get $new-size))))))
+    (global.set $heap (i32.add (local.get $new-ptr) (local.get $new-size)))
+    (local.get $new-ptr)))"#
+}
+
+fn adapter_trampoline_wat() -> &'static str {
+    r#"(module
+  (import "adapter" "memory" (memory 64))
+  (import "adapter" "realloc" (func $realloc (param i32 i32 i32 i32) (result i32)))
+  (import "program" "run" (func $program-run (param i32 i32 i32 i32 i32)))
+  (func (export "run") (param $args-ptr i32) (param $args-len i32) (param $stdin-ptr i32) (param $stdin-len i32) (result i32)
+    (local $ret i32)
+    (local.set $ret (call $realloc (i32.const 0) (i32.const 0) (i32.const 8) (i32.const 32)))
+    (call $program-run
+      (local.get $args-ptr)
+      (local.get $args-len)
+      (local.get $stdin-ptr)
+      (local.get $stdin-len)
+      (local.get $ret))
+    (local.get $ret)))"#
+}
+
+fn build_composed_component(program: &[u8], adapter: &[u8]) -> Vec<u8> {
+    let mut builder = ComponentBuilder::default();
+    let types_ty = builder.type_instance(Some("script-types"), &script_types_instance());
+    let types_instance = builder.import(TYPES_IMPORT, ComponentTypeRef::Instance(types_ty));
+    let program_component = builder.component_raw(Some("program"), program);
+    let program_instance = builder.instantiate(
+        Some("program-instance"),
+        program_component,
+        [(TYPES_IMPORT, ComponentExportKind::Instance, types_instance)],
+    );
+    let program_run = builder.alias_export(program_instance, "run", ComponentExportKind::Func);
+    let adapter_component = builder.component_raw(Some("adapter"), adapter);
+    let adapter_instance = builder.instantiate(
+        Some("adapter-instance"),
+        adapter_component,
+        [
+            (TYPES_IMPORT, ComponentExportKind::Instance, types_instance),
+            (PROGRAM_RUN_IMPORT, ComponentExportKind::Func, program_run),
+        ],
+    );
+    let run = builder.alias_export(adapter_instance, "run", ComponentExportKind::Func);
+    builder.export("run", ComponentExportKind::Func, run, None);
+    builder.finish()
+}
+
+fn hex_digest(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 /// Declares the frozen `sico:script/types@0.1.0` value shape. Component-level

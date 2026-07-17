@@ -198,11 +198,19 @@ Default Script execution has no environment, filesystem, network or process auth
 
 Acceptance requires the STEP-0076 vertical prototype, exact WIT parser/Component validation, randomized host/guest aggregate roundtrips, strict package/import closure, corrupted cache refusals, malicious guest limits, representative scripts and recorded cold/warm/RSS/artifact baselines. STEP-0075 froze the candidate bounds, exit mapping, capability names and cache encoding above; the RFC remains proposed until STEP-0076 tests the architecture and returns a composition/direct-runner decision.
 
+### STEP-0076 prototype result
+
+The architecture gate returned `composition-go` on 2026-07-17. A deterministic 915-byte `sico:script/adapter@0.1.0` candidate canonical-lowers the Program function through private Adapter memory, invokes it through a core trampoline and canonical-lifts the Adapter export. Direct and composed paths each passed the same six cases in 20 independent runs on Wasmtime 46.0.1. Composed cold P95 was 15.8033 ms and the worst recorded per-run warm P95 was 0.2038 ms; the Adapter digest remained stable.
+
+M8 therefore retains versioned Program/Adapter composition as the preferred path and direct Program invocation as a tested fallback. This RFC remains `proposed`: STEP-0076 did not verify compiler-generated Programs, randomized aggregate ABI, WASI CLI adaptation, manifest/package closure, caches, malicious-guest limits or representative standard-library scripts. Those existing acceptance conditions are not weakened by the architecture result.
+
 ## Links
 
 - [`M8 plan`](../plans/M8-script-profile.md)
 - [`M9 plan`](../plans/M9-streaming-async-interactive.md)
 - [`STEP-0075`](../steps/STEP-0075-script-profile-contract.md)
+- [`STEP-0076`](../steps/STEP-0076-script-profile-vertical-prototype.md)
+- [`composition evidence`](../reports/script-profile-composition-v0.md)
 - [`ADR-0007`](../adr/ADR-0007-openjdk-style-modular-monorepo.md)
 - [`ADR-0009`](../adr/ADR-0009-script-adapter-runner.md)
 - [`RFC-0012`](./RFC-0012-component-wit-boundary-v0.md)

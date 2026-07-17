@@ -6,7 +6,9 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
-| [`script-profile-contract-v0`](./script-profile-contract-v0.md) | complete-contract / prototype-pending | STEP-0075 | M8/M9 scope、Script WIT/exit/limit/capability/cache decisions and STEP-0076 gate |
+| [`script-profile-contract-v0`](./script-profile-contract-v0.md) | complete-contract / architecture-gate-complete | STEP-0075 | M8/M9 scope、Script WIT/exit/limit/capability/cache decisions and STEP-0076 gate |
+| [`script-profile-prototype-v0`](./script-profile-prototype-v0.md) | verified direct-path evidence | STEP-0076 | hard-coded Program 6/6、Canonical ABI、cold/warm/RSS 与 encoding findings |
+| [`script-profile-composition-v0`](./script-profile-composition-v0.md) | verified composition evidence | STEP-0076 | direct/composed 各 20 × 6/6、Adapter digest、latency/RSS 与 `composition-go` 裁决 |
 | [`ecosystem-release-contract-v0`](./ecosystem-release-contract-v0.md) | complete | STEP-0062 | 32-threat ecosystem trust boundary, 12 compatibility surfaces and split-track evidence |
 | [`m6-exit-audit`](./m6-exit-audit.md) | blocked-external-runner | STEP-0061 | host evidence complete; Android Runtime/UI/startup gate NO-GO |
 | [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |

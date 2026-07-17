@@ -1,6 +1,6 @@
 # Script Profile v0 contract baseline
 
-> - status: complete-contract / prototype-pending
+> - status: complete-contract / architecture-gate-complete
 > - date: 2026-07-17
 > - related step: STEP-0075
 
