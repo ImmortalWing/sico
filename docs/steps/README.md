@@ -89,5 +89,7 @@
 | [STEP-0072](./STEP-0072-user-manual-information-architecture.md) | complete | release docs | 根 README 改为用户入口，迁移开发手册并建立十项细分用户手册与文档契约 |
 | [STEP-0073](./STEP-0073-openjdk-style-modular-monorepo.md) | complete | architecture | 归档 v0.0.1，按 OpenJDK 模式拆分语言、应用 Runtime 与 Host 命令并强制依赖边界 |
 | [STEP-0074](./STEP-0074-production-deployment-origin-and-ux.md) | complete-local | M7 production | 建立只读 registry origin、生产部署包与单命令源码工作流 |
+| [STEP-0075](./STEP-0075-script-profile-contract.md) | complete-contract | M8 | 冻结 Script Profile/WIT/adapter/runner 契约并定义纵向原型 gate |
+| [STEP-0076](./STEP-0076-script-profile-vertical-prototype.md) | in-progress | M8 | 实现并验证 Program/Adapter/direct-runner 纵向原型，形成架构裁决证据 |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0073 为后续支持工作。仓库所有者于 2026-07-17 触发新的生产部署决定，STEP-0074 已完成本地 origin/UX 基线。下一未分配编号：`STEP-0075`，用于真实域名/TLS/生产身份部署。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。仓库所有者于 2026-07-17 决定在缺少 VPS 的情况下先推进本地 Script 体验；STEP-0075 契约已完成，STEP-0076 原型正在执行。M8 保留 STEP-0077–0084，M9 计划保留 STEP-0085–0094；各记录只在工作实际开始时创建。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。

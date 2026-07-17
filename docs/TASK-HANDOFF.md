@@ -1,4 +1,4 @@
-# Sico 任务交接：移动平台后推与 M7 平台无关轨
+# Sico 任务交接：M8 Script Profile 与外部阻塞轨
 
 > - 更新时间：2026-07-17
 > - 仓库：`E:\github\sico`
@@ -7,11 +7,13 @@
 > - 远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；`github=https://github.com/ImmortalWing/sico.git`
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
 > - 开发归档：`codex/archive-v0.0.1-development-history` 已同步到两个远端
-> - 工作区状态：STEP-0073 提交后应为 clean
+> - 工作区状态：以包含本文件的当前提交为 clean baseline
+
+当前 M8 的逐文件状态、验证边界与下一条命令见 [`M8 STEP-0076 接手文档`](./handoffs/M8-STEP-0076.md)。
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 又建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`，需要真实 hostname/hosting、生产发布者身份、密钥托管、TLS/edge 与远程证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 bounded batch Script WIT/adapter/runner 契约已冻结，STEP-0076 正在执行 direct-runner 与 Program/Adapter 纵向原型；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 
@@ -183,7 +185,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - 洁净室 pilot：[`pilots/third-party-component`](../pilots/third-party-component/README.md)
 - M7 退出审计：[`m7-exit-audit.md`](./reports/m7-exit-audit.md)
 
-## 8. STEP-0075 public rollout inputs
+## 8. Public rollout inputs (future unassigned STEP)
 
 STEP-0074 的 loopback 与 operator ZIP 不得改标为公网 production。恢复实际部署时，仓库所有者需要一次性提供：
 
@@ -193,7 +195,7 @@ STEP-0074 的 loopback 与 operator ZIP 不得改标为公网 production。恢�
 4. root/release/recovery/rotation/revocation 五类 custody 的实际负责人/设备策略；
 5. TLS/edge、监控告警、备份保留和恢复目标。
 
-输入到位后建立 STEP-0075，先部署空只读 origin 和外部健康检查，再通过离线/admin 流程同步真实签名 metadata/blob。签名私钥不得进入 origin 主机或仓库。
+输入到位后分配新的未使用 STEP，先部署空只读 origin 和外部健康检查，再通过离线/admin 流程同步真实签名 metadata/blob。STEP-0075 已分配给 M8 Script Profile，不得复用。签名私钥不得进入 origin 主机或仓库。
 
 ## 9. 接手者完成检查表
 

@@ -1,0 +1,70 @@
+{
+  "cases": [
+    {
+      "name": "unicode-args",
+      "mode": "join-args",
+      "args": ["你好", "🙂", "café"],
+      "stdin_hex": "",
+      "expected": {
+        "stdout_hex": "e4bda0e5a5bd7cf09f99827c636166c3a9",
+        "stderr_hex": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "binary-stdin",
+      "mode": "echo-stdin",
+      "args": [],
+      "stdin_hex": "00ff017f80c328",
+      "expected": {
+        "stdout_hex": "00ff017f80c328",
+        "stderr_hex": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "separated-channels-and-exit",
+      "mode": "split-channels",
+      "args": [],
+      "stdin_hex": "616263",
+      "expected": {
+        "stdout_hex": "616263",
+        "stderr_hex": "7761726e696e67",
+        "exit": 7
+      }
+    },
+    {
+      "name": "script-error",
+      "mode": "script-error",
+      "args": [],
+      "stdin_hex": "",
+      "expected": {
+        "error_kind": "invalid-input",
+        "error_message": "fixture rejected input"
+      }
+    },
+    {
+      "name": "one-mibibyte-roundtrip",
+      "mode": "echo-stdin",
+      "args": [],
+      "stdin_pattern_hex": "00017fff80fe",
+      "stdin_size": 1048576,
+      "expected": {
+        "echo_stdin": true,
+        "stderr_hex": "",
+        "exit": 0
+      }
+    },
+    {
+      "name": "stdin-limit-refusal",
+      "mode": "echo-stdin",
+      "args": [],
+      "stdin_pattern_hex": "aa",
+      "stdin_size": 8388609,
+      "expected": {
+        "runner_error": "stdin-limit",
+        "tool_exit": 125
+      }
+    }
+  ]
+}

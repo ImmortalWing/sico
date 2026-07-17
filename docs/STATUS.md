@@ -1,12 +1,12 @@
 # Sico project status
 
 > - updated: 2026-07-17
-> - phase: M7 production deployment local baseline complete; M6/mobile deferred
-> - phase status: blocked-external-deployment-inputs
-> - current step: public production rollout intake after STEP-0074 local closure
+> - phase: M8 Script Profile vertical prototype; M7 public deployment and M6/mobile deferred
+> - phase status: in-progress
+> - current step: STEP-0076 Script Profile Program/Adapter vertical prototype
 > - last completed sequential step: STEP-0069 (local complete; M7/product NO-GO)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: start STEP-0075 after production hostname, hosting access, publisher identity and key-custody owners are provided
+> - next step: execute the direct-runner fixtures and Program/Adapter composition, then decide RFC-0029/ADR-0009; resume public rollout under a new STEP when external inputs exist
 
 ## 0. M6 exit state
 
@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-仓库所有者已于 2026-07-17 授权新的生产部署路线。STEP-0074 已建立可部署但不持有签名密钥的只读 registry origin、独立 operator bundle、Windows release 集成和 `sico-app dev` 单命令源码流程。当前目标是收集真实域名/hosting、生产身份与密钥托管负责人后进入 STEP-0075 公网部署；Android STEP-0060/0061、Harmony 与 Linux native 路径保留为后置平台轨。
+仓库所有者已于 2026-07-17 授权新的生产部署路线。STEP-0074 已建立可部署但不持有签名密钥的只读 registry origin、独立 operator bundle、Windows release 集成和 `sico-app dev` 单命令源码流程。由于当前没有 VPS，公网部署继续等待真实域名/hosting、生产身份与密钥托管输入；当前主动目标切换为 M8 Script Profile，先解决本地 AI 自动化所需的 args/stdin/stdout、可执行后端、Script ABI、runner、缓存与最小标准库。Android、Harmony 与 Linux native 路径保留为后置平台轨。
 
 ## 2. Current step
 
@@ -25,6 +25,8 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 [`STEP-0073`](./steps/STEP-0073-openjdk-style-modular-monorepo.md) 已在两个远端归档完整 `v0.0.1` 开发流程，并按 OpenJDK 模式保持单仓库、拆分 `sico` 与 `sico-app` 命令、建立 22 个 package 的机器依赖边界。该步骤不提高任何平台或 production 证据等级。
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
+
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约与纵向原型 gate。[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已开始：rich-value direct-runner 原型及 Unicode/binary/channel/error/limit 机器用例已实现并通过 `cargo check`，但当前 Windows GNU host 缺少链接 Wasmtime library 所需的 assembler，因此尚无运行时结果，也尚未完成 Program/Adapter composition。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 继续等待原型裁决；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
 
 ## 3. Verified repository facts
 
@@ -169,4 +171,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-STEP-0074 本地实施已闭环。下一项是 STEP-0075 真实公网 rollout：先由仓库所有者提供生产 hostname、hosting/account access、法律发布者身份，以及 root/release/recovery/rotation/revocation custody 负责人；随后配置 TLS/edge、同步真实签名 registry tree，并执行远程可用性与备份恢复验证。在这些输入到位前不得把 loopback/operator bundle 改标为 public production evidence。
+当前执行 STEP-0076：先在完整 linker host 上运行 rich-value direct-runner fixtures，再执行 hard-coded Program + Adapter + Wasmtime 46.0.1 composition，并用实测结果裁决架构。裁决后按 M8 STEP-0077–0084 推进 backend、Canonical ABI、runner、CLI、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。

@@ -2,7 +2,7 @@
 
 > - updated: 2026-07-17
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M7 production deployment local baseline complete, public rollout blocked; M6 mobile deferred
+> - current phase: M8 Script Profile vertical prototype in progress; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
 
@@ -149,9 +149,31 @@ Entry gate：satisfied by STEP-0014。
 
 状态：`local-complete / blocked-external-deployment-inputs`
 
-仓库所有者于 2026-07-17 明确要求启动实际生产部署环境并简化使用流程，构成 M7 audit 允许的 new roadmap decision。STEP-0074 已实现不持有签名密钥的只读 registry origin、可移植 operator bundle、Windows release 集成和单命令源码工作流。公开部署仍需真实域名/TLS、hosting access、生产身份、密钥托管及外部可用性证据；输入到位后建立 STEP-0075。
+仓库所有者于 2026-07-17 明确要求启动实际生产部署环境并简化使用流程，构成 M7 audit 允许的 new roadmap decision。STEP-0074 已实现不持有签名密钥的只读 registry origin、可移植 operator bundle、Windows release 集成和单命令源码工作流。公开部署仍需真实域名/TLS、hosting access、生产身份、密钥托管及外部可用性证据；输入到位后分配新的未使用 STEP，不占用已进入 M8 的 STEP-0075。
 
 执行步骤：[`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md)、[`ADR-0008`](./adr/ADR-0008-production-registry-origin.md)。
+
+## M8: Script Profile v0
+
+状态：`in-progress / STEP-0075 complete / STEP-0076 in-progress`
+
+主要交付：bounded batch Script WIT、动态标量与通用 control/function codegen、Text/Bytes/List/record/Result Canonical ABI、versioned adapter、manifest v1、结构化 `sico-runner`、统一 `sico run`/`eval`、安全缓存，以及 text/bytes/list/JSON/scoped-file 最小标准库。
+
+进入条件：M3/M4 Component/package/trust/Runtime 合约和 STEP-0074 单命令源码基线已存在；不要求公网部署、生产签名身份或移动 runner。
+
+退出证据：args/binary stdin/separated stdout-stderr/exit 的真实 Wasmtime 链路；代表性 word-count/JSON/file scripts；缓存与 capability fail-closed；恶意 guest 后 Host 存活；Windows Runtime 和可获得的平台证据；性能与安全审计。
+
+执行计划：[`M8 Script Profile`](./plans/M8-script-profile.md)，STEP-0075–0084。契约见 proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md)。
+
+## M9: Streaming, async and interactive scripting
+
+状态：`planned-after-M8`
+
+主要交付：backpressured InputStream/OutputStream、resource Canonical ABI、Task/Future/Stream source backend、async runner/cancellation、scoped HTTP Component provider、persistent runner/watch、bounded REPL、top-level syntax decision与编辑器/AI执行集成。
+
+进入条件：M8 必须完成自己的 GO，且 Script WIT/manifest/runner identities 可版本化而不是继续重写。M9 不包含 unrestricted process/shell capability。
+
+执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094；单个 STEP 文件只在实际开始时创建。
 
 ## Immediate dependency chain
 

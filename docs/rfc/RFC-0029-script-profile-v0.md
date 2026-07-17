@@ -1,0 +1,209 @@
+# RFC-0029: Script Profile v0
+
+> - status: proposed
+> - date: 2026-07-17
+> - authors: autonomous-agent
+> - target language/platform version: M8 draft
+> - supersedes: RFC-0014/RFC-0019 source-run surface only after acceptance
+> - superseded-by: -
+
+## Summary
+
+Define a statically typed, bounded batch Script Profile that maps one Sico entry to a versioned Component interface carrying arguments, binary stdin, binary stdout/stderr, exit status and structured errors. The profile preserves `.sapp` verification and least-authority Runtime execution while presenting `sico run` and `sico eval` as the normal local workflow.
+
+## Problem
+
+`sico-app dev SOURCE.sico` proves one-command source execution, but the current executable subset is synchronous scalar `main()` with no application arguments or guest stdin. The frontend and IR describe strings, records, `Result`, calls, effects, resources and async constructs that the current backend still refuses. A source command alone therefore cannot support representative AI automation such as stdin transforms, JSON filtering or scoped file operations.
+
+The Script profile must not solve convenience by granting ambient filesystem/network/environment authority, weakening `Int` semantics, ignoring unsupported values, parsing Runtime stderr as a stable protocol or allowing unbounded input/output capture.
+
+## Goals and non-goals
+
+Goals:
+
+- exact args/stdin/stdout/stderr and exit behavior;
+- strict Text versus Bytes semantics;
+- a small versioned WIT boundary;
+- deterministic Program Component, adapter and package identities;
+- explicit limits and stable failure classes;
+- source and machine-code caches that do not weaken trust;
+- one normal `sico run` command while preserving module ownership;
+- a path to text/bytes/list/JSON/scoped-file standard APIs.
+
+Non-goals for v0:
+
+- streaming or interactive terminal I/O;
+- Task/Future/Stream source codegen;
+- HTTP or child processes;
+- stateful REPL or top-level statements;
+- implicit host environment/current-directory access;
+- general arbitrary-depth generic Component ABI;
+- claiming arbitrary-precision `Int` Runtime support without implementing it.
+
+## Semantics
+
+### Entry
+
+The source entry is exactly one exported function equivalent to:
+
+```sico
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  // body
+end function
+```
+
+`ScriptInput.arguments` preserves argument order. Every argument must convert losslessly to WIT `string`; a non-Unicode platform argument is rejected before guest execution. `ScriptInput.stdin` is arbitrary bytes.
+
+`ScriptOutput.stdout` and `stderr` are arbitrary bytes. A guest exit value is an `s64` at the WIT boundary but must be in `0..=119`; values outside that range are rejected rather than truncated. The user-facing `sico run` exit mapping is:
+
+| Exit | Meaning |
+|---:|---|
+| 0–119 | exact guest `ScriptOutput.exit-code` |
+| 120 | source syntax/semantic/lowering/codegen diagnostic |
+| 121 | CLI, I/O, package, trust, capability or Host setup failure |
+| 122 | returned `ScriptError` / typed domain failure |
+| 123 | cancellation |
+| 124 | timeout |
+| 125 | resource limit or guest trap |
+| 126 | runner launch failure |
+| 127 | required compiler, adapter or runner not found/incompatible |
+
+This mapping is specific to the new M8 `sico run` surface. Existing `sico-app run` v0 exit codes remain compatible until an explicit migration RFC changes them.
+
+### Source and guest stdin
+
+- `sico run FILE.sico` gives process stdin to the guest.
+- `sico run -` consumes process stdin as source and gives empty guest stdin.
+- A later explicit file/descriptor option may supply guest input with source stdin, but one stream is never ambiguously consumed twice.
+
+### Bounds
+
+Script v0 bounds are:
+
+- at most 1,024 arguments;
+- at most 64 KiB UTF-8 bytes per argument;
+- at most 1 MiB UTF-8 bytes across all arguments;
+- at most 8 MiB each for stdin, stdout and stderr;
+- at most 64 KiB UTF-8 bytes in `ScriptError.message`;
+- at most 64 MiB guest linear memory unless a stricter package/Host limit applies.
+
+The effective limit is the minimum of language/profile, package and Host limits. Exceeding a bound produces exit 125 and no silent truncation.
+
+### Numbers
+
+Sico `Int` retains its specified arbitrary-precision direction. Script v0 adds explicit fixed-width `I64/U64` values for sizes, indices, exit values and dynamic machine arithmetic. Arithmetic is checked; overflow is a typed failure, not wrapping. Codegen may not silently reinterpret `Int` as `i64`.
+
+### Capabilities
+
+Args and the current invocation's bounded stdio are visible capabilities named `script.args` and `script.stdio`; an explicit local `sico run` auto-grants only these two. They remain in the verified import/manifest closure even though they do not require a permission prompt. Environment access uses coarse request `environment.read` plus an exact Host-side name allowlist. Files use separate `storage.read` and `storage.write` requests plus canonical scoped roots. Network and process execution are absent from M8. Unknown imports, requests or scopes fail closed.
+
+The trusted adapter is the only code allowed to import the broad WASI CLI environment/stdio interfaces. Its exact digest is verified, and its v0 implementation obtains arguments but passes no environment variables or current working directory.
+
+### Cache identity
+
+The source cache key is SHA-256 over domain `SICO-SCRIPT-SOURCE-CACHE-V0\0` followed by a fixed-order sequence of fields. Each variable-length field is encoded as unsigned 64-bit little-endian byte length followed by exact bytes. Fixed digests are raw 32-byte SHA-256 values. Fields are:
+
+1. compiler executable digest;
+2. compiler build ID;
+3. language semantics ID;
+4. Script WIT package/version;
+5. adapter digest;
+6. exact source bytes;
+7. app ID and app version;
+8. profile ID `script-v0`;
+9. manifest schema ID;
+10. canonical codegen-options bytes.
+
+Cache hits are strictly reverified. A missing/corrupt/stale entry is never executed or silently treated as trusted. Wasmtime machine-code caching is a separate platform/engine-keyed performance layer.
+
+## Syntax candidates
+
+### Candidate A: explicit typed main
+
+```sico
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return ok(ScriptOutput(stdout: input.stdin, stderr: Bytes.empty(), exit_code: 0))
+end function
+```
+
+Accepted as the v0 baseline because it preserves normal module/function parsing and exposes the boundary to static analysis.
+
+### Candidate B: unrestricted top-level statements
+
+```sico
+stdout.write(stdin.read_all())
+```
+
+Deferred to M9. It changes parser recovery, formatter, HIR, module initialization, capability visibility and LSP behavior before the Script ABI is proven.
+
+### Candidate C: labeled `script:` block
+
+```sico
+script:
+  return input.stdin
+end script
+```
+
+Deferred with Candidate B for an evidence-based M9 syntax decision.
+
+`sico eval EXPR` may synthesize Candidate A in memory; this does not add a new source grammar.
+
+## Positive and negative cases
+
+Positive cases include empty input, Unicode arguments, binary stdin containing NUL/non-UTF-8, separated output channels, explicit guest failure, cache hit and scoped file access.
+
+Negative cases include non-Unicode arguments, duplicate/missing entry, wrong entry signature, malformed Text, pointer/length overflow, input/output/memory limit, stale compiler/adapter cache identity, corrupt package/cache, unknown import, ungranted file/network/env access and Runtime timeout/trap.
+
+Every negative case must identify whether failure occurred before compile, before execution, during host setup or in the guest. Tool diagnostics never contaminate guest stdout.
+
+## AST and IR
+
+M8 requires explicit IR types/operations for fixed-width integers, Text, Bytes, lists, nominal records and `Result` variants. The verifier owns type/layout preconditions before codegen. General dynamic calls and multi-block control flow must be emitted without compile-time constant assumptions.
+
+Canonical ABI layout is implemented in one compiler module. Pointer/length/alignment arithmetic is checked. Script v0 may use one bounded arena per instance and reclaim it by dropping the Store; it does not claim GC or cross-instance references.
+
+## Component/WIT mapping
+
+The normative draft is [`wit/script-profile-v0/world.wit`](../../wit/script-profile-v0/world.wit). A Program Component exports `sico:script/program@0.1.0.run`.
+
+The preferred packaging path composes a versioned adapter that converts WASI CLI args/stdin/stdout/stderr to/from the Program interface and exports a WASI command world. The adapter digest and WIT identity are package compatibility inputs. If composition fails its prototype gate, an in-process runner may call the same Program export directly; this does not change source semantics.
+
+Manifest v0 continues to identify scalar `main()`. Script packages require a new strict manifest schema containing exact entry kind/world, language semantics, Script WIT, adapter and final Component identities.
+
+## AI evaluation
+
+The M8 corpus must measure whether a model can generate, explain and repair at least args echo, binary/text transform, word count, JSON filter and scoped file transform programs. Compiler diagnostics and Runtime faults remain separately identified. Offline fixtures may verify protocols but are not live-model quality evidence.
+
+## Compatibility
+
+- Existing scalar sources and manifest v0 packages remain valid under their original contract.
+- Script WIT changes require a new semantic version and package compatibility value.
+- Unknown newer manifests or WIT versions are rejected.
+- Cached artifacts include compiler, semantics, WIT, adapter, source, profile and package identities.
+- Buffered Script v0 remains a compatibility profile after M9 adds streaming.
+
+## Security and privacy
+
+Default Script execution has no environment, filesystem, network or process authority. Host paths are never embedded in guest-visible diagnostics unless explicitly requested for local debugging. Output and errors are bounded. Package/import/capability closure is checked after composition and before execution. Cache content is untrusted and reverified. Secrets are not included in cache names, build IDs, stdout, default stderr or evaluation logs.
+
+## Alternatives
+
+- Keep `sico-app dev` scalar-only: rejected because it does not satisfy scripting use cases.
+- Embed compiler, package and Runtime in one crate: rejected because it violates accepted ownership boundaries and enlarges the trusted dependency graph.
+- Directly expose all WASI resources to generated Sico code: deferred because it makes the first Script ABI depend on resource/async lowering.
+- Use JSON strings as the only boundary: rejected as the normative interface because it loses binary stdin and moves basic type errors to Runtime.
+- Implement top-level syntax first: rejected because it improves appearance without solving executable data and host boundaries.
+
+## Validation and acceptance criteria
+
+Acceptance requires the STEP-0076 vertical prototype, exact WIT parser/Component validation, randomized host/guest aggregate roundtrips, strict package/import closure, corrupted cache refusals, malicious guest limits, representative scripts and recorded cold/warm/RSS/artifact baselines. STEP-0075 froze the candidate bounds, exit mapping, capability names and cache encoding above; the RFC remains proposed until STEP-0076 tests the architecture and returns a composition/direct-runner decision.
+
+## Links
+
+- [`M8 plan`](../plans/M8-script-profile.md)
+- [`M9 plan`](../plans/M9-streaming-async-interactive.md)
+- [`STEP-0075`](../steps/STEP-0075-script-profile-contract.md)
+- [`ADR-0007`](../adr/ADR-0007-openjdk-style-modular-monorepo.md)
+- [`ADR-0009`](../adr/ADR-0009-script-adapter-runner.md)
+- [`RFC-0012`](./RFC-0012-component-wit-boundary-v0.md)
+- [`RFC-0019`](./RFC-0019-package-cli-cache-stdio-v0.md)

@@ -1,0 +1,33 @@
+// Draft contract for RFC-0029. This file is not an implementation claim.
+package sico:script@0.1.0;
+
+interface types {
+  enum script-error-code {
+    invalid-input,
+    resource-limit,
+    domain-error,
+    cancelled,
+  }
+
+  record script-input {
+    arguments: list<string>,
+    stdin: list<u8>,
+  }
+
+  record script-output {
+    stdout: list<u8>,
+    stderr: list<u8>,
+    // Valid Script v0 guest values are 0..=119. Host/tool outcomes use 120..=127.
+    exit-code: s64,
+  }
+
+  record script-error {
+    code: script-error-code,
+    message: string,
+  }
+}
+
+world program {
+  use types.{script-input, script-output, script-error};
+  export run: func(input: script-input) -> result<script-output, script-error>;
+}

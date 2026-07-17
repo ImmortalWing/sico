@@ -91,9 +91,9 @@ fn thousand_function_component_is_valid_and_deterministic() {
 }
 
 #[test]
-fn boundary_probe_wit_parses_with_result_record_and_resource_shapes() {
+fn repository_wit_contracts_parse_with_expected_namespace() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for name in ["boundary-probe-v0", "async-flow-v0"] {
+    for name in ["boundary-probe-v0", "async-flow-v0", "script-profile-v0"] {
         let wit = repository.join("wit").join(name);
         let mut resolve = wit_parser::Resolve::default();
         let (package, sources) = resolve.push_dir(&wit).unwrap();

@@ -1165,6 +1165,33 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 
 退出条件：外部开发者能够在不修改编译器和 Runtime 的情况下开发、发布和运行应用。
 
+### M8：Script Profile v0
+
+交付：
+
+- bounded batch Script WIT；
+- 动态 fixed-width scalar、通用函数和控制流 codegen；
+- Text、Bytes、List、record 与 Result Canonical ABI；
+- versioned Script adapter、manifest v1 与结构化 runner；
+- `sico run`、`sico eval` 和安全 source/machine cache；
+- text、bytes、list、JSON 与 scoped-file 最小标准库。
+
+退出条件：代表性 args/stdin、word-count、JSON 和 scoped-file 脚本通过真实 Wasmtime，在默认无 env/filesystem/network/process authority 下满足限额、缓存、故障和性能审计。
+
+### M9：流式、异步与交互式脚本
+
+交付：
+
+- backpressured InputStream/OutputStream；
+- resource Canonical ABI；
+- Task/Future/Stream source backend 和结构化取消；
+- scoped HTTP Component provider；
+- persistent runner、watch 和 bounded REPL；
+- top-level script syntax 的证据化接受或拒绝决定；
+- 编辑器、调试与 AI execution 集成。
+
+退出条件：大数据流不需要 whole-buffer capture，async/cancel/HTTP 权限和 persistent-runner isolation 通过独立验证，且 M0–M8 regression 保持通过。
+
 ## 20. 性能与质量指标
 
 第一阶段不提前写死数值，但从首个原型开始持续记录：

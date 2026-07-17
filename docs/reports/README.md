@@ -6,6 +6,7 @@
 
 | Report | Status | Related step | 内容 |
 |---|---|---|---|
+| [`script-profile-contract-v0`](./script-profile-contract-v0.md) | complete-contract / prototype-pending | STEP-0075 | M8/M9 scope、Script WIT/exit/limit/capability/cache decisions and STEP-0076 gate |
 | [`ecosystem-release-contract-v0`](./ecosystem-release-contract-v0.md) | complete | STEP-0062 | 32-threat ecosystem trust boundary, 12 compatibility surfaces and split-track evidence |
 | [`m6-exit-audit`](./m6-exit-audit.md) | blocked-external-runner | STEP-0061 | host evidence complete; Android Runtime/UI/startup gate NO-GO |
 | [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |
