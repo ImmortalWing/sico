@@ -91,6 +91,7 @@
 | [STEP-0074](./STEP-0074-production-deployment-origin-and-ux.md) | complete-local | M7 production | 建立只读 registry origin、生产部署包与单命令源码工作流 |
 | [STEP-0075](./STEP-0075-script-profile-contract.md) | complete-contract | M8 | 冻结 Script Profile/WIT/adapter/runner 契约并定义纵向原型 gate |
 | [STEP-0076](./STEP-0076-script-profile-vertical-prototype.md) | complete | M8 | direct/composed 各 20 × 6/6，实测选择 versioned Adapter composition，保留 direct fallback |
-| [STEP-0077](./STEP-0077-fixed-width-dynamic-scalars.md) | planned | M8 | 贯通独立 I64/U64、checked arithmetic/comparison 与 dynamic scalar Wasm，不缩窄 Int |
+| [STEP-0077](./STEP-0077-fixed-width-dynamic-scalars.md) | complete | M8 | 独立 I64/U64、typed overflow/underflow、dynamic Core/Component 与 runtime oracle 已完成 |
+| [STEP-0078](./STEP-0078-general-executable-control-codegen.md) | planned | M8 | general Call、CFG、match 与内部 aggregate codegen，不扩张 Component ABI |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。仓库所有者于 2026-07-17 决定在缺少 VPS 的情况下先推进本地 Script 体验；STEP-0075 契约与 STEP-0076 composition gate 已完成，STEP-0077 已规划为下一项。M8 保留 STEP-0078–0084，M9 计划保留 STEP-0085–0094；各记录只在工作实际开始时创建。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。仓库所有者于 2026-07-17 决定在缺少 VPS 的情况下先推进本地 Script 体验；STEP-0075 契约、STEP-0076 composition gate 与 STEP-0077 dynamic fixed-width scalars 已完成，STEP-0078 已规划为下一项。M8 保留 STEP-0079–0084，M9 计划保留 STEP-0085–0094；各记录只在工作实际开始时创建。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。

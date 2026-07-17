@@ -155,7 +155,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M8: Script Profile v0
 
-状态：`in-progress / STEP-0075–0076 complete / STEP-0077 planned`
+状态：`in-progress / STEP-0075–0077 complete / STEP-0078 planned`
 
 主要交付：bounded batch Script WIT、动态标量与通用 control/function codegen、Text/Bytes/List/record/Result Canonical ABI、versioned adapter、manifest v1、结构化 `sico-runner`、统一 `sico run`/`eval`、安全缓存，以及 text/bytes/list/JSON/scoped-file 最小标准库。
 

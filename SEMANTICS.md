@@ -95,7 +95,9 @@
 - `Text`：合法 Unicode 文本；
 - 记录、封闭枚举、元组、函数值以及核心泛型类型。
 
-固定宽度整数属于核心接口类型，但名称和表层暴露方式仍开放。它们主要用于二进制、WIT 和系统边界；窄化转换必须显式并可能失败。
+固定宽度整数属于核心接口类型。Script v0 已公开 `I64` 与 `U64`，主要用于动态机器算术、二进制、WIT 和系统边界；其他宽度的名称与表层公开程度仍开放。`Int` 到固定宽度的窄化转换必须显式并可能失败。当前已实现的构造仅为 `I64.literal(Int literal)` / `U64.literal(Int literal)`；任意 `Int` 的运行时转换仍开放。
+
+`I64/U64.checked_add` 与 `checked_sub` 返回 `Result<I64|U64, NumericError>`；错误稳定区分 `overflow` 与 `underflow`。`equal` 与 `less_than` 返回 `Bool`。普通 `+` 不对固定宽度整数隐式采用 wrapping、饱和或 trap 语义。
 
 `Decimal`、`Money`、`Path`、`Url`、`Duration`、`Size` 和日期时间不是编译器内建标量。它们由标准库提供强类型语义，其中 `Money` 应由应用进一步封装币种或领域约束。
 
@@ -562,7 +564,7 @@ Wasm 数值宽度、线性内存、Canonical ABI 布局和 Runtime 引擎行为�
 
 1. `Int` 任意精度实现的跨平台性能与稳定限额诊断；STEP-0008 已验证 Rust 表示/编码/限额，STEP-0010 已完成 4096-bit 数值记录 Component 往返，RFC-0003 仍为 proposed；
 2. Decimal 的精度、舍入上下文和序列化规范；STEP-0008 已提出 coefficient/scale v0 并验证加乘与显式舍入，除法上下文和 RFC 接受仍开放；
-3. 固定宽度整数的正式名称及公开程度；
+3. `I64/U64` 已由 STEP-0077 作为 Script v0 正式公开；其他固定宽度名称、任意 `Int` 的运行时转换 API 及更广泛公开程度仍需单独决策；
 4. 泛型约束、接口/trait、方差和编译策略；
 5. 资源借用是否进入表层语言，以及需要怎样的生命周期推导；STEP-0009 已验证调用期 borrow 和 owned move 映射，表层推导仍开放；
 6. 闭包循环与自动内存管理的最低实现模型；

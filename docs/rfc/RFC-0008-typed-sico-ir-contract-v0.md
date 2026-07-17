@@ -58,6 +58,10 @@ core constant/copy/add/call/construct/project/variant 可由 STEP-0031 lowering�
 - syntax/semantic invalid source 在 IR construction 前被 compiler-produced error 阻止；
 - workspace/M2/M1/M0 regression 继续通过。
 
+## STEP-0077 additive numeric extension
+
+M8 adds `I64` and `U64` scalar types plus `ConstI64`, `ConstU64`, `CheckedAdd`, `CheckedSub`, `EqualFixed` and `LessFixed`. The generic operations are type directed: both operands must be the same fixed-width type; checked arithmetic results must be `Result[operand, NumericError]`; comparisons return `Bool`. The verifier has independent mixed-signedness/result mutation cases, and canonical serialization remains derived from the stable snake-case enum names. This is an additive `sico.ir.v0` implementation extension and does not reinterpret `Int`.
+
 ## Links
 
 - [`M3 plan`](../plans/M3-sico-ir-component.md)

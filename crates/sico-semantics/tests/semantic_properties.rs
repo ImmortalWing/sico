@@ -4,6 +4,117 @@ use sico_semantics::{MAX_SEMANTIC_DIAGNOSTICS, analyze};
 use sico_source::{SourceFile, SourceId};
 
 #[test]
+fn fixed_width_intrinsics_have_explicit_checked_semantics() {
+    let text = "function signed_add(left: I64, right: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(left, right)\nend function\n\nfunction unsigned_sub(left: U64, right: U64) returns Result[U64, NumericError]:\n  return U64.checked_sub(left, right)\nend function\n\nfunction signed_less(left: I64, right: I64) returns Bool:\n  return I64.less_than(left, right)\nend function\n\nfunction unsigned_equal(left: U64, right: U64) returns Bool:\n  return U64.equal(left, right)\nend function\n\nfunction signed_literal() returns I64:\n  return I64.literal(-9223372036854775808)\nend function\n\nfunction unsigned_literal() returns U64:\n  return U64.literal(18446744073709551615)\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "fixed-valid.sico", text).unwrap();
+    let analysis = analyze(&source).unwrap();
+    assert!(analysis.is_success(), "{:?}", analysis.diagnostics);
+    assert_eq!(analysis, analyze(&source).unwrap());
+}
+
+#[test]
+fn fixed_width_implicit_and_unchecked_operations_are_rejected() {
+    for (index, (expression, returns, code, message)) in [
+        (
+            "left + right",
+            "I64",
+            "E2001",
+            "expected I64.checked_add, found unchecked +",
+        ),
+        (
+            "1",
+            "I64",
+            "E2002",
+            "expected I64, found Int; convert explicitly",
+        ),
+        (
+            "I64.literal(9223372036854775808)",
+            "I64",
+            "E2001",
+            "expected I64 literal in range, found 9223372036854775808",
+        ),
+        (
+            "U64.literal(18446744073709551616)",
+            "U64",
+            "E2001",
+            "expected U64 literal in range, found 18446744073709551616",
+        ),
+        (
+            "I64.literal(-9223372036854775809)",
+            "I64",
+            "E2001",
+            "expected I64 literal in range, found -9223372036854775809",
+        ),
+        (
+            "U64.literal(-1)",
+            "U64",
+            "E2001",
+            "expected U64 literal in range, found -1",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let parameters = if expression == "left + right" {
+            "left: I64, right: I64"
+        } else {
+            ""
+        };
+        let text = format!(
+            "function invalid({parameters}) returns {returns}:\n  return {expression}\nend function\n"
+        );
+        let source = SourceFile::from_text(
+            SourceId::new(u32::try_from(index).unwrap()),
+            "fixed-invalid.sico",
+            text,
+        )
+        .unwrap();
+        let analysis = analyze(&source).unwrap();
+        assert_eq!(analysis.diagnostics.len(), 1, "{:?}", analysis.diagnostics);
+        assert_eq!(analysis.diagnostics[0].code, code);
+        assert_eq!(analysis.diagnostics[0].message, message);
+    }
+}
+
+#[test]
+fn fixed_width_intrinsic_arity_is_checked_semantically() {
+    for (index, (expression, returns, expected)) in [
+        (
+            "I64.literal()",
+            "I64",
+            "expected 1 argument, found 0 arguments",
+        ),
+        (
+            "U64.checked_add(left)",
+            "Result[U64, NumericError]",
+            "expected 2 arguments, found 1 arguments",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let parameters = if expression.contains("left") {
+            "left: U64"
+        } else {
+            ""
+        };
+        let text = format!(
+            "function invalid({parameters}) returns {returns}:\n  return {expression}\nend function\n"
+        );
+        let source = SourceFile::from_text(
+            SourceId::new(u32::try_from(index).unwrap()),
+            "fixed-arity.sico",
+            text,
+        )
+        .unwrap();
+        let analysis = analyze(&source).unwrap();
+        assert_eq!(analysis.diagnostics.len(), 1, "{:?}", analysis.diagnostics);
+        assert_eq!(analysis.diagnostics[0].code, "E2001");
+        assert_eq!(analysis.diagnostics[0].message, expected);
+    }
+}
+
+#[test]
 fn deterministic_semantic_inputs_are_bounded_and_repeatable() {
     let mut accepted = 0;
     let mut rejected = 0;

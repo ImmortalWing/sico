@@ -96,6 +96,77 @@ fn expression_operands_and_constructor_fields_lower_left_to_right_once() {
 }
 
 #[test]
+fn fixed_width_source_lowers_to_verified_typed_ir() {
+    let text = "function signed_add(left: I64, right: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(left, right)\nend function\n\nfunction unsigned_sub(left: U64, right: U64) returns Result[U64, NumericError]:\n  return U64.checked_sub(left, right)\nend function\n\nfunction signed_less(left: I64, right: I64) returns Bool:\n  return I64.less_than(left, right)\nend function\n\nfunction unsigned_equal(left: U64, right: U64) returns Bool:\n  return U64.equal(left, right)\nend function\n\nfunction signed_literal() returns I64:\n  return I64.literal(-9223372036854775808)\nend function\n\nfunction unsigned_literal() returns U64:\n  return U64.literal(18446744073709551615)\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "fixed.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    assert_eq!(module, lower_core(&source).unwrap());
+    assert_eq!(module.functions[0].parameters[0].ty, Type::I64);
+    assert!(matches!(
+        module.functions[0].blocks[0].instructions[0].operation,
+        Operation::CheckedAdd { .. }
+    ));
+    assert_eq!(
+        module.functions[0].return_type,
+        Type::Result {
+            ok: Box::new(Type::I64),
+            error: Box::new(Type::Named("NumericError".into())),
+        }
+    );
+    assert!(matches!(
+        module.functions[1].blocks[0].instructions[0].operation,
+        Operation::CheckedSub { .. }
+    ));
+    assert!(matches!(
+        module.functions[2].blocks[0].instructions[0].operation,
+        Operation::LessFixed { .. }
+    ));
+    assert!(matches!(
+        module.functions[3].blocks[0].instructions[0].operation,
+        Operation::EqualFixed { .. }
+    ));
+    assert!(matches!(
+        module.functions[4].blocks[0].instructions[0].operation,
+        Operation::ConstI64(i64::MIN)
+    ));
+    assert!(matches!(
+        module.functions[5].blocks[0].instructions[0].operation,
+        Operation::ConstU64(u64::MAX)
+    ));
+}
+
+#[test]
+fn verifier_rejects_fixed_width_operand_and_result_mutations() {
+    let source = SourceFile::from_text(
+        SourceId::new(0),
+        "fixed.sico",
+        "function add(left: I64, right: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(left, right)\nend function\n",
+    )
+    .unwrap();
+    let module = lower_core(&source).unwrap();
+
+    let mut mixed = module.clone();
+    mixed.functions[0].parameters[1].ty = Type::U64;
+    assert!(
+        verify(&mixed)
+            .iter()
+            .any(|error| error.kind == VerifyErrorKind::TypeMismatch)
+    );
+
+    let mut wrong_result = module;
+    wrong_result.functions[0].blocks[0].instructions[0].ty = Type::Result {
+        ok: Box::new(Type::U64),
+        error: Box::new(Type::Named("NumericError".into())),
+    };
+    assert!(
+        verify(&wrong_result)
+            .iter()
+            .any(|error| error.kind == VerifyErrorKind::TypeMismatch)
+    );
+}
+
+#[test]
 fn semantic_error_wins_before_backend_support_classification() {
     let source = SourceFile::from_text(
         SourceId::new(0),
@@ -228,10 +299,16 @@ fn shape(module: &sico_ir::Module) -> String {
                         .iter()
                         .map(|instruction| match &instruction.operation {
                             Operation::ConstInt(_) => "const-int",
+                            Operation::ConstI64(_) => "const-i64",
+                            Operation::ConstU64(_) => "const-u64",
                             Operation::ConstBool(_) => "const-bool",
                             Operation::ConstString(_) => "const-string",
                             Operation::Copy(_) => "copy",
                             Operation::AddInt { .. } => "add-int",
+                            Operation::CheckedAdd { .. } => "checked-add",
+                            Operation::CheckedSub { .. } => "checked-sub",
+                            Operation::EqualFixed { .. } => "equal-fixed",
+                            Operation::LessFixed { .. } => "less-fixed",
                             Operation::Call { .. } => "call",
                             Operation::Intrinsic { .. } => "intrinsic",
                             Operation::Construct { .. } => "construct",

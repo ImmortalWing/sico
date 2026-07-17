@@ -157,6 +157,10 @@ STEP-0010 已满足下列第 1、2 项；RFC 保持 `proposed`，直到其余条
 3. 至少验证一个非 Windows 构建环境，或在 M0 审计中明确保留跨平台风险；
 4. 决定资源超限在编译期、边界调用和实例执行中的稳定诊断/trap 分类。
 
+## M8 fixed-width implementation note
+
+STEP-0077 implements the Script v0 `I64/U64` subset without changing this RFC's arbitrary-precision `Int` direction. Explicit in-range literal construction is available; arbitrary runtime `Int` conversion remains unimplemented. Checked add/sub produce typed `NumericError.overflow` or `NumericError.underflow`, and fixed-width comparisons preserve signedness through verified IR and Wasm. This evidence does not complete the remaining arbitrary-precision Runtime or cross-platform acceptance gates of this RFC.
+
 ## Links
 
 - [STEP-0008](../steps/STEP-0008-numeric-representation-prototypes.md)

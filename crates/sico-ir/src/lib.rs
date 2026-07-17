@@ -17,6 +17,7 @@ pub const MAX_IR_DIAGNOSTICS: usize = 100;
 pub const MAX_FUNCTIONS: usize = 10_000;
 pub const MAX_BLOCKS_PER_FUNCTION: usize = 100_000;
 pub const MAX_INSTRUCTIONS_PER_FUNCTION: usize = 1_000_000;
+pub const NUMERIC_ERROR_TYPE: &str = "NumericError";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -52,6 +53,8 @@ pub enum Type {
     Unit,
     Bool,
     Int,
+    I64,
+    U64,
     Float64,
     String,
     Named(String),
@@ -125,10 +128,28 @@ pub struct Instruction {
 #[serde(tag = "op", content = "data", rename_all = "snake_case")]
 pub enum Operation {
     ConstInt(String),
+    ConstI64(i64),
+    ConstU64(u64),
     ConstBool(bool),
     ConstString(String),
     Copy(ValueId),
     AddInt {
+        left: ValueId,
+        right: ValueId,
+    },
+    CheckedAdd {
+        left: ValueId,
+        right: ValueId,
+    },
+    CheckedSub {
+        left: ValueId,
+        right: ValueId,
+    },
+    EqualFixed {
+        left: ValueId,
+        right: ValueId,
+    },
+    LessFixed {
         left: ValueId,
         right: ValueId,
     },
@@ -176,7 +197,11 @@ pub enum Operation {
 impl Operation {
     fn operands(&self) -> Vec<ValueId> {
         match self {
-            Self::ConstInt(_) | Self::ConstBool(_) | Self::ConstString(_) => Vec::new(),
+            Self::ConstInt(_)
+            | Self::ConstI64(_)
+            | Self::ConstU64(_)
+            | Self::ConstBool(_)
+            | Self::ConstString(_) => Vec::new(),
             Self::Copy(value)
             | Self::ResourceMove(value)
             | Self::ResourceBorrow(value)
@@ -184,7 +209,11 @@ impl Operation {
             | Self::Try(value)
             | Self::Await(value)
             | Self::StreamNext(value) => vec![*value],
-            Self::AddInt { left, right } => vec![*left, *right],
+            Self::AddInt { left, right }
+            | Self::CheckedAdd { left, right }
+            | Self::CheckedSub { left, right }
+            | Self::EqualFixed { left, right }
+            | Self::LessFixed { left, right } => vec![*left, *right],
             Self::Call { arguments, .. }
             | Self::Intrinsic { arguments, .. }
             | Self::Construct {
@@ -461,6 +490,12 @@ impl<'a> Verifier<'a> {
                     self.error(path, VerifyErrorKind::InvalidConstant);
                 }
             }
+            Operation::ConstI64(_) if instruction.ty != Type::I64 => {
+                self.error(path, VerifyErrorKind::InvalidConstant);
+            }
+            Operation::ConstU64(_) if instruction.ty != Type::U64 => {
+                self.error(path, VerifyErrorKind::InvalidConstant);
+            }
             Operation::ConstBool(_) if instruction.ty != Type::Bool => {
                 self.error(path, VerifyErrorKind::TypeMismatch);
             }
@@ -474,6 +509,12 @@ impl<'a> Verifier<'a> {
                 if instruction.ty != Type::Int {
                     self.error(path, VerifyErrorKind::TypeMismatch);
                 }
+            }
+            Operation::CheckedAdd { left, right } | Operation::CheckedSub { left, right } => {
+                self.verify_checked_fixed(path, instruction, available, *left, *right);
+            }
+            Operation::EqualFixed { left, right } | Operation::LessFixed { left, right } => {
+                self.verify_fixed_comparison(path, instruction, available, *left, *right);
             }
             Operation::Call {
                 function,
@@ -523,6 +564,43 @@ impl<'a> Verifier<'a> {
                 }
             }
             _ => {}
+        }
+    }
+
+    fn verify_checked_fixed(
+        &mut self,
+        path: &str,
+        instruction: &Instruction,
+        available: &BTreeMap<ValueId, Type>,
+        left: ValueId,
+        right: ValueId,
+    ) {
+        let Some(operand) = matching_fixed_operands(available.get(&left), available.get(&right))
+        else {
+            self.error(path, VerifyErrorKind::TypeMismatch);
+            return;
+        };
+        let expected = Type::Result {
+            ok: Box::new(operand.clone()),
+            error: Box::new(Type::Named(NUMERIC_ERROR_TYPE.to_owned())),
+        };
+        if instruction.ty != expected {
+            self.error(path, VerifyErrorKind::TypeMismatch);
+        }
+    }
+
+    fn verify_fixed_comparison(
+        &mut self,
+        path: &str,
+        instruction: &Instruction,
+        available: &BTreeMap<ValueId, Type>,
+        left: ValueId,
+        right: ValueId,
+    ) {
+        if matching_fixed_operands(available.get(&left), available.get(&right)).is_none()
+            || instruction.ty != Type::Bool
+        {
+            self.error(path, VerifyErrorKind::TypeMismatch);
         }
     }
 
@@ -678,6 +756,13 @@ impl<'a> Verifier<'a> {
                 kind,
             });
         }
+    }
+}
+
+fn matching_fixed_operands<'a>(left: Option<&'a Type>, right: Option<&Type>) -> Option<&'a Type> {
+    match (left, right) {
+        (Some(left @ (Type::I64 | Type::U64)), Some(right)) if left == right => Some(left),
+        _ => None,
     }
 }
 

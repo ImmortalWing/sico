@@ -45,6 +45,20 @@ fn scalar_components_are_deterministic_and_validate() {
 }
 
 #[test]
+fn dynamic_fixed_width_core_and_component_are_deterministic_and_validate() {
+    let ir = fixed_width_module();
+    let core = compile(&ir).unwrap();
+    assert_eq!(core, compile(&ir).unwrap());
+    validate(&core);
+    snapshot("fixed-width-core", &core);
+
+    let component = compile_component(&ir).unwrap();
+    assert_eq!(component, compile_component(&ir).unwrap());
+    validate(&component);
+    snapshot("fixed-width-component", &component);
+}
+
+#[test]
 fn deterministic_scalar_property_covers_2048_sources() {
     for seed in 0..2_048_u32 {
         let left = i64::from(seed);
@@ -259,6 +273,148 @@ fn identity_module(ty: Type) -> Module {
         range,
     });
     module
+}
+
+fn fixed_width_module() -> Module {
+    let range = SourceRange { start: 0, end: 0 };
+    let mut module = Module::new("fixed-width.sico", 0);
+    for (index, (name, ty, operation, return_type)) in [
+        (
+            "i64_checked_add",
+            Type::I64,
+            Operation::CheckedAdd {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            fixed_result(Type::I64),
+        ),
+        (
+            "i64_checked_sub",
+            Type::I64,
+            Operation::CheckedSub {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            fixed_result(Type::I64),
+        ),
+        (
+            "u64_checked_add",
+            Type::U64,
+            Operation::CheckedAdd {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            fixed_result(Type::U64),
+        ),
+        (
+            "u64_checked_sub",
+            Type::U64,
+            Operation::CheckedSub {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            fixed_result(Type::U64),
+        ),
+        (
+            "i64_equal",
+            Type::I64,
+            Operation::EqualFixed {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            Type::Bool,
+        ),
+        (
+            "i64_less_than",
+            Type::I64,
+            Operation::LessFixed {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            Type::Bool,
+        ),
+        (
+            "u64_equal",
+            Type::U64,
+            Operation::EqualFixed {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            Type::Bool,
+        ),
+        (
+            "u64_less_than",
+            Type::U64,
+            Operation::LessFixed {
+                left: ValueId(0),
+                right: ValueId(1),
+            },
+            Type::Bool,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        module.functions.push(fixed_function(
+            index,
+            name,
+            ty,
+            operation,
+            return_type,
+            range,
+        ));
+    }
+    module
+}
+
+fn fixed_function(
+    index: usize,
+    name: &str,
+    ty: Type,
+    operation: Operation,
+    return_type: Type,
+    range: SourceRange,
+) -> Function {
+    Function {
+        id: FunctionId(u32::try_from(index + 1).unwrap()),
+        name: name.into(),
+        parameters: vec![
+            Parameter {
+                id: ValueId(0),
+                name: "left".into(),
+                ty: ty.clone(),
+                range,
+            },
+            Parameter {
+                id: ValueId(1),
+                name: "right".into(),
+                ty,
+                range,
+            },
+        ],
+        return_type: return_type.clone(),
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: vec![Instruction {
+                result: ValueId(2),
+                ty: return_type,
+                operation,
+                range,
+            }],
+            terminator: Terminator::Return(Some(ValueId(2))),
+            range,
+        }],
+        range,
+    }
+}
+
+fn fixed_result(ok: Type) -> Type {
+    Type::Result {
+        ok: Box::new(ok),
+        error: Box::new(Type::Named(sico_ir::NUMERIC_ERROR_TYPE.into())),
+    }
 }
 
 fn validate(bytes: &[u8]) {

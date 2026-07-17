@@ -666,6 +666,71 @@ impl FunctionBuilder<'_> {
     ) -> Result<(ValueId, Type), CoreLowerError> {
         let callee = join_path(&tokens[..open]);
         let arguments = split_top_level(&tokens[open + 1..tokens.len() - 1], TokenKind::Comma);
+        if matches!(callee.as_str(), "I64.literal" | "U64.literal") {
+            let [argument] = arguments.as_slice() else {
+                return unsupported("fixed literal arity", token_range(tokens));
+            };
+            let literal = strip_outer_parens(argument_value(argument));
+            let (text, range) = match literal {
+                [token] if token.kind == TokenKind::Integer => (token.text.clone(), token.range),
+                [minus, token]
+                    if minus.kind == TokenKind::Minus && token.kind == TokenKind::Integer =>
+                {
+                    (format!("-{}", token.text), token_range(literal))
+                }
+                _ => return unsupported("non-literal fixed conversion", token_range(tokens)),
+            };
+            return if callee.starts_with("I64") {
+                let parsed = text
+                    .parse::<i64>()
+                    .map_err(|_| unsupported_error("I64 literal outside range", range))?;
+                let value = self.emit(Type::I64, Operation::ConstI64(parsed), range, output);
+                Ok((value, Type::I64))
+            } else {
+                let parsed = text
+                    .parse::<u64>()
+                    .map_err(|_| unsupported_error("U64 literal outside range", range))?;
+                let value = self.emit(Type::U64, Operation::ConstU64(parsed), range, output);
+                Ok((value, Type::U64))
+            };
+        }
+        if let Some((target, operation)) = callee.split_once('.')
+            && matches!(target, "I64" | "U64")
+            && matches!(
+                operation,
+                "checked_add" | "checked_sub" | "equal" | "less_than"
+            )
+        {
+            let [left, right] = arguments.as_slice() else {
+                return unsupported("fixed intrinsic arity", token_range(tokens));
+            };
+            let fixed = if target == "I64" {
+                Type::I64
+            } else {
+                Type::U64
+            };
+            let left = self
+                .expression(argument_value(left), Some(&fixed), output)?
+                .0;
+            let right = self
+                .expression(argument_value(right), Some(&fixed), output)?
+                .0;
+            let (ty, operation) = match operation {
+                "checked_add" => (
+                    checked_fixed_result(fixed.clone()),
+                    Operation::CheckedAdd { left, right },
+                ),
+                "checked_sub" => (
+                    checked_fixed_result(fixed.clone()),
+                    Operation::CheckedSub { left, right },
+                ),
+                "equal" => (Type::Bool, Operation::EqualFixed { left, right }),
+                "less_than" => (Type::Bool, Operation::LessFixed { left, right }),
+                _ => unreachable!("matched fixed intrinsic above"),
+            };
+            let value = self.emit(ty.clone(), operation, token_range(tokens), output);
+            return Ok((value, ty));
+        }
         if let Some(signature) = self.definitions.functions.get(&callee) {
             if arguments.len() != signature.parameters.len() {
                 return unsupported("call arity", token_range(tokens));
@@ -955,6 +1020,8 @@ fn parse_type(tokens: &[HirToken]) -> Type {
         "Unit" => Type::Unit,
         "Bool" => Type::Bool,
         "Int" => Type::Int,
+        "I64" => Type::I64,
+        "U64" => Type::U64,
         "Float64" => Type::Float64,
         "Text" => Type::String,
         "Option" if arguments.len() == 1 => Type::Option(Box::new(arguments[0].clone())),
@@ -966,6 +1033,13 @@ fn parse_type(tokens: &[HirToken]) -> Type {
         "Future" if arguments.len() == 1 => Type::Future(Box::new(arguments[0].clone())),
         "Stream" if !arguments.is_empty() => Type::Stream(Box::new(arguments[0].clone())),
         _ => Type::Named(name.to_owned()),
+    }
+}
+
+fn checked_fixed_result(fixed: Type) -> Type {
+    Type::Result {
+        ok: Box::new(fixed),
+        error: Box::new(Type::Named(crate::NUMERIC_ERROR_TYPE.to_owned())),
     }
 }
 

@@ -163,10 +163,16 @@ fn shape(module: &sico_ir::Module) -> String {
 fn operation_name(operation: &Operation) -> &'static str {
     match operation {
         Operation::ConstInt(_) => "const-int",
+        Operation::ConstI64(_) => "const-i64",
+        Operation::ConstU64(_) => "const-u64",
         Operation::ConstBool(_) => "const-bool",
         Operation::ConstString(_) => "const-string",
         Operation::Copy(_) => "copy",
         Operation::AddInt { .. } => "add-int",
+        Operation::CheckedAdd { .. } => "checked-add",
+        Operation::CheckedSub { .. } => "checked-sub",
+        Operation::EqualFixed { .. } => "equal-fixed",
+        Operation::LessFixed { .. } => "less-fixed",
         Operation::Call { .. } => "call",
         Operation::Intrinsic { .. } => "intrinsic",
         Operation::Construct { .. } => "construct",

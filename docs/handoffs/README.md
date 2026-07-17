@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M8 STEP-0077`](./M8-STEP-0077.md) | planned / ready | fixed-width dynamic scalars；保持 Int 不被静默缩窄 |
+| [`M8 STEP-0078`](./M8-STEP-0078.md) | planned / ready | general executable control/function codegen；复用 fixed-width dynamic values |
 
-已完成的上一接手快照：[`M8 STEP-0076`](./M8-STEP-0076.md)。
+已完成的上一接手快照：[`M8 STEP-0077`](./M8-STEP-0077.md)。

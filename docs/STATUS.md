@@ -3,10 +3,10 @@
 > - updated: 2026-07-17
 > - phase: M8 Script Profile backend foundation; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0077 fixed-width dynamic scalars (planned)
-> - last completed active step: STEP-0076 (M8 composition architecture gate complete)
+> - current step: STEP-0078 general executable control and function codegen (planned)
+> - last completed active step: STEP-0077 (M8 fixed-width dynamic scalars complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: start STEP-0077 by freezing explicit I64/U64 semantic and verified-IR operations, then implement dynamic scalar parameters/locals/results without narrowing Int
+> - next step: start STEP-0078 by freezing verified CFG and internal aggregate representation, then implement general Call/branch/jump/match codegen over dynamic Bool/I64/U64 values
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约与纵向原型 gate。[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已完成：direct 与显式 Program/Adapter composition 两条路径连续 20 次均通过 6/6，915-byte Adapter digest 稳定，composed cold P95 15.8033 ms、worst recorded warm P95 0.2038 ms，裁决为 `composition-go`，direct path 保留为诊断回退。下一项 [`STEP-0077`](./steps/STEP-0077-fixed-width-dynamic-scalars.md) 将贯通独立 `I64/U64`，不得静默缩窄 `Int`。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 仍等待后续 compiler/package/runner/security gate；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约；[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已完成 Program/Adapter `composition-go`。[`STEP-0077`](./steps/STEP-0077-fixed-width-dynamic-scalars.md) 已贯通独立 `I64/U64` semantics、verified IR、dynamic Core Wasm 与 Component：Node 完成 2,048 × 8 runtime oracle，Wasmtime 46.0.1 完成 11 个 Component 边界用例，overflow/underflow 保持 typed `Result`，`Int` 未被静默缩窄。下一项 [`STEP-0078`](./steps/STEP-0078-general-executable-control-codegen.md) 负责 general Call/CFG/match/internal aggregate codegen。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 仍等待后续 compiler/package/runner/security gate；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
 
 ## 3. Verified repository facts
 
@@ -171,4 +171,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0077：先冻结显式 `I64/U64` semantic/IR JSON/checked arithmetic 与 comparison operation set，再实现 dynamic parameters/locals/results 和 Wasmtime oracle/property tests；`Int` 保持任意精度方向且不得被后端静默缩窄。完成后按 STEP-0078–0084 推进 general control、Canonical ABI、runner、CLI、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。
+下一项执行 STEP-0078：先冻结 verified CFG 与 internal aggregate slot/layout/refusal 边界，再实现 dynamic `Bool/I64/U64` 上的 general Call、branch/jump/match 与 construct/project/variant codegen；不得把 arbitrary-precision `Int` 偷换为 i64，也不得把 numeric `Result` 私有返回区误报为通用 Canonical ABI。完成后按 STEP-0079–0084 推进 aggregate ABI、runner、CLI、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。

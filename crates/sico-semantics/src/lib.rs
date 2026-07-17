@@ -1646,6 +1646,20 @@ fn infer_expression(
             integer: None,
         };
     }
+    if let [minus, integer] = tokens
+        && minus.kind == TokenKind::Minus
+        && integer.kind == TokenKind::Integer
+    {
+        return Value {
+            ty: Type::named("Int"),
+            range,
+            integer: integer
+                .text
+                .parse::<i128>()
+                .ok()
+                .and_then(i128::checked_neg),
+        };
+    }
     if let Some(index) = top_level_any(tokens, &[TokenKind::EqualEqual, TokenKind::LessEqual]) {
         let _left = infer_expression(&tokens[..index], locals, model, diagnostics);
         let _right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
@@ -1658,6 +1672,20 @@ fn infer_expression(
     if let Some(index) = top_level_kind(tokens, TokenKind::Plus) {
         let left = infer_expression(&tokens[..index], locals, model, diagnostics);
         let right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
+        if left.ty == right.ty
+            && matches!(&left.ty, Type::Named(name) if matches!(name.as_str(), "I64" | "U64"))
+        {
+            let expected = format!("{}.checked_add", left.ty);
+            push_diagnostic(
+                diagnostics,
+                "E2001",
+                "TYPE_MISMATCH",
+                format!("expected {expected}, found unchecked +"),
+                [("expected", expected.as_str()), ("found", "unchecked +")],
+                range,
+            );
+            return unknown(range);
+        }
         if left.ty == right.ty && !left.ty.is_unknown() {
             return Value {
                 ty: left.ty,
@@ -1759,6 +1787,10 @@ fn infer_call(
         return result;
     }
 
+    if let Some(value) = infer_fixed_width_call(&callee, &values, range, diagnostics) {
+        return value;
+    }
+
     if callee == "Float64.from_int" {
         if let Some(value) = values.first() {
             require_type(&Type::named("Int"), value, diagnostics);
@@ -1825,6 +1857,95 @@ fn infer_call(
         };
     }
     unknown(range)
+}
+
+fn infer_fixed_width_call(
+    callee: &str,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Value> {
+    if matches!(callee, "I64.literal" | "U64.literal") {
+        if values.len() != 1 {
+            let found = format!("{} arguments", values.len());
+            push_diagnostic(
+                diagnostics,
+                "E2001",
+                "TYPE_MISMATCH",
+                format!("expected 1 argument, found {found}"),
+                [("expected", "1 argument"), ("found", found.as_str())],
+                range,
+            );
+            return Some(unknown(range));
+        }
+        let value = &values[0];
+        require_type(&Type::named("Int"), value, diagnostics);
+        let target = callee.trim_end_matches(".literal");
+        let in_range = match (target, value.integer) {
+            ("I64", Some(integer)) => i64::try_from(integer).is_ok(),
+            ("U64", Some(integer)) => u64::try_from(integer).is_ok(),
+            _ => false,
+        };
+        if !in_range {
+            let expected = format!("{target} literal in range");
+            let found = value.integer.map_or_else(
+                || "non-literal Int".to_owned(),
+                |integer| integer.to_string(),
+            );
+            push_diagnostic(
+                diagnostics,
+                "E2001",
+                "TYPE_MISMATCH",
+                format!("expected {expected}, found {found}"),
+                [("expected", expected.as_str()), ("found", found.as_str())],
+                value.range,
+            );
+        }
+        return Some(Value {
+            ty: Type::named(target),
+            range,
+            integer: value.integer,
+        });
+    }
+
+    let (target, operation) = callee.split_once('.')?;
+    if !matches!(target, "I64" | "U64")
+        || !matches!(
+            operation,
+            "checked_add" | "checked_sub" | "equal" | "less_than"
+        )
+    {
+        return None;
+    }
+    if values.len() != 2 {
+        let found = format!("{} arguments", values.len());
+        push_diagnostic(
+            diagnostics,
+            "E2001",
+            "TYPE_MISMATCH",
+            format!("expected 2 arguments, found {found}"),
+            [("expected", "2 arguments"), ("found", found.as_str())],
+            range,
+        );
+        return Some(unknown(range));
+    }
+    let fixed = Type::named(target);
+    for value in values {
+        require_type(&fixed, value, diagnostics);
+    }
+    let ty = if matches!(operation, "equal" | "less_than") {
+        Type::named("Bool")
+    } else {
+        Type::Generic {
+            name: "Result".to_owned(),
+            arguments: vec![fixed, Type::named("NumericError")],
+        }
+    };
+    Some(Value {
+        ty,
+        range,
+        integer: None,
+    })
 }
 
 fn infer_result_constructor(callee: &str, values: &[Value], range: TextRange) -> Option<Value> {
@@ -1918,7 +2039,7 @@ fn require_type(expected: &Type, value: &Value, diagnostics: &mut Vec<SemanticDi
     }
     let expected_name = expected.to_string();
     let found_name = value.ty.to_string();
-    let numeric = matches!(expected, Type::Named(name) if matches!(name.as_str(), "Float32" | "Float64"))
+    let numeric = matches!(expected, Type::Named(name) if matches!(name.as_str(), "Float32" | "Float64" | "I64" | "U64"))
         && value.ty == Type::named("Int");
     let (code, key, message) = if numeric {
         (
