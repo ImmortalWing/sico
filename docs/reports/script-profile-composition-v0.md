@@ -69,6 +69,7 @@ Release binary 一次完整运行的 stdout 原文：
     "warm_iterations": 40
   },
   "prototype": "script-profile-program-adapter-composition-v0",
+  "scope": "hard-coded guest Program Components composed with a deterministic versioned Adapter Component; the Adapter canonical-lowers the Program function into an isolated core trampoline and canonical-lifts its run export; both paths use the same Script values and Wasmtime 46.0.1 in-process runner",
   "wasmtime": "46.0.1"
 }
 ```
