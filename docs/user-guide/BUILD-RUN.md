@@ -17,37 +17,37 @@ Wasmtime / platform Host
 
 ## 开发期快捷运行
 
-在仓库根目录执行一个命令即可临时编译、打包并运行源码：
+安装 SDK 后执行一个命令即可临时编译、打包并运行源码：
 
 ```powershell
-.\tools\sico-dev.ps1 .\demo.sico
+sico-app dev .\demo.sico
 ```
 
-脚本只适合运行自己创建且来源可信的本地源码。它创建唯一的临时工作目录，以 `--allow-unsigned-dev` 运行，并在退出时删除 Component 和 `.sapp`。
+该命令只适合运行自己创建且来源可信的本地源码。它创建唯一的临时工作目录，以 unsigned development trust 运行，并在退出时删除 Component 和 `.sapp`。编译器仍作为独立进程调用，`sico-app` 没有获得编译器 crate 依赖。
 
 从独立 PowerShell 窗口或快捷方式启动、需要在结果后等待确认时执行：
 
 ```powershell
-.\tools\sico-dev.ps1 .\demo.sico -Pause
+sico-app dev .\demo.sico
 ```
 
-`-Pause` 会在运行成功后等待按 Enter。已有 PowerShell 会话不需要该参数，脚本结束后会直接返回当前提示符，不会关闭会话。
+从文件管理器启动并需要暂停窗口时，仍可使用兼容脚本 `tools/sico-dev.ps1 -Pause`。
 
 保留中间产物用于排查时执行：
 
 ```powershell
-.\tools\sico-dev.ps1 .\demo.sico -KeepArtifacts -Verbose
+sico-app dev .\demo.sico --keep-artifacts
 ```
 
 需要能力授权时可以继续传递开发参数：
 
 ```powershell
-.\tools\sico-dev.ps1 .\demo.sico `
-  -Grant storage.read-write `
-  -StorageRoot .\app-storage
+sico-app dev .\demo.sico `
+  --grant storage.read-write `
+  --storage-root .\app-storage
 ```
 
-快捷脚本是仓库级编排工具，不是 `sico` 编译器子命令，也不会让编译器依赖 package、Runtime 或 Host。
+快捷命令属于 `sico-app` 应用工具，不是 `sico` 编译器子命令，也不会让编译器依赖 package、Runtime 或 Host。
 
 ## 编译 Component
 
@@ -83,7 +83,7 @@ development-signed package：
 sico-app run --trusted-key trusted-public-key.hex demo.sapp
 ```
 
-Runtime 查找顺序为 `--runtime`、`SICO_WASMTIME`、`PATH`。
+Runtime 查找顺序为 `--runtime`、`SICO_WASMTIME`、已安装 SDK 的 bundled Runtime、`PATH`。
 
 ## 为什么不再直接运行源码
 

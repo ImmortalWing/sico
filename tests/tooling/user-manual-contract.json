@@ -17,7 +17,7 @@
     "LIMITATIONS.md"
   ],
   "language_cli_commands": ["check", "format", "outline", "build"],
-  "application_cli_commands": ["pack", "run", "inspect"],
+  "application_cli_commands": ["pack", "run", "inspect", "dev"],
   "verified_quick_start": {
     "source": "tests/end-to-end/answer.sico",
     "result": 42,

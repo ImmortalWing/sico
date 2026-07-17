@@ -28,7 +28,7 @@ foreach ($command in $contract.language_cli_commands) {
     if (-not $cliSource.Contains($implemented)) { throw "language CLI implementation missing documented command: $command" }
     if (-not $rootReadme.Contains("sico $command")) { throw "root user entry missing command: $command" }
 }
-if (@($contract.application_cli_commands).Count -ne 3 -or @($contract.application_cli_commands | Sort-Object -Unique).Count -ne 3) { throw 'application CLI command contract drifted' }
+if (@($contract.application_cli_commands).Count -ne 4 -or @($contract.application_cli_commands | Sort-Object -Unique).Count -ne 4) { throw 'application CLI command contract drifted' }
 foreach ($command in $contract.application_cli_commands) {
     $implemented = 'Command::new("{0}")' -f $command
     if (-not $appCliSource.Contains($implemented)) { throw "application CLI implementation missing documented command: $command" }
@@ -73,4 +73,4 @@ if ($badLinks.Count -ne 0) {
     throw "broken Markdown links:$([Environment]::NewLine)$details"
 }
 
-Write-Output 'STEP_0072_OK version=0.0.2-dev manuals=11 language_commands=4 app_commands=3 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'
+Write-Output 'STEP_0072_OK version=0.0.2-dev manuals=11 language_commands=4 app_commands=4 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'

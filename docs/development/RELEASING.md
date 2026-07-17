@@ -11,6 +11,7 @@ Sico 的 Windows Release 在已验证的本机环境中构建，不依赖 GitHub
 - compiler ZIP 只包含 `sico.exe`；
 - 独立的 `sico-init-*.exe` 是可双击、离线、自包含的用户级安装器；
 - SDK ZIP 包含 `sico`、`sico-app`、LSP、AI tool、`sico-dev`、终端安装器和锁定的 Wasmtime；
+- registry origin ZIP 单独包含只读 `sico-registry`、空 transport root、许可证和 operator README，不把服务端工具塞入普通用户安装；
 - SDK 同时携带 Sico 与 Wasmtime 许可证；
 - 当前二进制未做 Windows Authenticode 签名，Release Notes 和 manifest 会明确记录 `unsigned`；
 - GitHub 与 GitCode 必须上传脚本同一次运行产生的完全相同文件。
@@ -44,7 +45,8 @@ git status --short
 6. 源码 `1 + 2` → Component → `.sapp` → Wasmtime，结果必须为 `3`；
 7. SDK ZIP 解压后再次运行同一源码，结果必须为 `3`；
 8. 生成并实际运行 `sico-init` EXE，验证安装、版本、PATH 与卸载；
-9. 生成 SHA-256、SPDX SBOM、机器 manifest 和发布说明。
+9. 生成并自检 registry origin operator bundle；
+10. 生成 SHA-256、SPDX SBOM、机器 manifest 和发布说明。
 
 默认输出目录：
 
@@ -119,6 +121,8 @@ gh release create v0.0.2-dev `
   .\dist\v0.0.2-dev\sico-compiler-*.zip `
   .\dist\v0.0.2-dev\sico-sdk-*.zip `
   .\dist\v0.0.2-dev\sico-init-*.exe `
+  .\dist\v0.0.2-dev\sico-registry-origin-*.zip `
+  .\dist\v0.0.2-dev\registry-origin-manifest.json `
   .\dist\v0.0.2-dev\SHA256SUMS `
   .\dist\v0.0.2-dev\SBOM.spdx.json `
   .\dist\v0.0.2-dev\release-manifest.json `
@@ -128,7 +132,7 @@ gh release create v0.0.2-dev `
   --notes-file .\dist\v0.0.2-dev\RELEASE-NOTES.md
 ```
 
-GitHub API 不可用时，在网页创建 draft Release，选择已经推送的标签，上传同一目录中的六个附件并粘贴 `RELEASE-NOTES.md`；检查完毕再发布。
+GitHub API 不可用时，在网页创建 draft Release，选择已经推送的标签，上传 `SHA256SUMS` 列出的全部附件并粘贴 `RELEASE-NOTES.md`；检查完毕再发布。
 
 GitCode 使用同一个标签创建预发布 Release，上传完全相同的六个附件并使用同一份说明。不要在另一个网络环境重新构建 EXE 或 ZIP。
 

@@ -113,7 +113,13 @@ try {
         throw 'cargo metadata failed'
     }
     $metadata = $metadataText | ConvertFrom-Json
-    $releasePackageNames = @('sico-cli', 'sico-app-cli', 'sico-language-server', 'sico-ai-tools')
+    $releasePackageNames = @(
+        'sico-cli',
+        'sico-app-cli',
+        'sico-language-server',
+        'sico-ai-tools',
+        'sico-registry-server'
+    )
     $releasePackages = @($metadata.packages | Where-Object { $releasePackageNames -contains $_.name })
     if ($releasePackages.Count -ne $releasePackageNames.Count) {
         throw 'Cargo metadata is missing one or more release packages'
@@ -175,11 +181,12 @@ try {
         '-p', 'sico-cli',
         '-p', 'sico-app-cli',
         '-p', 'sico-language-server',
-        '-p', 'sico-ai-tools'
+        '-p', 'sico-ai-tools',
+        '-p', 'sico-registry-server'
     ) -Description 'build Windows release tools'
 
     $releaseBin = Join-Path $repositoryRoot 'target/release'
-    $binaryNames = @('sico.exe', 'sico-app.exe', 'sico-lsp.exe', 'sico-ai-tool.exe')
+    $binaryNames = @('sico.exe', 'sico-app.exe', 'sico-lsp.exe', 'sico-ai-tool.exe', 'sico-registry.exe')
     foreach ($binaryName in $binaryNames) {
         $binaryPath = Join-Path $releaseBin $binaryName
         if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
@@ -298,7 +305,7 @@ try {
         '',
         'Open a new terminal, then run:',
         '  sico --version',
-        '  sico-dev hello.sico',
+        '  sico-app dev hello.sico',
         '',
         'The SDK contains compiler, application CLI, LSP, AI tool, development runner,',
         'and the verified Wasmtime 46.0.1 Runtime.',
@@ -333,12 +340,12 @@ try {
     New-Item -ItemType Directory -Path $extractRoot | Out-Null
     Expand-Archive -LiteralPath $sdkArchive -DestinationPath $extractRoot
     $extractedSico = Join-Path $extractRoot 'bin/sico.exe'
-    $extractedDev = Join-Path $extractRoot 'bin/sico-dev.ps1'
+    $extractedApp = Join-Path $extractRoot 'bin/sico-app.exe'
     $extractedVersion = ((& $extractedSico --version) -join "`n").Trim()
     if ($LASTEXITCODE -ne 0 -or $extractedVersion -cne "sico $Version") {
         throw "Extracted compiler version check failed: $extractedVersion"
     }
-    $extractedSmokeOutput = @(& $extractedDev $smokeSource)
+    $extractedSmokeOutput = @(& $extractedApp dev $smokeSource)
     $extractedSmokeExitCode = $LASTEXITCODE
     $extractedSmokeResult = ($extractedSmokeOutput -join "`n").Trim()
     if ($extractedSmokeExitCode -ne 0 -or $extractedSmokeResult -cne '3') {
@@ -413,10 +420,24 @@ try {
     $sbomPath = Join-Path $releaseOutput 'SBOM.spdx.json'
     [IO.File]::WriteAllText($sbomPath, (($sbom | ConvertTo-Json -Depth 100) + "`n"), $utf8NoBom)
 
+    & (Join-Path $PSScriptRoot 'package-registry-origin.ps1') -OutputRoot $releaseOutput
+    if ($LASTEXITCODE -ne 0) {
+        throw 'registry origin bundle failed'
+    }
+    $registryArchiveName = "sico-registry-origin-$tag-$targetTriple.zip"
+    $registryArchive = Join-Path $releaseOutput $registryArchiveName
+    $registryManifestPath = Join-Path $releaseOutput 'registry-origin-manifest.json'
+    if (-not (Test-Path -LiteralPath $registryArchive -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $registryManifestPath -PathType Leaf)) {
+        throw 'registry origin bundle assets are missing'
+    }
+
     $compilerAsset = Get-AssetRecord -Path $compilerArchive -Role 'compiler'
     $sdkAsset = Get-AssetRecord -Path $sdkArchive -Role 'sdk'
     $setupAsset = Get-AssetRecord -Path $setupPath -Role 'windows-installer'
     $sbomAsset = Get-AssetRecord -Path $sbomPath -Role 'sbom'
+    $registryAsset = Get-AssetRecord -Path $registryArchive -Role 'registry-origin'
+    $registryManifestAsset = Get-AssetRecord -Path $registryManifestPath -Role 'registry-origin-manifest'
     $publishable = (-not $dirty) -and (-not $SkipQualityGates)
     $manifest = [ordered]@{
         schema = 'sico.toolchain-release.v1'
@@ -439,7 +460,14 @@ try {
             sourceRuntimeSmoke = '3'
             extractedSdkSmoke = '3'
         }
-        assets = @($compilerAsset, $sdkAsset, $setupAsset, $sbomAsset)
+        assets = @(
+            $compilerAsset,
+            $sdkAsset,
+            $setupAsset,
+            $registryAsset,
+            $registryManifestAsset,
+            $sbomAsset
+        )
     }
     $manifestPath = Join-Path $releaseOutput 'release-manifest.json'
     [IO.File]::WriteAllText($manifestPath, (($manifest | ConvertTo-Json -Depth 20) + "`n"), $utf8NoBom)
@@ -458,6 +486,8 @@ try {
         ('- `{0}`: compiler only' -f $compilerArchiveName),
         ('- `{0}`: compiler, application tools, LSP, AI tool, development runner and Runtime' -f $sdkArchiveName),
         ('- `{0}`: double-click, offline Windows user installer' -f $setupName),
+        ('- `{0}`: bounded read-only registry origin operator bundle' -f $registryArchiveName),
+        '- `registry-origin-manifest.json`: operator bundle identity and evidence boundary',
         '- `SHA256SUMS`: exact asset hashes',
         '- `SBOM.spdx.json`: SPDX 2.3 dependency inventory',
         '- `release-manifest.json`: machine-readable release identity and checks',
@@ -468,7 +498,7 @@ try {
         '',
         '```powershell',
         'sico --version',
-        'sico-dev hello.sico',
+        'sico-app dev hello.sico',
         '```',
         '',
         'This preview is verified only on Windows x86_64 with the target listed above.'
@@ -480,6 +510,8 @@ try {
         $compilerArchive,
         $sdkArchive,
         $setupPath,
+        $registryArchive,
+        $registryManifestPath,
         $sbomPath,
         $manifestPath,
         $releaseNotesPath

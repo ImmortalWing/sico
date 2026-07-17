@@ -8,15 +8,15 @@ function main() returns Int:
 end function
 ```
 
-以下命令假设 `target/release` 已加入当前会话 `PATH`。
+以下命令假设 Sico SDK 已安装，或 `target/release` 已加入当前会话 `PATH`。
 
-只想立即查看运行结果时，在仓库根目录执行：
+只想立即查看运行结果时执行：
 
 ```powershell
-.\tools\sico-dev.ps1 .\hello.sico
+sico-app dev .\hello.sico
 ```
 
-该开发脚本依次调用 `sico build`、`sico-app pack` 和 `sico-app run`，并在成功或失败后清理临时产物。需要检查中间产物时加 `-KeepArtifacts`。
+该命令依次调用独立的 `sico build`、内部 pack 和 Runtime，成功或失败后清理临时产物。需要检查中间产物时加 `--keep-artifacts`。仓库中的 `tools/sico-dev.ps1` 继续作为旧脚本兼容入口。
 
 ## 1. 检查和格式化
 

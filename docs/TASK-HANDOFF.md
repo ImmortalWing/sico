@@ -1,6 +1,6 @@
 # Sico 任务交接：移动平台后推与 M7 平台无关轨
 
-> - 更新时间：2026-07-16
+> - 更新时间：2026-07-17
 > - 仓库：`E:\github\sico`
 > - 分支：`main`
 > - 当前开发版本：`0.0.2-dev`；已发布归档：`v0.0.1`
@@ -11,7 +11,7 @@
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成生态契约、publisher/registry/update/dependency、bounded LSP、compiler-backed AI tooling 与两版洁净室 release drill；M7/产品退出仍是 `blocked-external-evidence`。STEP-0070/0071 已保存平台手册，但真实第三方、生产发布、真实模型与目标平台支持仍需各自证据。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 又建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`，需要真实 hostname/hosting、生产发布者身份、密钥托管、TLS/edge 与远程证据。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 
@@ -168,6 +168,7 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - 鸿蒙详细开发手册：[`HARMONY-DEVELOPMENT.md`](./platforms/HARMONY-DEVELOPMENT.md)
 - 移动平台共用验收清单：[`MOBILE-SHARED-CHECKLIST.md`](./platforms/MOBILE-SHARED-CHECKLIST.md)
 - Linux 详细开发手册：[`LINUX-DEVELOPMENT.md`](./platforms/LINUX-DEVELOPMENT.md)
+- Production origin：[`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md)、[`ADR-0008`](./adr/ADR-0008-production-registry-origin.md)、[`operator guide`](../deploy/registry-origin/README.md)
 - Ecosystem trust core：[`sico-ecosystem`](../crates/sico-ecosystem/src/lib.rs)
 - Publisher policy RFC：[`RFC-0023`](./rfc/RFC-0023-production-publisher-policy-v0.md)
 - Signed registry RFC：[`RFC-0024`](./rfc/RFC-0024-signed-registry-metadata-v0.md)
@@ -182,7 +183,19 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - 洁净室 pilot：[`pilots/third-party-component`](../pilots/third-party-component/README.md)
 - M7 退出审计：[`m7-exit-audit.md`](./reports/m7-exit-audit.md)
 
-## 8. 接手者完成检查表
+## 8. STEP-0075 public rollout inputs
+
+STEP-0074 的 loopback 与 operator ZIP 不得改标为公网 production。恢复实际部署时，仓库所有者需要一次性提供：
+
+1. production hostname 与 DNS 控制方式；
+2. hosting provider/account、目标 region 和可用的部署访问；
+3. 法律 publisher identity 与 namespace；
+4. root/release/recovery/rotation/revocation 五类 custody 的实际负责人/设备策略；
+5. TLS/edge、监控告警、备份保留和恢复目标。
+
+输入到位后建立 STEP-0075，先部署空只读 origin 和外部健康检查，再通过离线/admin 流程同步真实签名 metadata/blob。签名私钥不得进入 origin 主机或仓库。
+
+## 9. 接手者完成检查表
 
 - [ ] 工作区 clean，`main` 与远端基线一致；
 - [ ] 阅读 ADR-0005、RFC-0021、M6 audit 和 runner gate；
@@ -207,5 +220,6 @@ $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 - [x] STEP-0071 Linux Desktop Host 开发与验收手册已保存；
 - [x] STEP-0072 已建立根用户入口、独立开发手册、十项细分用户手册与机器文档契约；
 - [x] STEP-0073 已归档 v0.0.1，并完成语言 CLI、应用 CLI、Runtime 与 Host 的机器可验证模块边界；
+- [x] STEP-0074 已完成只读 registry origin、operator bundle、release 集成和 `sico-app dev`，且保持 public production evidence 为 false；
 - [x] production identity/key custody/public service 已在所有者决策边界停止，未生成或复用生产密钥；
 - [x] Android、Harmony 与 Linux 证据等级保持未升级，等待各自工具链、实现和 runner。

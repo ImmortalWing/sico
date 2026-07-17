@@ -1,8 +1,8 @@
 # Sico audited roadmap
 
-> - updated: 2026-07-16
+> - updated: 2026-07-17
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M7 local track complete, product exit blocked; M6 mobile deferred
+> - current phase: M7 production deployment local baseline complete, public rollout blocked; M6 mobile deferred
 
 ## Status vocabulary
 
@@ -144,6 +144,14 @@ Entry gate：satisfied by STEP-0014。
 退出证据：外部开发者无需修改编译器或 Runtime 即可完成开发、检查、构建、发布、安装、运行和调试。
 
 执行计划：[`M7 ecosystem, tooling and release`](./plans/M7-ecosystem-release.md)，STEP-0062–0069。仓库本地轨已完成 trust、registry、update、dependency stability、bounded LSP、compiler-backed AI tooling 及两版 pilot/exit audit。真实第三方、生产服务、live model、Android/Harmony/Linux runner 与最终项目退出继续作为独立外部 gate；结论见 [`M7 exit audit`](./reports/m7-exit-audit.md)。
+
+### M7 production deployment continuation
+
+状态：`local-complete / blocked-external-deployment-inputs`
+
+仓库所有者于 2026-07-17 明确要求启动实际生产部署环境并简化使用流程，构成 M7 audit 允许的 new roadmap decision。STEP-0074 已实现不持有签名密钥的只读 registry origin、可移植 operator bundle、Windows release 集成和单命令源码工作流。公开部署仍需真实域名/TLS、hosting access、生产身份、密钥托管及外部可用性证据；输入到位后建立 STEP-0075。
+
+执行步骤：[`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md)、[`ADR-0008`](./adr/ADR-0008-production-registry-origin.md)。
 
 ## Immediate dependency chain
 

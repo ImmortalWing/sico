@@ -615,6 +615,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-registry-server"
+version = "0.0.2-dev"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "sico-runtime"
 version = "0.0.2-dev"
 dependencies = [

@@ -88,5 +88,6 @@
 | [STEP-0071](./STEP-0071-linux-development-handbook.md) | complete | M5/M7 docs | 保存 Linux Desktop Host 详细开发/验收手册，不改变 Linux 证据等级 |
 | [STEP-0072](./STEP-0072-user-manual-information-architecture.md) | complete | release docs | 根 README 改为用户入口，迁移开发手册并建立十项细分用户手册与文档契约 |
 | [STEP-0073](./STEP-0073-openjdk-style-modular-monorepo.md) | complete | architecture | 归档 v0.0.1，按 OpenJDK 模式拆分语言、应用 Runtime 与 Host 命令并强制依赖边界 |
+| [STEP-0074](./STEP-0074-production-deployment-origin-and-ux.md) | complete-local | M7 production | 建立只读 registry origin、生产部署包与单命令源码工作流 |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0073 为后续支持工作。下一未分配编号：`STEP-0074`。后续实施由 M7 audit 中的外部证据或新 roadmap 决策触发。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0073 为后续支持工作。仓库所有者于 2026-07-17 触发新的生产部署决定，STEP-0074 已完成本地 origin/UX 基线。下一未分配编号：`STEP-0075`，用于真实域名/TLS/生产身份部署。

@@ -35,7 +35,8 @@
       "sico-mobile-host-core"
     ],
     "ecosystem": [
-      "sico-ecosystem"
+      "sico-ecosystem",
+      "sico-registry-server"
     ],
     "integration": [
       "sico-third-party-pilot"
@@ -62,7 +63,7 @@
   },
   "command_ownership": {
     "sico": ["check", "format", "outline", "build-component"],
-    "sico-app": ["pack-sapp", "inspect-sapp", "run-sapp"],
+    "sico-app": ["pack-sapp", "inspect-sapp", "run-sapp", "dev-source-orchestration"],
     "sico-desktop-host": ["install", "open", "uninstall", "platform-association"]
   }
 }

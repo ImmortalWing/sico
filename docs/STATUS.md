@@ -1,12 +1,12 @@
 # Sico project status
 
-> - updated: 2026-07-16
-> - phase: M7 local track complete; M6/mobile and product exit deferred
-> - phase status: blocked-external-evidence
-> - current step: external evidence acquisition after STEP-0069 local closure
+> - updated: 2026-07-17
+> - phase: M7 production deployment local baseline complete; M6/mobile deferred
+> - phase status: blocked-external-deployment-inputs
+> - current step: public production rollout intake after STEP-0074 local closure
 > - last completed sequential step: STEP-0069 (local complete; M7/product NO-GO)
-> - last completed support step: STEP-0073 (OpenJDK-style modular monorepo)
-> - next step: resume only with third-party/production/live-model/platform evidence or a new roadmap decision
+> - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
+> - next step: start STEP-0075 after production hostname, hosting access, publisher identity and key-custody owners are provided
 
 ## 0. M6 exit state
 
@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-仓库内可执行的 M7 目标已经闭环。当前目标是保持证据边界和可复现性，等待真实第三方、生产身份/公开服务、live-model 授权或目标平台 runner；Android STEP-0060/0061、Harmony 与 Linux native 路径保留为后置平台轨。
+仓库所有者已于 2026-07-17 授权新的生产部署路线。STEP-0074 已建立可部署但不持有签名密钥的只读 registry origin、独立 operator bundle、Windows release 集成和 `sico-app dev` 单命令源码流程。当前目标是收集真实域名/hosting、生产身份与密钥托管负责人后进入 STEP-0075 公网部署；Android STEP-0060/0061、Harmony 与 Linux native 路径保留为后置平台轨。
 
 ## 2. Current step
 
@@ -24,9 +24,11 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0073`](./steps/STEP-0073-openjdk-style-modular-monorepo.md) 已在两个远端归档完整 `v0.0.1` 开发流程，并按 OpenJDK 模式保持单仓库、拆分 `sico` 与 `sico-app` 命令、建立 22 个 package 的机器依赖边界。该步骤不提高任何平台或 production 证据等级。
 
+[`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
+
 ## 3. Verified repository facts
 
-基线检查时间：2026-07-16。
+基线检查时间：2026-07-17。
 
 | 事实 | 结果 | 状态 |
 |---|---:|---|
@@ -39,8 +41,8 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 83 | measured |
-| `Cargo.toml` | 27 | measured |
+| Rust `.rs` 文件 | 89 | measured |
+| `Cargo.toml` | 29 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |
@@ -167,4 +169,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-没有未完成且当前已授权/可在本机独立完成的顺序步骤。按 [`M7 exit audit`](./reports/m7-exit-audit.md) 获取真实第三方、production/public service、live-model 或目标平台 runner 证据后恢复对应轨；Android 按 [`TASK-HANDOFF.md`](./TASK-HANDOFF.md) 和平台手册后置恢复。新功能必须先建立新的 roadmap/STEP，不得把洁净室 fixture 改标为外部证据。
+STEP-0074 本地实施已闭环。下一项是 STEP-0075 真实公网 rollout：先由仓库所有者提供生产 hostname、hosting/account access、法律发布者身份，以及 root/release/recovery/rotation/revocation custody 负责人；随后配置 TLS/edge、同步真实签名 registry tree，并执行远程可用性与备份恢复验证。在这些输入到位前不得把 loopback/operator bundle 改标为 public production evidence。

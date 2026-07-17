@@ -12,7 +12,7 @@ Sico 采用与 OpenJDK 相同方向的“单仓库、强模块、分命令、分
 | application | `sico-package` | `.sapp` 格式、签名和授权对象 |
 | runtime | `sico-runtime`、`sico-app-cli` | Runtime、安全执行和应用命令 |
 | host | Host Core、Desktop Host、Mobile Host Core | 安装、权限、生命周期和平台适配 |
-| ecosystem | `sico-ecosystem` | 发布者、registry、更新和依赖协议 |
+| ecosystem | `sico-ecosystem`、`sico-registry-server` | 发布者、registry、更新、依赖协议和只读网络 origin |
 | integration | third-party pilot | 端到端集成证明 |
 
 ## 命令边界
@@ -30,7 +30,7 @@ app.sapp
 Wasmtime / platform Host
 ```
 
-`sico` 不得依赖 package、Runtime 或 Host。`sico-app` 不得通过正常依赖引入编译器，也不得隐式编译源码。测试可以使用编译器生成确定性 Component fixture，但这类依赖必须保持为 dev-dependency。
+`sico` 不得依赖 package、Runtime 或 Host。`sico-app` 不得通过正常依赖引入编译器；`sico-app dev` 只能通过显式进程边界调用独立的 `sico build`，之后必须回到相同的 package/trust/Runtime gate。测试可以使用编译器生成确定性 Component fixture，但这类依赖必须保持为 dev-dependency。
 
 ## 修改规则
 

@@ -71,6 +71,26 @@ sico-app run [OPTIONS] <PACKAGE.sapp> [-- [ARG]...]
 
 任何非空 `ARG` 当前都会退出 `2`，不会被静默丢弃。
 
+## `sico-app dev`
+
+```text
+sico-app dev [OPTIONS] <SOURCE.sico>
+```
+
+面向本机可信源码的一命令开发入口。它直接启动独立的 `sico` 编译器，生成临时 Component 和 unsigned development `.sapp`，再通过相同的 trust/capability/Runtime gate 执行。
+
+| 选项 | 含义 |
+|---|---|
+| `--app-id <ID>` | 临时应用 ID |
+| `--app-version <VERSION>` | 临时应用版本 |
+| `--compiler <SICO>` | 显式编译器路径 |
+| `--runtime <WASMTIME>` | 显式 Runtime 路径 |
+| `--grant <CAPABILITY>` | 授予已请求能力，可重复 |
+| `--storage-root <DIR>` | storage capability 的宿主根目录 |
+| `--keep-artifacts` | 保留临时 Component 和 `.sapp` |
+
+编译器查找顺序为 `--compiler`、`SICO_COMPILER`、`sico-app` 同目录、`PATH`。Runtime 查找顺序为 `--runtime`、`SICO_WASMTIME`、已安装 SDK 的 `runtime/`、`PATH`。
+
 ## 退出码
 
 | Code | 含义 |

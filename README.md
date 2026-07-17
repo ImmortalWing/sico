@@ -38,10 +38,10 @@ end function
 开发时可以用一个命令完成临时编译、打包和运行：
 
 ```powershell
-.\tools\sico-dev.ps1 .\hello.sico
+sico-app dev .\hello.sico
 ```
 
-脚本使用显式的本地 unsigned development trust，运行结束后删除临时 Component 和 `.sapp`；它只是开发期编排入口，不改变 `sico`、`sico-app` 和 Runtime 的模块边界。
+命令使用显式的本地 unsigned development trust，运行结束后删除临时 Component 和 `.sapp`；它直接调用独立 `sico` 编译器，不改变 `sico`、`sico-app` 和 Runtime 的模块边界。
 
 在独立窗口中运行且希望查看结果后再关闭时使用：
 
@@ -79,7 +79,9 @@ sico-app run --allow-unsigned-dev hello.sapp
 | `sico-app pack` | 把 Component 打包并可选签名为 `.sapp` |
 | `sico-app inspect` | 验证并检查 `.sapp`，不执行 |
 | `sico-app run` | 通过 trust/capability gate 运行 `.sapp` |
+| `sico-app dev` | 通过独立编译器和相同 trust/Runtime gate 一命令运行本地源码 |
 | `sico-desktop-host` | 安装、打开和管理桌面应用生命周期 |
+| `sico-registry` | 只读提供已经签名的 registry transport tree（operator 工具） |
 
 `sico` 不依赖 Runtime 或 Host；`sico-app` 不隐式编译源码。这个显式边界可避免把语言检查、应用信任和平台权限混成一个操作。
 
@@ -102,6 +104,7 @@ sico-app run --allow-unsigned-dev hello.sapp
 - [开发手册](./docs/development/README.md)
 - [模块边界](./docs/development/MODULE-BOUNDARIES.md)
 - [Windows 手动发布](./docs/development/RELEASING.md)
+- [Registry origin 部署](./deploy/registry-origin/README.md)
 - [完整架构与设计](./DEVELOPMENT.md)
 - [项目状态与审计记录](./docs/README.md)
 

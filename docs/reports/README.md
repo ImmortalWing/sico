@@ -59,6 +59,7 @@
 | [`language-server-editor-workflow-v0`](./language-server-editor-workflow-v0.md) | complete | STEP-0067 | bounded stdio LSP、UTF-16、compiler diagnostics/index、format 与 run/debug boundary |
 | [`ai-tooling-measured-evaluation-v0`](./ai-tooling-measured-evaluation-v0.md) | complete-offline | STEP-0068 | compiler-backed inspect/fix、54-source/12-fix 测量与 live-model authorization gate |
 | [`m7-pilot-release-drill`](./m7-pilot-release-drill.md) | complete-local | STEP-0069 | 两版洁净室 Component/registry/Host/Wasmtime 发布升级与四类安全拒绝 |
+| [`production-deployment-origin-v0`](./production-deployment-origin-v0.md) | complete-local | STEP-0074 | 只读 registry origin、operator bundle、release 集成与单命令源码 Runtime `42` |
 | [`m7-exit-audit`](./m7-exit-audit.md) | blocked-external-evidence | STEP-0069 | M7 本地轨完成、产品 NO-GO 与七项外部 gate |
 | [`project-completion-audit`](./project-completion-audit.md) | blocked-external-evidence | STEP-0069 | 仓库本地闭环和支持产品未完成边界 |
 | [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |

@@ -19,6 +19,16 @@
 | `sico-dev.ps1` | 一条命令完成源码编译、打包和本地运行 |
 | `ensure-wasmtime.ps1` | 定位或准备仓库锁定的 Wasmtime |
 
+已安装 SDK 优先直接使用 `sico-app dev <SOURCE.sico>`；`sico-dev.ps1` 保留暂停窗口和旧脚本兼容。
+
+## Registry origin 运维
+
+```powershell
+.\tools\package-registry-origin.ps1
+```
+
+该脚本构建、自检并打包独立的只读 registry origin。生产边界、TLS/edge 要求和证据限制见 [`deploy/registry-origin/README.md`](../deploy/registry-origin/README.md)。
+
 ## Windows 发布
 
 公开发布只有一个入口：
@@ -32,11 +42,13 @@
 ```text
 release-windows.ps1
   ├─ 质量门禁与模块边界
-  ├─ 构建 compiler / app CLI / LSP / AI tool
+  ├─ 构建 compiler / app CLI / LSP / AI tool / registry origin
   ├─ 组装 compiler ZIP 与 SDK ZIP
   ├─ internal/package-windows-installer.ps1
   │    ├─ 把 SDK ZIP 封装为 sico-init EXE
   │    └─ 验证 EXE 安装、版本、PATH 与卸载
+  ├─ package-registry-origin.ps1
+  │    └─ 生成并自检独立 operator ZIP
   └─ 生成 SHA256SUMS / SBOM / manifest / Release Notes
 ```
 

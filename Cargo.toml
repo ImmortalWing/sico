@@ -18,6 +18,7 @@ members = [
     "crates/sico-parser",
     "crates/sico-package",
     "crates/sico-runtime",
+    "crates/sico-registry-server",
     "crates/sico-semantics",
     "crates/sico-source",
     "crates/sico-syntax",

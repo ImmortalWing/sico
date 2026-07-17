@@ -6,8 +6,9 @@ use std::{
     collections::BTreeSet,
     ffi::{OsStr, OsString},
     fs::{self, OpenOptions},
-    io::Write,
+    io::{self, Write},
     path::{Path, PathBuf},
+    process::Command as ProcessCommand,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -59,6 +60,7 @@ where
         Some(("pack", command)) => run_pack(command, stdout, stderr),
         Some(("run", command)) => run_package(command, stdout, stderr),
         Some(("inspect", command)) => run_inspect(command, stdout, stderr),
+        Some(("dev", command)) => run_dev(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
 }
@@ -128,6 +130,51 @@ fn command() -> Command {
                         .help("Emit sico.sapp.inspect.v0 JSON")
                         .action(ArgAction::SetTrue),
                 ),
+        )
+        .subcommand(dev_command())
+}
+
+fn dev_command() -> Command {
+    Command::new("dev")
+        .about("Compile, package, and run one trusted local source file")
+        .arg(
+            Arg::new("source")
+                .value_name("SOURCE.sico")
+                .help("Local Sico source file")
+                .required(true),
+        )
+        .arg(app_id_arg())
+        .arg(app_version_arg())
+        .arg(
+            Arg::new("compiler")
+                .long("compiler")
+                .value_name("SICO")
+                .help("Compiler executable (otherwise sibling sico or PATH)"),
+        )
+        .arg(
+            Arg::new("runtime")
+                .long("runtime")
+                .value_name("WASMTIME")
+                .help("Wasmtime executable (otherwise bundled Runtime, SICO_WASMTIME or PATH)"),
+        )
+        .arg(
+            Arg::new("grant")
+                .long("grant")
+                .value_name("CAPABILITY")
+                .help("Grant one requested capability")
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("storage-root")
+                .long("storage-root")
+                .value_name("DIRECTORY")
+                .help("Host-owned base for isolated app storage"),
+        )
+        .arg(
+            Arg::new("keep-artifacts")
+                .long("keep-artifacts")
+                .help("Retain the temporary Component and .sapp")
+                .action(ArgAction::SetTrue),
         )
 }
 
@@ -298,11 +345,7 @@ fn run_package(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Wr
         Ok(storage) => storage,
         Err(exit) => return exit,
     };
-    let runtime = matches
-        .get_one::<String>("runtime")
-        .map(OsString::from)
-        .or_else(|| std::env::var_os("SICO_WASMTIME"))
-        .unwrap_or_else(|| OsString::from("wasmtime"));
+    let runtime = runtime_command(matches.get_one::<String>("runtime"));
     match run_authorized_package(&runtime, &authorized, storage.as_ref(), &limits) {
         Ok(output) => {
             if stdout.write_all(&output.stdout).is_err()
@@ -332,6 +375,184 @@ fn run_package(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Wr
             EXIT_TOOL_ERROR
         }
     }
+}
+
+fn run_dev(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let source = Path::new(matches.get_one::<String>("source").unwrap());
+    if !source.is_file() {
+        let _ = writeln!(
+            stderr,
+            "sico-app: source is not a file: {}",
+            source.display()
+        );
+        return EXIT_TOOL_ERROR;
+    }
+    let temporary_root = std::env::temp_dir().join("sico-app-dev");
+    if let Err(error) = fs::create_dir_all(&temporary_root) {
+        let _ = writeln!(stderr, "sico-app: cannot create temporary root: {error}");
+        return EXIT_TOOL_ERROR;
+    }
+    let work = temporary_root.join(format!(
+        "{}-{}",
+        std::process::id(),
+        ARTIFACT_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    if let Err(error) = fs::create_dir(&work) {
+        let _ = writeln!(
+            stderr,
+            "sico-app: cannot create temporary work directory: {error}"
+        );
+        return EXIT_TOOL_ERROR;
+    }
+    let stem = source
+        .file_stem()
+        .and_then(OsStr::to_str)
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("app");
+    let component = work.join(format!("{stem}.component.wasm"));
+    let package = work.join(format!("{stem}.sapp"));
+    let exit = run_dev_inner(matches, source, &component, &package, stdout, stderr);
+    if matches.get_flag("keep-artifacts") {
+        let _ = writeln!(stderr, "sico-app: artifacts retained at {}", work.display());
+    } else if let Err(error) = remove_dev_work(&temporary_root, &work) {
+        let _ = writeln!(
+            stderr,
+            "sico-app: cannot remove temporary artifacts: {error}"
+        );
+        return EXIT_TOOL_ERROR;
+    }
+    exit
+}
+
+fn run_dev_inner(
+    matches: &ArgMatches,
+    source: &Path,
+    component: &Path,
+    package: &Path,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let compiler = compiler_command(matches.get_one::<String>("compiler"));
+    let output = match ProcessCommand::new(&compiler)
+        .arg("build")
+        .arg("--output")
+        .arg(component)
+        .arg(source)
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico-app: cannot start compiler {}: {error}",
+                compiler.to_string_lossy()
+            );
+            return EXIT_TOOL_ERROR;
+        }
+    };
+    if !output.status.success() {
+        if stdout.write_all(&output.stdout).is_err() || stderr.write_all(&output.stderr).is_err() {
+            return EXIT_TOOL_ERROR;
+        }
+        return output.status.code().unwrap_or(EXIT_TOOL_ERROR);
+    }
+
+    let mut pack_stdout = Vec::new();
+    let pack_exit = run(
+        [
+            OsString::from("sico-app"),
+            OsString::from("pack"),
+            OsString::from("--app-id"),
+            OsString::from(matches.get_one::<String>("app-id").unwrap()),
+            OsString::from("--app-version"),
+            OsString::from(matches.get_one::<String>("app-version").unwrap()),
+            OsString::from("--output"),
+            package.as_os_str().to_owned(),
+            component.as_os_str().to_owned(),
+        ],
+        &mut pack_stdout,
+        stderr,
+    );
+    if pack_exit != EXIT_SUCCESS {
+        return pack_exit;
+    }
+
+    let mut arguments = vec![
+        OsString::from("sico-app"),
+        OsString::from("run"),
+        OsString::from("--allow-unsigned-dev"),
+        OsString::from("--runtime"),
+        runtime_command(matches.get_one::<String>("runtime")),
+    ];
+    if let Some(root) = matches.get_one::<String>("storage-root") {
+        arguments.push(OsString::from("--storage-root"));
+        arguments.push(OsString::from(root));
+    }
+    for grant in matches.get_many::<String>("grant").into_iter().flatten() {
+        arguments.push(OsString::from("--grant"));
+        arguments.push(OsString::from(grant));
+    }
+    arguments.push(package.as_os_str().to_owned());
+    run(arguments, stdout, stderr)
+}
+
+fn compiler_command(explicit: Option<&String>) -> OsString {
+    if let Some(explicit) = explicit {
+        return OsString::from(explicit);
+    }
+    if let Some(compiler) = std::env::var_os("SICO_COMPILER") {
+        return compiler;
+    }
+    sibling_tool("sico").unwrap_or_else(|| OsString::from("sico"))
+}
+
+fn runtime_command(explicit: Option<&String>) -> OsString {
+    if let Some(explicit) = explicit {
+        return OsString::from(explicit);
+    }
+    if let Some(runtime) = std::env::var_os("SICO_WASMTIME") {
+        return runtime;
+    }
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(bin) = executable.parent()
+    {
+        let name = if cfg!(windows) {
+            "wasmtime.exe"
+        } else {
+            "wasmtime"
+        };
+        if let Some(prefix) = bin.parent() {
+            let bundled = prefix.join("runtime").join(name);
+            if bundled.is_file() {
+                return bundled.into_os_string();
+            }
+        }
+    }
+    OsString::from("wasmtime")
+}
+
+fn sibling_tool(name: &str) -> Option<OsString> {
+    let executable = std::env::current_exe().ok()?;
+    let directory = executable.parent()?;
+    let file_name = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
+    let sibling = directory.join(file_name);
+    sibling.is_file().then(|| sibling.into_os_string())
+}
+
+fn remove_dev_work(temporary_root: &Path, work: &Path) -> io::Result<()> {
+    let root = fs::canonicalize(temporary_root)?;
+    let work = fs::canonicalize(work)?;
+    if !work.starts_with(&root) || work == root {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to remove an unexpected directory",
+        ));
+    }
+    fs::remove_dir_all(work)
 }
 
 fn storage_for_run(
