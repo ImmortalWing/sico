@@ -25,7 +25,7 @@ if (@($owned.code | Sort-Object -Unique).Count -ne 5) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-semantics --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0023 semantic tests failed' }

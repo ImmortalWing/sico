@@ -7,7 +7,7 @@ $step = Get-Content -LiteralPath (Join-Path $root 'docs/steps/STEP-0055-mobile-h
 foreach ($needle in @('BRIDGE_SCHEMA', 'MAX_BRIDGE_BYTES', 'NATIVE_PANIC', 'install_bytes', 'open_installed')) { if (-not $source.Contains($needle)) { throw "mobile bridge missing: $needle" } }
 foreach ($needle in @('external fun dispatch', 'copyOf()', 'MAX_BRIDGE_BYTES')) { if (-not $kotlin.Contains($needle)) { throw "Kotlin declaration missing: $needle" } }
 if ($step -notmatch '(?m)^> - status: complete\r?$') { throw 'STEP-0055 is not complete' }
-$previous = $env:RUSTUP_TOOLCHAIN; $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$previous = $env:RUSTUP_TOOLCHAIN; $env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath clippy --offline --locked -p sico-mobile-host-core --all-targets -- -D warnings

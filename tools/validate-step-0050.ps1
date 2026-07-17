@@ -14,7 +14,7 @@ foreach ($needle in @('MAX_UI_NODES: usize = 1_024', 'MAX_UI_DEPTH: usize = 32',
 }
 if (-not $wit.Contains('world desktop-app') -or -not $wit.Contains('next-event')) { throw 'UI WIT world is incomplete' }
 $previous = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath clippy --offline --locked -p sico-host-core --all-targets -- -D warnings

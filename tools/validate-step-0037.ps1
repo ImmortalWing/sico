@@ -28,7 +28,7 @@ if (-not $audit.Contains('GO: M3 complete; M4 entry gate satisfied; next STEP-00
 if ($m4Plan -notmatch '(?m)^> - status: (?:ready after M3 GO|complete)\r?$' -or -not $m4Plan.Contains('STEP-0038')) { throw 'M4 plan has regressed below its M3-ready state' }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 try {
   & $CargoPath fmt --all -- --check
   if ($LASTEXITCODE -ne 0) { throw 'M3 formatting check failed' }

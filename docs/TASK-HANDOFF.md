@@ -113,7 +113,7 @@ rustup target list --installed
 补充 Android cold/warm startup 非 SLA 基线、设备矩阵和安全用例，然后运行：
 
 ```powershell
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 $env:SICO_TEST_WASMTIME = & .\tools\ensure-wasmtime.ps1
 & "$HOME/.cargo/bin/cargo.exe" fmt --all -- --check
 & "$HOME/.cargo/bin/cargo.exe" clippy --offline --locked --workspace --all-targets --all-features -- -D warnings

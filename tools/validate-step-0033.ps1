@@ -15,7 +15,7 @@ if ($snapshots.Count -ne 2) { throw "expected 2 Core Wasm artifacts, found $($sn
 if (-not (Test-Path -LiteralPath $NodePath -PathType Leaf)) { throw "Node WebAssembly engine not found: $NodePath" }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
     & $CargoPath test --offline --locked -p sico-codegen-wasm

@@ -53,7 +53,7 @@ foreach ($number in 22..29) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 try {
   & $CargoPath fmt --all -- --check
   if ($LASTEXITCODE -ne 0) { throw 'workspace rustfmt failed' }

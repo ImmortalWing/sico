@@ -13,7 +13,7 @@ foreach ($needle in @('RuntimeVerified', 'ContractVerified', 'CFBundleDocumentTy
 }
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $previousRuntime = $env:SICO_TEST_WASMTIME
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 $output = Join-Path $root 'target/m5/step0052-contracts'
 Push-Location $root
 try {

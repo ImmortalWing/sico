@@ -12,7 +12,7 @@ foreach ($needle in @('PermissionChoice', 'AllowOnce', 'AllowPersistent', 'sico.
   if (-not $source.Contains($needle)) { throw "permission contract missing: $needle" }
 }
 $previous = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath clippy --offline --locked -p sico-host-core --all-targets -- -D warnings

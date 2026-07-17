@@ -20,7 +20,7 @@ foreach ($removed in @('sico_package', 'sico_runtime', 'Command::new("run")', 'C
 if ($source.Contains('SICO-SOURCE-CACHE-V0') -or $source.Contains('compile_component')) { throw 'application CLI must not compile or cache source' }
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $previousRuntime = $env:SICO_TEST_WASMTIME
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   $env:SICO_TEST_WASMTIME = & (Join-Path $root 'tools/ensure-wasmtime.ps1')

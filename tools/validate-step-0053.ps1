@@ -15,7 +15,7 @@ if ($plan -notmatch '(?m)^> - status: ready after M5 GO\r?$' -or -not $plan.Cont
 if ($performance.schema -ne 'sico.m5.desktop-host-startup-runs.v0' -or $performance.runs.Count -ne 3 -or $performance.median_mean_startup_ms -le 0) { throw 'M5 performance record is invalid' }
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $previousRuntime = $env:SICO_TEST_WASMTIME
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 $work = Join-Path $root 'target/m5/exit-example'
 Push-Location $root
 try {

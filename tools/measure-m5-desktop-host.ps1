@@ -8,7 +8,7 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
 $work = Join-Path $root 'target/m5/performance'
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath build --offline --locked --release -p sico-cli -p sico-app-cli -p sico-desktop-host
@@ -55,7 +55,7 @@ try {
   $record = [ordered]@{
     schema = 'sico.m5.desktop-host-startup-runs.v0'
     date = '2026-07-16'
-    environment = [ordered]@{ os = 'Windows'; rust = '1.97.0'; host = 'x86_64-pc-windows-gnu'; profile = 'release'; runtime = 'wasmtime-46.0.1' }
+    environment = [ordered]@{ os = 'Windows'; rust = '1.97.1'; host = 'x86_64-pc-windows-gnu'; profile = 'release'; runtime = 'wasmtime-46.0.1' }
     workload = 'signed package reinstall/reverify/open plus Wasmtime process execution returning 42'
     iterations_per_run = $IterationsPerRun
     sla = 'not-established'

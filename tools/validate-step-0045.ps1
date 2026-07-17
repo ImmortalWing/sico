@@ -30,7 +30,7 @@ if ($step -notmatch '(?m)^> - status: complete\r?$') { throw 'STEP-0045 is not c
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $previousRuntime = $env:SICO_TEST_WASMTIME
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   $env:SICO_TEST_WASMTIME = & (Join-Path $root 'tools/ensure-wasmtime.ps1')

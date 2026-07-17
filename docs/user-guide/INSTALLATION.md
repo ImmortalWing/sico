@@ -5,7 +5,7 @@
 ## 当前受验证环境
 
 - Windows x86_64；
-- Rust `1.97.0-x86_64-pc-windows-gnu`；
+- Rust `1.97.1-x86_64-pc-windows-gnu`；
 - PowerShell；
 - Wasmtime `46.0.1`。
 
@@ -103,7 +103,7 @@ git checkout v0.0.1
 ## 安装 Rust 工具链
 
 ```powershell
-rustup toolchain install 1.97.0-x86_64-pc-windows-gnu --profile minimal --component clippy,rustfmt
+rustup toolchain install 1.97.1-x86_64-pc-windows-gnu --profile minimal --component clippy,rustfmt
 ```
 
 ## 构建用户工具
