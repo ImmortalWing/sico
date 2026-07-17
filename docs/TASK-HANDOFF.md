@@ -1,7 +1,7 @@
 # Sico 任务交接：M8 Script Profile 与外部阻塞轨
 
 > - 更新时间：2026-07-17
-> - 仓库：`E:\github\sico`
+> - 仓库：`.`（仓库根目录，相对路径）
 > - 分支：`main`
 > - 当前开发版本：`0.0.2-dev`；已发布归档：`v0.0.1`
 > - 远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；`github=https://github.com/ImmortalWing/sico.git`
@@ -13,7 +13,7 @@
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 bounded batch Script WIT/adapter/runner 契约已冻结，STEP-0076 正在执行 direct-runner 与 Program/Adapter 纵向原型；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 bounded batch Script WIT/adapter/runner 契约已冻结，STEP-0076 的 direct-runner 纵向原型已修复并真实运行（6/6 用例、cold/warm/RSS 证据已存档），Program/Adapter composition 裁决仍在执行；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 
