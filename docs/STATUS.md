@@ -1,12 +1,12 @@
 # Sico project status
 
 > - updated: 2026-07-19
-> - phase: M10 Runtime observability/debugging planned; M7 public deployment and M6/mobile deferred
+> - phase: M10 Runtime observability/debugging planned; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
 > - phase status: planned
 > - current step: STEP-0095 observability/debug/source-identity RFC (planned)
 > - last completed active step: STEP-0094 (M9 exit audit, GO)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: freeze M10 source/artifact identity, event/frame schemas, redaction and cancellation race matrix
+> - next step: freeze M10 source/artifact identity, event/frame schemas, exact DAP claimed subset, redaction and cancellation race matrix
 
 ## 0. M6 exit state
 
@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、bounded events 与可实证的 minimal DAP。M10 GO 后的 M11 已完整规划为 Secure HTTP Provider/Automation SDK，TLS/DNS/redirect/secrets 属于 Host provider 而非语言核心。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨。
+M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、task-aware bounded events 与机器清单驱动的 minimal DAP。STEP-0098 后可提前启动 M11 Store/arena ADR，M11 实现仍等待 M10 GO；M11 完成 bounded structured-concurrency Runtime 后，M12 再实现 Secure HTTP Provider/Automation SDK。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨，内部里程碑不替代这些 gate。
 
 ## 2. Current step
 
@@ -177,4 +177,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0095：先冻结 exact source bytes/compiler/Component identity、debug-map 与 Runtime frame/event schema、redaction/size limits，以及 signal/timeout/client-cancel/guest/Host 竞争的单终态矩阵。合同接受前不修改 compiler/runner 来隐式创造 DAP。TLS HTTP、parallel task scheduler、declaration REPL 与 multi-file watch 不进入 M10；公网 rollout 和移动平台仍服从各自外部 gate。
+下一项执行 STEP-0095：先冻结 exact source bytes/compiler/Component identity、debug-map 与 Runtime frame/event schema、redaction/size limits、signal/timeout/client-cancel/guest/Host 单终态矩阵，以及逐 request/event 的 `dap-claimed-subset-v0.json`。合同接受前不修改 compiler/runner 来隐式创造 DAP。STEP-0098 接受后只可提前开展 M11 STEP-0103 ADR，scheduler 代码等待 M10 GO；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。

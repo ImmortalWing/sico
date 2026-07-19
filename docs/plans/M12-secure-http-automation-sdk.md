@@ -1,17 +1,18 @@
-# M11 plan: Secure HTTP Provider and Automation SDK
+# M12 plan: Secure HTTP Provider and Automation SDK
 
-> - status: planned after M10 GO
+> - status: planned after M11 GO
 > - created: 2026-07-19
-> - phase: M11
-> - reserved steps: STEP-0103–0110
-> - entry requirement: M10 GO with structured Runtime events, redaction and typed cancellation
+> - reordered: 2026-07-19
+> - phase: M12
+> - reserved steps: STEP-0111–0118
+> - entry requirement: M11 GO with bounded structured concurrency, plus M10 structured events, redaction and typed cancellation
 > - implementation boundary: HTTP/TLS/DNS/secrets are Host-provider responsibilities, not compiler responsibilities
 
 ## 1. Outcome
 
 Make Sico useful for real production API automation without granting ambient network or secret access. A Script must be able to perform bounded HTTPS requests with certificate and hostname verification, safe DNS handling, streaming request/response bodies, explicit redirect rules and Host-injected credentials. The same cancellation, event, redaction and per-run isolation model must cover every network phase.
 
-The target is a secure client-side automation SDK, not a general socket API or web browser. M11 should make common API workflows possible while keeping every endpoint, credential and byte budget auditable.
+The target is a secure client-side automation SDK, not a general socket API or web browser. M12 should make common API workflows possible while keeping every endpoint, credential and byte budget auditable.
 
 Representative target flows:
 
@@ -21,9 +22,9 @@ sico run upload.sico --allow-endpoint https://storage.example.com:443 --secret g
 sico watch sync.sico --allow-endpoint https://api.example.com:443
 ```
 
-The command spelling is provisional until STEP-0103 accepts the contract. No M11 syntax or support claim exists merely because this plan reserves it.
+The command spelling is provisional until STEP-0111 accepts the contract. No M12 syntax or support claim exists merely because this plan reserves it.
 
-## 2. M9/M10 baseline and bottleneck
+## 2. M9–M11 baseline, bottleneck and ordering rationale
 
 M9 HTTP v0 already proves:
 
@@ -35,7 +36,9 @@ M9 HTTP v0 already proves:
 
 Its honest limits are no TLS, IPv6/IDNA, proxy, credentials, custom headers, streaming upload, chunked response decoding or DNS pinning. Those limits prevent safe use with most production APIs.
 
-M10 is an entry requirement because certificate, redirect, DNS and credential failures must use structured faults/events and mandatory redaction, while client cancellation must reach connect/TLS/read/write phases through one typed path.
+M10 is an entry requirement because certificate, redirect, DNS and credential failures must use structured faults/events and mandatory redaction, while client cancellation must reach connect/TLS/read/write phases through one typed path. M11 is an entry requirement because multiple in-flight requests, task cancellation and resource ownership must share one settled Store/arena model rather than forcing the HTTP provider to invent a second scheduler.
+
+This internal sequence is chosen while public deployment identity, production credentials, third-party pilots and mobile runners remain unavailable external inputs. M12 does not close or replace those gates. Its exit audit must recheck them and resume any newly unblocked track under separate evidence; secure loopback fixtures and local SDK tests are not production-use evidence.
 
 ## 3. Scope and non-goals
 
@@ -60,9 +63,9 @@ M10 is an entry requirement because certificate, redirect, DNS and credential fa
 - browser cookies, JavaScript, HTML, CORS emulation or a browser security model;
 - automatic credential discovery from environment, home directories or cloud metadata;
 - wildcard internet access as the default grant;
-- WebSocket, HTTP/2, HTTP/3 or QUIC in v1 unless STEP-0103 separately proves necessity and bounded support;
+- WebSocket, HTTP/2, HTTP/3 or QUIC in v1 unless STEP-0111 separately proves necessity and bounded support;
 - transparent decompression without an explicit expanded-byte limit;
-- parallel Task scheduler, races/select or M12 concurrency work;
+- a second provider-owned task scheduler or any concurrency semantics outside the M11 Runtime contract;
 - public registry deployment, mobile Runtime completion or unsupported-platform claims.
 
 ## 4. Architecture and ownership
@@ -86,13 +89,13 @@ Sico source and standard-library helper
 | ergonomic JSON/form/pagination helpers | standard library | lower to provider API; no authority widening |
 | execution plans, diagnostics and redaction display | tooling | no secret bytes and no direct network authority |
 
-The preferred implementation is a separable provider crate/module under the runner boundary, with narrow typed configuration and no dependency from compiler crates. If offline dependency availability blocks a mature TLS stack, M11 pauses at the contract/prototype gate rather than implementing TLS manually.
+The preferred implementation is a separable provider crate/module under the runner boundary, with narrow typed configuration and no dependency from compiler crates. If offline dependency availability blocks a mature TLS stack, M12 pauses at the contract/prototype gate rather than implementing TLS manually.
 
-## 5. Versioned contracts to freeze in STEP-0103
+## 5. Versioned contracts to freeze in STEP-0111
 
 ### 5.1 Provider and WIT versioning
 
-M11 introduces a new compatible major/minor identity rather than mutating `sico:script/http@0.1.0` silently. The RFC must decide whether this is `http@0.2.0` or a new `secure-http@0.1.0` package based on WIT compatibility evidence.
+M12 introduces a new compatible major/minor identity rather than mutating `sico:script/http@0.1.0` silently. The RFC must decide whether this is `http@0.2.0` or a new `secure-http@0.1.0` package based on WIT compatibility evidence.
 
 The contract needs:
 
@@ -174,7 +177,7 @@ Rules:
 
 ### 5.7 Streaming and resource bounds
 
-Candidate hard limits for STEP-0103 acceptance:
+Candidate hard limits for STEP-0111 acceptance:
 
 - URL at most 8 KiB;
 - at most 256 headers; serialized request/response headers at most 64 KiB;
@@ -201,7 +204,7 @@ The total body budget is independent from memory usage: bytes move in bounded ch
 
 ## 6. Execution sequence
 
-### STEP-0103: secure HTTP/provider/authority RFC
+### STEP-0111: secure HTTP/provider/authority RFC
 
 Deliver:
 
@@ -217,7 +220,7 @@ Exit evidence:
 - mature TLS dependency is available and license/supply-chain constraints are recorded;
 - no implementation/support claim before acceptance.
 
-### STEP-0104: TLS transport and certificate validation
+### STEP-0112: TLS transport and certificate validation
 
 Deliver:
 
@@ -233,7 +236,7 @@ Exit evidence:
 - HTTP remains available only under an explicit `http://` grant;
 - guest cannot disable verification or inject trust roots.
 
-### STEP-0105: canonical endpoints, IPv6/IDNA and DNS pinning
+### STEP-0113: canonical endpoints, IPv6/IDNA and DNS pinning
 
 Deliver:
 
@@ -250,7 +253,7 @@ Exit evidence:
 - DNS hostname resolving to a denied private address is refused before connect;
 - exact development loopback grants still support deterministic tests.
 
-### STEP-0106: streaming request and response bodies
+### STEP-0114: streaming request and response bodies
 
 Deliver:
 
@@ -266,7 +269,7 @@ Exit evidence:
 - cancel during DNS/connect/TLS/upload/header/body/flush returns one typed terminal outcome;
 - limit, limit+1, malformed chunk, premature EOF, duplicate length and use-after-close cases fail closed.
 
-### STEP-0107: redirect and origin-transition policy
+### STEP-0115: redirect and origin-transition policy
 
 Deliver:
 
@@ -282,7 +285,7 @@ Exit evidence:
 - POST/body replay happens only when the contract marks it replay-safe and the body is reproducible within bounds;
 - cancellation and time budget cover the entire chain, not each hop independently.
 
-### STEP-0108: Host secret provider and redaction
+### STEP-0116: Host secret provider and redaction
 
 Deliver:
 
@@ -298,7 +301,7 @@ Exit evidence:
 - canary secret bytes and the exact encoded forms covered by the accepted redaction contract never appear in logs, faults, maps, cache, process argv or tooling output;
 - redirects, retries, cancellation and Host failures do not leak or persist secret material.
 
-### STEP-0109: connection lifecycle, SDK and tooling integration
+### STEP-0117: connection lifecycle, SDK and tooling integration
 
 Deliver:
 
@@ -316,11 +319,11 @@ Exit evidence:
 - SDK helpers compile to the same provider imports and cannot bypass policy;
 - shell metacharacters and secret names remain direct bounded arguments/data.
 
-### STEP-0110: M11 security, performance and platform exit audit
+### STEP-0118: M12 security, performance and platform exit audit
 
 Deliver:
 
-- aggregate validator for STEP-0103–0109 plus M0–M10 regression;
+- aggregate validator for STEP-0111–0117 plus M0–M11 regression;
 - TLS/DNS/redirect/secret threat audit and mutation corpus;
 - throughput, latency, RSS, cancellation and connection-lifecycle report;
 - actual platform matrix, GO/NO-GO and residual-risk register.
@@ -329,7 +332,7 @@ Exit evidence is defined in sections 8–10.
 
 ## 7. Threat model
 
-M11 must explicitly test:
+M12 must explicitly test:
 
 - certificate/hostname validation bypass and insecure fallback;
 - Unicode/IDNA, IPv4 textual and IPv6 canonicalization confusion;
@@ -355,7 +358,7 @@ Hard security gates:
 
 ## 8. Performance and resource plan
 
-Hard limits come from the accepted RFC. Latency/throughput figures are measured non-SLA goals unless STEP-0103 explicitly promotes them.
+Hard limits come from the accepted RFC. Latency/throughput figures are measured non-SLA goals unless STEP-0111 explicitly promotes them.
 
 Minimum matrix:
 
@@ -369,7 +372,7 @@ Minimum matrix:
 - redirect chains, retries and secret injection overhead;
 - invalid certificate/DNS/authority cases complete within bounded time.
 
-Candidate goals to freeze in STEP-0103:
+Candidate goals to freeze in STEP-0111:
 
 - memory growth remains independent of 256 MiB body size apart from fixed chunk/pool buffers;
 - fired cancellation token is observed within 100 ms at provider polling/async boundaries;
@@ -388,9 +391,9 @@ Raw samples, host load, TLS library/version, trust mode, server fixture and plat
 - Android/Harmony require their separate Runtime/Host tracks and do not inherit desktop provider claims.
 - Cross-compilation and WIT/schema parsing count as contract evidence only.
 
-## 10. M11 exit gate
+## 10. M12 exit gate
 
-M11 is GO only when:
+M12 is GO only when:
 
 1. a versioned secure HTTP WIT/provider contract coexists with HTTP v0 without silent semantic mutation;
 2. real HTTPS succeeds with valid trust and rejects all required certificate/hostname failures;
@@ -400,13 +403,13 @@ M11 is GO only when:
 6. Host secret use is exact, opaque to guest code and redacted across CLI/events/DAP/AI/cache;
 7. cancellation, timeout, retry and connection pooling have one bounded lifecycle per Store;
 8. standard-library/tooling helpers cannot bypass provider or manifest policy;
-9. the complete M0–M10 regression is green;
+9. the complete M0–M11 regression is green;
 10. platform support is limited to actual native execution evidence.
 
 Any custom/insecure TLS fallback, ambient credential discovery, unbounded body/queue, cross-origin credential leak or Store-crossing socket reuse is an automatic NO-GO.
 
-## 11. Deferred successor work
+## 11. Successor and external-gate recheck
 
-M11 intentionally leaves structured parallel execution for a separate milestone. A likely M12 scope is bounded parallel Task scheduling, task groups, `select`/race, concurrency quotas and deterministic cancellation/collection semantics. M11 provider tests may exercise multiple in-flight Host requests internally, but that does not create or claim new language-level concurrency.
+M12 intentionally leaves general sockets, servers, browser state, HTTP/2+, ambient credentials and mobile Runtime completion outside this milestone. A successor is numbered only after STEP-0118 records actual residual risk and checks whether public hosting credentials/domain, third-party pilots, live-model credentials or Android runners have become available.
 
-If production hosting credentials/domain or Android runners become available, the existing M7/M6 external tracks may resume in parallel as separately numbered work. They must not be folded into M11 or used to weaken its exit gate.
+Any newly available M7/M6 external track may resume in parallel as separately numbered work. It must not be folded into M12, used to widen HTTP authority or used to weaken this exit gate.

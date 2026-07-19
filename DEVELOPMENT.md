@@ -1199,15 +1199,35 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 - versioned source/debug identity 与 deterministic debug map；
 - structured Runtime faults 和 Sico source frames；
 - OS signal/client request 到 typed cancellation 的桥接；
-- bounded lifecycle/log/fault event protocol；
-- 经过真实 Component 验证的 minimal DAP；
+- task-aware bounded lifecycle/log/fault event protocol；
+- 机器 claimed-subset 清单驱动、经过真实 Component 逐项验证的 minimal DAP；
 - LSP 与 data-only AI feedback 复用同一执行事件合同。
 
 退出条件：真实 Runtime fault 可稳定映射到源码，signal/cancel race 只有一个 typed terminal outcome，事件队列和日志保持有界，声明的 DAP 子集端到端可执行，且 M0–M9 regression 保持通过。
 
 模块边界：compiler 只生成 digest-bound debug map；Runtime 生成 typed fault/frame 并拥有 signal/cancellation；tooling 拥有 DAP/event framing；LSP/AI 只消费 bounded redacted data。任何 `compiler → runner/DAP/platform` 依赖都不允许。
 
-### M11：Secure HTTP Provider 与 Automation SDK
+### M11：Bounded Structured-Concurrency Runtime
+
+交付：
+
+- 先行 ADR 决定单 Store 协作式与多 Store isolated-worker 模型，并与 M8 arena/Store 铁律对齐；
+- v1 fresh Store per top-level run、Store 内 cooperative bounded scheduler；
+- structured task scope、await、task group、select/race 与确定性 tie-break；
+- affine resource 跨 task move/borrow/cleanup 与 canonical ABI `post-return` 规则；
+- 全 run 累计 task/queue/memory/fuel/time/Host-operation budgets；
+- persistent runner/watch/REPL/DAP task-aware isolation；
+- Windows x64 与 Linux x64 native runner 同语料实证。
+
+进入顺序：M10 STEP-0098 接受 typed cancellation 后可启动 documentation-only STEP-0103 ADR；scheduler 实现和支持声明必须等待 M10 GO。首个代码步骤不得早于架构决定。
+
+模块边界：Runtime 拥有 task scope、scheduler、cancellation 与 bounded completion ingress；semantics/IR 只冻结结构化并发和 affine flow；Host worker 不独立拥有 Script authority；tooling/DAP 只消费 task-aware bounded events。并行是 Runtime 内部机制，不引入 capability，child task 只能看到父 run 已授权集合的相同或更小视图。
+
+退出条件：arena borrow 不跨 suspension、resource 不 alias/leak/cross-Store、race/cancel 只有一个 terminal winner、limit+1 fail closed、persistent generations 隔离，Windows x64 与 Linux x64 原生 runner 通过同一 corpus，且 M0–M10 regression 保持通过。Windows-only 证据不足以 GO。
+
+非目标：native guest threads、shared-memory preemption、detached tasks、跨 Store handle/reference 分享、通过并行扩大 endpoint/file/secret/process authority。
+
+### M12：Secure HTTP Provider 与 Automation SDK
 
 交付：
 
@@ -1221,9 +1241,13 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 
 模块边界：semantics/IR 只检查 HTTP effect/capability，codegen 只生成 versioned Component import，WIT/manifest 冻结接口与 authority，TLS/DNS/redirect/secrets 全部由独立 Host provider 实现。不得自研 TLS，不得让 compiler 依赖网络或凭据实现。
 
-退出条件：真实 HTTPS 信任/拒绝矩阵、DNS rebinding/private-address 防护、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、cancellation/connection lifecycle 和 M0–M10 regression 全部通过；平台声明只来自实际 native execution。
+进入条件：M11 GO 已冻结 Store/task/arena/cancellation 与 in-flight Host-operation accounting；provider 必须复用 Runtime scheduler，不能建立第二套并行模型。
 
-非目标：general sockets/listeners、ambient env/home/cloud credentials、browser cookies、unrestricted proxy、parallel Task scheduler、public deployment 和 mobile Runtime completion。
+退出条件：真实 HTTPS 信任/拒绝矩阵、DNS rebinding/private-address 防护、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、cancellation/connection lifecycle 和 M0–M11 regression 全部通过；平台声明只来自实际 native execution。
+
+非目标：general sockets/listeners、ambient env/home/cloud credentials、browser cookies、unrestricted proxy、provider-local scheduler、public deployment 和 mobile Runtime completion。
+
+M10–M12 是在 production domain/identity/credentials、third-party pilots、live-model credentials 与 mobile runners 尚未到位时关闭已知内部架构债。每个阶段出口必须重新检查这些外部输入；内部基建证据不得冒充 external product/platform gate。
 
 ## 20. 性能与质量指标
 

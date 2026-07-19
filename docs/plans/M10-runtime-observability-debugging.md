@@ -6,7 +6,7 @@
 > - phase: M10
 > - reserved steps: STEP-0095–0102
 > - entry requirement: M9 GO with frozen `sico.execution-plan.v0` and explicit source-map/debug limits
-> - successor: M11 Secure HTTP Provider and Automation SDK, only after M10 GO
+> - successor: M11 bounded structured-concurrency Runtime; STEP-0103 design may start after STEP-0098, implementation and GO require M10 GO
 
 ## 1. Outcome
 
@@ -19,6 +19,12 @@ Turn M9's shell-free execution plan into a diagnosable and interruptible executi
 - debug the explicitly supported subset through DAP only after real breakpoint, stack and variable evidence exists.
 
 M10 is an observability/debugging milestone, not a language-syntax expansion. It must preserve the M9 authority model and the rule that AI tooling receives bounded data but no execution authority.
+
+### 1.1 Why this internal milestone comes before an external gate
+
+The remaining public rollout, production identity, live-model credential and mobile-runner gates require inputs that are not present in this repository and cannot be manufactured by implementation work. M10 is scheduled now because M9 exposed concrete internal debt—identity discontinuity, untyped interruption and unbounded ad-hoc observation—that would make every later provider and concurrent execution path harder to audit.
+
+This ordering is not evidence that an external product gate has closed. STEP-0102 must recheck whether real deployment, third-party, model or platform inputs have arrived; if they have, those tracks resume under their own evidence and authority rules. Internal observability evidence never substitutes for production, mobile or external-user evidence.
 
 ## 2. M9 baseline and problem statement
 
@@ -48,7 +54,7 @@ The remaining gap is identity and control continuity. A compiler span cannot cur
 ### 3.2 Non-goals
 
 - new language syntax, top-level shorthand or declaration-capable REPL cells;
-- HTTP TLS/proxies/credentials or other M11 provider work;
+- HTTP TLS/proxies/credentials or other M12 provider work;
 - parallel Task scheduling, `select`, races or task collection;
 - unrestricted process/shell, filesystem or network authority;
 - arbitrary native debugging, memory editing, expression evaluation or hot code replacement;
@@ -133,6 +139,8 @@ Each record carries one terminal class, stable code/key, run/generation identity
 - terminal outcome/fault;
 - truncation or dropped-event marker.
 
+Every event carries `runId` and `generationId`. STEP-0095 also reserves bounded optional `taskId`, `parentTaskId` and `scopeId` fields plus a typed causal relation. M10 producers emit one logical task and do not claim parallel execution; reserving these fields prevents STEP-0099 from freezing a schema that M11 would immediately have to replace. Unknown task relationships and cross-run identities fail validation rather than being treated as display-only strings.
+
 Candidate hard bounds:
 
 - each frame/event at most 1 MiB;
@@ -158,17 +166,59 @@ The state machine has `running → cancellation-requested → terminal`, with gu
 
 The contract must say when exit 123 is guaranteed. If a client can only kill an already-unresponsive process tree, the outcome remains an external termination and must not be forged into typed guest cancellation.
 
-### 5.6 Minimal DAP subset
+### 5.6 Exact DAP claimed subset
 
-The planned v0 claim is limited to:
+STEP-0095 must accept a machine-readable `dap-claimed-subset-v0.json`. It is the sole allowlist for STEP-0100 and contains exactly one record per request/event, its direction, support state, preconditions, maximum response size and required evidence fixture. Missing, duplicate and unknown claims are validation failures.
 
-- `initialize`, `launch`, `setBreakpoints`, `configurationDone`;
-- `threads` with one logical Script thread unless actual parallelism later exists;
-- `stackTrace`, `scopes`, bounded `variables`;
-- `continue`, `pause`, `disconnect`, `terminate`;
-- stopped/continued/output/terminated events.
+The initial claimed request matrix is exact:
 
-Explicitly unsupported: attach to arbitrary processes, native assembly, memory read/write, set variable, evaluate arbitrary expressions, conditional/data breakpoints, reverse execution, hot reload and multi-process debugging. Unsupported requests return typed DAP errors rather than empty success.
+| DAP request | M10 v0 state | Required behavior and evidence |
+|---|---|---|
+| `initialize` | supported | advertises only this matrix; no implied optional capability |
+| `launch` | supported | launches one identity-bound Component with existing grants only |
+| `setBreakpoints` | supported | unconditional source line breakpoints only; `condition`, `hitCondition` and `logMessage` are typed-refused; each requested line is verified, rejected or reported unbound |
+| `configurationDone` | supported | starts/resumes only after the accepted launch sequence |
+| `threads` | supported | returns one logical Script execution in M10; M11 may map tasks without changing authority |
+| `stackTrace` | supported | bounded source-mapped frames for the selected logical execution |
+| `scopes` | supported | fixed read-only locals/arguments/result scopes only when Runtime data exists |
+| `variables` | supported | bounded, depth-limited, redacted read-only values; unavailable values say so |
+| `continue` | supported | resumes a stopped execution and produces one matching `continued` event |
+| `pause` | supported | succeeds only when the Runtime proves a real safe pause; otherwise typed refusal |
+| `disconnect` | supported | detaches only by terminating/cancelling the owned launch; no orphan session |
+| `terminate` | supported | requests the shared typed cancellation path and one terminal outcome |
+| `attach` | refused | arbitrary process/Store attachment is outside the ownership model |
+| `next` | refused | M10 v0 makes no source-stepping claim |
+| `stepIn` | refused | M10 v0 makes no source-stepping claim |
+| `stepOut` | refused | M10 v0 makes no source-stepping claim |
+| `evaluate` | refused | no arbitrary guest expression execution |
+| `setExpression` | refused | no guest expression mutation |
+| `setVariable` | refused | variables are read-only observations |
+| `readMemory` | refused | no native memory surface |
+| `writeMemory` | refused | no native memory mutation |
+| `disassemble` | refused | no native assembly surface |
+| `setFunctionBreakpoints` | refused | only unconditional source line breakpoints are claimed |
+| `setDataBreakpoints` | refused | only unconditional source line breakpoints are claimed |
+| `setInstructionBreakpoints` | refused | Component/native instruction breakpoints are not exposed |
+| `setExceptionBreakpoints` | refused | M10 v0 stops only for the accepted breakpoint/fault reasons |
+| `restartFrame` | refused | no frame/control-flow rewrite |
+| `goto` | refused | no control-flow rewrite |
+| `stepBack` | refused | no reverse execution |
+| `reverseContinue` | refused | no reverse execution |
+| `restart` | refused | persistent generations remain isolated launches |
+| `terminateThreads` | refused | M10 has one owned logical execution, not independently terminable tasks |
+
+The initial claimed event matrix is also exact:
+
+| DAP event | M10 v0 state | Required behavior and evidence |
+|---|---|---|
+| `initialized` | supported | emitted once after capabilities are fixed |
+| `stopped` | supported | carries a typed reason and valid logical execution identity |
+| `continued` | supported | paired with an accepted resume and correct all-threads semantics |
+| `output` | supported | bounded, redacted and derived from the execution-event stream |
+| `terminated` | supported | emitted once after the session reaches a terminal outcome |
+| `exited` | supported | carries the stable process/runner exit code when one exists |
+
+All other DAP requests and events are unclaimed. Requests receive a typed unsupported error rather than empty success; the adapter must not emit unclaimed events. A supported row is still a NO-GO until STEP-0100 exercises its success path and relevant failure/precondition paths against a real Component.
 
 ## 6. Execution sequence
 
@@ -177,6 +227,7 @@ Explicitly unsupported: attach to arbitrary processes, native assembly, memory r
 Deliver:
 
 - RFC for the identity chain, debug map, runtime fault, execution events, cancellation race and minimal DAP subset;
+- exact `dap-claimed-subset-v0.json` request/event allowlist, its schema and a validator that rejects missing, duplicate or unknown rows;
 - JSON Schemas or equivalent strict machine contracts plus positive/negative fixtures;
 - exact module ownership and compatibility/versioning rules;
 - threat model, redaction policy, hard resource bounds and non-SLA performance goals;
@@ -185,6 +236,7 @@ Deliver:
 Exit evidence:
 
 - every candidate schema rejects unknown fields, duplicate identities, integer overflow, stale digests and over-limit inputs;
+- every DAP matrix row has a unique evidence ID, bounded response contract and typed supported/refused state;
 - at least two independently generated Components demonstrate distinct identities;
 - no implementation or debugger claim before the RFC is accepted.
 
@@ -242,6 +294,7 @@ Deliver:
 - runner event producer and client decoder for `sico.execution-events.v0`;
 - bounded stdout/stderr chunking, ordering, truncation and backpressure;
 - lifecycle events for one-shot, watch, REPL and debug runs;
+- reserved task/parent/scope identities and causal relationships that remain valid when M11 adds multiple logical tasks;
 - mandatory redaction hook before events leave the runner boundary.
 
 Exit evidence:
@@ -262,6 +315,7 @@ Deliver:
 
 Exit evidence:
 
+- the validator iterates every row of `dap-claimed-subset-v0.json`; every supported request/event has real-Component evidence and every refused request has a typed negative fixture;
 - real Component stops at entry and at least one user breakpoint, continues and terminates;
 - nested calls produce source-mapped frames in correct order;
 - scalar/local values are bounded and type-correct; unavailable/optimized values are labeled unavailable;
@@ -355,7 +409,7 @@ M10 is GO only when:
 3. real Runtime faults and limits produce stable bounded source frames without parsing stderr;
 4. Ctrl+C and client cancellation reach blocked and busy execution with one terminal winner;
 5. lifecycle/log/fault transport stays within item/byte bounds under slow/disconnected clients;
-6. every claimed DAP feature is exercised against real Components, and unsupported features refuse honestly;
+6. every supported row in `dap-claimed-subset-v0.json` is exercised against real Components, every refused row has typed negative evidence, and no unclaimed event is emitted;
 7. editor and AI integrations preserve direct argv, redaction and authority boundaries;
 8. repeated debug/persistent sessions prove teardown and isolation;
 9. the complete M0–M9 regression is green;
@@ -363,6 +417,8 @@ M10 is GO only when:
 
 Failure of the DAP breakpoint gate may produce an honest partial milestone or M10 NO-GO; it cannot be papered over by renaming post-mortem fault inspection as interactive debugging.
 
-## 11. Handoff to M11
+## 11. Handoff to M11 and external-gate recheck
 
-M11 may start only after M10 GO freezes structured events, redaction and typed cancellation, because secure network operations need those mechanisms for timeout/certificate/DNS/credential diagnostics. M10 must not implement TLS or secrets early. The planned successor is [`M11 Secure HTTP Provider and Automation SDK`](./M11-secure-http-automation-sdk.md).
+After STEP-0098 freezes the shared typed cancellation path, the documentation-only STEP-0103 ADR may begin in parallel with STEP-0099–0102. This early design lane exists so the single-Store/multi-Store and arena-lifetime decision is settled before scheduler code. M11 implementation, support claims and GO still require complete M10 GO, including task-aware bounded events and the exact DAP matrix.
+
+The planned successor is [`M11 bounded structured-concurrency Runtime`](./M11-structured-concurrency-runtime.md). Secure HTTP moves to [`M12`](./M12-secure-http-automation-sdk.md), after scheduler ownership and cancellation semantics are stable. Neither milestone widens Script authority, and neither counts as evidence for the still-open public rollout, production identity, live-model or mobile-runner gates; STEP-0102 explicitly rechecks those inputs before handoff.

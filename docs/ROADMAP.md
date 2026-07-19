@@ -3,7 +3,7 @@
 > - updated: 2026-07-19
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
 > - current phase: M10
-> - phase context: Runtime observability/debugging planned; M11 secure HTTP planned after M10 GO; M7 public rollout and M6 mobile remain externally blocked
+> - phase context: Runtime observability/debugging planned; M11 structured-concurrency design unlocks after STEP-0098; M12 secure HTTP follows M11 GO; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
 
@@ -184,23 +184,39 @@ Entry gate：satisfied by STEP-0014。
 
 进入条件：M9 GO，且 `sico.execution-plan.v0` 的 compile-only source coordinates、client-owned cancellation 与 debug refusal 已明确冻结。
 
-执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。首项 STEP-0095 只冻结 identity/schema/redaction/race contracts，不提前宣称 debugger。Compiler 只拥有 deterministic debug map；Runtime fault/signal/event 与 DAP 分属 runner/tooling，不允许形成 `compiler → Runtime` 反向依赖。
+执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。首项 STEP-0095 冻结 identity/schema/redaction/race contracts，并产出机器可校验的 DAP request/event claimed-subset 清单；STEP-0100 必须逐行提供真实 Component 支持证据或 typed refusal。Compiler 只拥有 deterministic debug map；Runtime fault/signal/event 与 DAP 分属 runner/tooling，不允许形成 `compiler → Runtime` 反向依赖。
 
-退出证据：exact source/compiler/Component/debug-map identity、真实 Runtime source frames、typed signal cancellation、bounded event/log queues、真实 Component 上逐项验证的 DAP 子集、session isolation、M0–M9 regression 与 actual-platform matrix。底层 Runtime 若不能支持真实 breakpoint/pause，必须记录 DAP NO-GO，不得把 post-mortem inspection 改名为 debugger。
+退出证据：exact source/compiler/Component/debug-map identity、真实 Runtime source frames、typed signal cancellation、task-aware bounded event/log queues、机器清单驱动且在真实 Component 上逐项验证的 DAP 子集、session isolation、M0–M9 regression 与 actual-platform matrix。底层 Runtime 若不能支持真实 breakpoint/pause，必须记录 DAP NO-GO，不得把 post-mortem inspection 改名为 debugger。
 
-## M11: Secure HTTP Provider and Automation SDK
+## M11: Bounded structured-concurrency Runtime
 
-状态：`planned after M10 GO / STEP-0103–0110 reserved`
+状态：`planned / STEP-0103 design unlocks after STEP-0098; implementation after M10 GO`
+
+主要交付：Store/arena 架构 ADR、单 Store 协作式 bounded scheduler、structured task scope、await/group/select/race、affine resource 跨 task 所有权、统一 cancellation/terminal winner、bounded channel/stream、persistent-runner/DAP task integration，以及 Windows x64 与 Linux x64 native runner 实证。
+
+进入条件分两段：STEP-0098 接受 typed cancellation 后即可并行启动 documentation-only STEP-0103；任何 scheduler 实现和支持声明必须等待 M10 GO，尤其是 task-aware bounded events、redaction 与 exact DAP claims 稳定。
+
+架构候选：v1 选择“每个 top-level run 一个 fresh Store，Store 内 cooperative scheduler”；多 Store 只作为未来 isolated worker，通过显式 bounded message ABI 通信，禁止共享 borrow、Wasm reference、resource handle 或 authority-bearing state。STEP-0103 ADR 必须先 reconcile M8 canonical ABI scratch arena、`post-return`、resource move/borrow、Store teardown 与 persistent generation 铁律。
+
+执行计划：[`M11 bounded structured-concurrency Runtime`](./plans/M11-structured-concurrency-runtime.md)，STEP-0103–0110。并行仅是 Runtime 内部执行机制：child task 只能继承现有 grant 的相同或更小视图，concurrency quota 是资源限额而不是 capability，M11 不引入新 authority。
+
+退出证据：ADR-before-code、arena borrow 不跨 suspension、affine resource 无 alias/leak、limit+1 与 cancellation/race 单终态、persistent generation 隔离、M0–M10 regression，以及 Windows x64 + Linux x64 原生 runner 同一语料。macOS/mobile 只有真实 native evidence 才能宣称。
+
+## M12: Secure HTTP Provider and Automation SDK
+
+状态：`planned after M11 GO / STEP-0111–0118 reserved`
 
 主要交付：成熟 TLS 实现上的 HTTPS/SNI/certificate validation、exact scheme/host/port authority、IPv6/IDNA 与 DNS pinning、bounded streaming upload/download、redirect reauthorization、opaque Host secret injection、per-Store connection lifecycle、automation SDK/tooling 和出口审计。
 
-进入条件：M10 GO，尤其是 structured events、mandatory redaction 和 typed cancellation 已稳定；M9 `http@0.1.0` compatibility profile 保留。若离线依赖中没有成熟 TLS stack，M11 在 contract/prototype gate 暂停，绝不自研 TLS。
+进入条件：M11 GO 已冻结 Store/task/arena/cancellation/in-flight Host-operation accounting；M10 structured events、mandatory redaction 和 typed cancellation 保持稳定；M9 `http@0.1.0` compatibility profile 保留。若没有成熟 TLS stack，M12 在 contract/prototype gate 暂停，绝不自研 TLS。
 
-模块边界：语言 semantics/IR 只拥有 HTTP 类型/effect/capability；codegen 只生成 versioned Component import；TLS/DNS/redirect/credentials 位于独立 Host provider；runner/manifest 负责默认拒绝的 endpoint/secret grants；标准库只提供不扩权的 helpers。
+模块边界：语言 semantics/IR 只拥有 HTTP 类型/effect/capability；codegen 只生成 versioned Component import；TLS/DNS/redirect/credentials 位于独立 Host provider；runner/manifest 负责默认拒绝的 endpoint/secret grants；标准库只提供不扩权的 helpers。Provider 必须复用 M11 scheduler，不创建第二套并行模型。
 
-执行计划：[`M11 Secure HTTP Provider and Automation SDK`](./plans/M11-secure-http-automation-sdk.md)，STEP-0103–0110。M11 不包含 general sockets、ambient proxy/credentials、browser state、parallel Task scheduler、public deployment 或 mobile Runtime completion。
+执行计划：[`M12 Secure HTTP Provider and Automation SDK`](./plans/M12-secure-http-automation-sdk.md)，STEP-0111–0118。M12 不包含 general sockets、ambient proxy/credentials、browser state、public deployment 或 mobile Runtime completion。
 
-退出证据：真实 HTTPS 正反证书矩阵、IDNA/IPv4/IPv6/DNS rebinding 拒绝语料、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、one-Store connection isolation、M0–M10 regression 与 actual-platform matrix。
+退出证据：真实 HTTPS 正反证书矩阵、IDNA/IPv4/IPv6/DNS rebinding 拒绝语料、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、one-Store/task connection isolation、M0–M11 regression 与 actual-platform matrix。
+
+M10–M12 之所以在此时推进内部基建，是因为 production domain/identity/credentials、third-party pilots、live-model credentials 和 mobile runners 仍是缺失的外部输入，不能靠仓库代码伪造。每个 exit audit 都必须重新检查这些输入；内部 GO 不得替代任何外部 gate。
 
 ## Immediate dependency chain
 
