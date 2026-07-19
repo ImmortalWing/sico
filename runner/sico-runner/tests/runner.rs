@@ -2,8 +2,9 @@ use sico_ir::{
     Block, BlockId, ConstructField, Function, FunctionId, Instruction, Module, Operation,
     Parameter, SourceRange, Terminator, Type, ValueId,
 };
+use sico_observability::{canonical_json, parse_runtime_fault};
 use sico_runner::{
-    CancelToken, FsGrants, RunOutcome, Runner, RunnerLimits, ScriptInput, ScriptOutput,
+    CancelToken, FsGrants, ObservedRun, RunOutcome, Runner, RunnerLimits, ScriptInput, ScriptOutput,
 };
 
 fn runner() -> Runner {
@@ -210,6 +211,196 @@ fn trap_fuel_memory_and_malformed_guests_fail_closed_and_host_survives() {
             .unwrap(),
         RunOutcome::Output(_)
     ));
+}
+
+#[test]
+fn observed_trap_uses_verified_exact_source_frames() {
+    let artifact = trap_debug_artifact();
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let observed = prepared
+        .run_observed(
+            &ScriptInput::default(),
+            &limits(),
+            &no_cancel(),
+            "run-observed-1",
+            7,
+        )
+        .unwrap();
+    assert!(matches!(observed.outcome, RunOutcome::Trap(_)));
+    let fault = observed.fault.unwrap();
+    assert_eq!(fault.class, "trap");
+    assert_eq!(fault.generation_id, 7);
+    assert!(!fault.frames.is_empty());
+    assert!(fault.frames.iter().any(|frame| {
+        frame.source.as_ref().is_some_and(|source| {
+            source.document_id == "doc.trap" && source.start == 10 && source.end == 20
+        })
+    }));
+    let bytes = canonical_json(&fault).unwrap();
+    assert_eq!(parse_runtime_fault(&bytes).unwrap(), fault);
+
+    let mut stale_map = artifact.debug_map.clone();
+    stale_map.push(b' ');
+    assert!(matches!(
+        runner.prepare_program_with_debug(
+            &artifact.component,
+            &stale_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        ),
+        Err(RunOutcome::Incompatible(_))
+    ));
+}
+
+#[test]
+fn observed_outcomes_have_stable_classes_and_unmapped_frames_are_explicit() {
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
+            &trap_component(),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let observed = prepared
+        .run_observed(
+            &ScriptInput::default(),
+            &limits(),
+            &no_cancel(),
+            "run-no-map",
+            1,
+        )
+        .unwrap();
+    let fault = observed.fault.unwrap();
+    assert_eq!(fault.class, "trap");
+    assert!(!fault.frames.is_empty());
+    assert!(fault.frames.iter().all(|frame| {
+        frame.source.is_none()
+            && frame.unavailable_reason.as_deref() == Some("debug-map-unavailable")
+    }));
+
+    let cases = [
+        (
+            RunOutcome::Domain {
+                code: "domain-error".into(),
+                message: "not exposed".into(),
+            },
+            "domain-error",
+        ),
+        (RunOutcome::Cancelled, "cancelled"),
+        (RunOutcome::Timeout, "timeout"),
+        (RunOutcome::FuelExhausted, "resource-limit.fuel"),
+        (RunOutcome::MemoryLimit, "resource-limit.memory"),
+        (
+            RunOutcome::HostProviderFailure {
+                provider_id: "sico.streams.stdout".into(),
+            },
+            "host-provider-failure",
+        ),
+        (RunOutcome::Trap("engine prose".into()), "trap"),
+        (RunOutcome::Launch("engine prose".into()), "launch-failure"),
+        (
+            RunOutcome::Incompatible("engine prose".into()),
+            "incompatible-artifact",
+        ),
+    ];
+    for (outcome, expected_class) in cases {
+        let observed = ObservedRun::from_outcome(outcome, "run-class-matrix", 2).unwrap();
+        let fault = observed.fault.unwrap();
+        assert_eq!(fault.class, expected_class);
+        assert!(!fault.message.contains("engine prose"));
+        if fault.class == "host-provider-failure" {
+            assert_eq!(fault.provider_id.as_deref(), Some("sico.streams.stdout"));
+        }
+        parse_runtime_fault(&canonical_json(&fault).unwrap()).unwrap();
+    }
+}
+
+#[test]
+fn runner_cli_renders_verified_fault_json_text_and_stale_refusal() {
+    let artifact = trap_debug_artifact();
+    let unique = format!(
+        "sico-step0097-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("trap.component.wasm");
+    let map = directory.join("trap.debug-map.json");
+    let identity = directory.join("trap.debug-identity.json");
+    std::fs::write(&component, &artifact.component).unwrap();
+    std::fs::write(&map, &artifact.debug_map).unwrap();
+    std::fs::write(&identity, &artifact.identity).unwrap();
+
+    let run = |json: bool| {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sico-runner"));
+        if json {
+            command.arg("--json");
+        }
+        command
+            .arg("--debug-map")
+            .arg(&map)
+            .arg("--debug-identity")
+            .arg(&identity)
+            .arg(&component)
+            .output()
+            .unwrap()
+    };
+
+    let json_output = run(true);
+    assert_eq!(json_output.status.code(), Some(125));
+    let fault = parse_runtime_fault(
+        json_output
+            .stderr
+            .strip_suffix(b"\n")
+            .unwrap_or(&json_output.stderr),
+    )
+    .unwrap();
+    assert_eq!(fault.class, "trap");
+    assert!(fault.frames.iter().any(|frame| {
+        frame
+            .source
+            .as_ref()
+            .is_some_and(|source| source.document_id == "doc.trap")
+    }));
+
+    let text_output = run(false);
+    assert_eq!(text_output.status.code(), Some(125));
+    let text = String::from_utf8(text_output.stderr).unwrap();
+    assert!(text.contains("trap [runtime.trap]: guest execution trapped"));
+    assert!(text.contains("doc.trap:10..20"));
+    assert!(!text.contains("unreachable"));
+
+    let mut stale = artifact.identity;
+    stale.push(b' ');
+    std::fs::write(&identity, stale).unwrap();
+    let stale_output = run(true);
+    assert_eq!(stale_output.status.code(), Some(127));
+    let stale_fault = parse_runtime_fault(
+        stale_output
+            .stderr
+            .strip_suffix(b"\n")
+            .unwrap_or(&stale_output.stderr),
+    )
+    .unwrap();
+    assert_eq!(stale_fault.class, "incompatible-artifact");
+    assert!(stale_fault.frames.is_empty());
+
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -533,6 +724,47 @@ fn spin_component() -> Vec<u8> {
         range,
     });
     sico_codegen_wasm::compile_script_program(&module).unwrap()
+}
+
+fn trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
+    let parameter_range = SourceRange { start: 0, end: 10 };
+    let mut module = Module::new("trap.sico", 64);
+    module.functions.push(Function {
+        id: FunctionId(1),
+        name: "run".into(),
+        parameters: vec![Parameter {
+            id: ValueId(0),
+            name: "input".into(),
+            ty: Type::Named("ScriptInput".into()),
+            range: parameter_range,
+        }],
+        return_type: script_result(),
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: Vec::new(),
+            terminator: Terminator::Unreachable,
+            range: SourceRange { start: 10, end: 20 },
+        }],
+        range: SourceRange { start: 0, end: 20 },
+    });
+    let source = [b' '; 64];
+    let compiler_sha256 = "b".repeat(64);
+    sico_codegen_wasm::compile_script_program_with_debug(
+        &module,
+        &sico_codegen_wasm::DebugBuildInput {
+            document_id: "doc.trap",
+            source_bytes: &source,
+            display_uri: Some("workspace://trap.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &compiler_sha256,
+            adapter_identities: vec!["sico:script-adapter@0.1.0".into()],
+            wit_identities: vec!["sico:script@0.1.0".into()],
+        },
+    )
+    .unwrap()
 }
 
 /// A malicious core guest whose result discriminant is out of range, wrapped

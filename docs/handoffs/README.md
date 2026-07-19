@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M10 STEP-0095`](./M10-STEP-0095.md) | complete-contract; M10 in progress; STEP-0096 next | observability/debug 合同与机器证据已冻结；下一项只实现 deterministic debug-map sidecar/link |
+| [`M10 STEP-0097`](./M10-STEP-0097.md) | complete; M10 in progress; STEP-0098 next | typed Runtime faults 与 exact verified source frames 已完成；下一项统一 signal/client cancellation |
 
 旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

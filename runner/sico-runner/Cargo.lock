@@ -923,7 +923,9 @@ name = "sico-codegen-wasm"
 version = "0.0.2-dev"
 dependencies = [
  "sico-ir",
+ "sico-observability",
  "wasm-encoder 0.253.0",
+ "wasmparser 0.253.0",
  "wit-parser 0.253.0",
 ]
 
@@ -960,6 +962,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-observability"
+version = "0.0.2-dev"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "wasm-encoder 0.253.0",
+]
+
+[[package]]
 name = "sico-package"
 version = "0.0.2-dev"
 dependencies = [
@@ -993,6 +1005,7 @@ dependencies = [
  "sico-app-cli",
  "sico-codegen-wasm",
  "sico-ir",
+ "sico-observability",
  "wasm-encoder 0.253.0",
  "wasmtime",
 ]

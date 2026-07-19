@@ -89,7 +89,7 @@ An embedded full map and an unbound filename-only sidecar were rejected. A debug
 
 ## Debug map
 
-`sico.debug-map.v0` uses UTF-8, zero-based, half-open byte coordinates. It records sorted source documents, functions and non-overlapping Core Wasm instruction ranges within a Component. Each function and mapping carries an explicit `core_module` identity because a Component may contain guest, transport and adapter modules; a bare function index is not globally unique. Each mapping contains:
+`sico.debug-map.v0` uses UTF-8, zero-based, half-open source byte coordinates and zero-based, half-open Component-file byte offsets for embedded Core Wasm instructions. Component-absolute instruction offsets match Wasmtime `FrameInfo::module_offset` for Component-embedded modules and remain stable when the compact debug-link section is appended after executable sections. It records sorted source documents, functions and non-overlapping Core Wasm instruction ranges within a Component. Each function and mapping carries an explicit `core_module` identity because a Component may contain guest, transport and adapter modules; a bare function index is not globally unique. Each mapping contains:
 
 - Core module identity, function index and half-open instruction range;
 - stable Sico function ID;

@@ -294,6 +294,7 @@ fn build_debug_artifact(
 ) -> Result<DebugArtifact, CodegenError> {
     let source_sha256 = sha256_hex(input.source_bytes);
     let component_code_sha256 = sha256_hex(component_code);
+    let core_base = embedded_guest_core_base(component_code)?;
     let body_ranges = Parser::new(0)
         .parse_all(&core.bytes)
         .filter_map(|payload| match payload {
@@ -327,11 +328,13 @@ fn build_debug_artifact(
             let instruction_start = body_range
                 .start
                 .checked_add(local.start)
+                .and_then(|value| value.checked_add(core_base))
                 .and_then(|value| u64::try_from(value).ok())
                 .ok_or_else(|| CodegenError::DebugArtifact("instruction offset overflow".into()))?;
             let instruction_end = body_range
                 .start
                 .checked_add(local.end)
+                .and_then(|value| value.checked_add(core_base))
                 .and_then(|value| u64::try_from(value).ok())
                 .ok_or_else(|| CodegenError::DebugArtifact("instruction offset overflow".into()))?;
             mappings.push(DebugMapping {
@@ -439,6 +442,25 @@ fn build_debug_artifact(
         debug_map,
         identity,
     })
+}
+
+fn embedded_guest_core_base(component: &[u8]) -> Result<usize, CodegenError> {
+    Parser::new(0)
+        .parse_all(component)
+        .filter_map(|payload| match payload {
+            Ok(Payload::ModuleSection {
+                unchecked_range, ..
+            }) => Some(Ok(unchecked_range.start)),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            CodegenError::DebugArtifact(format!("invalid emitted Component: {error}"))
+        })?
+        .into_iter()
+        .last()
+        .ok_or_else(|| CodegenError::DebugArtifact("Component has no embedded guest core".into()))
 }
 
 fn component_extern_name(name: &str) -> String {
@@ -1359,6 +1381,8 @@ fn compile_function(
     };
     let mut mappings = Vec::new();
     for current in &function.blocks {
+        let block_start = body.byte_len();
+        let first_block_mapping = mappings.len();
         body.instruction(&Instruction::LocalGet(dispatcher));
         body.instruction(&Instruction::I32Const(
             i32::try_from(current.id.0)
@@ -1380,6 +1404,14 @@ fn compile_function(
             });
         }
         body.instruction(&Instruction::End);
+        let block_end = body.byte_len();
+        add_generated_gaps(
+            &mut mappings,
+            first_block_mapping,
+            block_start,
+            block_end,
+            Some(current.range),
+        );
     }
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
@@ -1387,6 +1419,37 @@ fn compile_function(
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
     Ok(CompiledFunction { body, mappings })
+}
+
+fn add_generated_gaps(
+    mappings: &mut Vec<LocalDebugMapping>,
+    first_mapping: usize,
+    start: usize,
+    end: usize,
+    source: Option<sico_ir::SourceRange>,
+) {
+    let mut cursor = start;
+    let mut gaps = Vec::new();
+    for mapping in &mappings[first_mapping..] {
+        if cursor < mapping.start {
+            gaps.push(LocalDebugMapping {
+                start: cursor,
+                end: mapping.start,
+                source,
+                generated: true,
+            });
+        }
+        cursor = cursor.max(mapping.end);
+    }
+    if cursor < end {
+        gaps.push(LocalDebugMapping {
+            start: cursor,
+            end,
+            source,
+            generated: true,
+        });
+    }
+    mappings.extend(gaps);
 }
 
 #[derive(Clone)]

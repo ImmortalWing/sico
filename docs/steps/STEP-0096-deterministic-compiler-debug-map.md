@@ -28,7 +28,7 @@ Implementation of Script Components exposed one ambiguity in the STEP-0095 map s
 ## 3. Changes
 
 - Added authority-free [`sico-observability`](../../crates/sico-observability/src/lib.rs), which owns strict canonical data validation and Component link verification but cannot launch processes, access Host providers or execute guests.
-- `sico-codegen-wasm` records byte ranges while emitting each verified IR operation and block terminator, resolves them to absolute Core module offsets with `wasmparser`, and emits source or explicit generated mappings.
+- `sico-codegen-wasm` records byte ranges while emitting each verified IR operation and block terminator, resolves them to Component-file absolute offsets for the embedded guest Core module with `wasmparser`, and emits source or explicit generated mappings.
 - Script alloc/realloc/post-return and used intrinsic helper functions receive synthetic `generated=true`, `source=null` rows instead of false user locations.
 - `sico build --debug-info` installs an all-or-none triplet:
   - `<output>`: linked Component;

@@ -8,7 +8,7 @@
 
 Sico now emits an identity-bound debug triplet on explicit `sico build --debug-info`. The Component contains only a compact canonical link; the bounded canonical map and identity remain sidecars. Rebuilding the same source with the same compiler produces identical bytes for all three files, while ordinary builds remain free of the link and preserve their prior semantics.
 
-The code offset is derived from the emitted Core Wasm function body, not estimated from IR order. Each IR operation and block terminator captures its local encoder byte interval; the completed Core module is parsed to obtain the absolute function-body range. Script-generated allocator and intrinsic-helper bodies are marked generated with no source span.
+The code offset is derived from the emitted Core Wasm function body, not estimated from IR order. Each IR operation and block terminator captures its local encoder byte interval; the completed Core module supplies the function-body range and the completed Component supplies the embedded-module base, yielding the Component-file absolute offset reported by Wasmtime. Script-generated allocator and intrinsic-helper bodies are marked generated with no source span.
 
 ## Integrity properties
 

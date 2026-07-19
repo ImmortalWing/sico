@@ -13,12 +13,17 @@ use std::error::Error;
 use std::fmt;
 use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
+use std::num::NonZeroUsize;
 use std::path::{Component as PathComponent, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
+use sico_observability::{
+    ContractError, DebugMap, EngineFrame, RuntimeFault, RuntimeFrame, resolve_engine_frame,
+    validate_runtime_fault, verify_debug_artifacts,
+};
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
 
@@ -143,6 +148,9 @@ pub enum RunOutcome {
     FuelExhausted,
     /// Guest memory growth denied by the configured ceiling.
     MemoryLimit,
+    /// A named Host provider failed internally rather than returning its
+    /// declared guest-visible domain result.
+    HostProviderFailure { provider_id: String },
     /// Any other guest trap (including malformed results and out-of-range
     /// guest exit values, which are rejected rather than truncated).
     Trap(String),
@@ -150,6 +158,50 @@ pub enum RunOutcome {
     Launch(String),
     /// The artifact is not a runnable Program Component.
     Incompatible(String),
+}
+
+/// One typed outcome plus its strict Runtime fault record when execution did
+/// not return a successful `ScriptOutput`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ObservedRun {
+    pub outcome: RunOutcome,
+    pub fault: Option<RuntimeFault>,
+}
+
+impl ObservedRun {
+    /// Converts a typed pre-execution outcome (for example incompatible or
+    /// launch failure) into the same strict fault envelope.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid run identity or generation bound.
+    pub fn from_outcome(
+        outcome: RunOutcome,
+        run_id: &str,
+        generation_id: u64,
+    ) -> Result<Self, ContractError> {
+        let fault = runtime_fault(&outcome, &[], None, run_id, generation_id)?;
+        Ok(Self { outcome, fault })
+    }
+}
+
+/// Validation failure before an observed run can produce a trusted record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ObservationError {
+    Input(InputViolation),
+    Contract(ContractError),
+}
+
+impl From<InputViolation> for ObservationError {
+    fn from(error: InputViolation) -> Self {
+        Self::Input(error)
+    }
+}
+
+impl From<ContractError> for ObservationError {
+    fn from(error: ContractError) -> Self {
+        Self::Contract(error)
+    }
 }
 
 impl RunOutcome {
@@ -162,6 +214,7 @@ impl RunOutcome {
             Self::Cancelled => 123,
             Self::Timeout => 124,
             Self::FuelExhausted | Self::MemoryLimit | Self::Trap(_) => 125,
+            Self::HostProviderFailure { .. } => 126,
             Self::Launch(_) => 126,
             Self::Incompatible(_) => 127,
         }
@@ -177,6 +230,7 @@ impl RunOutcome {
             Self::Timeout => "timeout",
             Self::FuelExhausted => "resource-limit.fuel",
             Self::MemoryLimit => "resource-limit.memory",
+            Self::HostProviderFailure { .. } => "host-provider-failure",
             Self::Trap(_) => "trap",
             Self::Launch(_) => "launch-failure",
             Self::Incompatible(_) => "incompatible",
@@ -212,6 +266,17 @@ impl fmt::Display for Marker {
 }
 
 impl Error for Marker {}
+
+#[derive(Debug)]
+struct ProviderFault(&'static str);
+
+impl fmt::Display for ProviderFault {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Host provider failed")
+    }
+}
+
+impl Error for ProviderFault {}
 
 struct RunState {
     memory_ceiling: usize,
@@ -439,6 +504,7 @@ pub struct PreparedProgram {
     component: Component,
     linker: Linker<RunState>,
     streams_component: bool,
+    debug_map: Option<Arc<DebugMap>>,
 }
 
 impl Runner {
@@ -453,6 +519,8 @@ impl Runner {
         config.wasm_component_model(true);
         config.consume_fuel(true);
         config.epoch_interruption(true);
+        config.generate_address_map(true);
+        config.wasm_backtrace_max_frames(NonZeroUsize::new(256));
         // Streaming pumps are recursive until the source-level loop lands
         // (STEP-0087): 4 MiB stack covers ~8k iterations at 64 KiB chunks
         // (512 MiB streamed) while staying a hard bound.
@@ -522,6 +590,31 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<PreparedProgram, RunOutcome> {
+        self.prepare_program_inner(component, fs, net, None)
+    }
+
+    /// Compiles and links a Program only after the Component, map and identity
+    /// pass the complete digest/source-document chain.
+    pub fn prepare_program_with_debug(
+        &self,
+        component: &[u8],
+        debug_map: &[u8],
+        debug_identity: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+    ) -> Result<PreparedProgram, RunOutcome> {
+        let (map, _) = verify_debug_artifacts(component, debug_map, debug_identity)
+            .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
+        self.prepare_program_inner(component, fs, net, Some(Arc::new(map)))
+    }
+
+    fn prepare_program_inner(
+        &self,
+        component: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        debug_map: Option<Arc<DebugMap>>,
+    ) -> Result<PreparedProgram, RunOutcome> {
         let component = match self.compile_cached(component) {
             Ok(component) => component,
             Err(error) => return Err(RunOutcome::Incompatible(format!("{error:#}"))),
@@ -549,6 +642,7 @@ impl Runner {
             component,
             linker,
             streams_component,
+            debug_map,
         })
     }
 
@@ -589,7 +683,37 @@ impl PreparedProgram {
         cancel: &CancelToken,
     ) -> Result<RunOutcome, InputViolation> {
         check_input(input)?;
-        Ok(self.run_unchecked(input, limits, cancel))
+        Ok(self.run_unchecked(input, limits, cancel).outcome)
+    }
+
+    /// Executes once and emits a strict fault record from typed outcome state
+    /// and engine frame metadata. Source spans are present only when this
+    /// program was prepared through [`Runner::prepare_program_with_debug`].
+    ///
+    /// # Errors
+    ///
+    /// Rejects input bounds or an invalid run/fault contract before returning.
+    pub fn run_observed(
+        &self,
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+        run_id: &str,
+        generation_id: u64,
+    ) -> Result<ObservedRun, ObservationError> {
+        check_input(input)?;
+        let execution = self.run_unchecked(input, limits, cancel);
+        let fault = runtime_fault(
+            &execution.outcome,
+            &execution.frames,
+            self.debug_map.as_deref(),
+            run_id,
+            generation_id,
+        )?;
+        Ok(ObservedRun {
+            outcome: execution.outcome,
+            fault,
+        })
     }
 
     fn run_unchecked(
@@ -597,7 +721,7 @@ impl PreparedProgram {
         input: &ScriptInput,
         limits: &RunnerLimits,
         cancel: &CancelToken,
-    ) -> RunOutcome {
+    ) -> Execution {
         let mut store = Store::new(
             &self.runner.engine,
             RunState {
@@ -612,7 +736,9 @@ impl PreparedProgram {
         );
         store.limiter(|state| state);
         if store.set_fuel(limits.fuel).is_err() {
-            return RunOutcome::Launch("fuel configuration failed".to_owned());
+            return Execution::without_frames(RunOutcome::Launch(
+                "fuel configuration failed".to_owned(),
+            ));
         }
         let timeout_ticks = ticks_for(limits.timeout);
         // Check the cancellation token on every watchdog tick. A deadline set
@@ -645,16 +771,25 @@ impl PreparedProgram {
             }
         });
 
-        let outcome = match self.linker.instantiate(&mut store, &self.component) {
+        let execution = match self.linker.instantiate(&mut store, &self.component) {
             Ok(instance) => match instance.get_func(&mut store, "run") {
                 Some(run) => self.invoke(&mut store, &run, input, limits),
-                None => RunOutcome::Incompatible("component does not export run".to_owned()),
+                None => Execution::without_frames(RunOutcome::Incompatible(
+                    "component does not export run".to_owned(),
+                )),
             },
-            Err(error) => RunOutcome::Launch(format!("{error}")),
+            Err(error) => Execution {
+                frames: engine_frames(&error),
+                outcome: if store.data().denied {
+                    RunOutcome::MemoryLimit
+                } else {
+                    RunOutcome::Launch(format!("{error}"))
+                },
+            },
         };
         done.store(true, Ordering::Relaxed);
         let _ = watchdog.join();
-        outcome
+        execution
     }
 
     fn invoke(
@@ -663,7 +798,7 @@ impl PreparedProgram {
         run: &wasmtime::component::Func,
         input: &ScriptInput,
         limits: &RunnerLimits,
-    ) -> RunOutcome {
+    ) -> Execution {
         // Canonical-ABI transport is charged per element; budget the call
         // from the measured input size on top of the configured floor.
         let needed = input
@@ -676,10 +811,161 @@ impl PreparedProgram {
         let params = [input_val(input)];
         let mut results = [Val::Result(Ok(None))];
         match run.call(&mut *store, &params, &mut results) {
-            Ok(()) => read_result(&results[0]),
-            Err(error) => classify_error(store, &error),
+            Ok(()) => Execution::without_frames(read_result(&results[0])),
+            Err(error) => Execution {
+                outcome: classify_error(store, &error),
+                frames: engine_frames(&error),
+            },
         }
     }
+}
+
+struct Execution {
+    outcome: RunOutcome,
+    frames: Vec<RawEngineFrame>,
+}
+
+impl Execution {
+    fn without_frames(outcome: RunOutcome) -> Self {
+        Self {
+            outcome,
+            frames: Vec::new(),
+        }
+    }
+}
+
+struct RawEngineFrame {
+    module: Option<String>,
+    component_function: u64,
+    instruction_offset: Option<u64>,
+}
+
+fn engine_frames(error: &wasmtime::Error) -> Vec<RawEngineFrame> {
+    error
+        .downcast_ref::<wasmtime::WasmBacktrace>()
+        .map_or_else(Vec::new, |trace| {
+            trace
+                .frames()
+                .iter()
+                .take(256)
+                .map(|frame| RawEngineFrame {
+                    module: frame.module().name().map(str::to_owned),
+                    component_function: u64::from(frame.func_index()),
+                    instruction_offset: frame
+                        .module_offset()
+                        .and_then(|offset| u64::try_from(offset).ok()),
+                })
+                .collect()
+        })
+}
+
+fn runtime_fault(
+    outcome: &RunOutcome,
+    engine_frames: &[RawEngineFrame],
+    debug_map: Option<&DebugMap>,
+    run_id: &str,
+    generation_id: u64,
+) -> Result<Option<RuntimeFault>, ContractError> {
+    let (class, code, key, message) = match outcome {
+        RunOutcome::Output(_) => return Ok(None),
+        RunOutcome::Domain { .. } => (
+            "domain-error",
+            "runtime.domain-error",
+            "runtime_domain_error",
+            "guest returned a domain error",
+        ),
+        RunOutcome::Cancelled => (
+            "cancelled",
+            "runtime.cancelled",
+            "runtime_cancelled",
+            "execution was cancelled",
+        ),
+        RunOutcome::Timeout => (
+            "timeout",
+            "runtime.timeout",
+            "runtime_timeout",
+            "execution deadline elapsed",
+        ),
+        RunOutcome::FuelExhausted => (
+            "resource-limit.fuel",
+            "runtime.fuel-exhausted",
+            "runtime_fuel_exhausted",
+            "execution exhausted its fuel budget",
+        ),
+        RunOutcome::MemoryLimit => (
+            "resource-limit.memory",
+            "runtime.memory-limit",
+            "runtime_memory_limit",
+            "execution exceeded its memory limit",
+        ),
+        RunOutcome::HostProviderFailure { .. } => (
+            "host-provider-failure",
+            "runtime.host-provider-failure",
+            "runtime_host_provider_failure",
+            "a Host provider failed internally",
+        ),
+        RunOutcome::Trap(_) => (
+            "trap",
+            "runtime.trap",
+            "runtime_trap",
+            "guest execution trapped",
+        ),
+        RunOutcome::Launch(_) => (
+            "launch-failure",
+            "runtime.launch-failure",
+            "runtime_launch_failure",
+            "component launch failed",
+        ),
+        RunOutcome::Incompatible(_) => (
+            "incompatible-artifact",
+            "runtime.incompatible-artifact",
+            "runtime_incompatible_artifact",
+            "artifact is incompatible with this runner",
+        ),
+    };
+    let frames = engine_frames
+        .iter()
+        .take(256)
+        .map(|frame| {
+            let Some(map) = debug_map else {
+                return RuntimeFrame {
+                    function_id: "runtime.unmapped".into(),
+                    source: None,
+                    generated: true,
+                    unavailable_reason: Some("debug-map-unavailable".into()),
+                };
+            };
+            let known_module = frame.module.as_deref().filter(|module| {
+                map.functions
+                    .iter()
+                    .any(|function| function.core_module == *module)
+            });
+            resolve_engine_frame(
+                map,
+                &EngineFrame {
+                    core_module: known_module,
+                    component_function: frame.component_function,
+                    instruction_offset: frame.instruction_offset,
+                },
+            )
+        })
+        .collect();
+    let fault = RuntimeFault {
+        schema: "sico.runtime-fault.v0".into(),
+        run_id: run_id.into(),
+        generation_id,
+        class: class.into(),
+        code: code.into(),
+        key: key.into(),
+        message: message.into(),
+        provider_id: match outcome {
+            RunOutcome::HostProviderFailure { provider_id } => Some(provider_id.clone()),
+            _ => None,
+        },
+        frames,
+    };
+    validate_runtime_fault(&fault)?;
+    Ok(Some(fault))
 }
 
 const TICK: Duration = Duration::from_millis(5);
@@ -1240,7 +1526,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
-            Ok((outcome,))
+            Ok((provider_result(outcome, "sico.streams.stdin")?,))
         },
     )?;
     streams.func_wrap(
@@ -1271,7 +1557,12 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
-            Ok((outcome,))
+            let provider = if stderr_channel {
+                "sico.streams.stderr"
+            } else {
+                "sico.streams.stdout"
+            };
+            Ok((provider_result(outcome, provider)?,))
         },
     )?;
     streams.func_wrap(
@@ -1297,7 +1588,12 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
-            Ok((outcome,))
+            let provider = if stderr_channel {
+                "sico.streams.stderr"
+            } else {
+                "sico.streams.stdout"
+            };
+            Ok((provider_result(outcome, provider)?,))
         },
     )?;
     streams.func_wrap(
@@ -1359,10 +1655,20 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 store.data_mut().table.get_mut(&input)?.terminal = true;
                 store.data_mut().table.get_mut(&output)?.terminal = true;
             }
-            Ok((outcome,))
+            Ok((provider_result(outcome, "sico.streams")?,))
         },
     )?;
     Ok(())
+}
+
+fn provider_result<T>(
+    outcome: Result<T, HostStreamError>,
+    provider_id: &'static str,
+) -> Result<Result<T, HostStreamError>, wasmtime::Error> {
+    match outcome {
+        Err(HostStreamError::Io) => Err(ProviderFault(provider_id).into()),
+        other => Ok(other),
+    }
 }
 /// drive/verbatim prefixes, no backslash or colon inside components.
 fn scope_path(capability: &str, path: &str) -> Result<PathBuf, String> {
@@ -1467,6 +1773,11 @@ fn classify_error(store: &Store<RunState>, error: &wasmtime::Error) -> RunOutcom
         .is_some_and(|m| m.0 == "cancelled")
     {
         return RunOutcome::Cancelled;
+    }
+    if let Some(provider) = error.downcast_ref::<ProviderFault>() {
+        return RunOutcome::HostProviderFailure {
+            provider_id: provider.0.to_owned(),
+        };
     }
     if store.data().denied {
         return RunOutcome::MemoryLimit;
@@ -1681,9 +1992,14 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
-            let mut request = [0_u8; 1024];
-            let count = socket.read(&mut request).unwrap();
-            let request = std::str::from_utf8(&request[..count]).unwrap();
+            let mut request = Vec::new();
+            while find_header_end(&request).is_none_or(|end| request.len() < end + 4 + 3) {
+                let mut chunk = [0_u8; 1024];
+                let count = socket.read(&mut chunk).unwrap();
+                assert_ne!(count, 0, "client closed before sending the request body");
+                request.extend_from_slice(&chunk[..count]);
+            }
+            let request = std::str::from_utf8(&request).unwrap();
             assert!(request.starts_with("POST /echo?q=1 HTTP/1.1\r\n"));
             assert!(request.contains("Content-Length: 3\r\n"));
             socket
@@ -1720,5 +2036,16 @@ mod tests {
             Err(error) if error == "cancelled"
         ));
         assert!(started.elapsed() < Duration::from_millis(200));
+    }
+
+    #[test]
+    fn provider_transport_failure_is_typed_not_text_classified() {
+        let error = provider_result::<()>(
+            Err(HostStreamError::Io),
+            "sico.streams.stdout",
+        )
+        .unwrap_err();
+        let provider = error.downcast_ref::<ProviderFault>().unwrap();
+        assert_eq!(provider.0, "sico.streams.stdout");
     }
 }

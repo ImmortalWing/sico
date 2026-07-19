@@ -16,11 +16,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use sico_runner::{
-    CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
+    CancelToken, FsGrants, NetGrants, ObservationError, ObservedRun, RunOutcome, Runner,
+    RunnerLimits, ScriptInput,
 };
 
 const EXIT_TOOL_ERROR: i32 = 121;
 const MAX_WATCH_COMPONENT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_DEBUG_MAP_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_DEBUG_IDENTITY_BYTES: u64 = 1024 * 1024;
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(100);
 
 fn main() {
@@ -38,6 +41,8 @@ fn run() -> i32 {
     let mut watch = false;
     let mut watch_runs = None;
     let mut watch_poll_ms = 25_u64;
+    let mut debug_map_path = None;
+    let mut debug_identity_path = None;
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
         if passthrough {
@@ -71,6 +76,16 @@ fn run() -> i32 {
             match value.parse::<u64>() {
                 Ok(ms) => cancel_after_ms = Some(ms),
                 Err(_) => return diagnostic(json, "cli", "--cancel-after-ms expects milliseconds"),
+            }
+        } else if argument == "--debug-map" || argument == "--debug-identity" {
+            let map = argument == "--debug-map";
+            let Some(path) = args.next() else {
+                return diagnostic(json, "cli", &format!("missing path after {argument}"));
+            };
+            if map {
+                debug_map_path = Some(PathBuf::from(path));
+            } else {
+                debug_identity_path = Some(PathBuf::from(path));
             }
         } else if argument == "--allow-net" {
             let Some(endpoint) = args.next() else {
@@ -112,11 +127,25 @@ fn run() -> i32 {
         return diagnostic(
             json,
             "cli",
-            "usage: sico-runner [--watch] [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... PROGRAM.component.wasm [-- ARGS...]",
+            "usage: sico-runner [--watch] [--json] [--debug-map PATH --debug-identity PATH] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... PROGRAM.component.wasm [-- ARGS...]",
         );
     };
     if !watch && watch_runs.is_some() {
         return diagnostic(json, "cli", "--watch-runs requires --watch");
+    }
+    if debug_map_path.is_some() != debug_identity_path.is_some() {
+        return diagnostic(
+            json,
+            "cli",
+            "--debug-map and --debug-identity must be provided together",
+        );
+    }
+    if watch && debug_map_path.is_some() {
+        return diagnostic(
+            json,
+            "cli",
+            "watch v0 refuses a fixed debug identity across changing generations",
+        );
     }
     let component_path = PathBuf::from(component);
     let component = match read_component(&component_path) {
@@ -129,10 +158,36 @@ fn run() -> i32 {
         Ok(runner) => runner,
         Err(error) => return diagnostic(json, "cli", &format!("engine setup failed: {error}")),
     };
+    let debug_prepared = if let (Some(map_path), Some(identity_path)) =
+        (debug_map_path.as_deref(), debug_identity_path.as_deref())
+    {
+        let map = match read_bounded(map_path, MAX_DEBUG_MAP_BYTES, "debug map") {
+            Ok(bytes) => bytes,
+            Err(error) => return diagnostic(json, "cli", &error),
+        };
+        let identity = match read_bounded(identity_path, MAX_DEBUG_IDENTITY_BYTES, "debug identity")
+        {
+            Ok(bytes) => bytes,
+            Err(error) => return diagnostic(json, "cli", &error),
+        };
+        match runner.prepare_program_with_debug(&component, &map, &identity, &grants, &net) {
+            Ok(prepared) => Some(prepared),
+            Err(outcome) => {
+                let observed = ObservedRun::from_outcome(outcome, "run-0", 0)
+                    .expect("fixed runner identity is valid");
+                return report_observed(json, &observed);
+            }
+        }
+    } else {
+        None
+    };
     // RFC-0030 mixing rule: each channel is consumed exactly once. When the
     // component imports the streams interface the buffered stdin stays empty
     // and the OS stream belongs to the streaming host calls.
-    let streams_component = runner.component_imports_streams(&component);
+    let streams_component = debug_prepared.as_ref().map_or_else(
+        || runner.component_imports_streams(&component),
+        sico_runner::PreparedProgram::imports_streams,
+    );
     let mut stdin = Vec::new();
     if !streams_component && let Err(error) = std::io::stdin().read_to_end(&mut stdin) {
         return diagnostic(json, "cli", &format!("cannot read stdin: {error}"));
@@ -166,6 +221,19 @@ fn run() -> i32 {
             std::thread::sleep(std::time::Duration::from_millis(ms));
             token.cancel();
         });
+    }
+    if let Some(prepared) = debug_prepared {
+        return match prepared.run_observed(&input, &RunnerLimits::default(), &cancel, "run-0", 0) {
+            Ok(observed) => report_observed(json, &observed),
+            Err(ObservationError::Input(violation)) => diagnostic(
+                json,
+                "resource-limit.input",
+                &format!("input bound violated: {violation:?}"),
+            ),
+            Err(ObservationError::Contract(error)) => {
+                diagnostic(json, "internal-invariant", &error.to_string())
+            }
+        };
     }
     let outcome = match runner.run_program_with_net(
         &component,
@@ -302,6 +370,75 @@ fn read_component(path: &Path) -> std::io::Result<Vec<u8>> {
         ));
     }
     Ok(bytes)
+}
+
+fn read_bounded(path: &Path, maximum: u64, label: &str) -> Result<Vec<u8>, String> {
+    let file =
+        std::fs::File::open(path).map_err(|error| format!("cannot open {label}: {error}"))?;
+    let mut bytes = Vec::new();
+    file.take(maximum.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("cannot read {label}: {error}"))?;
+    if bytes.len() as u64 > maximum {
+        return Err(format!("{label} exceeds its {maximum}-byte bound"));
+    }
+    Ok(bytes)
+}
+
+fn report_observed(json: bool, observed: &ObservedRun) -> i32 {
+    let Some(fault) = observed.fault.as_ref() else {
+        return report(json, &observed.outcome);
+    };
+    if json {
+        match sico_observability::canonical_json(fault) {
+            Ok(bytes) => {
+                let mut stderr = std::io::stderr().lock();
+                let _ = stderr.write_all(&bytes);
+                let _ = stderr.write_all(b"\n");
+            }
+            Err(error) => {
+                return diagnostic(
+                    true,
+                    "internal-invariant",
+                    &format!("cannot serialize Runtime fault: {error}"),
+                );
+            }
+        }
+    } else {
+        let mut stderr = std::io::stderr().lock();
+        let _ = writeln!(
+            stderr,
+            "{} [{}]: {}",
+            fault.class, fault.code, fault.message
+        );
+        if let Some(provider) = &fault.provider_id {
+            let _ = writeln!(stderr, "  provider: {provider}");
+        }
+        for (index, frame) in fault.frames.iter().enumerate() {
+            if let Some(source) = &frame.source {
+                let _ = writeln!(
+                    stderr,
+                    "  #{index} {} at {}:{}..{}{}",
+                    frame.function_id,
+                    source.document_id,
+                    source.start,
+                    source.end,
+                    if frame.generated { " [generated]" } else { "" }
+                );
+            } else {
+                let _ = writeln!(
+                    stderr,
+                    "  #{index} {} [{}]",
+                    frame.function_id,
+                    frame
+                        .unavailable_reason
+                        .as_deref()
+                        .unwrap_or("source-unavailable")
+                );
+            }
+        }
+    }
+    i32::from(observed.outcome.exit_code())
 }
 
 fn report(_json: bool, outcome: &RunOutcome) -> i32 {

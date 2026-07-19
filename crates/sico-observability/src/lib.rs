@@ -20,6 +20,8 @@ pub const MAX_DOCUMENTS: usize = 256;
 pub const MAX_FUNCTIONS: usize = 100_000;
 pub const MAX_MAPPINGS: usize = 1_000_000;
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+pub const MAX_RUNTIME_FRAMES: usize = 256;
+pub const MAX_MESSAGE_BYTES: usize = 65_536;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -112,6 +114,36 @@ pub struct DebugSpan {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct RuntimeFault {
+    pub schema: String,
+    pub run_id: String,
+    pub generation_id: u64,
+    pub class: String,
+    pub code: String,
+    pub key: String,
+    pub message: String,
+    pub provider_id: Option<String>,
+    pub frames: Vec<RuntimeFrame>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RuntimeFrame {
+    pub function_id: String,
+    pub source: Option<DebugSpan>,
+    pub generated: bool,
+    pub unavailable_reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EngineFrame<'a> {
+    pub core_module: Option<&'a str>,
+    pub component_function: u64,
+    pub instruction_offset: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DebugLink {
     pub schema: String,
     pub source_sha256: String,
@@ -195,6 +227,22 @@ pub fn parse_debug_identity(bytes: &[u8]) -> Result<DebugIdentity, ContractError
     Ok(identity)
 }
 
+/// Parses and strictly validates canonical Runtime fault bytes.
+///
+/// # Errors
+///
+/// Rejects invalid JSON, unknown fields/schema, non-canonical bytes and all
+/// identity, class, range or hard-limit violations.
+pub fn parse_runtime_fault(bytes: &[u8]) -> Result<RuntimeFault, ContractError> {
+    let fault: RuntimeFault =
+        serde_json::from_slice(bytes).map_err(|error| ContractError::Json(error.to_string()))?;
+    validate_runtime_fault(&fault)?;
+    if canonical_json(&fault)? != bytes {
+        return Err(ContractError::NonCanonical("runtime-fault-json"));
+    }
+    Ok(fault)
+}
+
 /// Validates a decoded debug identity.
 ///
 /// # Errors
@@ -224,6 +272,68 @@ pub fn validate_debug_identity(identity: &DebugIdentity) -> Result<(), ContractE
             || (!uri.starts_with("workspace://") && !uri.starts_with("sico-source://")))
     {
         return Err(ContractError::InvalidIdentity("display-uri".into()));
+    }
+    Ok(())
+}
+
+/// Validates a decoded Runtime fault record.
+///
+/// # Errors
+///
+/// Rejects unknown classes, invalid identities/ranges, oversized text and
+/// more than 256 frames.
+pub fn validate_runtime_fault(fault: &RuntimeFault) -> Result<(), ContractError> {
+    if fault.schema != "sico.runtime-fault.v0" {
+        return Err(ContractError::UnknownSchema(fault.schema.clone()));
+    }
+    validate_id(&fault.run_id)?;
+    validate_id(&fault.code)?;
+    validate_id(&fault.key)?;
+    if fault.generation_id > MAX_SAFE_INTEGER {
+        return Err(ContractError::Limit("generation-id"));
+    }
+    if !matches!(
+        fault.class.as_str(),
+        "domain-error"
+            | "cancelled"
+            | "timeout"
+            | "resource-limit.fuel"
+            | "resource-limit.memory"
+            | "resource-limit.other"
+            | "trap"
+            | "host-provider-failure"
+            | "incompatible-artifact"
+            | "launch-failure"
+            | "external-termination"
+            | "internal-invariant"
+    ) {
+        return Err(ContractError::InvalidIdentity("fault-class".into()));
+    }
+    if fault.message.len() > MAX_MESSAGE_BYTES {
+        return Err(ContractError::Limit("fault-message"));
+    }
+    if let Some(provider) = &fault.provider_id {
+        validate_id(provider)?;
+    }
+    if fault.frames.len() > MAX_RUNTIME_FRAMES {
+        return Err(ContractError::Limit("runtime-frames"));
+    }
+    for frame in &fault.frames {
+        validate_id(&frame.function_id)?;
+        if let Some(span) = &frame.source {
+            validate_id(&span.document_id)?;
+            if span.start > span.end || span.end > MAX_SAFE_INTEGER {
+                return Err(ContractError::InvalidRange("runtime-frame-source".into()));
+            }
+        }
+        if let Some(reason) = &frame.unavailable_reason {
+            validate_id(reason)?;
+        }
+        if frame.source.is_some() && frame.unavailable_reason.is_some() {
+            return Err(ContractError::InvalidIdentity(
+                "frame-source-and-unavailable".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -364,6 +474,87 @@ pub fn validate_debug_map(map: &DebugMap) -> Result<(), ContractError> {
         ));
     }
     Ok(())
+}
+
+/// Resolves one engine frame only when its module/function/offset identifies
+/// exactly one accepted debug-map row.
+///
+/// Missing or ambiguous engine metadata produces an explicit unavailable
+/// frame; it never guesses a source span.
+#[must_use]
+pub fn resolve_engine_frame(map: &DebugMap, frame: &EngineFrame<'_>) -> RuntimeFrame {
+    let offset = frame.instruction_offset;
+    let mut modules = BTreeSet::new();
+    for function in &map.functions {
+        if function.component_function != frame.component_function {
+            continue;
+        }
+        if frame
+            .core_module
+            .is_none_or(|module| module == function.core_module)
+        {
+            modules.insert(function.core_module.as_str());
+        }
+    }
+    if modules.len() != 1 && frame.core_module.is_some() {
+        modules.clear();
+        for function in &map.functions {
+            if function.component_function == frame.component_function {
+                modules.insert(function.core_module.as_str());
+            }
+        }
+    }
+    let Some(core_module) = modules
+        .iter()
+        .copied()
+        .next()
+        .filter(|_| modules.len() == 1)
+    else {
+        return unavailable_frame("runtime.unmapped", "module-unresolved", true);
+    };
+    let Some(function) = map.functions.iter().find(|function| {
+        function.core_module == core_module
+            && function.component_function == frame.component_function
+    }) else {
+        return unavailable_frame("runtime.unmapped", "function-unresolved", true);
+    };
+    let Some(offset) = offset else {
+        return unavailable_frame(
+            &function.id,
+            "instruction-offset-unavailable",
+            function.id.starts_with("generated."),
+        );
+    };
+    let Some(mapping) = map.mappings.iter().find(|mapping| {
+        mapping.core_module == core_module
+            && mapping.component_function == frame.component_function
+            && mapping.instruction_start <= offset
+            && offset < mapping.instruction_end
+    }) else {
+        return unavailable_frame(
+            &function.id,
+            "instruction-unmapped",
+            function.id.starts_with("generated."),
+        );
+    };
+    RuntimeFrame {
+        function_id: mapping.function_id.clone(),
+        source: mapping.source.clone(),
+        generated: mapping.generated,
+        unavailable_reason: mapping
+            .source
+            .is_none()
+            .then(|| "generated-code".to_owned()),
+    }
+}
+
+fn unavailable_frame(function_id: &str, reason: &str, generated: bool) -> RuntimeFrame {
+    RuntimeFrame {
+        function_id: function_id.into(),
+        source: None,
+        generated,
+        unavailable_reason: Some(reason.into()),
+    }
 }
 
 /// Appends the canonical digest link to an otherwise complete Component.
@@ -699,5 +890,67 @@ mod tests {
             verify_debug_artifacts(&mismatched_component, &mismatched_map, &mismatched_identity),
             Err(ContractError::StaleBinding("source-document"))
         );
+    }
+
+    fn runtime_fault_with_frames(count: usize) -> RuntimeFault {
+        RuntimeFault {
+            schema: "sico.runtime-fault.v0".into(),
+            run_id: "run-test".into(),
+            generation_id: 1,
+            class: "trap".into(),
+            code: "runtime.trap".into(),
+            key: "runtime_trap".into(),
+            message: "guest execution trapped".into(),
+            provider_id: None,
+            frames: (0..count)
+                .map(|index| RuntimeFrame {
+                    function_id: format!("fn.{index}"),
+                    source: None,
+                    generated: false,
+                    unavailable_reason: Some("debug-map-unavailable".into()),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn runtime_fault_limits_and_exclusive_frame_location_fail_closed() {
+        let accepted = runtime_fault_with_frames(MAX_RUNTIME_FRAMES);
+        validate_runtime_fault(&accepted).unwrap();
+        assert_eq!(
+            parse_runtime_fault(&canonical_json(&accepted).unwrap()).unwrap(),
+            accepted
+        );
+
+        let limit_plus_one = runtime_fault_with_frames(MAX_RUNTIME_FRAMES + 1);
+        assert_eq!(
+            validate_runtime_fault(&limit_plus_one),
+            Err(ContractError::Limit("runtime-frames"))
+        );
+
+        let mut oversized = runtime_fault_with_frames(0);
+        oversized.message = "x".repeat(MAX_MESSAGE_BYTES + 1);
+        assert_eq!(
+            validate_runtime_fault(&oversized),
+            Err(ContractError::Limit("fault-message"))
+        );
+
+        let mut conflicting = runtime_fault_with_frames(1);
+        conflicting.frames[0].source = Some(DebugSpan {
+            document_id: "doc.main".into(),
+            start: 0,
+            end: 1,
+        });
+        assert!(matches!(
+            validate_runtime_fault(&conflicting),
+            Err(ContractError::InvalidIdentity(_))
+        ));
+
+        let mut unknown = runtime_fault_with_frames(0);
+        unknown.class = "engine-text-derived".into();
+        assert!(matches!(
+            validate_runtime_fault(&unknown),
+            Err(ContractError::InvalidIdentity(_))
+        ));
     }
 }
