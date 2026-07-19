@@ -44,6 +44,8 @@ $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
 $psi.EnvironmentVariables['SICO_RUNNER'] = $runner
 $process = [Diagnostics.Process]::Start($psi)
+$stdoutTask = $process.StandardOutput.ReadToEndAsync()
+$stderrTask = $process.StandardError.ReadToEndAsync()
 
 # Initial generation, then one invalid edit that must never reach the runner.
 Start-Sleep -Milliseconds 1200
@@ -62,12 +64,12 @@ Start-Sleep -Milliseconds 20
 [IO.File]::WriteAllText($source, $markerTwo, [Text.UTF8Encoding]::new($false))
 
 if (-not $process.WaitForExit(10000)) {
-    $process.Kill()
+    & taskkill.exe /PID $process.Id /T /F | Out-Null
     $process.WaitForExit()
     throw 'sico watch did not finish three accepted generations'
 }
-$stdout = $process.StandardOutput.ReadToEnd()
-$stderr = $process.StandardError.ReadToEnd()
+$stdout = $stdoutTask.GetAwaiter().GetResult()
+$stderr = $stderrTask.GetAwaiter().GetResult()
 if ($process.ExitCode -ne 0) { throw "sico watch final exit failed: $($process.ExitCode) $stderr" }
 if ($stdout -cne 'generationgeneration') { throw "watch output generations mismatch: $stdout" }
 
