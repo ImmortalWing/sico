@@ -28,15 +28,20 @@ interface http {
 
 ## Semantics
 
-- **Authorization.** `--allow-net host:port` (repeatable) grants exactly that host and port over `http`. The URL's scheme must be `http`, its host must equal the grant byte-for-byte (case-insensitive ASCII), and its port must equal the grant (explicit or the default 80). No wildcards, no CIDR, no listener.
+- **Authorization.** `--allow-net host:port` (repeatable) grants exactly that host and port over `http`. The URL's scheme must be `http`, its normalized host must equal the grant (case-insensitive ASCII), and its port must equal the grant (explicit or the default 80). v0 accepts canonical IPv4 literals and bounded ASCII DNS names; IPv6/IDNA, wildcards, CIDR, userinfo and listeners are refused.
 - **DNS.** The granted host is resolved by the system resolver at request time; the `Host` header names the granted host. IP-literal grants (e.g. `127.0.0.1:8080`) connect literally. v0 does not pin resolved addresses to the grant beyond this; a stricter resolved-IP check is later work and is recorded as such.
 - **Redirects.** Never followed: a 3xx response is returned to the guest as-is. Redirect targets cannot expand authority.
-- **Limits.** Request body ≤ 8 MiB; request headers are the fixed minimal set (`Host`, `Content-Length`, `Connection: close`, `User-Agent: sico-runner/x`); response status line + headers ≤ 64 KiB; response body ≤ 8 MiB; connect timeout 5 s, total timeout 30 s. Exceeding any bound is `resource-limit` or `timeout`, never silent truncation.
+- **Limits.** URL ≤ 8 KiB; request body ≤ 8 MiB; request headers are the fixed minimal set (`Host`, `Content-Length`, `Connection: close`, `User-Agent: sico-runner/x`); response status line + headers ≤ 64 KiB; response body ≤ 8 MiB; connect timeout 2 s, total timeout 5 s. Exceeding any bound is `resource-limit` or `timeout`, never silent truncation.
 - **Cancellation.** The request runs on a worker thread behind the STEP-0088 rendezvous pattern; a fired CancelToken returns `cancelled` promptly without waiting for the socket.
-- **Capability.** The interface maps to `network.connect` in the package closure (already a supported grant name). Without `--allow-net` every call returns `denied`.
+- **Protocol.** v0 accepts HTTP/1.0 and HTTP/1.1 responses with a single `Content-Length` or connection-close framing. Transfer-Encoding/chunked and ambiguous duplicate lengths fail with `protocol`; redirects are still returned as ordinary 3xx responses.
+- **Capability.** The interface maps exactly to `network.connect` in the package closure. Without `--allow-net` every call returns `denied` before DNS or socket creation.
 - **Logging.** v0 logs nothing about requests; there is no credential support, so nothing sensitive exists to redact. Both are later work with their own RFC updates.
 
 ## Positive and negative cases
 
 Positive: granted `http://127.0.0.1:PORT` GET/POST round-trips status and body; redirect surfaces the 3xx status to the guest.
 Negative (all typed, no socket opened unless stated): ungranted host; ungranted port; `https://`; other methods; oversized request/response body; slow server → timeout; cancel during connect/read.
+
+## Implementation evidence
+
+STEP-0089 implements the provider in `sico-runner`, passes grants through `sico run --allow-net`, and validates the real compiler/cache/Component/runner loopback path. `tools/validate-step-0089.ps1` proves status/body transport, exact request framing, default denial, wrong-port denial, HTTPS/method refusal, redirect non-following, header/body bounds, timeout and cancellation. Evidence report: [`scoped-http-provider-v0`](../reports/scoped-http-provider-v0.md).

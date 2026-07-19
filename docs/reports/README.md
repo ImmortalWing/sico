@@ -10,6 +10,7 @@
 | [`script-profile-prototype-v0`](./script-profile-prototype-v0.md) | verified direct-path evidence | STEP-0076 | hard-coded Program 6/6、Canonical ABI、cold/warm/RSS 与 encoding findings |
 | [`script-profile-composition-v0`](./script-profile-composition-v0.md) | verified composition evidence | STEP-0076 | direct/composed 各 20 × 6/6、Adapter digest、latency/RSS 与 `composition-go` 裁决 |
 | [`fixed-width-dynamic-scalars-v0`](./fixed-width-dynamic-scalars-v0.md) | verified implementation evidence | STEP-0077 | I64/U64 typed failure、2,048 × 8 Core oracle、11 个 Wasmtime Component 边界用例 |
+| [`scoped-http-provider-v0`](./scoped-http-provider-v0.md) | verified implementation evidence | STEP-0089 | 精确端点 grant、GET/POST loopback、默认拒绝、redirect/limit/timeout/cancel 与 `network.connect` closure |
 | [`ecosystem-release-contract-v0`](./ecosystem-release-contract-v0.md) | complete | STEP-0062 | 32-threat ecosystem trust boundary, 12 compatibility surfaces and split-track evidence |
 | [`m6-exit-audit`](./m6-exit-audit.md) | blocked-external-runner | STEP-0061 | host evidence complete; Android Runtime/UI/startup gate NO-GO |
 | [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |

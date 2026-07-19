@@ -59,6 +59,13 @@ pub fn run_command() -> Command {
                 .action(ArgAction::Append),
         )
         .arg(
+            Arg::new("allow-net")
+                .long("allow-net")
+                .value_name("HOST:PORT")
+                .help("Grant one exact outbound HTTP endpoint (repeatable)")
+                .action(ArgAction::Append),
+        )
+        .arg(
             Arg::new("args")
                 .value_name("ARG")
                 .help("Script arguments after --")
@@ -138,7 +145,7 @@ pub fn run_run(
         }
         bytes
     };
-    let mut fs_flags: Vec<String> = Vec::new();
+    let mut provider_flags: Vec<String> = Vec::new();
     for (flag, values) in [
         ("--fs-read-root", matches.get_many::<String>("fs-read-root")),
         (
@@ -148,14 +155,20 @@ pub fn run_run(
     ] {
         if let Some(values) = values {
             for value in values {
-                fs_flags.push(flag.to_owned());
-                fs_flags.push(value.clone());
+                provider_flags.push(flag.to_owned());
+                provider_flags.push(value.clone());
             }
+        }
+    }
+    if let Some(values) = matches.get_many::<String>("allow-net") {
+        for value in values {
+            provider_flags.push("--allow-net".to_owned());
+            provider_flags.push(value.clone());
         }
     }
     execute_runner(
         &component_path,
-        &fs_flags,
+        &provider_flags,
         &arguments,
         &guest_stdin,
         streams_component,
@@ -461,7 +474,7 @@ fn compile_eval_component(value: i64, stderr: &mut dyn Write) -> Result<Vec<u8>,
 #[allow(clippy::too_many_arguments)]
 fn execute_runner(
     component: &std::path::Path,
-    fs_flags: &[String],
+    provider_flags: &[String],
     arguments: &[String],
     guest_stdin: &[u8],
     streams_component: bool,
@@ -478,7 +491,7 @@ fn execute_runner(
         );
     };
     let mut command = ProcessCommand::new(runner);
-    command.args(fs_flags);
+    command.args(provider_flags);
     command.arg(component);
     if !arguments.is_empty() {
         command.arg("--");

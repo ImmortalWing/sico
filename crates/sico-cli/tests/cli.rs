@@ -357,6 +357,32 @@ fn build_script_profile_emits_deterministic_valid_components() {
 }
 
 #[test]
+fn build_script_profile_emits_valid_http_component_import() {
+    let source = root().join("tests/end-to-end/script-http-request.sico");
+    let output = temp_file("script-http.component.wasm");
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v0",
+            "--output",
+            path(&output),
+            path(&source),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    let bytes = fs::read(&output).unwrap();
+    wasmparser::Validator::new().validate_all(&bytes).unwrap();
+    assert!(
+        bytes
+            .windows(b"sico:script/http@0.1.0".len())
+            .any(|window| window == b"sico:script/http@0.1.0")
+    );
+    fs::remove_file(output).unwrap();
+}
+
+#[test]
 fn usage_io_and_unimplemented_commands_are_tool_errors() {
     let output = run::<0>([], None);
     assert_eq!(output.status.code(), Some(2));

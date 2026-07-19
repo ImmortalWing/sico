@@ -768,13 +768,14 @@ fn fs_write_instance() -> InstanceType {
 fn http_instance() -> InstanceType {
     let mut types = InstanceType::new();
     types.ty().defined_type().list(PrimitiveValType::U8);
+    types.export("byte-list", ComponentTypeRef::Type(TypeBounds::Eq(0)));
     types.ty().defined_type().record([
         ("status", ComponentValType::Primitive(PrimitiveValType::S64)),
-        ("body", ComponentValType::Type(0)),
+        ("body", ComponentValType::Type(1)),
     ]);
-    types.export("response", ComponentTypeRef::Type(TypeBounds::Eq(1)));
+    types.export("response", ComponentTypeRef::Type(TypeBounds::Eq(2)));
     types.ty().defined_type().result(
-        Some(ComponentValType::Type(1)),
+        Some(ComponentValType::Type(3)),
         Some(ComponentValType::Primitive(PrimitiveValType::String)),
     );
     types
@@ -786,10 +787,10 @@ fn http_instance() -> InstanceType {
                 ComponentValType::Primitive(PrimitiveValType::String),
             ),
             ("url", ComponentValType::Primitive(PrimitiveValType::String)),
-            ("body", ComponentValType::Type(0)),
+            ("body", ComponentValType::Type(1)),
         ])
-        .result(Some(ComponentValType::Type(3)));
-    types.export("request", ComponentTypeRef::Func(4));
+        .result(Some(ComponentValType::Type(4)));
+    types.export("request", ComponentTypeRef::Func(5));
     types
 }
 

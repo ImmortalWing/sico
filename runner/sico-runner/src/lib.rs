@@ -11,10 +11,12 @@
 
 use std::error::Error;
 use std::fmt;
+use std::io::{Read as _, Write as _};
+use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::path::{Component as PathComponent, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
@@ -44,19 +46,45 @@ pub struct FsGrants {
     pub write_roots: Vec<PathBuf>,
 }
 
-/// Reserved STEP-0089 HTTP grants. The runner does not link the draft HTTP
-/// interface until the scoped provider and its denial tests are complete.
-/// Keeping this data type inert lets the in-progress contract compile without
-/// accidentally granting ambient network access.
+/// Exact per-invocation HTTP endpoint grants (STEP-0089 / RFC-0031).
+/// Empty means no network. v0 accepts ASCII DNS names and canonical IPv4
+/// literals only; every endpoint includes a non-zero port.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NetGrants {
     pub endpoints: Vec<(String, u16)>,
+}
+
+impl NetGrants {
+    /// Adds one exact `host:port` grant after strict v0 validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded diagnostic without resolving or opening a socket.
+    pub fn grant(&mut self, endpoint: &str) -> Result<(), String> {
+        let parsed = parse_endpoint(endpoint)?;
+        if !self.endpoints.contains(&parsed) {
+            self.endpoints.push(parsed);
+            self.endpoints.sort();
+        }
+        Ok(())
+    }
+
+    fn allows(&self, host: &str, port: u16) -> bool {
+        self.endpoints
+            .iter()
+            .any(|(allowed_host, allowed_port)| allowed_host == host && *allowed_port == port)
+    }
 }
 
 /// Per-call fs bounds: path text and file payload stay inside the Script v0
 /// channel budget so fs cannot smuggle past the 8 MiB boundary.
 pub const MAX_FS_PATH_BYTES: usize = 4 * 1024;
 pub const MAX_FS_FILE_BYTES: usize = MAX_CHANNEL_BYTES;
+pub const MAX_HTTP_URL_BYTES: usize = 8 * 1024;
+pub const MAX_HTTP_HEADER_BYTES: usize = 64 * 1024;
+pub const MAX_HTTP_BODY_BYTES: usize = MAX_CHANNEL_BYTES;
+const HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const HTTP_TOTAL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Script v0 output value.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -189,6 +217,7 @@ struct RunState {
     denied: bool,
     table: ResourceTable,
     streams_live: u32,
+    http_abandoned: bool,
     cancel: CancelToken,
     io: IoWorkers,
 }
@@ -445,8 +474,25 @@ impl Runner {
         cancel: &CancelToken,
         fs: &FsGrants,
     ) -> Result<RunOutcome, InputViolation> {
+        self.run_program_with_net(component, input, limits, cancel, fs, &NetGrants::default())
+    }
+
+    /// Runs with explicit scoped filesystem and network grants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] without any guest execution.
+    pub fn run_program_with_net(
+        &self,
+        component: &[u8],
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+        fs: &FsGrants,
+        net: &NetGrants,
+    ) -> Result<RunOutcome, InputViolation> {
         check_input(input)?;
-        Ok(self.run_unchecked(component, input, limits, cancel, fs))
+        Ok(self.run_unchecked(component, input, limits, cancel, fs, net))
     }
 
     fn run_unchecked(
@@ -456,10 +502,11 @@ impl Runner {
         limits: &RunnerLimits,
         cancel: &CancelToken,
         fs: &FsGrants,
+        net: &NetGrants,
     ) -> RunOutcome {
         let component = match Component::new(&self.engine, component) {
             Ok(component) => component,
-            Err(error) => return RunOutcome::Incompatible(format!("{error}")),
+            Err(error) => return RunOutcome::Incompatible(format!("{error:#}")),
         };
         let mut linker = Linker::new(&self.engine);
         if let Err(error) = link_fs(&mut linker, fs) {
@@ -468,6 +515,9 @@ impl Runner {
         if let Err(error) = link_streams(&mut linker) {
             return RunOutcome::Launch(format!("streams host setup failed: {error}"));
         }
+        if let Err(error) = link_http(&mut linker, net) {
+            return RunOutcome::Launch(format!("http host setup failed: {error}"));
+        }
         let mut store = Store::new(
             &self.engine,
             RunState {
@@ -475,6 +525,7 @@ impl Runner {
                 denied: false,
                 table: ResourceTable::new(),
                 streams_live: 0,
+                http_abandoned: false,
                 cancel: cancel.clone(),
                 io: spawn_io_workers(),
             },
@@ -599,6 +650,416 @@ fn link_fs(linker: &mut Linker<RunState>, fs: &FsGrants) -> Result<(), wasmtime:
         },
     )?;
     Ok(())
+}
+
+#[derive(Debug, wasmtime::component::ComponentType, wasmtime::component::Lower)]
+#[component(record)]
+struct HostHttpResponse {
+    #[component(name = "status")]
+    status: i64,
+    #[component(name = "body")]
+    body: Vec<u8>,
+}
+
+type HttpOutcome = Result<(Result<HostHttpResponse, String>,), wasmtime::Error>;
+
+#[derive(Debug)]
+struct HttpRequest {
+    method: String,
+    host: String,
+    port: u16,
+    authority: String,
+    target: String,
+    body: Vec<u8>,
+}
+
+/// Wires the default-deny `sico:script/http@0.1.0` provider (RFC-0031).
+/// Validation and authorization happen before DNS or socket creation. The
+/// blocking request runs on a worker so cancellation/timeout can abandon it.
+fn link_http(linker: &mut Linker<RunState>, net: &NetGrants) -> Result<(), wasmtime::Error> {
+    let grants = net.clone();
+    let mut http = linker.instance("sico:script/http@0.1.0")?;
+    http.func_wrap(
+        "request",
+        move |mut store: wasmtime::StoreContextMut<'_, RunState>,
+              (method, url, body): (String, String, Vec<u8>)|
+              -> HttpOutcome {
+            // A timed-out OS operation cannot be synchronously joined. Fail
+            // closed for the remainder of this Store so guest recovery logic
+            // cannot accumulate abandoned worker threads.
+            if store.data().http_abandoned {
+                return Ok((Err("resource-limit".to_owned()),));
+            }
+            let request = match prepare_http_request(&grants, method, url, body) {
+                Ok(request) => request,
+                Err(error) => return Ok((Err(error),)),
+            };
+            let cancel = store.data().cancel.clone();
+            let deadline = Instant::now() + HTTP_TOTAL_TIMEOUT;
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            std::thread::spawn(move || {
+                let _ = sender.send(perform_http_request(request, deadline));
+            });
+            let outcome = wait_http_response(&receiver, &cancel, deadline);
+            if matches!(
+                outcome.as_ref().map_err(String::as_str),
+                Err("timeout" | "cancelled")
+            ) {
+                store.data_mut().http_abandoned = true;
+            }
+            Ok((outcome,))
+        },
+    )?;
+    Ok(())
+}
+
+fn prepare_http_request(
+    grants: &NetGrants,
+    method: String,
+    url: String,
+    body: Vec<u8>,
+) -> Result<HttpRequest, String> {
+    if !matches!(method.as_str(), "GET" | "POST") {
+        return Err("protocol".to_owned());
+    }
+    if body.len() > MAX_HTTP_BODY_BYTES {
+        return Err("resource-limit".to_owned());
+    }
+    let parsed = parse_http_url(&url)?;
+    if !grants.allows(&parsed.host, parsed.port) {
+        return Err("denied".to_owned());
+    }
+    Ok(HttpRequest {
+        method,
+        host: parsed.host,
+        port: parsed.port,
+        authority: parsed.authority,
+        target: parsed.target,
+        body,
+    })
+}
+
+struct ParsedHttpUrl {
+    host: String,
+    port: u16,
+    authority: String,
+    target: String,
+}
+
+fn parse_http_url(url: &str) -> Result<ParsedHttpUrl, String> {
+    if url.len() > MAX_HTTP_URL_BYTES {
+        return Err("resource-limit".to_owned());
+    }
+    let Some(rest) = url.strip_prefix("http://") else {
+        return Err(if url.contains("://") {
+            "denied".to_owned()
+        } else {
+            "protocol".to_owned()
+        });
+    };
+    if rest.is_empty() || rest.contains('#') || rest.contains('@') {
+        return Err("protocol".to_owned());
+    }
+    let split = rest.find(['/', '?']).unwrap_or(rest.len());
+    let authority_text = &rest[..split];
+    let remainder = &rest[split..];
+    let (host, port) = if authority_text.contains(':') {
+        parse_endpoint(authority_text)?
+    } else {
+        (normalize_host(authority_text)?, 80)
+    };
+    let target = if remainder.is_empty() {
+        "/".to_owned()
+    } else if remainder.starts_with('?') {
+        format!("/{remainder}")
+    } else {
+        remainder.to_owned()
+    };
+    if target.bytes().any(|byte| byte <= b' ' || byte == 0x7f) {
+        return Err("protocol".to_owned());
+    }
+    let authority = if port == 80 {
+        host.clone()
+    } else {
+        format!("{host}:{port}")
+    };
+    Ok(ParsedHttpUrl {
+        host,
+        port,
+        authority,
+        target,
+    })
+}
+
+fn parse_endpoint(endpoint: &str) -> Result<(String, u16), String> {
+    if endpoint.len() > 320 || endpoint.matches(':').count() != 1 {
+        return Err("endpoint must be an ASCII host:port pair".to_owned());
+    }
+    let Some((host, port)) = endpoint.rsplit_once(':') else {
+        return Err("endpoint must include a port".to_owned());
+    };
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("endpoint port must be decimal".to_owned());
+    }
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| "endpoint port is outside 1..=65535".to_owned())?;
+    if port == 0 {
+        return Err("endpoint port is outside 1..=65535".to_owned());
+    }
+    Ok((normalize_host(host)?, port))
+}
+
+fn normalize_host(host: &str) -> Result<String, String> {
+    if host.is_empty() || host.len() > 253 || !host.is_ascii() {
+        return Err("endpoint host must be bounded ASCII".to_owned());
+    }
+    let host = host.to_ascii_lowercase();
+    if host
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || byte == b'.')
+    {
+        let address = host
+            .parse::<Ipv4Addr>()
+            .map_err(|_| "endpoint IPv4 literal is not canonical".to_owned())?;
+        if address.to_string() != host {
+            return Err("endpoint IPv4 literal is not canonical".to_owned());
+        }
+        return Ok(host);
+    }
+    if host.ends_with('.')
+        || host.split('.').any(|label| {
+            label.is_empty()
+                || label.len() > 63
+                || label.starts_with('-')
+                || label.ends_with('-')
+                || !label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        })
+    {
+        return Err("endpoint DNS host is not canonical".to_owned());
+    }
+    Ok(host)
+}
+
+fn wait_http_response(
+    receiver: &std::sync::mpsc::Receiver<Result<HostHttpResponse, String>>,
+    cancel: &CancelToken,
+    deadline: Instant,
+) -> Result<HostHttpResponse, String> {
+    loop {
+        if cancel.cancelled.load(Ordering::Acquire) {
+            return Err("cancelled".to_owned());
+        }
+        if Instant::now() >= deadline {
+            return Err("timeout".to_owned());
+        }
+        match receiver.try_recv() {
+            Ok(outcome) => return outcome,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                return Err("connect".to_owned());
+            }
+        }
+    }
+}
+
+fn perform_http_request(
+    request: HttpRequest,
+    deadline: Instant,
+) -> Result<HostHttpResponse, String> {
+    let addresses = (request.host.as_str(), request.port)
+        .to_socket_addrs()
+        .map_err(|_| "dns".to_owned())?;
+    let mut stream = None;
+    for address in addresses.take(32) {
+        let timeout = remaining(deadline)?.min(HTTP_CONNECT_TIMEOUT);
+        match TcpStream::connect_timeout(&address, timeout) {
+            Ok(connected) => {
+                stream = Some(connected);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => {}
+        }
+    }
+    let mut stream = stream.ok_or_else(|| {
+        if Instant::now() >= deadline {
+            "timeout".to_owned()
+        } else {
+            "connect".to_owned()
+        }
+    })?;
+    set_socket_timeout(&stream, deadline)?;
+    let header = format!(
+        "{} {} HTTP/1.1\r\nHost: {}\r\nContent-Length: {}\r\nConnection: close\r\nUser-Agent: sico-runner/0.0.2\r\n\r\n",
+        request.method,
+        request.target,
+        request.authority,
+        request.body.len()
+    );
+    stream
+        .write_all(header.as_bytes())
+        .and_then(|()| stream.write_all(&request.body))
+        .map_err(classify_socket_error)?;
+    read_http_response(&mut stream, deadline)
+}
+
+fn read_http_response(
+    stream: &mut TcpStream,
+    deadline: Instant,
+) -> Result<HostHttpResponse, String> {
+    let mut bytes = Vec::new();
+    let header_end = loop {
+        set_socket_timeout(stream, deadline)?;
+        let mut chunk = [0_u8; 8 * 1024];
+        let count = stream.read(&mut chunk).map_err(classify_socket_error)?;
+        if count == 0 {
+            return Err("protocol".to_owned());
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+        if let Some(index) = find_header_end(&bytes) {
+            if index > MAX_HTTP_HEADER_BYTES {
+                return Err("resource-limit".to_owned());
+            }
+            break index;
+        }
+        if bytes.len() > MAX_HTTP_HEADER_BYTES {
+            return Err("resource-limit".to_owned());
+        }
+    };
+    let (status, content_length) = parse_response_head(&bytes[..header_end])?;
+    let mut body = bytes[header_end + 4..].to_vec();
+    if body.len() > MAX_HTTP_BODY_BYTES {
+        return Err("resource-limit".to_owned());
+    }
+    match content_length {
+        Some(expected) => read_sized_body(stream, deadline, &mut body, expected)?,
+        None => read_body_to_eof(stream, deadline, &mut body)?,
+    }
+    Ok(HostHttpResponse { status, body })
+}
+
+fn find_header_end(bytes: &[u8]) -> Option<usize> {
+    bytes.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn parse_response_head(head: &[u8]) -> Result<(i64, Option<usize>), String> {
+    let text = std::str::from_utf8(head).map_err(|_| "protocol".to_owned())?;
+    let mut lines = text.split("\r\n");
+    let mut status_parts = lines.next().unwrap_or_default().split_ascii_whitespace();
+    let version = status_parts.next().unwrap_or_default();
+    let status = status_parts
+        .next()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| (100..=999).contains(value))
+        .ok_or_else(|| "protocol".to_owned())?;
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
+        return Err("protocol".to_owned());
+    }
+    let mut content_length = None;
+    for line in lines {
+        if line.starts_with([' ', '\t']) {
+            return Err("protocol".to_owned());
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            return Err("protocol".to_owned());
+        };
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("protocol".to_owned());
+        }
+        if name.eq_ignore_ascii_case("transfer-encoding") {
+            return Err("protocol".to_owned());
+        }
+        if name.eq_ignore_ascii_case("content-length") {
+            let parsed = value
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "protocol".to_owned())?;
+            if content_length.replace(parsed).is_some() {
+                return Err("protocol".to_owned());
+            }
+        }
+    }
+    Ok((status, content_length))
+}
+
+fn read_sized_body(
+    stream: &mut TcpStream,
+    deadline: Instant,
+    body: &mut Vec<u8>,
+    expected: usize,
+) -> Result<(), String> {
+    if expected > MAX_HTTP_BODY_BYTES || body.len() > expected {
+        return Err(if expected > MAX_HTTP_BODY_BYTES {
+            "resource-limit".to_owned()
+        } else {
+            "protocol".to_owned()
+        });
+    }
+    while body.len() < expected {
+        set_socket_timeout(stream, deadline)?;
+        let remaining = expected - body.len();
+        let mut chunk = vec![0_u8; remaining.min(64 * 1024)];
+        let count = stream.read(&mut chunk).map_err(classify_socket_error)?;
+        if count == 0 {
+            return Err("protocol".to_owned());
+        }
+        body.extend_from_slice(&chunk[..count]);
+    }
+    Ok(())
+}
+
+fn read_body_to_eof(
+    stream: &mut TcpStream,
+    deadline: Instant,
+    body: &mut Vec<u8>,
+) -> Result<(), String> {
+    loop {
+        set_socket_timeout(stream, deadline)?;
+        let mut chunk = [0_u8; 64 * 1024];
+        let count = stream.read(&mut chunk).map_err(classify_socket_error)?;
+        if count == 0 {
+            return Ok(());
+        }
+        if body.len().saturating_add(count) > MAX_HTTP_BODY_BYTES {
+            return Err("resource-limit".to_owned());
+        }
+        body.extend_from_slice(&chunk[..count]);
+    }
+}
+
+fn set_socket_timeout(stream: &TcpStream, deadline: Instant) -> Result<(), String> {
+    let timeout = remaining(deadline)?;
+    stream
+        .set_read_timeout(Some(timeout))
+        .and_then(|()| stream.set_write_timeout(Some(timeout)))
+        .map_err(|_| "connect".to_owned())
+}
+
+fn remaining(deadline: Instant) -> Result<Duration, String> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|duration| !duration.is_zero())
+        .ok_or_else(|| "timeout".to_owned())
+}
+
+fn classify_socket_error(error: std::io::Error) -> String {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    ) {
+        "timeout".to_owned()
+    } else {
+        "protocol".to_owned()
+    }
 }
 
 /// Wires the `sico:script/streams@0.1.0` streaming channel (RFC-0030). The
@@ -1069,6 +1530,114 @@ mod tests {
         assert!(matches!(
             send_cancellable(&sender, 2_u8, &cancel),
             Err(HostStreamError::Cancelled)
+        ));
+        assert!(started.elapsed() < Duration::from_millis(200));
+    }
+
+    #[test]
+    fn net_grants_and_urls_are_exact_and_canonical() {
+        let mut grants = NetGrants::default();
+        grants.grant("Example.COM:8080").unwrap();
+        grants.grant("127.0.0.1:80").unwrap();
+        assert!(grants.allows("example.com", 8080));
+        assert!(grants.allows("127.0.0.1", 80));
+        assert!(!grants.allows("example.com", 80));
+        for invalid in [
+            "example.com",
+            "example.com:0",
+            "*.example.com:80",
+            "127.000.0.1:80",
+            "[::1]:80",
+            "example.com:65536",
+        ] {
+            assert!(NetGrants::default().grant(invalid).is_err(), "{invalid}");
+        }
+
+        let url = parse_http_url("http://Example.COM:8080/path?q=1").unwrap();
+        assert_eq!((url.host.as_str(), url.port), ("example.com", 8080));
+        assert_eq!(url.authority, "example.com:8080");
+        assert_eq!(url.target, "/path?q=1");
+        assert_eq!(parse_http_url("http://example.com").unwrap().target, "/");
+        for invalid in [
+            "https://example.com/",
+            "http://user@example.com/",
+            "http://example.com/a b",
+            "http://example.com/#fragment",
+        ] {
+            assert!(parse_http_url(invalid).is_err(), "{invalid}");
+        }
+
+        assert_eq!(
+            prepare_http_request(
+                &grants,
+                "POST".to_owned(),
+                "http://127.0.0.1/".to_owned(),
+                vec![0; MAX_HTTP_BODY_BYTES + 1],
+            )
+            .unwrap_err(),
+            "resource-limit"
+        );
+    }
+
+    #[test]
+    fn response_parser_rejects_ambiguous_or_unbounded_headers() {
+        assert_eq!(
+            parse_response_head(b"HTTP/1.1 200 OK\r\nContent-Length: 3").unwrap(),
+            (200, Some(3))
+        );
+        for invalid in [
+            b"HTTP/2 200 OK\r\nContent-Length: 0".as_slice(),
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked".as_slice(),
+            b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 1".as_slice(),
+            b"HTTP/1.1 99 Nope\r\nContent-Length: 0".as_slice(),
+        ] {
+            assert_eq!(parse_response_head(invalid), Err("protocol".to_owned()));
+        }
+    }
+
+    #[test]
+    fn loopback_http_roundtrip_preserves_status_and_body() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let count = socket.read(&mut request).unwrap();
+            let request = std::str::from_utf8(&request[..count]).unwrap();
+            assert!(request.starts_with("POST /echo?q=1 HTTP/1.1\r\n"));
+            assert!(request.contains("Content-Length: 3\r\n"));
+            socket
+                .write_all(b"HTTP/1.1 307 Temporary Redirect\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc")
+                .unwrap();
+        });
+        let request = HttpRequest {
+            method: "POST".to_owned(),
+            host: "127.0.0.1".to_owned(),
+            port: address.port(),
+            authority: format!("127.0.0.1:{}", address.port()),
+            target: "/echo?q=1".to_owned(),
+            body: b"xyz".to_vec(),
+        };
+        let response =
+            perform_http_request(request, Instant::now() + Duration::from_secs(1)).unwrap();
+        assert_eq!(response.status, 307);
+        assert_eq!(response.body, b"abc");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn http_wait_observes_cancellation_without_a_worker_response() {
+        let (_sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let cancel = CancelToken::new();
+        let cancel_thread = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            cancel_thread.cancel();
+        });
+        let started = Instant::now();
+        assert!(matches!(
+            wait_http_response(&receiver, &cancel, started + Duration::from_secs(1)),
+            Err(error) if error == "cancelled"
         ));
         assert!(started.elapsed() < Duration::from_millis(200));
     }

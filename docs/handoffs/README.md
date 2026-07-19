@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M9 STEP-0089`](./M9-STEP-0089.md) | in progress / runner disabled | scoped HTTP RFC/WIT/codegen draft；Host provider、安全策略与证据待完成 |
+| [`M9 STEP-0089`](./M9-STEP-0089.md) | complete; STEP-0090 next | scoped HTTP provider 已闭环；接手上下文转向 persistent runner/watch 隔离契约 |
 
 旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

@@ -347,6 +347,10 @@ fn script_import_mapping_is_exact_and_fails_closed() {
         mapped,
         BTreeSet::from(["script.args".to_owned(), "script.stdio".to_owned()])
     );
+    assert_eq!(
+        capabilities_for_imports(&["sico:script/http@0.1.0".to_owned()]).unwrap(),
+        BTreeSet::from(["network.connect".to_owned()])
+    );
     for unknown in [
         "wasi:cli/environment@0.2.6".to_owned(),
         "wasi:cli/environment@0.3.0".to_owned(),

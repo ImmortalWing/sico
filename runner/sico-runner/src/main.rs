@@ -1,7 +1,7 @@
 //! `sico-runner`: in-process runner for `sico:script/program@0.1.0` Program
 //! Components with the RFC-0029 exit mapping.
 //!
-//! Usage: `sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... PROGRAM.component.wasm [-- ARGS...]`
+//! Usage: `sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... PROGRAM.component.wasm [-- ARGS...]`
 //!
 //! Guest stdin is the process stdin (bounded, 8 MiB). Guest stdout goes to
 //! process stdout; everything else is a machine-readable JSON diagnostic on
@@ -14,7 +14,9 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
-use sico_runner::{CancelToken, FsGrants, RunOutcome, Runner, RunnerLimits, ScriptInput};
+use sico_runner::{
+    CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
+};
 
 const EXIT_TOOL_ERROR: i32 = 121;
 
@@ -28,6 +30,7 @@ fn run() -> i32 {
     let mut arguments = Vec::new();
     let mut passthrough = false;
     let mut grants = FsGrants::default();
+    let mut net = NetGrants::default();
     let mut cancel_after_ms = None;
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
@@ -44,6 +47,13 @@ fn run() -> i32 {
             match value.parse::<u64>() {
                 Ok(ms) => cancel_after_ms = Some(ms),
                 Err(_) => return diagnostic(json, "cli", "--cancel-after-ms expects milliseconds"),
+            }
+        } else if argument == "--allow-net" {
+            let Some(endpoint) = args.next() else {
+                return diagnostic(json, "cli", "missing endpoint after --allow-net");
+            };
+            if let Err(error) = net.grant(&endpoint) {
+                return diagnostic(json, "cli", &format!("invalid --allow-net: {error}"));
             }
         } else if argument == "--fs-read-root" || argument == "--fs-write-root" {
             let read = argument == "--fs-read-root";
@@ -78,7 +88,7 @@ fn run() -> i32 {
         return diagnostic(
             json,
             "cli",
-            "usage: sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... PROGRAM.component.wasm [-- ARGS...]",
+            "usage: sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... PROGRAM.component.wasm [-- ARGS...]",
         );
     };
     let component = match std::fs::read(&component) {
@@ -108,12 +118,13 @@ fn run() -> i32 {
             token.cancel();
         });
     }
-    let outcome = match runner.run_program(
+    let outcome = match runner.run_program_with_net(
         &component,
         &input,
         &RunnerLimits::default(),
         &cancel,
         &grants,
+        &net,
     ) {
         Ok(outcome) => outcome,
         Err(violation) => {

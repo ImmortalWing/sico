@@ -1309,6 +1309,14 @@ fn inferred_local_layout(
                     "projected field does not match its declared Wasm layout",
                 ));
             }
+            if let Some(record) = script.and_then(|abi| record_fields(abi, &instruction.ty)) {
+                for field in &record.fields {
+                    layout.fields.insert(
+                        ir_field_name(&field.name),
+                        (field.slot_start..field.slot_start + field.slot_len).collect(),
+                    );
+                }
+            }
         }
         Operation::Variant { name, payload } => {
             layout.types.push(ValType::I32);
@@ -1386,16 +1394,16 @@ fn inferred_local_layout(
                     "error".to_owned(),
                     (1 + ok_flat.len()..1 + ok_flat.len() + error_flat.len()).collect(),
                 );
-                if let (Some(ok_record), Some(error_record)) =
-                    (record_fields(abi, ok), record_fields(abi, error))
-                {
+                if let Some(ok_record) = record_fields(abi, ok) {
                     for field in &ok_record.fields {
                         layout.fields.insert(
                             ir_field_name(&field.name),
                             (1 + field.slot_start..1 + field.slot_start + field.slot_len).collect(),
                         );
                     }
-                    let offset = 1 + ok_record.flat.len();
+                }
+                if let Some(error_record) = record_fields(abi, error) {
+                    let offset = 1 + ok_flat.len();
                     for field in &error_record.fields {
                         layout.fields.insert(
                             ir_field_name(&field.name),

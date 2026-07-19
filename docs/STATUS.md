@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0089 scoped HTTP Component provider (contract/codegen draft; runner disabled)
-> - last completed active step: STEP-0088 (quality-verified async runner and streaming stdio)
+> - current step: STEP-0090 persistent development runner and watch mode (planned)
+> - last completed active step: STEP-0089 (scoped HTTP Component provider complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: finish STEP-0089 endpoint policy and runner provider, then prove default-deny, limits, redirect, timeout and cancellation before enabling HTTP linking
+> - next step: freeze STEP-0090 persistent-runner isolation/watch contract before reusing Engine, Linker or compiled artifacts across runs
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0088`](./steps/STEP-0088-async-runner-streaming-stdio.md) 已完成并在 2026-07-19 质量复核中修正 Task 间接逃逸、取消退出码与阻塞写退出路径。当前 [`STEP-0089`](./steps/STEP-0089-scoped-http-component-provider.md) 只有 RFC-0031、WIT 与 codegen 草案；runner 未链接 HTTP provider，因此默认拒绝网络，不能宣称 scoped HTTP 已完成。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0089`](./steps/STEP-0089-scoped-http-component-provider.md) 已完成：streaming、structured task、可取消 blocked IO 与 scoped HTTP provider 均有真实证据。HTTP 默认无网络，只有 `--allow-net HOST:PORT` 精确授权；TLS/IPv6/代理/凭证仍明确不在 v0。下一项 STEP-0090 是 persistent development runner/watch，不得在 Store、capability 或 resource-table 隔离证据前复用执行状态。
 
 ## 3. Verified repository facts
 

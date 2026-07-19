@@ -79,8 +79,8 @@ interface streams {
   pump: func(input: borrow<input-stream>, output: borrow<output-stream>) -> result<u64, stream-error>;
 }
 
-// Draft contract for RFC-0031. Scoped outbound HTTP: exact endpoint grants,
-// no redirects, bounded bodies; https is absent from v0 (no TLS offline).
+// RFC-0031 scoped outbound HTTP: exact endpoint grants, no redirects,
+// bounded bodies; https is absent from v0 (no TLS stack offline).
 interface http {
   record response {
     status: s64,

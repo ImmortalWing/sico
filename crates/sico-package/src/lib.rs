@@ -689,7 +689,10 @@ pub fn capabilities_for_imports(imports: &[String]) -> Result<BTreeSet<String>, 
                 "clock.read"
             } else if import.starts_with("wasi:random/") {
                 "random.read"
-            } else if import.starts_with("wasi:sockets/") || import.starts_with("wasi:http/") {
+            } else if import.starts_with("wasi:sockets/")
+                || import.starts_with("wasi:http/")
+                || import == "sico:script/http@0.1.0"
+            {
                 "network.connect"
             } else if import.starts_with("sico:log/") {
                 "log.write"
