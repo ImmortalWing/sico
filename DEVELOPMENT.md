@@ -1192,6 +1192,19 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 
 退出条件：大数据流不需要 whole-buffer capture，async/cancel/HTTP 权限和 persistent-runner isolation 通过独立验证，且 M0–M8 regression 保持通过。
 
+### M10：Runtime 可观测性与调试
+
+交付：
+
+- versioned source/debug identity 与 deterministic debug map；
+- structured Runtime faults 和 Sico source frames；
+- OS signal/client request 到 typed cancellation 的桥接；
+- bounded lifecycle/log/fault event protocol；
+- 经过真实 Component 验证的 minimal DAP；
+- LSP 与 data-only AI feedback 复用同一执行事件合同。
+
+退出条件：真实 Runtime fault 可稳定映射到源码，signal/cancel race 只有一个 typed terminal outcome，事件队列和日志保持有界，声明的 DAP 子集端到端可执行，且 M0–M9 regression 保持通过。
+
 ## 20. 性能与质量指标
 
 第一阶段不提前写死数值，但从首个原型开始持续记录：

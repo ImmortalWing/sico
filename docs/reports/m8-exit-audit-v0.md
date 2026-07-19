@@ -37,6 +37,8 @@ Compared against the STEP-0076 gate *goals* (cold P95 < 200 ms, warm P95 < 120 m
 
 Quality rerun (2026-07-19): the benchmark now uses a GUID-scoped fresh cache for every run, preventing stale evidence directories from contaminating the cold-cache classification. Measured P95 was 79.6508 ms cold, 49.0328 ms warm and 34.1953 ms runner-only; the M8 gate remains GO. The same run passed workspace fmt/Clippy/tests and STEP-0084; STEP-0086/0087/0088 were also revalidated independently.
 
+STEP-0094 quality repair restored the benchmark's 20-sample default after finding that the validator's 10-sample nearest-rank P95 was merely the maximum. It also removed two hard failures against the non-SLA goals: M8 §11 requires the report to distinguish measurements from goals, not to turn host contention into a correctness failure. A CPU-saturated aggregate rerun measured 109.0825/126.6373/88.4598 ms P95 (cold/warm/runner-only), with the runner-only slowdown demonstrating host-wide scheduling contention; the warm goal miss is recorded rather than hidden. Functional, security, format, Clippy and test failures remain hard gates.
+
 ## Security posture (measured)
 
 - Default `sico run` grants only `script.args`/`script.stdio`; every fs call without a grant returned a typed `result` error (exit 122) and produced no filesystem effect (verified: no `escape.txt` created).

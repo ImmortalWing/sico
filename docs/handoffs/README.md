@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M9 STEP-0093`](./M9-STEP-0093.md) | complete; STEP-0094 next | shared tooling execution plan 已闭环；接手上下文转向 M9 security/performance/exit audit |
+| [`M9 STEP-0094`](./M9-STEP-0094.md) | complete; M9 GO; STEP-0095 next | M9 aggregate exit audit 已闭环；接手上下文转向 M10 observability/debug contract |
 
 旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

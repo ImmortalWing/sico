@@ -64,7 +64,7 @@ These are non-SLA local measurements. The benchmark must be captured in an M8 re
 | STEP-0081 | structured in-process `sico-runner` | complete: typed outcomes for every RFC-0029 exit class; exact guest exits; fuel/timeout/memory/cancel; malicious-guest host survival; MSVC-only crate note |
 | STEP-0082 | unified `sico run`, `eval` and safe caches | complete: frozen cache identity with reuse/fresh/corrupt-closed evidence; stdout purity; JSON diagnostics; engine cache deferred (offline dep) |
 | STEP-0083 | minimal useful script standard library | complete: three-layer frozen intrinsic registry (text/bytes/list/JSON/fs), helper aggregate ABI, full-width Result + `case ok(x)`, scoped fs dual interface with typed refusals; four pilots green via `sico run`; `script-standard-library-v0` |
-| STEP-0084 | performance, security, platform and M8 exit audit | complete: §11 gate 8/8 verified; original benchmark P95 46.96/44.82/29.00 ms, 2026-07-19 quality rerun 79.65/49.03/34.20 ms (cold/warm/runner, all within gates); WSL Linux runner evidence + pilots; honest GO; `m8-exit-audit-v0` |
+| STEP-0084 | performance, security, platform and M8 exit audit | complete: §11 gate 8/8 verified; original benchmark P95 46.96/44.82/29.00 ms, quality reruns preserve 20-sample raw measurement and non-SLA comparison; WSL Linux runner evidence + pilots; honest GO; `m8-exit-audit-v0` |
 
 ## 5. Architecture
 

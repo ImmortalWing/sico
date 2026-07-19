@@ -168,13 +168,23 @@ Entry gate：satisfied by STEP-0014。
 
 ## M9: Streaming, async and interactive scripting
 
-状态：`in-progress / STEP-0085–0093 complete / STEP-0094 next`
+状态：`GO / STEP-0085–0094 complete`
 
 主要交付：backpressured InputStream/OutputStream、resource Canonical ABI、Task/Future/Stream source backend、async runner/cancellation、scoped HTTP Component provider、persistent runner/watch、bounded REPL、top-level syntax decision与编辑器/AI执行集成。
 
 进入条件：M8 必须完成自己的 GO，且 Script WIT/manifest/runner identities 可版本化而不是继续重写。M9 不包含 unrestricted process/shell capability。
 
-执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0093 已用 `sico.execution-plan.v0` 统一 LSP/AI direct argv、1 MiB logs、client cancellation 与 source-map/debug 边界；下一项 STEP-0094 exit audit。
+执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，STEP-0085–0094。STEP-0094 已重跑 M8/M9 全部关键门禁并以 Windows x64 Runtime 实证发出 GO；Linux/macOS/mobile M9 execution 不作推断。结论见 [`M9 exit audit`](./reports/m9-exit-audit-v0.md)。
+
+## M10: Runtime observability and debugging
+
+状态：`planned / STEP-0095 next`
+
+主要交付：versioned source/debug identity、compiler debug map、structured Runtime frames、typed OS-signal/client cancellation、bounded execution events/logs、minimal DAP 及 LSP/AI feedback integration。
+
+进入条件：M9 GO，且 `sico.execution-plan.v0` 的 compile-only source coordinates、client-owned cancellation 与 debug refusal 已明确冻结。
+
+执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。首项 STEP-0095 只冻结 identity/schema/redaction/race contracts，不提前宣称 debugger。
 
 ## Immediate dependency chain
 

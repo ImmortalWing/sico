@@ -75,3 +75,4 @@
 | [`sapp-builder-loader-v0`](./sapp-builder-loader-v0.md) | complete | STEP-0039 | canonical `.sapp` builder、strict loader、hash/path/limit verification |
 | [`package-cli-cache-v0`](./package-cli-cache-v0.md) | accepted | STEP-0044 | `.sapp` build/run/inspect、explicit trust、source cache 与 args/stdio |
 | [`m4-exit-audit`](./m4-exit-audit.md) | complete | STEP-0045 | M4 security/property/performance、M0–M3 regression 与 M5 GO |
+| [`m9-exit-audit-v0`](./m9-exit-audit-v0.md) | accepted / GO | STEP-0094 | M8/M9 aggregate regression、security/performance evidence、Windows-only Runtime matrix 与 M10 entry |

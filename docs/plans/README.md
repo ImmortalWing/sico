@@ -12,4 +12,5 @@
 | [`M6 Sico Android Host`](./M6-android-host.md) | blocked-external-runner | shared Android contracts complete; device Runtime/UI evidence pending |
 | [`M7 ecosystem, tooling and release`](./M7-ecosystem-release.md) | local-complete, blocked-external-evidence | STEP-0062–0069 complete locally; product exit awaits third-party/production/live-model/platform evidence |
 | [`M8 Script Profile v0`](./M8-script-profile.md) | GO; STEP-0075–0084 complete | bounded args/stdin/stdout, general executable codegen, Script WIT/adapter/runner, cache and minimal useful standard library |
-| [`M9 streaming, async and interactive scripting`](./M9-streaming-async-interactive.md) | in progress; STEP-0085–0093 complete, STEP-0094 next | streaming resources, Task/Future/Stream backend, scoped HTTP, persistent runner, watch, REPL, syntax and tooling integration |
+| [`M9 streaming, async and interactive scripting`](./M9-streaming-async-interactive.md) | GO; STEP-0085–0094 complete | streaming resources, Task/Future/Stream backend, scoped HTTP, persistent runner, watch, REPL, syntax/tooling integration and exit audit |
+| [`M10 Runtime observability and debugging`](./M10-runtime-observability-debugging.md) | planned; STEP-0095 next | source/debug identity, Runtime frames, typed signal cancellation, bounded events, DAP and client integration |

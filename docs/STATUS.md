@@ -1,12 +1,12 @@
 # Sico project status
 
 > - updated: 2026-07-19
-> - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
-> - phase status: in-progress
-> - current step: STEP-0094 M9 security/performance/exit audit (planned)
-> - last completed active step: STEP-0093 (tooling execution integration complete)
+> - phase: M10 Runtime observability/debugging planned; M7 public deployment and M6/mobile deferred
+> - phase status: planned
+> - current step: STEP-0095 observability/debug/source-identity RFC (planned)
+> - last completed active step: STEP-0094 (M9 exit audit, GO)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: run M9 aggregate security/performance/platform regression and issue GO/NO-GO
+> - next step: freeze M10 source/artifact identity, event/frame schemas, redaction and cancellation race matrix
 
 ## 0. M6 exit state
 
@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-仓库所有者已于 2026-07-17 授权新的生产部署路线。STEP-0074 已建立可部署但不持有签名密钥的只读 registry origin、独立 operator bundle、Windows release 集成和 `sico-app dev` 单命令源码流程。由于当前没有 VPS，公网部署继续等待真实域名/hosting、生产身份与密钥托管输入；当前主动目标切换为 M8 Script Profile，先解决本地 AI 自动化所需的 args/stdin/stdout、可执行后端、Script ABI、runner、缓存与最小标准库。Android、Harmony 与 Linux native 路径保留为后置平台轨。
+M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、bounded events 与可实证的 minimal DAP。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨。
 
 ## 2. Current step
 
@@ -28,16 +28,20 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 已完成。LSP/AI 共享 direct-argv execution plan，logs/cancellation/source-map/debug 边界有机器证据；下一项 STEP-0094 exit audit。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。下一项为 [`M10 STEP-0095`](./plans/M10-runtime-observability-debugging.md)，先冻结 observability/debug contract，不提前宣称 DAP。
 
 ## 3. Verified repository facts
 
-基线检查时间：2026-07-17。
+基线检查时间：2026-07-19。
 
 | 事实 | 结果 | 状态 |
 |---|---:|---|
 | `.sico` 文件 | 214 | measured |
 | 代表性程序 | 10 | verified by `examples/` |
+| M9 stream throughput | 1/16/256 MiB exact；256 MiB peak RSS 10.8 MiB | Windows runtime-verified |
+| M9 blocked I/O cancellation | read/pump/write exit 123；127/124/136 ms total incl. 100 ms timer | Windows runtime-verified |
+| M9 persistent watch | one PID generations 1/2/3；exits 0/122/0；warm median 5.994 ms | Windows runtime-verified |
+| M9 REPL bounds | 4 KiB line；256 cells；16 KiB history；7.8 MiB peak RSS | Windows runtime-verified |
 | P0 A0 语义案例 | 54 | verified by semantic case validator |
 | 候选 B 案例 | 54 | verified by semantic case validator |
 | 候选 C 案例 | 54 | verified by semantic case validator |
@@ -165,7 +169,7 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 - B frontend 与确定性 fuzz/limit 已完成，但 coverage-guided 长期 fuzz 和跨平台性能仍是后续质量工作；
 - `Int`/Decimal 记录已通过 Rust 原型和真实 Component 往返，但 RFC-0003 仍待非 Windows 重现与稳定限额诊断分类；contract invariant 和 Result 表层写法仍是草案；
 - STEP-0023–0029 已有真实 checker/index/CLI；仍无真实模型实测；
-- WIT 0.253 已真实往返 resource、数值记录、`async func`、`future<T>` 与 `stream<T>`；compiler async IR 尚缺完整 task scope/cancel/bound，所以 codegen 保持专用 refusal；
+- WIT 0.253 已真实往返 resource、数值记录、`async func`、`future<T>` 与 `stream<T>`；M9 compiler 已实现 parallelism-1 sequential Task scope 与 typed cancellation edge，真正并行 scheduler、first-class Future/Stream 和 task collection 仍保持专用 refusal；
 - Core Wasm、compiler-generated Component 与同步 scalar CLI 已由独立 engine/selected Wasmtime 执行；一般 aggregate/import adapter、package capability host 与 sandbox 留在 M4；
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
@@ -173,4 +177,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0079：先从 Script WIT 冻结 aggregate layout、ownership、post-return 与 bounded arena，再按 Text、Bytes、List、records、Result 顺序实现 checked lift/lower、恶意 memory mutation 和至少 10,000 个 seeded roundtrips；不得把 STEP-0078 flat locals 或 numeric `Result` 私有返回区误报为通用 Canonical ABI。完成后按 STEP-0080–0084 推进 compiler profile/adapter、runner、CLI/cache、标准库和退出审计。公网 rollout 继续等待 hostname/hosting/production identity/key-custody 输入；输入到位时使用新的未分配 STEP，且不得把 loopback/operator bundle 改标为 public production evidence。
+下一项执行 STEP-0095：先冻结 exact source bytes/compiler/Component identity、debug-map 与 Runtime frame/event schema、redaction/size limits，以及 signal/timeout/client-cancel/guest/Host 竞争的单终态矩阵。合同接受前不修改 compiler/runner 来隐式创造 DAP。TLS HTTP、parallel task scheduler、declaration REPL 与 multi-file watch 不进入 M10；公网 rollout 和移动平台仍服从各自外部 gate。

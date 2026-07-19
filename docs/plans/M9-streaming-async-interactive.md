@@ -1,6 +1,6 @@
 # M9 plan: Streaming, async and interactive scripting
 
-> - status: in-progress; STEP-0085–0093 complete, STEP-0094 next
+> - status: GO; STEP-0085–0094 complete
 > - created: 2026-07-17
 > - phase: M9
 > - entry requirement: M8 Script Profile GO with stable Script WIT/manifest/runner identities
@@ -51,7 +51,7 @@ Any future process capability must be supplied by a separately versioned plugin/
 | STEP-0091 | bounded REPL session model | complete: RFC-0032 expression cells; deterministic IDs; rollback/replay/reset/export; 4 KiB/256/16 KiB bounds; 7.8 MiB peak RSS |
 | STEP-0092 | top-level script syntax decision | complete: RFC-0033 accepts explicit typed `main`; B/C rejected with E1013 across parser/formatter/HIR/LSP/AI |
 | STEP-0093 | editor/debug/AI execution integration | complete: shared execution-plan v0; direct argv; LSP/AI run/watch/REPL; 1 MiB logs; honest cancel/source-map/debug bounds |
-| STEP-0094 | M9 security, performance and exit audit | large-stream throughput/RSS, HTTP denial tests, cancellation races, persistent-runner isolation and platform matrix |
+| STEP-0094 | M9 security, performance and exit audit | complete: aggregate M8/M9 regression; bounded stream/cancel/HTTP/watch/REPL evidence; Windows-only Runtime matrix; GO |
 
 STEP numbers are reserved by this plan but individual STEP records are created only when their work begins.
 
@@ -105,6 +105,10 @@ Initial goals, subject to an accepted M8 baseline, are:
 
 These are planning targets, not current evidence.
 
+STEP-0094 measured 256 MiB exact passthrough at 10.8 MiB peak runner RSS, 5.994 ms persistent warm median and blocked-operation cancellation within 24–36 ms after the 100 ms timer fired. The complete results and measurement qualifications are in the [`M9 exit audit`](../reports/m9-exit-audit-v0.md).
+
 ## 10. M9 exit gate
 
 M9 is GO only when streaming resources, structured async cancellation, scoped HTTP, persistent-runner isolation, watch and REPL limits are independently verified; top-level syntax is either accepted with evidence or explicitly rejected; and the complete M0–M8 regression remains green. Platform support is claimed only for runners with actual execution evidence.
+
+STEP-0094 satisfies this gate and issues GO for the Windows x64 Runtime evidence. Other platform claims remain unverified. The next plan is [`M10 runtime observability and debugging`](./M10-runtime-observability-debugging.md).

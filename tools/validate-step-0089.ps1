@@ -14,8 +14,8 @@ if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
 
 $vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
 $runnerDir = Join-Path $root 'runner\sico-runner'
-$build = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo test --release --offline && cargo build --release --offline"
-$null = & cmd.exe /c $build
+$build = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo test --release --offline -- --test-threads=1 && cargo build --release --offline"
+& cmd.exe /c $build
 if ($LASTEXITCODE -ne 0) { throw 'sico-runner build failed' }
 
 $sico = Join-Path $root 'target\debug\sico.exe'
