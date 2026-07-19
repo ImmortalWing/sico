@@ -8,6 +8,7 @@ Sico 采用与 OpenJDK 相同方向的“单仓库、强模块、分命令、分
 |---|---|---|
 | language | `sico-source`、`sico-syntax`、`sico-lexer`、`sico-parser`、`sico-hir`、`sico-semantics` | 源码、语法和静态语义 |
 | compiler | `sico-ir`、`sico-codegen-wasm`、`sico-diagnostics`、`sico-format`、`sico-index` | 编译、诊断和查询 |
+| observability | `sico-observability` | 无执行权的版本化 debug identity/map/fault/event 数据合同与严格验证 |
 | tooling | `sico-cli`、LSP、AI tools | 语言开发工具 |
 | application | `sico-package` | `.sapp` 格式、签名和授权对象 |
 | runtime | `sico-runtime`、`sico-app-cli` | Runtime、安全执行和应用命令 |
@@ -31,6 +32,8 @@ Wasmtime / platform Host
 ```
 
 `sico` 不得依赖 package、Runtime 或 Host。`sico-app` 不得通过正常依赖引入编译器；`sico-app dev` 只能通过显式进程边界调用独立的 `sico build`，之后必须回到相同的 package/trust/Runtime gate。测试可以使用编译器生成确定性 Component fixture，但这类依赖必须保持为 dev-dependency。
+
+`sico-observability` 只拥有严格、版本化、bounded 的数据结构、canonical serialization 与 identity 验证。Compiler、Runtime 和 tooling 可以依赖它，但它不得反向依赖这些模块，也不得获得进程启动、Store、Host provider、文件或网络 authority。
 
 ## 修改规则
 

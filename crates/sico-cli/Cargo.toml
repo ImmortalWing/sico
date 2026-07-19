@@ -26,5 +26,8 @@ sha2.workspace = true
 sico-package = { path = "../sico-package" }
 wasmparser.workspace = true
 
+[dev-dependencies]
+sico-observability = { path = "../sico-observability" }
+
 [lints]
 workspace = true

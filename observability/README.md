@@ -14,10 +14,11 @@ This directory is the machine-readable source of truth for M10 observability and
 
 ## Current evidence boundary
 
-STEP-0095 validates contracts and fixtures only. It does not prove that the compiler emits a debug map, that the runner produces source frames/events, that Ctrl+C becomes typed cancellation, or that a DAP adapter exists. Those claims remain STEP-0096–0101.
+STEP-0096 now proves deterministic compiler debug maps, a compact Component digest link and exact identity sidecars through the authority-free `sico-observability` crate. It does not prove that the runner produces source frames/events, that Ctrl+C becomes typed cancellation, or that a DAP adapter exists. Those claims remain STEP-0097–0101.
 
 ## Validate
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-step-0095.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-step-0096.ps1
 ```

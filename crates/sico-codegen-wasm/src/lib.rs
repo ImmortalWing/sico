@@ -8,6 +8,12 @@ use sico_ir::{
     Block, BlockId, Function as IrFunction, FunctionId, Module as IrModule, Operation, Pattern,
     Terminator, Type, ValueId, VerifyError, verify,
 };
+use sico_observability::{
+    CompilerIdentity, DEBUG_IDENTITY_SCHEMA, DEBUG_LINK_SCHEMA, DEBUG_MAP_SCHEMA, DebugBinding,
+    DebugDocument, DebugFunction, DebugIdentity, DebugLink, DebugMap, DebugMapping, DebugSpan,
+    MAX_DEBUG_MAP_BYTES, SourceIdentity, canonical_json, link_component, sha256_hex,
+    validate_debug_map, verify_debug_artifacts,
+};
 use wasm_encoder::{
     BlockType, CanonicalOption, CodeSection, ComponentBuilder, ComponentExportKind,
     ComponentValType, ConstExpr, DataSection, DataSegment, DataSegmentMode, EntityType, ExportKind,
@@ -15,6 +21,7 @@ use wasm_encoder::{
     Instruction, MemArg, MemorySection, MemoryType, Module, ModuleArg, PrimitiveValType,
     TypeSection, ValType,
 };
+use wasmparser::{Parser, Payload};
 
 mod canonical;
 mod json;
@@ -42,6 +49,50 @@ pub enum CodegenError {
         function: String,
         bytes: usize,
     },
+    DebugArtifact(String),
+}
+
+/// Exact source/compiler inputs needed to bind a deterministic debug artifact.
+pub struct DebugBuildInput<'a> {
+    pub document_id: &'a str,
+    pub source_bytes: &'a [u8],
+    pub display_uri: Option<&'a str>,
+    pub compiler_package: &'a str,
+    pub compiler_version: &'a str,
+    pub compiler_executable_sha256: &'a str,
+    pub adapter_identities: Vec<String>,
+    pub wit_identities: Vec<String>,
+}
+
+/// A linked Component and its canonical sidecar/identity JSON bytes.
+pub struct DebugArtifact {
+    pub component: Vec<u8>,
+    pub debug_map: Vec<u8>,
+    pub identity: Vec<u8>,
+}
+
+#[derive(Clone)]
+struct LocalDebugMapping {
+    start: usize,
+    end: usize,
+    source: Option<sico_ir::SourceRange>,
+    generated: bool,
+}
+
+struct CompiledFunction {
+    body: Function,
+    mappings: Vec<LocalDebugMapping>,
+}
+
+struct CoreDebugFunction {
+    id: String,
+    core_index: u32,
+    mappings: Vec<LocalDebugMapping>,
+}
+
+struct CoreCompilation {
+    bytes: Vec<u8>,
+    functions: Vec<CoreDebugFunction>,
 }
 
 /// Compiles the proven scalar/control subset to deterministic Core Wasm.
@@ -54,7 +105,7 @@ pub enum CodegenError {
 ///
 /// Returns verifier errors or a typed unsupported/representation refusal.
 pub fn compile(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
-    compile_core(module, CoreAbi::Direct)
+    Ok(compile_core(module, CoreAbi::Direct)?.bytes)
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -63,7 +114,7 @@ enum CoreAbi {
     ComponentLift,
 }
 
-fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError> {
+fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<CoreCompilation, CodegenError> {
     let errors = verify(module);
     if !errors.is_empty() {
         return Err(CodegenError::InvalidIr(errors));
@@ -72,6 +123,7 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
     let mut functions = FunctionSection::new();
     let mut exports = ExportSection::new();
     let mut code = CodeSection::new();
+    let mut debug_functions = Vec::with_capacity(module.functions.len());
     let function_indices = module
         .functions
         .iter()
@@ -104,13 +156,13 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
         types.ty().function(params, results);
         functions.function(function_index);
         exports.export(&function.name, ExportKind::Func, function_index);
-        code.function(&compile_function(
-            function,
-            abi,
-            &function_indices,
-            &variant_tags,
-            None,
-        )?);
+        let compiled = compile_function(function, abi, &function_indices, &variant_tags, None)?;
+        code.function(&compiled.body);
+        debug_functions.push(CoreDebugFunction {
+            id: format!("function-{:010}", function.id.0),
+            core_index: function_index,
+            mappings: compiled.mappings,
+        });
     }
     let mut output = Module::new();
     output.section(&types);
@@ -134,7 +186,10 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
     }
     output.section(&exports);
     output.section(&code);
-    Ok(output.finish())
+    Ok(CoreCompilation {
+        bytes: output.finish(),
+        functions: debug_functions,
+    })
 }
 
 /// Compiles the proven scalar/control subset to a deterministic WebAssembly Component.
@@ -148,9 +203,27 @@ fn compile_core(module: &IrModule, abi: CoreAbi) -> Result<Vec<u8>, CodegenError
 ///
 /// Returns verifier errors or a typed unsupported/representation refusal.
 pub fn compile_component(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
+    Ok(compile_component_parts(module)?.1)
+}
+
+/// Compiles and binds a deterministic debug map and identity to a Component.
+///
+/// # Errors
+///
+/// Returns the ordinary code-generation refusals or a closed debug-contract
+/// failure if any identity, offset, limit or digest invariant is violated.
+pub fn compile_component_with_debug(
+    module: &IrModule,
+    input: &DebugBuildInput<'_>,
+) -> Result<DebugArtifact, CodegenError> {
+    let (core, component) = compile_component_parts(module)?;
+    build_debug_artifact(&core, &component, "sico-core", input)
+}
+
+fn compile_component_parts(module: &IrModule) -> Result<(CoreCompilation, Vec<u8>), CodegenError> {
     let core = compile_core(module, CoreAbi::ComponentLift)?;
     let mut builder = ComponentBuilder::default();
-    let core_module = builder.core_module_raw(Some("sico-core"), &core);
+    let core_module = builder.core_module_raw(Some("sico-core"), &core.bytes);
     let core_instance = builder.core_instantiate(
         Some("sico-core"),
         core_module,
@@ -209,7 +282,163 @@ pub fn compile_component(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
         );
     }
 
-    Ok(builder.finish())
+    Ok((core, builder.finish()))
+}
+
+#[allow(clippy::too_many_lines)]
+fn build_debug_artifact(
+    core: &CoreCompilation,
+    component_code: &[u8],
+    core_module: &str,
+    input: &DebugBuildInput<'_>,
+) -> Result<DebugArtifact, CodegenError> {
+    let source_sha256 = sha256_hex(input.source_bytes);
+    let component_code_sha256 = sha256_hex(component_code);
+    let body_ranges = Parser::new(0)
+        .parse_all(&core.bytes)
+        .filter_map(|payload| match payload {
+            Ok(Payload::CodeSectionEntry(body)) => Some(Ok(body.range())),
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            CodegenError::DebugArtifact(format!("invalid emitted core module: {error}"))
+        })?;
+    if body_ranges.len() < core.functions.len() {
+        return Err(CodegenError::DebugArtifact(
+            "emitted core module lost a compiled function body".into(),
+        ));
+    }
+
+    let mut functions = Vec::with_capacity(core.functions.len());
+    let mut mappings = Vec::new();
+    for (function, body_range) in core.functions.iter().zip(body_ranges) {
+        let function_id = function.id.clone();
+        functions.push(DebugFunction {
+            id: function_id.clone(),
+            core_module: core_module.into(),
+            component_function: u64::from(function.core_index),
+        });
+        for local in &function.mappings {
+            if local.start >= local.end {
+                continue;
+            }
+            let instruction_start = body_range
+                .start
+                .checked_add(local.start)
+                .and_then(|value| u64::try_from(value).ok())
+                .ok_or_else(|| CodegenError::DebugArtifact("instruction offset overflow".into()))?;
+            let instruction_end = body_range
+                .start
+                .checked_add(local.end)
+                .and_then(|value| u64::try_from(value).ok())
+                .ok_or_else(|| CodegenError::DebugArtifact("instruction offset overflow".into()))?;
+            mappings.push(DebugMapping {
+                core_module: core_module.into(),
+                component_function: u64::from(function.core_index),
+                instruction_start,
+                instruction_end,
+                function_id: function_id.clone(),
+                source: local.source.map(|source| DebugSpan {
+                    document_id: input.document_id.into(),
+                    start: u64::from(source.start),
+                    end: u64::from(source.end),
+                }),
+                call_site: None,
+                inline_parent: None,
+                generated: local.generated,
+            });
+        }
+    }
+    functions.sort_by(|left, right| left.id.cmp(&right.id));
+    mappings.sort_by(|left, right| {
+        (
+            &left.core_module,
+            left.component_function,
+            left.instruction_start,
+            left.instruction_end,
+            &left.function_id,
+        )
+            .cmp(&(
+                &right.core_module,
+                right.component_function,
+                right.instruction_start,
+                right.instruction_end,
+                &right.function_id,
+            ))
+    });
+
+    let map = DebugMap {
+        schema: DEBUG_MAP_SCHEMA.into(),
+        binding: DebugBinding {
+            source_sha256: source_sha256.clone(),
+            compiler_executable_sha256: input.compiler_executable_sha256.into(),
+            component_code_sha256: component_code_sha256.clone(),
+        },
+        coordinate_system: "utf8-byte-half-open".into(),
+        documents: vec![DebugDocument {
+            id: input.document_id.into(),
+            sha256: source_sha256.clone(),
+            byte_length: u64::try_from(input.source_bytes.len())
+                .map_err(|_| CodegenError::DebugArtifact("source length overflow".into()))?,
+        }],
+        functions,
+        mappings,
+    };
+    validate_debug_map(&map).map_err(|error| CodegenError::DebugArtifact(error.to_string()))?;
+    let debug_map =
+        canonical_json(&map).map_err(|error| CodegenError::DebugArtifact(error.to_string()))?;
+    if debug_map.len() > MAX_DEBUG_MAP_BYTES {
+        return Err(CodegenError::DebugArtifact(
+            "debug map exceeds the 16 MiB contract".into(),
+        ));
+    }
+    let debug_map_sha256 = sha256_hex(&debug_map);
+    let link = DebugLink {
+        schema: DEBUG_LINK_SCHEMA.into(),
+        source_sha256: source_sha256.clone(),
+        compiler_executable_sha256: input.compiler_executable_sha256.into(),
+        component_code_sha256: component_code_sha256.clone(),
+        debug_map_sha256: debug_map_sha256.clone(),
+    };
+    let component = link_component(component_code, &link)
+        .map_err(|error| CodegenError::DebugArtifact(error.to_string()))?;
+    let mut adapter_identities = input.adapter_identities.clone();
+    let mut wit_identities = input.wit_identities.clone();
+    adapter_identities.sort();
+    wit_identities.sort();
+    let identity = DebugIdentity {
+        schema: DEBUG_IDENTITY_SCHEMA.into(),
+        source: SourceIdentity {
+            document_id: input.document_id.into(),
+            sha256: source_sha256,
+            byte_length: u64::try_from(input.source_bytes.len())
+                .map_err(|_| CodegenError::DebugArtifact("source length overflow".into()))?,
+            display_uri: input.display_uri.map(str::to_owned),
+        },
+        compiler: CompilerIdentity {
+            package: input.compiler_package.into(),
+            version: input.compiler_version.into(),
+            executable_sha256: input.compiler_executable_sha256.into(),
+        },
+        language_semantics: "sico.semantics.v0".into(),
+        ir_schema: sico_ir::SCHEMA.into(),
+        component_code_sha256,
+        component_sha256: sha256_hex(&component),
+        debug_map_sha256,
+        adapter_identities,
+        wit_identities,
+    };
+    let identity = canonical_json(&identity)
+        .map_err(|error| CodegenError::DebugArtifact(error.to_string()))?;
+    verify_debug_artifacts(&component, &debug_map, &identity)
+        .map_err(|error| CodegenError::DebugArtifact(error.to_string()))?;
+    Ok(DebugArtifact {
+        component,
+        debug_map,
+        identity,
+    })
 }
 
 fn component_extern_name(name: &str) -> String {
@@ -303,6 +532,27 @@ const INTRINSIC_HELPERS: &[&str] = &[
 /// embedded boundary or the intrinsic helper table is inconsistent.
 #[allow(clippy::too_many_lines)]
 pub fn compile_script_program(module: &IrModule) -> Result<Vec<u8>, CodegenError> {
+    Ok(compile_script_program_parts(module)?.1)
+}
+
+/// Compiles a Script Component and emits its deterministic debug sidecars.
+///
+/// # Errors
+///
+/// Returns the ordinary Script boundary refusals or a closed debug-contract
+/// failure if any identity, offset, limit or digest invariant is violated.
+pub fn compile_script_program_with_debug(
+    module: &IrModule,
+    input: &DebugBuildInput<'_>,
+) -> Result<DebugArtifact, CodegenError> {
+    let (core, component) = compile_script_program_parts(module)?;
+    build_debug_artifact(&core, &component, "sico-script-core", input)
+}
+
+#[allow(clippy::too_many_lines)]
+fn compile_script_program_parts(
+    module: &IrModule,
+) -> Result<(CoreCompilation, Vec<u8>), CodegenError> {
     let errors = verify(module);
     if !errors.is_empty() {
         return Err(CodegenError::InvalidIr(errors));
@@ -461,9 +711,8 @@ pub fn compile_script_program(module: &IrModule) -> Result<Vec<u8>, CodegenError
     };
     let variant_tags = VariantTags::new(module, Some(&emit.abi))?;
     let core = build_script_core(module, run, &emit, &function_indices, &variant_tags)?;
-    Ok(canonical::wrap_script_component(
-        &core, fs, streams, http, arena_base,
-    ))
+    let component = canonical::wrap_script_component(&core.bytes, fs, streams, http, arena_base);
+    Ok((core, component))
 }
 
 /// Collects every static aggregate literal into one deterministic data segment.
@@ -506,10 +755,11 @@ fn build_script_core(
     emit: &ScriptEmit,
     function_indices: &BTreeMap<FunctionId, u32>,
     variant_tags: &VariantTags,
-) -> Result<Vec<u8>, CodegenError> {
+) -> Result<CoreCompilation, CodegenError> {
     let mut types = TypeSection::new();
     let mut functions = FunctionSection::new();
     let mut code = CodeSection::new();
+    let mut debug_functions = Vec::with_capacity(module.functions.len());
     let import_count = u32::from(emit.fs.any() || emit.streams.any() || emit.http)
         + (emit.fs.import_count() - u32::from(emit.fs.any()))
         + emit.streams.import_count()
@@ -621,13 +871,19 @@ fn build_script_core(
         };
         types.ty().function(params, results);
         functions.function(function_index);
-        code.function(&compile_function(
+        let compiled = compile_function(
             function,
             CoreAbi::Direct,
             function_indices,
             variant_tags,
             Some(emit),
-        )?);
+        )?;
+        code.function(&compiled.body);
+        debug_functions.push(CoreDebugFunction {
+            id: format!("function-{:010}", function.id.0),
+            core_index: function_index,
+            mappings: compiled.mappings,
+        });
     }
     types.ty().function([ValType::I32], [ValType::I32]);
     types.ty().function(
@@ -642,21 +898,80 @@ fn build_script_core(
         // The transport module owns the memory and the bump allocator; the
         // local alloc/realloc forward to the imported realloc (core import 0)
         // so one allocator serves guest and host-lowered fs calls alike.
-        code.function(&emit_alloc_forwarded());
-        code.function(&emit_realloc_forwarded());
-        code.function(&emit_post_return_noop());
+        let alloc = emit_alloc_forwarded();
+        let realloc = emit_realloc_forwarded();
+        let post_return = emit_post_return_noop();
+        code.function(&alloc);
+        code.function(&realloc);
+        code.function(&post_return);
+        debug_functions.push(generated_debug_function(
+            "generated.alloc",
+            emit.alloc_index,
+            &alloc,
+        ));
+        debug_functions.push(generated_debug_function(
+            "generated.realloc",
+            emit.realloc_index,
+            &realloc,
+        ));
+        debug_functions.push(generated_debug_function(
+            "generated.post-return",
+            emit.post_return_index,
+            &post_return,
+        ));
     } else {
-        code.function(&emit_alloc());
-        code.function(&emit_realloc());
-        code.function(&emit_post_return(emit.arena_base));
+        let alloc = emit_alloc();
+        let realloc = emit_realloc();
+        let post_return = emit_post_return(emit.arena_base);
+        code.function(&alloc);
+        code.function(&realloc);
+        code.function(&post_return);
+        debug_functions.push(generated_debug_function(
+            "generated.alloc",
+            emit.alloc_index,
+            &alloc,
+        ));
+        debug_functions.push(generated_debug_function(
+            "generated.realloc",
+            emit.realloc_index,
+            &realloc,
+        ));
+        debug_functions.push(generated_debug_function(
+            "generated.post-return",
+            emit.post_return_index,
+            &post_return,
+        ));
     }
     for name in emit.helpers.keys() {
         let (params, results) = stdlib::helper_signature(name);
         types.ty().function(params, results);
         functions.function(emit.helpers[name]);
-        code.function(&stdlib::emit_helper(name, emit.alloc_index, &emit.helpers));
+        let helper = stdlib::emit_helper(name, emit.alloc_index, &emit.helpers);
+        code.function(&helper);
+        debug_functions.push(generated_debug_function(
+            &format!("generated.helper.{name}"),
+            emit.helpers[name],
+            &helper,
+        ));
     }
-    finish_script_core(run, emit, function_indices, &types, &functions, &code)
+    let bytes = finish_script_core(run, emit, function_indices, &types, &functions, &code)?;
+    Ok(CoreCompilation {
+        bytes,
+        functions: debug_functions,
+    })
+}
+
+fn generated_debug_function(id: &str, core_index: u32, body: &Function) -> CoreDebugFunction {
+    CoreDebugFunction {
+        id: id.into(),
+        core_index,
+        mappings: vec![LocalDebugMapping {
+            start: 0,
+            end: body.byte_len(),
+            source: None,
+            generated: true,
+        }],
+    }
 }
 
 /// Assembles the Script core sections after code emission.
@@ -1019,7 +1334,7 @@ fn compile_function(
     function_indices: &BTreeMap<FunctionId, u32>,
     variant_tags: &VariantTags,
     script: Option<&ScriptEmit>,
-) -> Result<Function, CodegenError> {
+) -> Result<CompiledFunction, CodegenError> {
     let plan = LocalLayout::plan(function, script)?;
     let layout = plan.layout;
     let dispatcher = plan.dispatcher;
@@ -1042,6 +1357,7 @@ fn compile_function(
         script,
         scratch,
     };
+    let mut mappings = Vec::new();
     for current in &function.blocks {
         body.instruction(&Instruction::LocalGet(dispatcher));
         body.instruction(&Instruction::I32Const(
@@ -1051,8 +1367,18 @@ fn compile_function(
         body.instruction(&Instruction::I32Eq);
         body.instruction(&Instruction::If(BlockType::Empty));
         let mut constants = BTreeMap::new();
-        compile_instructions(&context, current, &mut body, &mut constants)?;
+        compile_instructions(&context, current, &mut body, &mut constants, &mut mappings)?;
+        let terminator_start = body.byte_len();
         compile_terminator(&context, &current.terminator, &mut body)?;
+        let terminator_end = body.byte_len();
+        if terminator_end > terminator_start {
+            mappings.push(LocalDebugMapping {
+                start: terminator_start,
+                end: terminator_end,
+                source: Some(current.range),
+                generated: false,
+            });
+        }
         body.instruction(&Instruction::End);
     }
     body.instruction(&Instruction::Unreachable);
@@ -1060,7 +1386,7 @@ fn compile_function(
     body.instruction(&Instruction::End);
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
-    Ok(body)
+    Ok(CompiledFunction { body, mappings })
 }
 
 #[derive(Clone)]
@@ -1644,6 +1970,7 @@ fn compile_instructions(
     block: &Block,
     body: &mut Function,
     constants: &mut BTreeMap<ValueId, i64>,
+    mappings: &mut Vec<LocalDebugMapping>,
 ) -> Result<(), CodegenError> {
     let function = context.function;
     let layout = context.layout;
@@ -1652,6 +1979,7 @@ fn compile_instructions(
     let function_indices = context.function_indices;
     let variant_tags = context.variant_tags;
     for instruction in &block.instructions {
+        let mapping_start = body.byte_len();
         match &instruction.operation {
             Operation::ConstInt(value) => {
                 let parsed =
@@ -1891,6 +2219,15 @@ fn compile_instructions(
                 }
             }
             _ => return Err(unsupported(&function.name, "operation")),
+        }
+        let mapping_end = body.byte_len();
+        if mapping_end > mapping_start {
+            mappings.push(LocalDebugMapping {
+                start: mapping_start,
+                end: mapping_end,
+                source: Some(instruction.range),
+                generated: false,
+            });
         }
     }
     Ok(())

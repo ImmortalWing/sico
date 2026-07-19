@@ -116,9 +116,10 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["id", "component_function"],
+            "required": ["id", "core_module", "component_function"],
             "properties": {
               "id": { "$ref": "#/$defs/boundedId" },
+              "core_module": { "$ref": "#/$defs/boundedId" },
               "component_function": { "$ref": "#/$defs/safeInteger" }
             }
           }
@@ -129,8 +130,9 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["component_function", "instruction_start", "instruction_end", "function_id", "source", "call_site", "inline_parent", "generated"],
+            "required": ["core_module", "component_function", "instruction_start", "instruction_end", "function_id", "source", "call_site", "inline_parent", "generated"],
             "properties": {
+              "core_module": { "$ref": "#/$defs/boundedId" },
               "component_function": { "$ref": "#/$defs/safeInteger" },
               "instruction_start": { "$ref": "#/$defs/safeInteger" },
               "instruction_end": { "$ref": "#/$defs/safeInteger" },

@@ -442,6 +442,7 @@ dependencies = [
  "sico-format",
  "sico-ir",
  "sico-lexer",
+ "sico-observability",
  "sico-package",
  "sico-parser",
  "sico-semantics",
@@ -455,6 +456,7 @@ name = "sico-codegen-wasm"
 version = "0.0.2-dev"
 dependencies = [
  "sico-ir",
+ "sico-observability",
  "sico-source",
  "wasm-encoder",
  "wasmparser",
@@ -593,6 +595,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-observability"
+version = "0.0.2-dev"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "wasm-encoder",
+]
+
+[[package]]
 name = "sico-package"
 version = "0.0.2-dev"
 dependencies = [
@@ -602,6 +614,7 @@ dependencies = [
  "sha2 0.10.9",
  "sico-codegen-wasm",
  "sico-ir",
+ "sico-observability",
  "sico-source",
  "unicode-normalization",
  "wasm-encoder",

@@ -1,6 +1,6 @@
 # M10 plan: Runtime observability and debugging
 
-> - status: in progress; STEP-0095 complete, STEP-0096 next
+> - status: in progress; STEP-0095–0096 complete, STEP-0097 next
 > - created: 2026-07-19
 > - expanded: 2026-07-19
 > - phase: M10
@@ -94,7 +94,7 @@ A missing, stale or mismatched link fails closed. A display URI may help a clien
 
 ### 5.2 Debug map
 
-Accepted `sico.debug-map.v0` records sorted, non-overlapping mappings from Component function/instruction locations to:
+Accepted `sico.debug-map.v0` records sorted, non-overlapping mappings from Core module/function/instruction locations to:
 
 - stable Sico function/declaration ID;
 - UTF-8 half-open source span;
@@ -246,6 +246,8 @@ Exit evidence:
 
 ### STEP-0096: deterministic compiler debug-map artifact
 
+Status: complete. Implementation and evidence: [`STEP-0096`](../steps/STEP-0096-deterministic-compiler-debug-map.md), [`report`](../reports/deterministic-debug-map-v0.md), `sico-observability` and `tools/validate-step-0096.ps1`.
+
 Deliver:
 
 - stable mapping from verified IR functions/operations to source spans and emitted Component locations;
@@ -259,6 +261,8 @@ Exit evidence:
 - representative control flow, calls, match, loops, helper functions and Script intrinsics map to exact spans;
 - malformed, reordered, duplicated, truncated and mismatched maps fail closed;
 - debug-disabled artifacts remain supported and honestly lack Runtime locations.
+
+Accepted result: `sico build --debug-info` emits an atomic deterministic Component/map/identity triplet; real Core offsets cover calls, matches, back edges, block terminators and Script intrinsic helpers; generated allocator/helper bodies use source-less synthetic mappings; malformed/mixed artifacts fail closed; normal builds remain unlinked; packaging preserves the linked Component without absorbing developer sidecars. Multi-Core Components require explicit `core_module` qualifiers on functions and mappings.
 
 ### STEP-0097: structured Runtime faults and source frames
 

@@ -15,6 +15,7 @@ members = [
     "crates/sico-lexer",
     "crates/sico-language-server",
     "crates/sico-mobile-host-core",
+    "crates/sico-observability",
     "crates/sico-parser",
     "crates/sico-package",
     "crates/sico-runtime",

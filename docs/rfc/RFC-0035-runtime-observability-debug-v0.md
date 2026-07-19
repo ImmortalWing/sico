@@ -89,15 +89,17 @@ An embedded full map and an unbound filename-only sidecar were rejected. A debug
 
 ## Debug map
 
-`sico.debug-map.v0` uses UTF-8, zero-based, half-open byte coordinates. It records sorted source documents, functions and non-overlapping Component instruction ranges. Each mapping contains:
+`sico.debug-map.v0` uses UTF-8, zero-based, half-open byte coordinates. It records sorted source documents, functions and non-overlapping Core Wasm instruction ranges within a Component. Each function and mapping carries an explicit `core_module` identity because a Component may contain guest, transport and adapter modules; a bare function index is not globally unique. Each mapping contains:
 
-- Component function index and half-open instruction range;
+- Core module identity, function index and half-open instruction range;
 - stable Sico function ID;
 - source document ID and half-open source range;
 - optional call-site range and inline-parent function ID;
 - `generated` marker for synthetic/adaptor code.
 
-Mappings sort by Component function, instruction start/end and stable function ID. Documents and functions have unique IDs. A mapping must reference known IDs, remain inside the bound source byte length, and not overlap a previous mapping in the same Component function. Protocol integers are limited to JSON's exactly interoperable range `0..=9,007,199,254,740,991`; implementation-specific `u64` overflow is rejected before allocation.
+Mappings sort by Core module identity, function index, instruction start/end and stable function ID. Documents and functions have unique IDs. A mapping must reference the same module/function pair declared by its function ID, remain inside the bound source byte length, and not overlap a previous mapping in the same Core function. Protocol integers are limited to JSON's exactly interoperable range `0..=9,007,199,254,740,991`; implementation-specific `u64` overflow is rejected before allocation.
+
+STEP-0096 clarification: `core_module` is a required v0 field, not a schema expansion. STEP-0095 froze maps before the compiler proved offsets across multi-module Script Components; the implementation finding exposed an ambiguity that would otherwise bind transport function `0` and guest function `0` to the same coordinate. The field closes that ambiguity without adding runtime authority or widening the DAP subset.
 
 Accepted hard limits:
 

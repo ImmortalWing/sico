@@ -1,10 +1,13 @@
 use std::{fmt::Write as _, fs, path::Path};
 
-use sico_codegen_wasm::{CodegenError, compile, compile_component};
+use sico_codegen_wasm::{
+    CodegenError, DebugBuildInput, compile, compile_component, compile_component_with_debug,
+};
 use sico_ir::{
     Block, BlockId, ConstructField, Function, FunctionId, Instruction, MatchArm, Module, Operation,
     Parameter, Pattern, SourceRange, Terminator, Type, ValueId,
 };
+use sico_observability::{ContractError, sha256_hex, verify_debug_artifacts};
 use sico_source::{SourceFile, SourceId};
 
 #[test]
@@ -42,6 +45,55 @@ fn scalar_components_are_deterministic_and_validate() {
         validate(&bytes);
         snapshot(name, &bytes);
     }
+}
+
+#[test]
+fn debug_component_map_and_identity_are_deterministic_and_fail_closed() {
+    let text = b"function main() returns Int:\n  return 40 + 2\nend function\n";
+    let source = SourceFile::from_text(
+        SourceId::new(0),
+        "answer.sico",
+        std::str::from_utf8(text).unwrap(),
+    )
+    .unwrap();
+    let ir = sico_ir::lower_core(&source).unwrap();
+    let compiler_digest = sha256_hex(b"sico-test-compiler");
+    let input = DebugBuildInput {
+        document_id: "doc.answer",
+        source_bytes: text,
+        display_uri: Some("workspace://answer.sico"),
+        compiler_package: "sico-compiler",
+        compiler_version: "0.0.2-dev",
+        compiler_executable_sha256: &compiler_digest,
+        adapter_identities: Vec::new(),
+        wit_identities: Vec::new(),
+    };
+    let first = compile_component_with_debug(&ir, &input).unwrap();
+    let second = compile_component_with_debug(&ir, &input).unwrap();
+    assert_eq!(first.component, second.component);
+    assert_eq!(first.debug_map, second.debug_map);
+    assert_eq!(first.identity, second.identity);
+    validate(&first.component);
+    let (map, identity) =
+        verify_debug_artifacts(&first.component, &first.debug_map, &first.identity).unwrap();
+    assert_eq!(map.functions.len(), 1);
+    assert!(!map.mappings.is_empty());
+    assert!(map.mappings.iter().all(|mapping| {
+        mapping.core_module == "sico-core"
+            && mapping.instruction_start < mapping.instruction_end
+            && mapping
+                .source
+                .as_ref()
+                .is_some_and(|span| span.end <= text.len() as u64)
+    }));
+    assert_eq!(identity.source.sha256, sha256_hex(text));
+
+    let mut stale_map = first.debug_map.clone();
+    stale_map.push(b' ');
+    assert!(matches!(
+        verify_debug_artifacts(&first.component, &stale_map, &first.identity),
+        Err(ContractError::NonCanonical("debug-map-json"))
+    ));
 }
 
 #[test]
@@ -89,6 +141,71 @@ fn general_calls_cfg_and_internal_data_are_deterministic_and_validate() {
         Err(CodegenError::Unsupported { feature, .. })
             if feature == "projected field does not match its declared Wasm layout"
     ));
+}
+
+#[test]
+fn debug_map_covers_calls_matches_back_edges_and_block_terminators() {
+    let mut ir = general_module();
+    let mut next = 1_u32;
+    let mut expected = std::collections::BTreeSet::new();
+    for function in &mut ir.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                instruction.range = SourceRange {
+                    start: next,
+                    end: next + 1,
+                };
+                expected.insert((next, next + 1));
+                next += 2;
+            }
+            block.range = SourceRange {
+                start: next,
+                end: next + 1,
+            };
+            expected.insert((next, next + 1));
+            next += 2;
+        }
+    }
+    ir.source_len = next + 1;
+    let source = vec![b' '; next as usize + 1];
+    let compiler_digest = sha256_hex(b"sico-general-debug-compiler");
+    let artifact = compile_component_with_debug(
+        &ir,
+        &DebugBuildInput {
+            document_id: "doc.general",
+            source_bytes: &source,
+            display_uri: Some("workspace://general.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &compiler_digest,
+            adapter_identities: Vec::new(),
+            wit_identities: Vec::new(),
+        },
+    )
+    .unwrap();
+    let (map, _) =
+        verify_debug_artifacts(&artifact.component, &artifact.debug_map, &artifact.identity)
+            .unwrap();
+    assert_eq!(map.functions.len(), 7);
+    let actual = map
+        .mappings
+        .iter()
+        .filter_map(|mapping| mapping.source.as_ref())
+        .map(|span| {
+            (
+                u32::try_from(span.start).unwrap(),
+                u32::try_from(span.end).unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(actual, expected);
+    for window in map.mappings.windows(2) {
+        if window[0].core_module == window[1].core_module
+            && window[0].component_function == window[1].component_function
+        {
+            assert!(window[0].instruction_end <= window[1].instruction_start);
+        }
+    }
 }
 
 #[test]

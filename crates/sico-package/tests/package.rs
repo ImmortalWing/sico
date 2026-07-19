@@ -1,8 +1,9 @@
 use std::collections::BTreeSet;
 
 use ed25519_dalek::SigningKey;
-use sico_codegen_wasm::compile_component;
+use sico_codegen_wasm::{DebugBuildInput, compile_component, compile_component_with_debug};
 use sico_ir::lower_core;
+use sico_observability::verify_debug_artifacts;
 use sico_package::{
     BuildInput, PackageError, ResourceInput, RuntimeLimits, TrustPolicy, TrustStatus, authorize,
     build_script_v1, build_unsigned, capabilities_for_imports, sign_development, verify,
@@ -53,6 +54,55 @@ fn build_is_byte_identical_and_verified() {
     );
     assert!(package.signature.is_none());
     assert_eq!(package.unsigned_bytes(), first);
+}
+
+#[test]
+fn debug_linked_component_packages_without_absorbing_sidecars() {
+    let text = b"function main() returns Int:\n  return 42\nend function\n";
+    let source = SourceFile::from_text(
+        SourceId::new(1),
+        "answer.sico",
+        std::str::from_utf8(text).unwrap(),
+    )
+    .unwrap();
+    let compiler_sha256 = "b".repeat(64);
+    let artifact = compile_component_with_debug(
+        &lower_core(&source).unwrap(),
+        &DebugBuildInput {
+            document_id: "doc.answer",
+            source_bytes: text,
+            display_uri: Some("workspace://answer.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &compiler_sha256,
+            adapter_identities: Vec::new(),
+            wit_identities: Vec::new(),
+        },
+    )
+    .unwrap();
+    verify_debug_artifacts(&artifact.component, &artifact.debug_map, &artifact.identity).unwrap();
+    let package = build_unsigned(BuildInput {
+        app_id: "dev.sico.debug-answer".into(),
+        app_version: "0.1.0".into(),
+        component: artifact.component.clone(),
+        resources: Vec::new(),
+        source_effects: Vec::new(),
+        capabilities: Vec::new(),
+        limits: RuntimeLimits::default(),
+    })
+    .unwrap();
+    let verified = verify(&package).unwrap();
+    assert_eq!(verified.component, artifact.component);
+    assert!(
+        !package
+            .windows(artifact.debug_map.len())
+            .any(|window| window == artifact.debug_map)
+    );
+    assert!(
+        !package
+            .windows(artifact.identity.len())
+            .any(|window| window == artifact.identity)
+    );
 }
 
 #[test]

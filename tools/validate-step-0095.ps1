@@ -156,33 +156,36 @@ function Assert-DebugMap($Document, [string]$Context) {
     $functionIds = @{}
     $previousFunction = $null
     foreach ($entry in $functions) {
-        Assert-ExactProperties $entry @('id', 'component_function') "$Context.function"
+        Assert-ExactProperties $entry @('id', 'core_module', 'component_function') "$Context.function"
         Assert-Id $entry.id "$Context.function.id"
+        Assert-Id $entry.core_module "$Context.function.core_module"
         Assert-SafeInteger $entry.component_function "$Context.function.component_function"
         $id = [string]$entry.id
         if ($functionIds.ContainsKey($id)) { Fail 'duplicate-identity' "$Context function $id" }
         if ($null -ne $previousFunction -and [StringComparer]::Ordinal.Compare($previousFunction, $id) -gt 0) {
             Fail 'non-canonical-order' "$Context functions"
         }
-        $functionIds[$id] = [int64]$entry.component_function
+        $functionIds[$id] = "$($entry.core_module):$($entry.component_function)"
         $previousFunction = $id
     }
 
     $mappings = @($Document.mappings)
     if ($mappings.Count -gt 1000000) { Fail 'over-limit' "$Context mappings" }
     $mappingKeys = @{}
+    $previousCoreModule = $null
     $previousComponentFunction = -1L
     $previousStart = -1L
     $previousEnd = -1L
     foreach ($entry in $mappings) {
-        Assert-ExactProperties $entry @('component_function', 'instruction_start', 'instruction_end', 'function_id', 'source', 'call_site', 'inline_parent', 'generated') "$Context.mapping"
+        Assert-ExactProperties $entry @('core_module', 'component_function', 'instruction_start', 'instruction_end', 'function_id', 'source', 'call_site', 'inline_parent', 'generated') "$Context.mapping"
+        Assert-Id $entry.core_module "$Context.mapping.core_module"
         Assert-SafeInteger $entry.component_function "$Context.mapping.component_function"
         Assert-SafeInteger $entry.instruction_start "$Context.mapping.instruction_start"
         Assert-SafeInteger $entry.instruction_end "$Context.mapping.instruction_end"
         if ([int64]$entry.instruction_start -ge [int64]$entry.instruction_end) { Fail 'invalid-span' "$Context instruction range" }
         Assert-Id $entry.function_id "$Context.mapping.function_id"
         if (-not $functionIds.ContainsKey([string]$entry.function_id)) { Fail 'unknown-identity' "$Context mapping function" }
-        if ([int64]$functionIds[[string]$entry.function_id] -ne [int64]$entry.component_function) { Fail 'identity-mismatch' "$Context mapping function index" }
+        if ([string]$functionIds[[string]$entry.function_id] -ne "$($entry.core_module):$($entry.component_function)") { Fail 'identity-mismatch' "$Context mapping function index" }
         if ($null -ne $entry.source) { Assert-Span $entry.source $documentBytes "$Context.mapping.source" }
         if ($null -ne $entry.call_site) { Assert-Span $entry.call_site $documentBytes "$Context.mapping.call_site" }
         if ($null -ne $entry.inline_parent) {
@@ -190,19 +193,23 @@ function Assert-DebugMap($Document, [string]$Context) {
             if (-not $functionIds.ContainsKey([string]$entry.inline_parent)) { Fail 'unknown-identity' "$Context inline parent" }
         }
         if ($entry.generated -isnot [bool]) { Fail 'invalid-boolean' "$Context.mapping.generated" }
-        $key = "$($entry.component_function):$($entry.instruction_start):$($entry.instruction_end):$($entry.function_id)"
+        $key = "$($entry.core_module):$($entry.component_function):$($entry.instruction_start):$($entry.instruction_end):$($entry.function_id)"
         if ($mappingKeys.ContainsKey($key)) { Fail 'duplicate-mapping' "$Context mapping $key" }
         $mappingKeys[$key] = $true
+        $coreModule = [string]$entry.core_module
         $componentFunction = [int64]$entry.component_function
         $start = [int64]$entry.instruction_start
         $end = [int64]$entry.instruction_end
-        if ($componentFunction -lt $previousComponentFunction -or
-            ($componentFunction -eq $previousComponentFunction -and $start -lt $previousStart)) {
+        $moduleOrder = if ($null -eq $previousCoreModule) { 1 } else { [StringComparer]::Ordinal.Compare($coreModule, $previousCoreModule) }
+        if ($moduleOrder -lt 0 -or
+            ($moduleOrder -eq 0 -and $componentFunction -lt $previousComponentFunction) -or
+            ($moduleOrder -eq 0 -and $componentFunction -eq $previousComponentFunction -and $start -lt $previousStart)) {
             Fail 'non-canonical-order' "$Context mappings"
         }
-        if ($componentFunction -eq $previousComponentFunction -and $start -lt $previousEnd) {
+        if ($moduleOrder -eq 0 -and $componentFunction -eq $previousComponentFunction -and $start -lt $previousEnd) {
             Fail 'overlapping-mapping' "$Context mappings"
         }
+        $previousCoreModule = $coreModule
         $previousComponentFunction = $componentFunction
         $previousStart = $start
         $previousEnd = $end

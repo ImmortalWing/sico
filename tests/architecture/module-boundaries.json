@@ -17,6 +17,9 @@
       "sico-ir",
       "sico-codegen-wasm"
     ],
+    "observability": [
+      "sico-observability"
+    ],
     "tooling": [
       "sico-cli",
       "sico-language-server",
@@ -45,15 +48,17 @@
   },
   "allowed_normal_dependencies": {
     "language": ["language"],
-    "compiler": ["language", "compiler"],
-    "tooling": ["language", "compiler", "tooling"],
+    "compiler": ["language", "compiler", "observability"],
+    "observability": ["observability"],
+    "tooling": ["language", "compiler", "observability", "tooling"],
     "application": ["application"],
-    "runtime": ["application", "runtime"],
-    "host": ["application", "runtime", "host"],
+    "runtime": ["application", "observability", "runtime"],
+    "host": ["application", "observability", "runtime", "host"],
     "ecosystem": ["application", "ecosystem"],
     "integration": [
       "language",
       "compiler",
+      "observability",
       "tooling",
       "application",
       "runtime",

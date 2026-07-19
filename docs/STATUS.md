@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M10 Runtime observability/debugging in progress; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0096 deterministic compiler debug-map artifact (next)
-> - last completed active step: STEP-0095 (observability/debug contract, complete)
+> - current step: STEP-0097 structured Runtime faults and source frames (next)
+> - last completed active step: STEP-0096 (deterministic compiler debug-map artifact, complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: implement canonical debug-map sidecar and compact digest-bound Component link
+> - next step: resolve typed Runtime faults through the exact bound debug map without parsing engine text
 
 ## 0. M6 exit state
 
@@ -28,7 +28,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。[`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md) 已冻结 identity/map/fault/event/cancellation/DAP 合同并保持 debugger refusal；下一项为 STEP-0096 deterministic compiler debug-map artifact。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。[`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md) 已冻结 identity/map/fault/event/cancellation/DAP 合同；[`STEP-0096`](./steps/STEP-0096-deterministic-compiler-debug-map.md) 已实现 deterministic Component/map/identity triplet、真实 Core offset mapping 与 strict mix-and-match rejection。下一项为 STEP-0097 typed Runtime faults/source frames；debugger 仍未宣称。
 
 ## 3. Verified repository facts
 
@@ -49,8 +49,8 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
 | 稳定诊断 code/key | 37（其中 13 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
-| Rust `.rs` 文件 | 89 | measured |
-| `Cargo.toml` | 29 | measured |
+| Rust `.rs` 文件 | 111 | measured |
+| `Cargo.toml` | 34 | measured |
 | 数值原型单元测试 | 10 passed | verified |
 | resource/async 动态测试 | 10 passed | verified |
 | WASI 0.3 WIT parser 测试 | 1 passed | verified |

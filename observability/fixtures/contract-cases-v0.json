@@ -45,11 +45,13 @@
           "functions": [
             {
               "id": "fn.main",
+              "core_module": "sico-script-core",
               "component_function": 0
             }
           ],
           "mappings": [
             {
+              "core_module": "sico-script-core",
               "component_function": 0,
               "instruction_start": 0,
               "instruction_end": 10,
@@ -147,8 +149,8 @@
             { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 100 }
           ],
           "functions": [
-            { "id": "fn.main", "component_function": 0 },
-            { "id": "fn.main", "component_function": 1 }
+            { "id": "fn.main", "core_module": "sico-script-core", "component_function": 0 },
+            { "id": "fn.main", "core_module": "sico-script-core", "component_function": 1 }
           ],
           "mappings": []
         }
@@ -171,10 +173,11 @@
             { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 100 }
           ],
           "functions": [
-            { "id": "fn.main", "component_function": 0 }
+            { "id": "fn.main", "core_module": "sico-script-core", "component_function": 0 }
           ],
           "mappings": [
             {
+              "core_module": "sico-script-core",
               "component_function": 0,
               "instruction_start": 0,
               "instruction_end": 10,
@@ -185,6 +188,7 @@
               "generated": false
             },
             {
+              "core_module": "sico-script-core",
               "component_function": 0,
               "instruction_start": 0,
               "instruction_end": 10,

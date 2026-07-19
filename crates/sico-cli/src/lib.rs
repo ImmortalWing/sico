@@ -16,7 +16,11 @@ use std::{
 
 use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
 use serde_json::{Value, json};
-use sico_codegen_wasm::{CodegenError, compile_component};
+use sha2::{Digest, Sha256};
+use sico_codegen_wasm::{
+    CodegenError, DebugArtifact, DebugBuildInput, compile_component, compile_component_with_debug,
+    compile_script_program_with_debug,
+};
 use sico_diagnostics::{render_syntax_json, render_syntax_text, syntax_identity};
 use sico_format::format as canonical_format;
 use sico_ir::{CoreLowerError, Module, Type, lower_core};
@@ -141,6 +145,12 @@ fn build_command() -> Command {
                 .help("Build profile: component-v0 (default) or script-v0")
                 .default_value("component-v0"),
         )
+        .arg(
+            Arg::new("debug-info")
+                .long("debug-info")
+                .help("Emit a bound debug map and build identity beside the Component")
+                .action(ArgAction::SetTrue),
+        )
 }
 
 fn input_arg() -> Arg {
@@ -178,6 +188,35 @@ fn run_build(
             return EXIT_TOOL_ERROR;
         }
     };
+    if matches.get_flag("debug-info") {
+        let artifact = match compile_source_debug(input, profile, stdin, stdout, stderr) {
+            Ok(artifact) => artifact,
+            Err(exit) => return exit,
+        };
+        return match write_debug_artifacts(&output, &artifact) {
+            Ok(paths) => {
+                if writeln!(
+                    stdout,
+                    "built {}\ndebug-map {}\ndebug-identity {}",
+                    paths.component.display(),
+                    paths.debug_map.display(),
+                    paths.identity.display()
+                )
+                .is_err()
+                {
+                    remove_debug_artifacts(&paths);
+                    EXIT_TOOL_ERROR
+                } else {
+                    EXIT_SUCCESS
+                }
+            }
+            Err(message) => {
+                let _ = writeln!(stderr, "{message}");
+                EXIT_TOOL_ERROR
+            }
+        };
+    }
+
     let component = match compile_source(input, profile, stdin, stdout, stderr) {
         Ok(component) => component,
         Err(exit) => return exit,
@@ -215,6 +254,78 @@ fn compile_source(
     compile_source_bytes(&name, &bytes, profile, stdout, stderr)
 }
 
+fn compile_source_debug(
+    input: &str,
+    profile: &str,
+    stdin: &mut dyn Read,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<DebugArtifact, i32> {
+    let (name, bytes) = match read_input_bytes(input, stdin) {
+        Ok(input) => input,
+        Err(message) => {
+            let _ = writeln!(stderr, "{message}");
+            return Err(EXIT_TOOL_ERROR);
+        }
+    };
+    let (source, module) = prepare_source_bytes(&name, &bytes, profile, stdout, stderr)?;
+    let executable = std::env::current_exe()
+        .and_then(fs::read)
+        .map_err(|error| {
+            let _ = writeln!(stderr, "sico: cannot identify compiler executable: {error}");
+            EXIT_TOOL_ERROR
+        })?;
+    let source_sha256 = sha256(&bytes);
+    let compiler_sha256 = sha256(&executable);
+    let display_uri = if input == "-" {
+        "sico-source://stdin".to_owned()
+    } else {
+        format!(
+            "workspace://{}",
+            Path::new(input)
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or("source.sico")
+        )
+    };
+    let mut adapters = Vec::new();
+    let mut wit = Vec::new();
+    if profile == "script-v0" {
+        adapters.push("sico:script-adapter@0.1.0".into());
+        wit.push("sico:script@0.1.0".into());
+    }
+    let document_id = format!("document-{source_sha256}");
+    let debug_input = DebugBuildInput {
+        document_id: &document_id,
+        source_bytes: &bytes,
+        display_uri: Some(&display_uri),
+        compiler_package: "sico-compiler",
+        compiler_version: env!("CARGO_PKG_VERSION"),
+        compiler_executable_sha256: &compiler_sha256,
+        adapter_identities: adapters,
+        wit_identities: wit,
+    };
+    let result = if profile == "script-v0" {
+        let module = prepare_script_module(&module, &source, stderr)?;
+        compile_script_program_with_debug(&module, &debug_input)
+    } else {
+        if let Err(message) = validate_entry(&module) {
+            let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+            return Err(EXIT_TOOL_ERROR);
+        }
+        compile_component_with_debug(&module, &debug_input)
+    };
+    result.map_err(|error| {
+        let _ = writeln!(
+            stderr,
+            "sico: cannot generate debug Component for {}: {}",
+            source.name(),
+            codegen_error(&error)
+        );
+        EXIT_TOOL_ERROR
+    })
+}
+
 pub(crate) fn compile_source_bytes(
     name: &str,
     bytes: &[u8],
@@ -222,6 +333,35 @@ pub(crate) fn compile_source_bytes(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<Vec<u8>, i32> {
+    let (source, module) = prepare_source_bytes(name, bytes, profile, stdout, stderr)?;
+    if profile == "script-v0" {
+        return compile_script_module(&module, &source, stderr);
+    }
+    if let Err(message) = validate_entry(&module) {
+        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        return Err(EXIT_TOOL_ERROR);
+    }
+    match compile_component(&module) {
+        Ok(component) => Ok(component),
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot generate Component for {}: {}",
+                source.name(),
+                codegen_error(&error)
+            );
+            Err(EXIT_TOOL_ERROR)
+        }
+    }
+}
+
+fn prepare_source_bytes(
+    name: &str,
+    bytes: &[u8],
+    profile: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<(SourceFile, Module), i32> {
     let source = match SourceFile::from_bytes(SourceId::new(0), name.to_owned(), bytes) {
         Ok(source) => source,
         Err(error) => {
@@ -265,25 +405,7 @@ pub(crate) fn compile_source_bytes(
             return Err(EXIT_TOOL_ERROR);
         }
     };
-    if profile == "script-v0" {
-        return compile_script_module(&module, &source, stderr);
-    }
-    if let Err(message) = validate_entry(&module) {
-        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
-        return Err(EXIT_TOOL_ERROR);
-    }
-    match compile_component(&module) {
-        Ok(component) => Ok(component),
-        Err(error) => {
-            let _ = writeln!(
-                stderr,
-                "sico: cannot generate Component for {}: {}",
-                source.name(),
-                codegen_error(&error)
-            );
-            Err(EXIT_TOOL_ERROR)
-        }
-    }
+    Ok((source, module))
 }
 
 /// Compiles the validated Script profile module, mapping the source `main`
@@ -293,16 +415,7 @@ fn compile_script_module(
     source: &SourceFile,
     stderr: &mut dyn Write,
 ) -> Result<Vec<u8>, i32> {
-    let mut module = module.clone();
-    if let Err(message) = validate_script_entry(&module) {
-        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
-        return Err(EXIT_TOOL_ERROR);
-    }
-    for function in &mut module.functions {
-        if function.name == "main" {
-            "run".clone_into(&mut function.name);
-        }
-    }
+    let module = prepare_script_module(module, source, stderr)?;
     match sico_codegen_wasm::compile_script_program(&module) {
         Ok(component) => Ok(component),
         Err(error) => {
@@ -315,6 +428,24 @@ fn compile_script_module(
             Err(EXIT_TOOL_ERROR)
         }
     }
+}
+
+fn prepare_script_module(
+    module: &Module,
+    source: &SourceFile,
+    stderr: &mut dyn Write,
+) -> Result<Module, i32> {
+    let mut module = module.clone();
+    if let Err(message) = validate_script_entry(&module) {
+        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        return Err(EXIT_TOOL_ERROR);
+    }
+    for function in &mut module.functions {
+        if function.name == "main" {
+            "run".clone_into(&mut function.name);
+        }
+    }
+    Ok(module)
 }
 
 /// The frozen Script v0 entry: exactly one
@@ -459,6 +590,63 @@ fn build_output_path(input: &str, output: Option<&String>) -> Result<PathBuf, St
     Ok(Path::new(input).with_extension("component.wasm"))
 }
 
+#[derive(Clone)]
+struct DebugArtifactPaths {
+    component: PathBuf,
+    debug_map: PathBuf,
+    identity: PathBuf,
+}
+
+fn debug_artifact_paths(output: &Path) -> DebugArtifactPaths {
+    let sidecar = |suffix: &str| {
+        let mut path = output.as_os_str().to_os_string();
+        path.push(suffix);
+        PathBuf::from(path)
+    };
+    DebugArtifactPaths {
+        component: output.to_owned(),
+        debug_map: sidecar(".debug-map.json"),
+        identity: sidecar(".debug-identity.json"),
+    }
+}
+
+fn write_debug_artifacts(
+    output: &Path,
+    artifact: &DebugArtifact,
+) -> Result<DebugArtifactPaths, String> {
+    let paths = debug_artifact_paths(output);
+    for path in [&paths.component, &paths.debug_map, &paths.identity] {
+        if path.exists() {
+            return Err(format!(
+                "sico: refusing to overwrite existing artifact {}",
+                path.display()
+            ));
+        }
+    }
+    let artifacts = [
+        (&paths.component, artifact.component.as_slice()),
+        (&paths.debug_map, artifact.debug_map.as_slice()),
+        (&paths.identity, artifact.identity.as_slice()),
+    ];
+    let mut installed = Vec::new();
+    for (path, bytes) in artifacts {
+        if let Err(error) = write_new_artifact(path, bytes) {
+            for installed_path in installed {
+                let _ = fs::remove_file(installed_path);
+            }
+            return Err(error);
+        }
+        installed.push(path);
+    }
+    Ok(paths)
+}
+
+fn remove_debug_artifacts(paths: &DebugArtifactPaths) {
+    for path in [&paths.component, &paths.debug_map, &paths.identity] {
+        let _ = fs::remove_file(path);
+    }
+}
+
 fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {
     if output.exists() {
         return Err(format!(
@@ -506,6 +694,10 @@ fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
+fn sha256(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
 pub(crate) fn lower_error(error: &CoreLowerError) -> String {
     match error {
         CoreLowerError::Unsupported { feature, range } => format!(
@@ -543,6 +735,7 @@ fn codegen_error(error: &CodegenError) -> String {
         CodegenError::IntegerOutsideProvenI64 { function, bytes } => {
             format!("function {function}: Int is outside the proven i64 probe ({bytes} bytes)")
         }
+        CodegenError::DebugArtifact(message) => format!("invalid debug artifact: {message}"),
     }
 }
 

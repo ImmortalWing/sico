@@ -7,6 +7,7 @@ use std::{
 };
 
 use serde_json::Value;
+use sico_observability::verify_debug_artifacts;
 
 static TEMP_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -276,6 +277,106 @@ fn build_emits_a_deterministic_component() {
 }
 
 #[test]
+fn debug_build_emits_a_deterministic_bound_triplet_atomically() {
+    let source = root().join("tests/end-to-end/answer.sico");
+    let first = temp_file("debug-answer-1.component.wasm");
+    let second = temp_file("debug-answer-2.component.wasm");
+    let first_map = suffix(&first, ".debug-map.json");
+    let first_identity = suffix(&first, ".debug-identity.json");
+    let second_map = suffix(&second, ".debug-map.json");
+    let second_identity = suffix(&second, ".debug-identity.json");
+
+    for output in [&first, &second] {
+        let result = run(
+            [
+                "build",
+                "--debug-info",
+                "--output",
+                path(output),
+                path(&source),
+            ],
+            None,
+        );
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        assert!(stdout(&result).contains("debug-map "));
+        assert!(stdout(&result).contains("debug-identity "));
+    }
+    let first_component = fs::read(&first).unwrap();
+    let first_map_bytes = fs::read(&first_map).unwrap();
+    let first_identity_bytes = fs::read(&first_identity).unwrap();
+    verify_debug_artifacts(&first_component, &first_map_bytes, &first_identity_bytes).unwrap();
+    assert_eq!(first_component, fs::read(&second).unwrap());
+    assert_eq!(first_map_bytes, fs::read(&second_map).unwrap());
+    assert_eq!(first_identity_bytes, fs::read(&second_identity).unwrap());
+
+    let blocked = temp_file("debug-blocked.component.wasm");
+    let blocked_map = suffix(&blocked, ".debug-map.json");
+    fs::write(&blocked_map, b"owned-by-caller").unwrap();
+    let result = run(
+        [
+            "build",
+            "--debug-info",
+            "--output",
+            path(&blocked),
+            path(&source),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(2));
+    assert!(stderr(&result).contains("refusing to overwrite"));
+    assert!(!blocked.exists());
+    assert_eq!(fs::read(&blocked_map).unwrap(), b"owned-by-caller");
+    assert!(!suffix(&blocked, ".debug-identity.json").exists());
+
+    let script_source = root().join("tests/end-to-end/script-word-count.sico");
+    let script = temp_file("debug-script.component.wasm");
+    let script_map = suffix(&script, ".debug-map.json");
+    let script_identity = suffix(&script, ".debug-identity.json");
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v0",
+            "--debug-info",
+            "--output",
+            path(&script),
+            path(&script_source),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    let (map, _) = verify_debug_artifacts(
+        &fs::read(&script).unwrap(),
+        &fs::read(&script_map).unwrap(),
+        &fs::read(&script_identity).unwrap(),
+    )
+    .unwrap();
+    assert!(map.functions.iter().any(|function| {
+        function.core_module == "sico-script-core" && function.id.starts_with("generated.helper.")
+    }));
+    assert!(map.mappings.iter().any(|mapping| {
+        mapping.generated
+            && mapping.source.is_none()
+            && mapping.function_id.starts_with("generated.")
+    }));
+
+    for path in [
+        first,
+        first_map,
+        first_identity,
+        second,
+        second_map,
+        second_identity,
+        blocked_map,
+        script,
+        script_map,
+        script_identity,
+    ] {
+        fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn build_script_profile_emits_deterministic_valid_components() {
     let echo = root().join("tests/end-to-end/script-echo.sico");
     let reject = root().join("tests/end-to-end/script-reject.sico");
@@ -493,6 +594,12 @@ fn stderr(output: &Output) -> String {
 fn temp_file(suffix: &str) -> PathBuf {
     let id = TEMP_ID.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("sico-cli-{}-{id}-{suffix}", std::process::id()))
+}
+
+fn suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
 }
 
 fn collect_sico(root: &Path, output: &mut Vec<PathBuf>) {
