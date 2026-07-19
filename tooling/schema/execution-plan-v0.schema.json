@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sico.dev/schema/execution-plan-v0.schema.json",
+  "title": "Sico execution plan v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "mode", "executable", "arguments", "shell", "cwd", "output", "cancellation", "source_map"],
+  "properties": {
+    "schema": { "const": "sico.execution-plan.v0" },
+    "mode": { "enum": ["check", "run", "watch", "repl"] },
+    "executable": { "const": "sico" },
+    "arguments": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 68,
+      "items": { "type": "string", "maxLength": 4096 }
+    },
+    "shell": { "const": false },
+    "cwd": { "type": "null" },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stdout", "stderr_schemas", "capture_limit_bytes", "overflow"],
+      "properties": {
+        "stdout": { "enum": ["sico.diagnostics.v0-json", "guest-bytes", "sico.repl.event.v0-jsonl"] },
+        "stderr_schemas": {
+          "type": "array",
+          "maxItems": 2,
+          "items": { "enum": ["sico.runner.outcome.v0", "sico.runner.watch.v0", "sico.repl.event.v0"] }
+        },
+        "capture_limit_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+        "overflow": { "const": "truncate-and-mark" }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "action", "grace_ms", "typed_runner_exit_guaranteed"],
+      "properties": {
+        "owner": { "const": "client" },
+        "action": { "const": "terminate-direct-child-tree" },
+        "grace_ms": { "const": 1000 },
+        "typed_runner_exit_guaranteed": { "const": false }
+      }
+    },
+    "source_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compile_coordinates", "source", "runtime_locations", "debug_adapter"],
+      "properties": {
+        "compile_coordinates": { "const": "utf8-byte-half-open" },
+        "source": { "type": ["string", "null"], "maxLength": 4096 },
+        "runtime_locations": { "const": false },
+        "debug_adapter": { "const": false }
+      }
+    }
+  }
+}

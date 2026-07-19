@@ -413,6 +413,7 @@ dependencies = [
  "sico-parser",
  "sico-semantics",
  "sico-source",
+ "sico-tooling-protocol",
 ]
 
 [[package]]
@@ -561,6 +562,7 @@ dependencies = [
  "sico-parser",
  "sico-semantics",
  "sico-source",
+ "sico-tooling-protocol",
 ]
 
 [[package]]
@@ -676,6 +678,13 @@ dependencies = [
  "sico-package",
  "sico-runtime",
  "sico-source",
+]
+
+[[package]]
+name = "sico-tooling-protocol"
+version = "0.0.2-dev"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

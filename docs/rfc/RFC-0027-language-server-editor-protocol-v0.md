@@ -15,7 +15,7 @@ Define a bounded local Language Server Protocol adapter that translates compiler
 
 `sico-lsp` communicates only through stdin/stdout using JSON-RPC 2.0 and ASCII `Content-Length` headers separated by CRLF. Bodies are UTF-8 JSON. A message or one open document is at most 1 MiB, all headers are at most 8 KiB, one session holds at most 128 documents and 8 MiB of source, and file URIs are at most 4 KiB. Duplicate lengths, unsupported encodings, malformed/truncated frames and oversized input fail before dispatch.
 
-The server implements initialize, initialized, shutdown and exit ordering. It advertises UTF-16 positions, full-document synchronization, pull and push diagnostics, symbols, completion, hover, definition, references, whole-document formatting and three editor commands. It does not advertise rename, incremental sync, workspace diagnostics, semantic tokens or source debugging.
+The server implements initialize, initialized, shutdown and exit ordering. It advertises UTF-16 positions, full-document synchronization, pull and push diagnostics, symbols, completion, hover, definition, references, whole-document formatting and five editor commands. It does not advertise rename, incremental sync, workspace diagnostics, semantic tokens or source debugging.
 
 ## Compiler ownership and coordinates
 
@@ -25,7 +25,7 @@ Module identities encode the entire file URI so same-name files in different dir
 
 ## Run and debug workflow
 
-`sico.check` and `sico.run` return `sico <subcommand> <program>` as an argument array with `shell: false`; the language server never spawns a shell or executes a program itself. Paths with spaces remain one argument and control characters are rejected.
+STEP-0093 supersedes the original editor-command value with shared `sico.execution-plan.v0`. `sico.check`, `sico.run`, `sico.watch` and `sico.repl` return direct argument arrays with `shell: false`; the language server never spawns a shell or executes a program itself. Paths with spaces/metacharacters remain one argument and control characters are rejected. Plans cap client capture at 1 MiB and state client cancellation plus source-map/debug limits.
 
 `sico.debug` returns typed error `-32004`. The current Runtime exposes no source pause, step, stack or variable inspection hooks, so advertising DAP breakpoints would be false. A later RFC may add a Debug Adapter only after those Runtime hooks exist and can be tested end to end.
 

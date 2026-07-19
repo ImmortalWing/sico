@@ -168,13 +168,13 @@ Entry gate：satisfied by STEP-0014。
 
 ## M9: Streaming, async and interactive scripting
 
-状态：`in-progress / STEP-0085–0092 complete / STEP-0093 next`
+状态：`in-progress / STEP-0085–0093 complete / STEP-0094 next`
 
 主要交付：backpressured InputStream/OutputStream、resource Canonical ABI、Task/Future/Stream source backend、async runner/cancellation、scoped HTTP Component provider、persistent runner/watch、bounded REPL、top-level syntax decision与编辑器/AI执行集成。
 
 进入条件：M8 必须完成自己的 GO，且 Script WIT/manifest/runner identities 可版本化而不是继续重写。M9 不包含 unrestricted process/shell capability。
 
-执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0092 已接受 explicit typed `main`，拒绝并以 E1013 fail closed 处理 top-level statements 与 `script:` block；下一项 STEP-0093。
+执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0093 已用 `sico.execution-plan.v0` 统一 LSP/AI direct argv、1 MiB logs、client cancellation 与 source-map/debug 边界；下一项 STEP-0094 exit audit。
 
 ## Immediate dependency chain
 

@@ -13,6 +13,7 @@ use sico_index::{IndexInput, build_index};
 use sico_parser::parse;
 use sico_semantics::analyze;
 use sico_source::{SourceFile, SourceId};
+use sico_tooling_protocol::{ExecutionMode, execution_plan};
 
 pub const REQUEST_SCHEMA: &str = "sico.ai-tool.request.v0";
 pub const RESPONSE_SCHEMA: &str = "sico.ai-tool.response.v0";
@@ -28,6 +29,7 @@ pub const MAX_CHANGED_BYTES: usize = 256;
 enum Operation {
     Inspect,
     ValidateFix,
+    PlanExecution,
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,6 +81,16 @@ struct FixInput {
     original_sha256: String,
     expected_diagnostics: Vec<String>,
     max_changed_bytes: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExecutionInput {
+    mode: String,
+    program: Option<String>,
+    #[serde(default)]
+    arguments: Vec<String>,
+    max_log_bytes: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -184,6 +196,7 @@ pub fn execute_value(value: Value) -> Value {
     let result = match request.operation {
         Operation::Inspect => inspect(&request),
         Operation::ValidateFix => validate_fix(&request),
+        Operation::PlanExecution => plan_execution(&request),
     };
     match result {
         Ok(result) => success(&request.id, request.operation, &result),
@@ -356,6 +369,28 @@ fn validate_fix(request: &Request) -> Result<Value, ToolError> {
     Ok(result)
 }
 
+fn plan_execution(request: &Request) -> Result<Value, ToolError> {
+    let input: ExecutionInput =
+        serde_json::from_value(request.input.clone()).map_err(|_| ToolError::InvalidInput)?;
+    let mode = match input.mode.as_str() {
+        "run" => ExecutionMode::Run,
+        "watch" => ExecutionMode::Watch,
+        "repl" => ExecutionMode::Repl,
+        _ => return Err(ToolError::InvalidInput),
+    };
+    let plan = execution_plan(
+        mode,
+        input.program.as_deref(),
+        &input.arguments,
+        input.max_log_bytes,
+    )
+    .map_err(|_| ToolError::InvalidInput)?;
+    if encoded_len(&plan)? > request.budget.response_bytes {
+        return Err(ToolError::ResponseTooLarge);
+    }
+    Ok(plan)
+}
+
 fn validate_budget(budget: Budget) -> Result<(), ToolError> {
     if budget.files == 0
         || budget.files > MAX_FILES
@@ -510,7 +545,11 @@ fn success(request_id: &str, operation: Operation, result: &Value) -> Value {
         "schema": RESPONSE_SCHEMA,
         "protocol_version": 0,
         "request_id": request_id,
-        "operation": match operation { Operation::Inspect => "inspect", Operation::ValidateFix => "validate_fix" },
+        "operation": match operation {
+            Operation::Inspect => "inspect",
+            Operation::ValidateFix => "validate_fix",
+            Operation::PlanExecution => "plan_execution",
+        },
         "ok": true,
         "result": result
     })
@@ -805,6 +844,48 @@ mod tests {
             }),
         ));
         assert_eq!(response["error"]["code"], "candidate_has_diagnostics");
+    }
+
+    #[test]
+    fn execution_plans_are_bounded_direct_argv_and_never_execute() {
+        let response = execute_value(request(
+            "plan_execution",
+            json!({
+                "mode": "run",
+                "program": "path with spaces/$(literal);app.sico",
+                "arguments": ["; echo nope", "$(whoami)"],
+                "max_log_bytes": 65536
+            }),
+        ));
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["operation"], "plan_execution");
+        assert_eq!(response["result"]["schema"], "sico.execution-plan.v0");
+        assert_eq!(response["result"]["shell"], false);
+        assert_eq!(
+            response["result"]["arguments"],
+            json!([
+                "run",
+                "--json",
+                "path with spaces/$(literal);app.sico",
+                "--",
+                "; echo nope",
+                "$(whoami)"
+            ])
+        );
+        assert_eq!(response["result"]["output"]["capture_limit_bytes"], 65536);
+        assert_eq!(response["result"]["source_map"]["runtime_locations"], false);
+
+        for invalid in [
+            json!({ "mode": "debug", "program": "app.sico", "max_log_bytes": 1 }),
+            json!({ "mode": "run", "program": null, "max_log_bytes": 1 }),
+            json!({ "mode": "repl", "program": "app.sico", "max_log_bytes": 1 }),
+            json!({ "mode": "watch", "program": "app.sico", "max_log_bytes": MAX_REQUEST_BYTES + 1 }),
+        ] {
+            assert_eq!(
+                execute_value(request("plan_execution", invalid))["error"]["code"],
+                "invalid_input"
+            );
+        }
     }
 
     #[test]

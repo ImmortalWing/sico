@@ -14,6 +14,7 @@ use sico_index::{IndexInput, SemanticIndex, Symbol, build_index};
 use sico_parser::parse;
 use sico_semantics::analyze;
 use sico_source::{SourceFile, SourceId, TextRange};
+use sico_tooling_protocol::{ExecutionMode, MAX_LOG_BYTES, execution_plan};
 
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_HEADER_BYTES: usize = 8 * 1024;
@@ -145,7 +146,7 @@ impl LanguageServer {
                     "referencesProvider": true,
                     "documentFormattingProvider": true,
                     "executeCommandProvider": {
-                        "commands": ["sico.check", "sico.run", "sico.debug"]
+                        "commands": ["sico.check", "sico.run", "sico.watch", "sico.repl", "sico.debug"]
                     }
                 },
                 "serverInfo": { "name": "sico-language-server", "version": env!("CARGO_PKG_VERSION") }
@@ -507,18 +508,11 @@ impl LanguageServer {
             .get("command")
             .and_then(Value::as_str)
             .ok_or_else(|| ProtocolError::invalid("executeCommand requires command"))?;
-        let program = params
-            .get("arguments")
-            .and_then(Value::as_array)
-            .and_then(|arguments| arguments.first())
-            .and_then(Value::as_str)
-            .ok_or_else(|| ProtocolError::invalid("command requires one program path"))?;
-        if program.is_empty() || program.len() > 4096 || program.chars().any(char::is_control) {
-            return Err(ProtocolError::invalid("program path is invalid"));
-        }
-        let subcommand = match command {
-            "sico.check" => "check",
-            "sico.run" => "run",
+        let mode = match command {
+            "sico.check" => ExecutionMode::Check,
+            "sico.run" => ExecutionMode::Run,
+            "sico.watch" => ExecutionMode::Watch,
+            "sico.repl" => ExecutionMode::Repl,
             "sico.debug" => {
                 return Err(ProtocolError::unavailable(
                     "source debugging is unavailable until Runtime pause/step/inspect hooks exist",
@@ -526,13 +520,28 @@ impl LanguageServer {
             }
             _ => return Err(ProtocolError::invalid("unknown Sico editor command")),
         };
-        Ok(json!({
-            "schema": "sico.editor-command.v0",
-            "executable": "sico",
-            "arguments": [subcommand, program],
-            "shell": false,
-            "cwd": null
-        }))
+        let arguments = params
+            .get("arguments")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let program = if mode == ExecutionMode::Repl {
+            if !arguments.is_empty() {
+                return Err(ProtocolError::invalid("repl command takes no program path"));
+            }
+            None
+        } else {
+            let [program] = arguments else {
+                return Err(ProtocolError::invalid("command requires one program path"));
+            };
+            Some(
+                program
+                    .as_str()
+                    .ok_or_else(|| ProtocolError::invalid("program path is invalid"))?,
+            )
+        };
+        execution_plan(mode, program, &[], MAX_LOG_BYTES)
+            .map_err(|_| ProtocolError::invalid("execution plan input is invalid"))
     }
 }
 
@@ -1173,13 +1182,40 @@ mod tests {
             "workspace/executeCommand",
             json!({ "command": "sico.run", "arguments": ["path with spaces/app.sico"] }),
         ));
+        assert_eq!(command[0]["result"]["schema"], "sico.execution-plan.v0");
         assert_eq!(
             command[0]["result"]["arguments"],
-            json!(["run", "path with spaces/app.sico"])
+            json!(["run", "--json", "path with spaces/app.sico"])
         );
         assert_eq!(command[0]["result"]["shell"], false);
-        let debug = server.process(request(
+        assert_eq!(
+            command[0]["result"]["output"]["capture_limit_bytes"],
+            MAX_LOG_BYTES
+        );
+        assert_eq!(
+            command[0]["result"]["cancellation"]["action"],
+            "terminate-direct-child-tree"
+        );
+
+        let watch = server.process(request(
             4,
+            "workspace/executeCommand",
+            json!({ "command": "sico.watch", "arguments": ["$(literal); app.sico"] }),
+        ));
+        assert_eq!(
+            watch[0]["result"]["arguments"],
+            json!(["watch", "--json", "$(literal); app.sico"])
+        );
+        assert_eq!(watch[0]["result"]["shell"], false);
+
+        let repl = server.process(request(
+            5,
+            "workspace/executeCommand",
+            json!({ "command": "sico.repl", "arguments": [] }),
+        ));
+        assert_eq!(repl[0]["result"]["arguments"], json!(["repl", "--json"]));
+        let debug = server.process(request(
+            6,
             "workspace/executeCommand",
             json!({ "command": "sico.debug", "arguments": ["app.sico"] }),
         ));

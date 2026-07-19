@@ -40,6 +40,21 @@ The result contains source SHA-256 and byte count, compiler diagnostics, Semanti
 
 The response includes the validated edit, candidate and canonical digests, canonical text, and before/after diagnostics. Applying an edit remains an editor/user action; this tool only validates and describes it.
 
+## Plan execution
+
+`plan_execution` accepts this `input` shape:
+
+```json
+{
+  "mode": "run",
+  "program": "workspace/main.sico",
+  "arguments": ["input.json"],
+  "max_log_bytes": 65536
+}
+```
+
+Modes are `run`, `watch`, or `repl`; REPL requires `program: null` and no arguments. The result is shared `sico.execution-plan.v0`. It is data only and never launches a process. See [`tooling/schema/execution-plan-v0.schema.json`](../tooling/schema/execution-plan-v0.schema.json).
+
 ## Evidence boundary
 
 The 54-source B corpus and twelve B repair oracle pairs measure the local compiler-backed tool path. They are deterministic fixtures, not model outputs. The existing 96-task `sico-ai-eval-v1` model protocol remains unchanged. A real model run still requires exact model metadata, raw outputs, at least 30 repetitions for a full comparison, credentials and explicit cost authorization.

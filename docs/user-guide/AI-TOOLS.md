@@ -53,6 +53,12 @@ Get-Content request.json -Raw | .\target\release\sico-ai-tool.exe
 
 工具只描述经过验证的 edit，不会自动写文件。调用方应用 edit 前仍应检查当前 buffer digest。
 
+## Plan execution
+
+`plan_execution` 接受 `run`、`watch` 或 `repl`、可选 program/guest arguments 与 `1..=1048576` 的 `max_log_bytes`。结果是与 LSP 相同的 `sico.execution-plan.v0`，只包含 direct argv 与执行边界；工具不会启动这个 plan。
+
+路径和参数中的空格、`;`、反引号或 `$()` 都保留为单独字面参数，`shell` 永远为 false。调用方必须执行 argument array、限制日志捕获，并按 plan 终止 direct child tree。
+
 ## 证据边界
 
 仓库的 54-source/12-fix/96-task 数据用于验证工具链和评测协议，不是模型成绩。真实模型评测仍需要准确 model metadata、raw output、重复次数、凭据和成本授权。

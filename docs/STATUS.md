@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0093 editor/debug/AI execution integration (planned)
-> - last completed active step: STEP-0092 (top-level syntax decision complete)
+> - current step: STEP-0094 M9 security/performance/exit audit (planned)
+> - last completed active step: STEP-0093 (tooling execution integration complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: unify run/watch/REPL execution protocols, cancellation, source maps and bounded logs without shell interpolation
+> - next step: run M9 aggregate security/performance/platform regression and issue GO/NO-GO
 
 ## 0. M6 exit state
 
@@ -26,7 +26,9 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0092`](./steps/STEP-0092-top-level-script-syntax-decision.md) 已完成。RFC-0033 保留 explicit typed `main`，拒绝 top-level statements 与 `script:` block；E1013 已关闭 parser 成功但 AST/HIR 静默丢弃的缺陷。下一项 STEP-0093。
+[`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
+
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 已完成。LSP/AI 共享 direct-argv execution plan，logs/cancellation/source-map/debug 边界有机器证据；下一项 STEP-0094 exit audit。
 
 ## 3. Verified repository facts
 

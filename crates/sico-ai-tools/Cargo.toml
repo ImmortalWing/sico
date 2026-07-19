@@ -20,6 +20,7 @@ sico-index = { path = "../sico-index" }
 sico-parser = { path = "../sico-parser" }
 sico-semantics = { path = "../sico-semantics" }
 sico-source = { path = "../sico-source" }
+sico-tooling-protocol = { path = "../sico-tooling-protocol" }
 
 [lints]
 workspace = true

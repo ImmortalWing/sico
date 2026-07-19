@@ -1,0 +1,13 @@
+[package]
+name = "sico-tooling-protocol"
+description = "Shared bounded execution-plan protocol for Sico editor and AI tooling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

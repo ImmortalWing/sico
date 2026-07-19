@@ -39,9 +39,11 @@ target/release/sico-lsp.exe
 - definition；
 - bounded references；
 - whole-document formatting；
-- `sico.check` 和 `sico.run` editor commands。
+- `sico.check`、`sico.run`、`sico.watch` 和 `sico.repl` editor commands。
 
-`sico.check`/`sico.run` 只返回 `sico <subcommand> <program>` 的 argument array，并标记 `shell: false`；LSP server 自身不启动程序。
+这些命令返回共享 `sico.execution-plan.v0`：固定 `sico` executable、argument array、`shell: false`、`cwd: null`、最多 1 MiB 的 client capture、process-tree cancellation 责任，以及 compile-only source coordinate 边界。LSP server 自身不启动程序。
+
+客户端执行 plan 时必须直接调用 executable/arguments，不得重新拼接成 shell string；捕获超过 plan 上限时应截断并标记。取消由客户端终止 direct child tree，但不能把这种终止伪报为 runner typed exit 123。
 
 ## 未实现能力
 
@@ -52,7 +54,7 @@ target/release/sico-lsp.exe
 - file watcher/background index；
 - source debugger/DAP。
 
-`sico.debug` 会明确返回错误 `-32004`。在 Runtime 尚无 pause/step/stack/variable hooks 时，不应把普通运行包装成“调试”。
+`sico.debug` 会明确返回错误 `-32004`。plan 的 `runtime_locations`/`debug_adapter` 也固定为 false；在 Runtime 尚无 pause/step/stack/variable hooks 时，不应把普通运行包装成“调试”。
 
 ## 资源限制
 

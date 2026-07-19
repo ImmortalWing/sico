@@ -38,6 +38,23 @@ foreach ($package in $packageToModule.Keys) {
     }
 }
 
+$dependencyExceptions = @{}
+foreach ($exception in @($contract.allowed_normal_dependency_exceptions)) {
+    $source = [string]$exception.source
+    $target = [string]$exception.target
+    $reason = [string]$exception.reason
+    $key = "$source->$target"
+    if (-not $packageToModule.ContainsKey($source) -or -not $packageToModule.ContainsKey($target) -or
+        [string]::IsNullOrWhiteSpace($reason) -or $dependencyExceptions.ContainsKey($key)) {
+        throw "invalid normal dependency exception: $key"
+    }
+    if (@($contract.allowed_normal_dependencies.$($packageToModule[$source])) -contains $packageToModule[$target]) {
+        throw "redundant normal dependency exception: $key"
+    }
+    $dependencyExceptions[$key] = $reason
+}
+$usedDependencyExceptions = @{}
+
 foreach ($package in $workspacePackages) {
     $sourceModule = $packageToModule[$package.name]
     $allowed = @($contract.allowed_normal_dependencies.$sourceModule)
@@ -47,14 +64,23 @@ foreach ($package in $workspacePackages) {
         }
         $targetModule = $packageToModule[$dependency.name]
         if ($allowed -notcontains $targetModule) {
-            throw "forbidden normal dependency: $($package.name) [$sourceModule] -> $($dependency.name) [$targetModule]"
+            $key = "$($package.name)->$($dependency.name)"
+            if (-not $dependencyExceptions.ContainsKey($key)) {
+                throw "forbidden normal dependency: $($package.name) [$sourceModule] -> $($dependency.name) [$targetModule]"
+            }
+            $usedDependencyExceptions[$key] = $true
         }
+    }
+}
+foreach ($key in $dependencyExceptions.Keys) {
+    if (-not $usedDependencyExceptions.ContainsKey($key)) {
+        throw "stale normal dependency exception: $key"
     }
 }
 
 $languageCli = $workspacePackages | Where-Object name -eq 'sico-cli'
 $languageCliDependencies = @($languageCli.dependencies | Where-Object { $null -eq $_.kind } | ForEach-Object name)
-foreach ($forbidden in @('sico-package', 'sico-runtime', 'sico-host-core', 'sico-desktop-host', 'sico-mobile-host-core')) {
+foreach ($forbidden in @('sico-runtime', 'sico-host-core', 'sico-desktop-host', 'sico-mobile-host-core')) {
     if ($languageCliDependencies -contains $forbidden) {
         throw "language CLI must not depend on $forbidden"
     }
@@ -68,4 +94,4 @@ foreach ($required in @('sico-package', 'sico-runtime')) {
     }
 }
 
-Write-Output "MODULE_BOUNDARIES_OK model=openjdk-style packages=$($workspacePackages.Count) language_cli=sico app_cli=sico-app host_cli=sico-desktop-host"
+Write-Output "MODULE_BOUNDARIES_OK model=openjdk-style packages=$($workspacePackages.Count) exceptions=$($dependencyExceptions.Count) language_cli=sico app_cli=sico-app host_cli=sico-desktop-host"

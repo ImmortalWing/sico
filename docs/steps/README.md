@@ -107,5 +107,6 @@
 | [STEP-0090](./STEP-0090-persistent-runner-watch.md) | complete | M9 | persistent Engine/Component/Linker、per-run Store isolation、watch coalescing/failure recovery、5.8–6.1 ms warm median |
 | [STEP-0091](./STEP-0091-bounded-repl-session.md) | complete | M9 | bounded expression REPL、deterministic ID、rollback/replay/reset/export、4 KiB/256/16 KiB limits |
 | [STEP-0092](./STEP-0092-top-level-script-syntax-decision.md) | complete | M9 | explicit typed `main` accepted；top-level statements 与 `script:` rejected；E1013 fail-closed |
+| [STEP-0093](./STEP-0093-editor-ai-execution-integration.md) | complete | M9 | shared LSP/AI execution plan；direct argv；bounded logs/cancel/source-map/debug honesty |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0092 完成 streaming/structured-task/async-runner/scoped-HTTP/persistent-watch/bounded-REPL 与 syntax decision。M9 下一项 STEP-0093，保留 STEP-0093–0094。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0093 完成 streaming/structured-task/async-runner/scoped-HTTP/persistent-watch/bounded-REPL、syntax 与 tooling integration。M9 下一项 STEP-0094 exit audit。

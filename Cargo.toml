@@ -22,6 +22,7 @@ members = [
     "crates/sico-semantics",
     "crates/sico-source",
     "crates/sico-syntax",
+    "crates/sico-tooling-protocol",
     "pilots/third-party-component",
 ]
 resolver = "3"

@@ -30,6 +30,8 @@ Command ownership is separated:
 
 Platform-independent behavior stays in `sico-host-core`. Operating-system adapters remain inside the Host module and may not become language dependencies. Windows runtime evidence does not make the language module Windows-specific.
 
+The machine contract records four narrow normal-dependency exceptions rather than loosening a whole module: `sico-app-cli` may reach `sico-codegen-wasm`/`sico-ir` for the shell-free `dev` source orchestration path; `sico-cli` may reach `sico-package` for M8 Script adapter composition; and `sico-package` may reach `sico-codegen-wasm` for the deterministic compiler-owned adapter bytes. The validator requires every exception to name existing packages, carry a reason, correspond to a real otherwise-forbidden edge, and rejects duplicate, redundant or stale entries.
+
 ## Consequences
 
 Compiler and Runtime changes can still be atomic and tested as one revision. Installed products can be packaged separately. Users now perform an explicit compile, package and run pipeline, which makes trust and execution boundaries visible.

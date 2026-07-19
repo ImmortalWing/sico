@@ -25,6 +25,8 @@ The candidate need not already be canonically formatted. The compiler formatter 
 
 The tool validates but never applies edits. It has no filesystem mutation, process execution, network, credential or model surface.
 
+STEP-0093 adds `plan_execution` without expanding that authority. It returns shared `sico.execution-plan.v0` data for run/watch/REPL, including direct argv, capture bounds, client cancellation and honest source-map/debug availability. The AI tool still launches nothing.
+
 ## Evaluation semantics
 
 Offline compiler-backed metrics and live-model metrics are separate:
