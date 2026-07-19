@@ -15,14 +15,14 @@ use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::num::NonZeroUsize;
 use std::path::{Component as PathComponent, Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 use sico_observability::{
-    ContractError, DebugMap, EngineFrame, RuntimeFault, RuntimeFrame, resolve_engine_frame,
-    validate_runtime_fault, verify_debug_artifacts,
+    ContractError, DebugMap, EngineFrame, RuntimeFault, RuntimeFrame, parse_cancel_request,
+    resolve_engine_frame, validate_runtime_fault, verify_debug_artifacts,
 };
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
@@ -166,6 +166,7 @@ pub enum RunOutcome {
 pub struct ObservedRun {
     pub outcome: RunOutcome,
     pub fault: Option<RuntimeFault>,
+    pub cancellation_source: Option<CancellationSource>,
 }
 
 impl ObservedRun {
@@ -181,7 +182,11 @@ impl ObservedRun {
         generation_id: u64,
     ) -> Result<Self, ContractError> {
         let fault = runtime_fault(&outcome, &[], None, run_id, generation_id)?;
-        Ok(Self { outcome, fault })
+        Ok(Self {
+            outcome,
+            fault,
+            cancellation_source: None,
+        })
     }
 }
 
@@ -190,6 +195,36 @@ impl ObservedRun {
 pub enum ObservationError {
     Input(InputViolation),
     Contract(ContractError),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CancelRequestError {
+    Contract(ContractError),
+    IdentityMismatch,
+}
+
+/// Applies one canonical, identity-bound client/debugger cancellation request.
+///
+/// # Errors
+///
+/// Rejects malformed/oversized requests and requests for any other run or
+/// generation before touching the token.
+pub fn apply_cancel_request(
+    token: &CancelToken,
+    bytes: &[u8],
+    run_id: &str,
+    generation_id: u64,
+) -> Result<bool, CancelRequestError> {
+    let request = parse_cancel_request(bytes).map_err(CancelRequestError::Contract)?;
+    if request.run_id != run_id || request.generation_id != generation_id {
+        return Err(CancelRequestError::IdentityMismatch);
+    }
+    let source = match request.cause.as_str() {
+        "client" => CancellationSource::Client,
+        "debugger" => CancellationSource::Debugger,
+        _ => unreachable!("strict parser accepts only client/debugger"),
+    };
+    Ok(token.request(source))
 }
 
 impl From<InputViolation> for ObservationError {
@@ -240,9 +275,83 @@ impl RunOutcome {
 
 /// Shared cancellation handle; [`crate::run_program`] consults it at every
 /// epoch tick.
-#[derive(Clone, Default)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CancellationSource {
+    Timer,
+    Signal,
+    Client,
+    Debugger,
+    Host,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TerminalDecision {
+    pub outcome: RunOutcome,
+    pub cancellation_source: Option<CancellationSource>,
+}
+
+#[derive(Debug)]
+enum TerminalState {
+    Running,
+    CancellationRequested(CancellationSource),
+    Terminal(TerminalDecision),
+}
+
+#[derive(Debug)]
+struct TerminalArbiter {
+    state: Mutex<TerminalState>,
+}
+
+impl TerminalArbiter {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(TerminalState::Running),
+        }
+    }
+
+    fn request(&self, source: CancellationSource) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        match &*state {
+            TerminalState::Running => {
+                *state = TerminalState::CancellationRequested(source);
+                true
+            }
+            TerminalState::CancellationRequested(_) | TerminalState::Terminal(_) => false,
+        }
+    }
+
+    fn commit(&self, outcome: RunOutcome) -> TerminalDecision {
+        let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        let decision = match &*state {
+            TerminalState::Running => TerminalDecision {
+                outcome,
+                cancellation_source: None,
+            },
+            TerminalState::CancellationRequested(source) => TerminalDecision {
+                outcome: RunOutcome::Cancelled,
+                cancellation_source: Some(*source),
+            },
+            TerminalState::Terminal(decision) => return decision.clone(),
+        };
+        *state = TerminalState::Terminal(decision.clone());
+        decision
+    }
+}
+
+#[derive(Debug, Default)]
+struct CancelState {
+    requested: Option<CancellationSource>,
+    active: Option<Weak<TerminalArbiter>>,
+}
+
+#[derive(Debug, Default)]
+struct CancelInner {
+    state: Mutex<CancelState>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct CancelToken {
-    cancelled: Arc<AtomicBool>,
+    inner: Arc<CancelInner>,
 }
 
 impl CancelToken {
@@ -252,7 +361,176 @@ impl CancelToken {
     }
 
     pub fn cancel(&self) {
-        self.cancelled.store(true, Ordering::Release);
+        let _ = self.request(CancellationSource::Client);
+    }
+
+    /// Records one typed cancellation request. The first request observed by
+    /// an active run wins; repeated requests are idempotent.
+    pub fn request(&self, source: CancellationSource) -> bool {
+        let active = {
+            let mut state = self
+                .inner
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if state.requested.is_some() {
+                return false;
+            }
+            let active = state.active.as_ref().and_then(Weak::upgrade);
+            if active.is_none() {
+                state.requested = Some(source);
+                return true;
+            }
+            active
+        };
+        let accepted = active.is_some_and(|active| active.request(source));
+        if accepted {
+            self.inner
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .requested = Some(source);
+        }
+        accepted
+    }
+
+    #[must_use]
+    pub fn requested_source(&self) -> Option<CancellationSource> {
+        self.inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .requested
+    }
+
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.requested_source().is_some()
+    }
+
+    fn bind(&self, arbiter: &Arc<TerminalArbiter>) -> Result<CancelBinding, RunOutcome> {
+        let requested = {
+            let mut state = self
+                .inner
+                .state
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if state
+                .active
+                .as_ref()
+                .is_some_and(|active| active.strong_count() > 0)
+            {
+                return Err(RunOutcome::Launch(
+                    "cancellation token is already bound to an active run".into(),
+                ));
+            }
+            state.active = Some(Arc::downgrade(arbiter));
+            state.requested
+        };
+        if let Some(source) = requested {
+            let _ = arbiter.request(source);
+        }
+        Ok(CancelBinding {
+            inner: Arc::downgrade(&self.inner),
+            arbiter: Arc::downgrade(arbiter),
+        })
+    }
+}
+
+struct CancelBinding {
+    inner: Weak<CancelInner>,
+    arbiter: Weak<TerminalArbiter>,
+}
+
+impl Drop for CancelBinding {
+    fn drop(&mut self) {
+        let (Some(inner), Some(arbiter)) = (self.inner.upgrade(), self.arbiter.upgrade()) else {
+            return;
+        };
+        let mut state = inner
+            .state
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if state
+            .active
+            .as_ref()
+            .and_then(Weak::upgrade)
+            .is_some_and(|active| Arc::ptr_eq(&active, &arbiter))
+        {
+            state.active = None;
+        }
+    }
+}
+
+static CONSOLE_TOKENS: OnceLock<Mutex<Vec<Weak<CancelInner>>>> = OnceLock::new();
+static CONSOLE_HANDLER: OnceLock<Result<(), String>> = OnceLock::new();
+
+/// Registration guard for the process-global console control handler. Dropping
+/// it prevents later signals from cancelling the associated run.
+pub struct ConsoleCancellation {
+    inner: Weak<CancelInner>,
+}
+
+/// Installs the safe process-global Ctrl+C handler once and associates the
+/// supplied token with console signals for the guard's lifetime.
+///
+/// # Errors
+///
+/// Returns the platform handler installation failure without pretending that
+/// Ctrl+C can be classified as typed cancellation.
+pub fn register_console_cancellation(token: &CancelToken) -> Result<ConsoleCancellation, String> {
+    CONSOLE_HANDLER
+        .get_or_init(|| {
+            ctrlc::set_handler(dispatch_console_signal).map_err(|error| error.to_string())
+        })
+        .clone()?;
+    let registry = CONSOLE_TOKENS.get_or_init(|| Mutex::new(Vec::new()));
+    let mut tokens = registry.lock().unwrap_or_else(|error| error.into_inner());
+    tokens.retain(|token| token.strong_count() > 0);
+    tokens.push(Arc::downgrade(&token.inner));
+    Ok(ConsoleCancellation {
+        inner: Arc::downgrade(&token.inner),
+    })
+}
+
+fn dispatch_console_signal() {
+    let Some(registry) = CONSOLE_TOKENS.get() else {
+        std::process::exit(130);
+    };
+    let tokens = {
+        let mut tokens = registry.lock().unwrap_or_else(|error| error.into_inner());
+        tokens.retain(|token| token.strong_count() > 0);
+        tokens.clone()
+    };
+    let mut delivered = false;
+    for inner in tokens.into_iter().filter_map(|token| token.upgrade()) {
+        delivered = true;
+        let _ = CancelToken { inner }.request(CancellationSource::Signal);
+    }
+    if !delivered {
+        // The safe process-global handler cannot be uninstalled. Outside a
+        // scoped registration, preserve ordinary console termination instead
+        // of swallowing the signal or forging typed exit 123.
+        std::process::exit(130);
+    }
+}
+
+impl Drop for ConsoleCancellation {
+    fn drop(&mut self) {
+        let Some(registry) = CONSOLE_TOKENS.get() else {
+            return;
+        };
+        let Some(inner) = self.inner.upgrade() else {
+            return;
+        };
+        registry
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .retain(|token| {
+                token
+                    .upgrade()
+                    .is_some_and(|registered| !Arc::ptr_eq(&registered, &inner))
+            });
     }
 }
 
@@ -365,7 +643,7 @@ fn recv_cancellable<T>(
     cancel: &CancelToken,
 ) -> Result<T, HostStreamError> {
     loop {
-        if cancel.cancelled.load(Ordering::Acquire) {
+        if cancel.is_cancelled() {
             return Err(HostStreamError::Cancelled);
         }
         match receiver.try_recv() {
@@ -390,7 +668,7 @@ fn send_cancellable<T>(
     cancel: &CancelToken,
 ) -> Result<(), HostStreamError> {
     loop {
-        if cancel.cancelled.load(Ordering::Acquire) {
+        if cancel.is_cancelled() {
             return Err(HostStreamError::Cancelled);
         }
         match sender.try_send(value) {
@@ -713,6 +991,7 @@ impl PreparedProgram {
         Ok(ObservedRun {
             outcome: execution.outcome,
             fault,
+            cancellation_source: execution.cancellation_source,
         })
     }
 
@@ -722,6 +1001,11 @@ impl PreparedProgram {
         limits: &RunnerLimits,
         cancel: &CancelToken,
     ) -> Execution {
+        let arbiter = Arc::new(TerminalArbiter::new());
+        let _binding = match cancel.bind(&arbiter) {
+            Ok(binding) => binding,
+            Err(outcome) => return Execution::without_frames(outcome),
+        };
         let mut store = Store::new(
             &self.runner.engine,
             RunState {
@@ -736,21 +1020,23 @@ impl PreparedProgram {
         );
         store.limiter(|state| state);
         if store.set_fuel(limits.fuel).is_err() {
-            return Execution::without_frames(RunOutcome::Launch(
-                "fuel configuration failed".to_owned(),
-            ));
+            let decision =
+                arbiter.commit(RunOutcome::Launch("fuel configuration failed".to_owned()));
+            return Execution::without_frames(decision.outcome);
         }
         let timeout_ticks = ticks_for(limits.timeout);
         // Check the cancellation token on every watchdog tick. A deadline set
         // directly to `timeout_ticks` would postpone cancellation of busy guest
         // code until the full wall-clock timeout elapsed.
         store.set_epoch_deadline(1);
-        let cancelled = cancel.cancelled.clone();
+        let cancel = cancel.clone();
+        let deadline_arbiter = arbiter.clone();
         let mut remaining_ticks = timeout_ticks.max(1);
         store.epoch_deadline_callback(move |_| {
-            if cancelled.load(Ordering::Acquire) {
+            if cancel.is_cancelled() {
                 Err(Marker("cancelled").into())
             } else if remaining_ticks <= 1 {
+                let _ = deadline_arbiter.commit(RunOutcome::Timeout);
                 Err(Marker("timeout").into())
             } else {
                 remaining_ticks -= 1;
@@ -771,7 +1057,7 @@ impl PreparedProgram {
             }
         });
 
-        let execution = match self.linker.instantiate(&mut store, &self.component) {
+        let mut execution = match self.linker.instantiate(&mut store, &self.component) {
             Ok(instance) => match instance.get_func(&mut store, "run") {
                 Some(run) => self.invoke(&mut store, &run, input, limits),
                 None => Execution::without_frames(RunOutcome::Incompatible(
@@ -780,6 +1066,7 @@ impl PreparedProgram {
             },
             Err(error) => Execution {
                 frames: engine_frames(&error),
+                cancellation_source: None,
                 outcome: if store.data().denied {
                     RunOutcome::MemoryLimit
                 } else {
@@ -787,6 +1074,9 @@ impl PreparedProgram {
                 },
             },
         };
+        let decision = arbiter.commit(execution.outcome);
+        execution.outcome = decision.outcome;
+        execution.cancellation_source = decision.cancellation_source;
         done.store(true, Ordering::Relaxed);
         let _ = watchdog.join();
         execution
@@ -815,6 +1105,7 @@ impl PreparedProgram {
             Err(error) => Execution {
                 outcome: classify_error(store, &error),
                 frames: engine_frames(&error),
+                cancellation_source: None,
             },
         }
     }
@@ -823,6 +1114,7 @@ impl PreparedProgram {
 struct Execution {
     outcome: RunOutcome,
     frames: Vec<RawEngineFrame>,
+    cancellation_source: Option<CancellationSource>,
 }
 
 impl Execution {
@@ -830,6 +1122,7 @@ impl Execution {
         Self {
             outcome,
             frames: Vec::new(),
+            cancellation_source: None,
         }
     }
 }
@@ -1215,7 +1508,7 @@ fn wait_http_response(
     deadline: Instant,
 ) -> Result<HostHttpResponse, String> {
     loop {
-        if cancel.cancelled.load(Ordering::Acquire) {
+        if cancel.is_cancelled() {
             return Err("cancelled".to_owned());
         }
         if Instant::now() >= deadline {
@@ -2040,12 +2333,111 @@ mod tests {
 
     #[test]
     fn provider_transport_failure_is_typed_not_text_classified() {
-        let error = provider_result::<()>(
-            Err(HostStreamError::Io),
-            "sico.streams.stdout",
-        )
-        .unwrap_err();
+        let error =
+            provider_result::<()>(Err(HostStreamError::Io), "sico.streams.stdout").unwrap_err();
         let provider = error.downcast_ref::<ProviderFault>().unwrap();
         assert_eq!(provider.0, "sico.streams.stdout");
+    }
+
+    #[test]
+    fn terminal_arbiter_matches_the_frozen_both_order_race_matrix() {
+        let output = RunOutcome::Output(ScriptOutput {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            exit_code: 0,
+        });
+        let domain = RunOutcome::Domain {
+            code: "failure".into(),
+            message: "failure".into(),
+        };
+        let host = RunOutcome::HostProviderFailure {
+            provider_id: "sico.streams.stdout".into(),
+        };
+
+        let completion_first = TerminalArbiter::new();
+        assert_eq!(completion_first.commit(output.clone()).outcome, output);
+        assert!(!completion_first.request(CancellationSource::Client));
+        assert!(matches!(
+            completion_first.commit(RunOutcome::Cancelled).outcome,
+            RunOutcome::Output(_)
+        ));
+
+        let client_first = TerminalArbiter::new();
+        assert!(client_first.request(CancellationSource::Client));
+        assert_eq!(
+            client_first.commit(output).cancellation_source,
+            Some(CancellationSource::Client)
+        );
+
+        let timeout_first = TerminalArbiter::new();
+        assert_eq!(
+            timeout_first.commit(RunOutcome::Timeout).outcome,
+            RunOutcome::Timeout
+        );
+        assert!(!timeout_first.request(CancellationSource::Signal));
+
+        let signal_first = TerminalArbiter::new();
+        assert!(signal_first.request(CancellationSource::Signal));
+        assert_eq!(
+            signal_first.commit(RunOutcome::Timeout),
+            TerminalDecision {
+                outcome: RunOutcome::Cancelled,
+                cancellation_source: Some(CancellationSource::Signal),
+            }
+        );
+
+        let host_first = TerminalArbiter::new();
+        assert_eq!(host_first.commit(host.clone()).outcome, host);
+        assert!(!host_first.request(CancellationSource::Client));
+
+        let client_before_host = TerminalArbiter::new();
+        assert!(client_before_host.request(CancellationSource::Client));
+        assert!(matches!(
+            client_before_host.commit(host).outcome,
+            RunOutcome::Cancelled
+        ));
+
+        let failure_first = TerminalArbiter::new();
+        assert_eq!(failure_first.commit(domain.clone()).outcome, domain);
+        assert_eq!(
+            failure_first.commit(RunOutcome::Timeout).outcome.class(),
+            "domain-error"
+        );
+
+        let timeout_before_failure = TerminalArbiter::new();
+        assert_eq!(
+            timeout_before_failure.commit(RunOutcome::Timeout).outcome,
+            RunOutcome::Timeout
+        );
+        assert_eq!(
+            timeout_before_failure.commit(domain).outcome,
+            RunOutcome::Timeout
+        );
+
+        let double_cancel = TerminalArbiter::new();
+        assert!(double_cancel.request(CancellationSource::Client));
+        assert!(!double_cancel.request(CancellationSource::Signal));
+        assert_eq!(
+            double_cancel
+                .commit(RunOutcome::Timeout)
+                .cancellation_source,
+            Some(CancellationSource::Client)
+        );
+    }
+
+    #[test]
+    fn cancellation_request_is_identity_bound_and_idempotent() {
+        let token = CancelToken::new();
+        let request = br#"{"schema":"sico.cancel-request.v0","run_id":"run-1","generation_id":2,"cause":"debugger"}"#;
+        assert_eq!(apply_cancel_request(&token, request, "run-1", 2), Ok(true));
+        assert_eq!(token.requested_source(), Some(CancellationSource::Debugger));
+        assert_eq!(apply_cancel_request(&token, request, "run-1", 2), Ok(false));
+
+        let other = CancelToken::new();
+        assert_eq!(
+            apply_cancel_request(&other, request, "run-1", 3),
+            Err(CancelRequestError::IdentityMismatch)
+        );
+        assert_eq!(other.requested_source(), None);
     }
 }

@@ -7,6 +7,7 @@ rust-version = "1.97"
 publish = false
 
 [dependencies]
+ctrlc = "=3.5.2"
 sico-codegen-wasm = { path = "../../crates/sico-codegen-wasm" }
 sico-observability = { path = "../../crates/sico-observability" }
 serde = { version = "=1.0.228", features = ["derive"] }
@@ -16,6 +17,7 @@ wasmtime = { version = "=46.0.1", default-features = false, features = ["anyhow"
 
 [dev-dependencies]
 sico-app-cli = { path = "../../crates/sico-app-cli" }
+sico-cli = { path = "../../crates/sico-cli" }
 sico-ir = { path = "../../crates/sico-ir" }
 wasm-encoder = "=0.253.0"
 

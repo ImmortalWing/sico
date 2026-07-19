@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M10 Runtime observability/debugging in progress; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0098 OS signal and client cancellation bridge (next)
-> - last completed active step: STEP-0097 (structured Runtime faults and source frames, complete)
+> - current step: STEP-0099 bounded execution events and logs (next); M11 STEP-0103 ADR design unlocked
+> - last completed active step: STEP-0098 (OS signal and client cancellation bridge, complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: route timer, Windows console and persistent-client cancellation through one typed terminal-winner path
+> - next step: emit bounded task-aware execution events with mandatory redaction; settle M11 Store/arena ADR in the unlocked design lane
 
 ## 0. M6 exit state
 
@@ -28,7 +28,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。[`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md) 已冻结 identity/map/fault/event/cancellation/DAP 合同；[`STEP-0096`](./steps/STEP-0096-deterministic-compiler-debug-map.md) 已实现 deterministic Component/map/identity triplet；[`STEP-0097`](./steps/STEP-0097-structured-runtime-faults-source-frames.md) 已实现 typed faults、exact source frames 与 stale/missing map fail-closed。下一项为 STEP-0098 cancellation bridge；debugger 仍未宣称。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0098`](./steps/STEP-0098-os-signal-client-cancellation-bridge.md) 已完成 contract、debug triplet、typed source faults 与 Windows console/client cancellation。下一项为 STEP-0099 bounded events；M11 STEP-0103 ADR 设计轨已解锁；debugger 仍未宣称。
 
 ## 3. Verified repository facts
 
@@ -177,4 +177,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0098：在 CLI/runner 边界建立 Windows console 与 portable client cancellation bridge，并让 timer、signal、client、Host cancellation 共享一个 typed terminal-winner。不得提前实现 event server 或 DAP。STEP-0098 接受后可提前开展 documentation-only M11 STEP-0103 ADR；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
+下一项执行 STEP-0099：建立 bounded `sico.execution-event.v0` producer/decoder、binary-safe stdout/stderr chunking、backpressure/overflow terminal delivery 与 mandatory redaction。并行完成 documentation-only M11 STEP-0103 Store/arena ADR，但 scheduler code 仍等待 M10 GO。不得提前实现 DAP；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。

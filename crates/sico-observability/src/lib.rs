@@ -22,6 +22,7 @@ pub const MAX_MAPPINGS: usize = 1_000_000;
 pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 pub const MAX_RUNTIME_FRAMES: usize = 256;
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
+pub const MAX_CANCEL_REQUEST_BYTES: usize = 4_096;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -135,6 +136,15 @@ pub struct RuntimeFrame {
     pub unavailable_reason: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelRequest {
+    pub schema: String,
+    pub run_id: String,
+    pub generation_id: u64,
+    pub cause: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EngineFrame<'a> {
     pub core_module: Option<&'a str>,
@@ -241,6 +251,34 @@ pub fn parse_runtime_fault(bytes: &[u8]) -> Result<RuntimeFault, ContractError> 
         return Err(ContractError::NonCanonical("runtime-fault-json"));
     }
     Ok(fault)
+}
+
+/// Parses a bounded canonical persistent-client cancellation request.
+///
+/// # Errors
+///
+/// Rejects oversized/non-canonical JSON, unknown fields, invalid identities,
+/// unsafe generation numbers and causes outside the client/debugger boundary.
+pub fn parse_cancel_request(bytes: &[u8]) -> Result<CancelRequest, ContractError> {
+    if bytes.len() > MAX_CANCEL_REQUEST_BYTES {
+        return Err(ContractError::Limit("cancel-request-bytes"));
+    }
+    let request: CancelRequest =
+        serde_json::from_slice(bytes).map_err(|error| ContractError::Json(error.to_string()))?;
+    if request.schema != "sico.cancel-request.v0" {
+        return Err(ContractError::UnknownSchema(request.schema));
+    }
+    validate_id(&request.run_id)?;
+    if request.generation_id > MAX_SAFE_INTEGER {
+        return Err(ContractError::Limit("generation-id"));
+    }
+    if !matches!(request.cause.as_str(), "client" | "debugger") {
+        return Err(ContractError::InvalidIdentity("cancel-cause".into()));
+    }
+    if canonical_json(&request)? != bytes {
+        return Err(ContractError::NonCanonical("cancel-request-json"));
+    }
+    Ok(request)
 }
 
 /// Validates a decoded debug identity.
@@ -950,6 +988,35 @@ mod tests {
         unknown.class = "engine-text-derived".into();
         assert!(matches!(
             validate_runtime_fault(&unknown),
+            Err(ContractError::InvalidIdentity(_))
+        ));
+    }
+
+    #[test]
+    fn cancellation_request_is_canonical_bounded_and_identity_typed() {
+        let request = CancelRequest {
+            schema: "sico.cancel-request.v0".into(),
+            run_id: "run-7".into(),
+            generation_id: 3,
+            cause: "client".into(),
+        };
+        let bytes = canonical_json(&request).unwrap();
+        assert_eq!(parse_cancel_request(&bytes).unwrap(), request);
+
+        let mut non_canonical = bytes.clone();
+        non_canonical.push(b'\n');
+        assert_eq!(
+            parse_cancel_request(&non_canonical),
+            Err(ContractError::NonCanonical("cancel-request-json"))
+        );
+        assert_eq!(
+            parse_cancel_request(&vec![b'x'; MAX_CANCEL_REQUEST_BYTES + 1]),
+            Err(ContractError::Limit("cancel-request-bytes"))
+        );
+        let mut invalid_cause = request;
+        invalid_cause.cause = "signal".into();
+        assert!(matches!(
+            parse_cancel_request(&canonical_json(&invalid_cause).unwrap()),
             Err(ContractError::InvalidIdentity(_))
         ));
     }

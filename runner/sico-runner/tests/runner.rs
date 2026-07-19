@@ -404,6 +404,206 @@ fn runner_cli_renders_verified_fault_json_text_and_stale_refusal() {
 }
 
 #[test]
+fn runner_cli_accepts_identity_bound_client_cancellation_file() {
+    let unique = format!(
+        "sico-step0098-client-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("spin.component.wasm");
+    let request = directory.join("cancel.json");
+    std::fs::write(&component, spin_component()).unwrap();
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_sico-runner"))
+        .args(["--fuel", "1000000000000"])
+        .arg("--cancel-request-file")
+        .arg(&request)
+        .arg(&component)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    std::fs::write(
+        &request,
+        br#"{"schema":"sico.cancel-request.v0","run_id":"run-0","generation_id":1,"cause":"client"}"#,
+    )
+    .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "stale generation cancelled the run"
+    );
+
+    std::fs::write(
+        &request,
+        br#"{"schema":"sico.cancel-request.v0","run_id":"run-0","generation_id":0,"cause":"client"}"#,
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(123));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("\"class\":\"cancelled\""), "{stderr}");
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn runner_watch_accepts_generation_bound_client_cancellation() {
+    let unique = format!(
+        "sico-step0098-watch-client-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("spin.component.wasm");
+    let request = directory.join("cancel.json");
+    std::fs::write(&component, spin_component()).unwrap();
+    let child = std::process::Command::new(env!("CARGO_BIN_EXE_sico-runner"))
+        .args(["--watch", "--watch-runs", "1", "--fuel", "1000000000000"])
+        .arg("--cancel-request-file")
+        .arg(&request)
+        .arg(&component)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::fs::write(
+        &request,
+        br#"{"schema":"sico.cancel-request.v0","run_id":"watch","generation_id":1,"cause":"client"}"#,
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(123));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("\"event\":\"run-complete\""), "{stderr}");
+    assert!(stderr.contains("\"exit\":123"), "{stderr}");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn runner_cli_observes_real_windows_console_control() {
+    let unique = format!(
+        "sico-step0098-signal-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("blocked-read.component.wasm");
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/end-to-end/script-stream-read-once.sico");
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = sico_cli::run(
+        [
+            std::ffi::OsString::from("sico"),
+            std::ffi::OsString::from("build"),
+            std::ffi::OsString::from("--profile"),
+            std::ffi::OsString::from("script-v0"),
+            std::ffi::OsString::from("--output"),
+            component.as_os_str().to_owned(),
+            source.as_os_str().to_owned(),
+        ],
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
+
+    let script = r#"
+import os, signal, subprocess, sys, time
+p = subprocess.Popen(
+    [sys.argv[1], sys.argv[2]],
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+)
+time.sleep(0.15)
+os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+stdout, stderr = p.communicate(timeout=10)
+if p.returncode != 123 or b'\"class\":\"cancelled\"' not in stderr:
+    sys.stderr.buffer.write(stderr)
+    raise SystemExit(1)
+"#;
+    let output = std::process::Command::new("python")
+        .arg("-c")
+        .arg(script)
+        .arg(env!("CARGO_BIN_EXE_sico-runner"))
+        .arg(&component)
+        .output()
+        .expect("Python is required for the Windows console-control fixture");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn runner_watch_observes_console_control_while_idle() {
+    let unique = format!(
+        "sico-step0098-watch-signal-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("echo.component.wasm");
+    std::fs::write(&component, echo_component(0)).unwrap();
+    let script = r#"
+import os, signal, subprocess, sys, time
+p = subprocess.Popen(
+    [sys.argv[1], '--watch', sys.argv[2]],
+    stdin=subprocess.DEVNULL,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+)
+time.sleep(0.2)
+os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+stdout, stderr = p.communicate(timeout=10)
+if p.returncode != 123 or b'\"schema\":\"sico.runner.watch.v0\"' not in stderr:
+    sys.stderr.buffer.write(stderr)
+    raise SystemExit(1)
+"#;
+    let output = std::process::Command::new("python")
+        .arg("-c")
+        .arg(script)
+        .arg(env!("CARGO_BIN_EXE_sico-runner"))
+        .arg(&component)
+        .output()
+        .expect("Python is required for the Windows watch signal fixture");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn cancellation_reaches_a_blocked_guest() {
     let token = CancelToken::new();
     let token_thread = token.clone();
@@ -414,19 +614,25 @@ fn cancellation_reaches_a_blocked_guest() {
     };
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(50));
-        token_thread.cancel();
+        let _ = token_thread.request(sico_runner::CancellationSource::Signal);
     });
-    let outcome = runner()
-        .run_program(
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
             &spin_component(),
-            &ScriptInput::default(),
-            &instant,
-            &token,
             &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
         )
         .unwrap();
-    assert_eq!(outcome, RunOutcome::Cancelled);
-    assert_eq!(outcome.exit_code(), 123);
+    let observed = prepared
+        .run_observed(&ScriptInput::default(), &instant, &token, "run-signal", 0)
+        .unwrap();
+    assert_eq!(observed.outcome, RunOutcome::Cancelled);
+    assert_eq!(observed.outcome.exit_code(), 123);
+    assert_eq!(
+        observed.cancellation_source,
+        Some(sico_runner::CancellationSource::Signal)
+    );
 }
 
 #[test]

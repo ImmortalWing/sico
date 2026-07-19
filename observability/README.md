@@ -4,7 +4,7 @@ This directory is the machine-readable source of truth for M10 observability and
 
 ## Files
 
-- [`schema/observability-contract-v0.schema.json`](./schema/observability-contract-v0.schema.json): strict shapes for debug identity/map, Runtime fault and one execution event;
+- [`schema/observability-contract-v0.schema.json`](./schema/observability-contract-v0.schema.json): strict shapes for debug identity/map, Runtime fault, cancel request and one execution event;
 - [`schema/dap-claimed-subset-v0.schema.json`](./schema/dap-claimed-subset-v0.schema.json): exact DAP claim document shape;
 - [`schema/cancellation-race-v0.schema.json`](./schema/cancellation-race-v0.schema.json): cancellation/terminal-race matrix shape;
 - [`contracts/dap-claimed-subset-v0.json`](./contracts/dap-claimed-subset-v0.json): sole DAP request/event allowlist;
@@ -14,11 +14,12 @@ This directory is the machine-readable source of truth for M10 observability and
 
 ## Current evidence boundary
 
-STEP-0096 now proves deterministic compiler debug maps, a compact Component digest link and exact identity sidecars through the authority-free `sico-observability` crate. It does not prove that the runner produces source frames/events, that Ctrl+C becomes typed cancellation, or that a DAP adapter exists. Those claims remain STEP-0097–0101.
+STEP-0096 proves deterministic debug artifacts, STEP-0097 proves typed Runtime source faults, and STEP-0098 proves the bounded cancellation request plus real Windows console bridge. Execution events, cross-platform signal parity and DAP remain STEP-0099–0102 claims.
 
 ## Validate
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-step-0095.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-step-0096.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-step-0098.ps1
 ```

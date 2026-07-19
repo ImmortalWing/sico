@@ -112,5 +112,6 @@
 | [STEP-0095](./STEP-0095-observability-debug-contract.md) | complete-contract | M10 | RFC-0035、strict identity/map/fault/event schemas、exact DAP allowlist、cancellation races 与双 Component identity evidence |
 | [STEP-0096](./STEP-0096-deterministic-compiler-debug-map.md) | complete | M10 | deterministic debug triplet、真实 Core offset/source mapping、generated rows、atomic CLI/package integration |
 | [STEP-0097](./STEP-0097-structured-runtime-faults-source-frames.md) | complete | M10 | typed Runtime fault classes、verified exact source frames、256-frame bound、JSON/text CLI 与 stale/missing map fail-closed |
+| [STEP-0098](./STEP-0098-os-signal-client-cancellation-bridge.md) | complete | M10 | real Windows console control、canonical client/watch cancellation、single terminal winner 与 M9 blocked-I/O/HTTP regression |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0097 已完成 M10 contract、deterministic debug artifact 与 typed Runtime source frames；下一项为 STEP-0098 OS signal/client cancellation bridge。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0098 已完成 M10 contract、debug artifact、Runtime source faults 与 typed cancellation；下一项为 STEP-0099 bounded events，同时 documentation-only M11 STEP-0103 ADR 已解锁。

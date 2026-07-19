@@ -178,13 +178,13 @@ Entry gate：satisfied by STEP-0014。
 
 ## M10: Runtime observability and debugging
 
-状态：`in-progress / STEP-0095–0097 complete; STEP-0098 next`
+状态：`in-progress / STEP-0095–0098 complete; STEP-0099 next`
 
 主要交付：versioned source/debug identity、compiler debug map、structured Runtime frames、typed OS-signal/client cancellation、bounded execution events/logs、minimal DAP 及 LSP/AI feedback integration。
 
 进入条件：M9 GO，且 `sico.execution-plan.v0` 的 compile-only source coordinates、client-owned cancellation 与 debug refusal 已明确冻结。
 
-执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。STEP-0095 已冻结 identity/schema/redaction/race contracts 与 38 行 DAP allowlist；STEP-0096 已实现 deterministic debug triplet；STEP-0097 已实现 exact verified Runtime source frames、typed fault classes、bounded JSON/text CLI 和 stale/missing map fail-closed。下一项 STEP-0098 实现 OS signal/client cancellation bridge。STEP-0100 必须逐行提供真实 Component 支持证据或 typed refusal。Compiler 只拥有 deterministic debug map；Runtime fault/signal/event 与 DAP 分属 runner/tooling，不允许形成 `compiler → Runtime` 反向依赖。
+执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。STEP-0095 已冻结 contracts 与 DAP allowlist；STEP-0096 已实现 deterministic debug triplet；STEP-0097 已实现 exact Runtime source faults；STEP-0098 已实现真实 Windows console control、canonical client cancellation 和单 terminal winner。下一项 STEP-0099 实现 task-aware bounded events/redaction；documentation-only M11 STEP-0103 ADR 已解锁。STEP-0100 必须逐行提供真实 Component 支持证据或 typed refusal。Compiler 只拥有 deterministic debug map；Runtime fault/signal/event 与 DAP 分属 runner/tooling，不允许形成 `compiler → Runtime` 反向依赖。
 
 退出证据：exact source/compiler/Component/debug-map identity、真实 Runtime source frames、typed signal cancellation、task-aware bounded event/log queues、机器清单驱动且在真实 Component 上逐项验证的 DAP 子集、session isolation、M0–M9 regression 与 actual-platform matrix。底层 Runtime 若不能支持真实 breakpoint/pause，必须记录 DAP NO-GO，不得把 post-mortem inspection 改名为 debugger。
 

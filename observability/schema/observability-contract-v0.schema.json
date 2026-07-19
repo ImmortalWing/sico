@@ -6,7 +6,8 @@
     { "$ref": "#/$defs/debugIdentity" },
     { "$ref": "#/$defs/debugMap" },
     { "$ref": "#/$defs/runtimeFault" },
-    { "$ref": "#/$defs/executionEvent" }
+    { "$ref": "#/$defs/executionEvent" },
+    { "$ref": "#/$defs/cancelRequest" }
   ],
   "$defs": {
     "sha256": {
@@ -175,6 +176,17 @@
           "maxItems": 256,
           "items": { "$ref": "#/$defs/frame" }
         }
+      }
+    },
+    "cancelRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "run_id", "generation_id", "cause"],
+      "properties": {
+        "schema": { "const": "sico.cancel-request.v0" },
+        "run_id": { "$ref": "#/$defs/boundedId" },
+        "generation_id": { "$ref": "#/$defs/safeInteger" },
+        "cause": { "enum": ["client", "debugger"] }
       }
     },
     "executionEvent": {

@@ -77,3 +77,4 @@
 | [`m4-exit-audit`](./m4-exit-audit.md) | complete | STEP-0045 | M4 security/property/performance、M0–M3 regression 与 M5 GO |
 | [`m9-exit-audit-v0`](./m9-exit-audit-v0.md) | accepted / GO | STEP-0094 | M8/M9 aggregate regression、security/performance evidence、Windows-only Runtime matrix 与 M10 entry |
 | [`runtime-fault-source-frames-v0`](./runtime-fault-source-frames-v0.md) | accepted | STEP-0097 | typed Runtime fault classes、exact verified source frames、bounded CLI 与 fail-closed sidecars |
+| [`typed-cancellation-bridge-v0`](./typed-cancellation-bridge-v0.md) | accepted / Windows native | STEP-0098 | real console control、canonical client requests、single terminal winner 与 blocked Host cancellation |

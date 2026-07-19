@@ -1,6 +1,6 @@
 # M10 plan: Runtime observability and debugging
 
-> - status: in progress; STEP-0095–0097 complete, STEP-0098 next
+> - status: in progress; STEP-0095–0098 complete, STEP-0099 next
 > - created: 2026-07-19
 > - expanded: 2026-07-19
 > - phase: M10
