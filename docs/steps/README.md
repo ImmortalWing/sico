@@ -93,6 +93,16 @@
 | [STEP-0076](./STEP-0076-script-profile-vertical-prototype.md) | complete | M8 | direct/composed 各 20 × 6/6，实测选择 versioned Adapter composition，保留 direct fallback |
 | [STEP-0077](./STEP-0077-fixed-width-dynamic-scalars.md) | complete | M8 | 独立 I64/U64、typed overflow/underflow、dynamic Core/Component 与 runtime oracle 已完成 |
 | [STEP-0078](./STEP-0078-general-executable-control-codegen.md) | complete | M8 | direct Call、dispatcher CFG、match/back-edge 与内部 aggregate codegen，不扩张 Component ABI |
-| [STEP-0079](./STEP-0079-script-aggregate-canonical-abi.md) | planned | M8 | bounded Text/Bytes/List/record/Result Canonical ABI 与 randomized roundtrip |
+| [STEP-0079](./STEP-0079-script-aggregate-canonical-abi.md) | complete | M8 | WIT 驱动 layout 表、bounded arena、Text/Bytes/List/record/Result Canonical ABI、10,000 seeded roundtrip 与恶意内存 fail-closed |
+| [STEP-0080](./STEP-0080-compiler-script-profile-adapter-manifest.md) | complete | M8 | `sico build --profile script-v0`、versioned Adapter composition（WASI 0.2.12 实跑 echo/reject）与严格 manifest v1 |
+| [STEP-0081](./STEP-0081-in-process-script-runner.md) | complete | M8 | in-process sico-runner：typed outcomes、fuel/timeout/memory/cancel、精确 guest exit 与 host survival |
+| [STEP-0082](./STEP-0082-unified-run-eval-caches.md) | complete | M8 | unified `sico run`/`eval`、冻结 cache identity、corrupt/conflict fail-closed 与 stdout purity |
+| [STEP-0083](./STEP-0083-script-standard-library.md) | complete | M8 | 三层冻结 intrinsic registry（text/bytes/list/JSON/fs）、helper aggregate ABI、scoped fs 双接口与四个 pilots |
+| [STEP-0084](./STEP-0084-m8-exit-audit.md) | complete | M8 | §11 门禁 8/8、性能矩阵、WSL Linux 证据与 honest GO |
+| [STEP-0085](./STEP-0085-streaming-script-rfc.md) | complete | M9 | RFC-0030 streaming channel：streams WIT、ownership、backpressure、cancellation 矩阵 |
+| [STEP-0086](./STEP-0086-stream-resource-abi-codegen.md) | complete | M9 | streams resource Canonical ABI、exact drop、mixing rule、256 MiB bounded-RSS passthrough |
+| [STEP-0087](./STEP-0087-task-future-stream-source-backend.md) | complete | M9 | sequential executor：structured task scope、E5101/E5102（含间接逃逸）、cancellation edge 123 |
+| [STEP-0088](./STEP-0088-async-runner-streaming-stdio.md) | complete | M9 | worker-thread 可取消 IO、blocked read/pump/write 取消 120–134ms、bounded queues |
+| [STEP-0089](./STEP-0089-scoped-http-component-provider.md) | in-progress | M9 | RFC/WIT/codegen draft isolated；runner provider 与安全证据未完成，默认无网络 |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。仓库所有者于 2026-07-17 决定在缺少 VPS 的情况下先推进本地 Script 体验；STEP-0075 契约、STEP-0076 composition gate、STEP-0077 dynamic fixed-width scalars 与 STEP-0078 general executable codegen 已完成，STEP-0079 aggregate Canonical ABI 已规划为下一项。M8 保留 STEP-0080–0084，M9 计划保留 STEP-0085–0094；各记录只在工作实际开始时创建。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0088 完成 streaming/structured-task/async-runner 基础并通过质量修复。STEP-0089 已创建为进行中记录，现有 HTTP 契约/WIT/codegen 仍是隔离草案，runner 默认不链接网络 provider。M9 保留 STEP-0090–0094。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。

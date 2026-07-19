@@ -1,6 +1,6 @@
 # M8 plan: Script Profile v0
 
-> - status: in-progress; STEP-0075–0078 complete, STEP-0079 planned
+> - status: complete (GO 2026-07-18); STEP-0075–0084 complete
 > - created: 2026-07-17
 > - phase: M8
 > - entry requirement: M3/M4 Component, package, trust and Runtime contracts; STEP-0074 one-command development baseline
@@ -59,12 +59,12 @@ These are non-SLA local measurements. The benchmark must be captured in an M8 re
 | STEP-0076 | hard-coded Program + Adapter vertical prototype | complete: direct/composed 20 × 6/6; composed cold P95 15.8033 ms, worst warm P95 0.2038 ms; `composition-go` |
 | STEP-0077 | fixed-width dynamic scalar representation | complete: `I64/U64`, typed overflow/underflow, dynamic parameters/locals/results, 2,048 × 8 Core oracle and 11 Wasmtime Component cases |
 | STEP-0078 | general executable control and function codegen | complete: direct calls; dispatcher CFG with back-edges; internal construct/project/variant; 7 Wasmtime cases plus bounded-fuel loop trap |
-| STEP-0079 | Script aggregate Canonical ABI | Text/Bytes/List/Text list/record/Result memory, lift/lower, bounded allocation and randomized host/guest roundtrip |
-| STEP-0080 | compiler Script profile, adapter composition and manifest v1 | `sico build --profile script-v0`; exact WIT/adapter digests; composed command imports and package closure verified |
-| STEP-0081 | structured in-process `sico-runner` | typed Wasmtime fault mapping, WASI context, limits, no ambient env/fs/network, host survival after malicious guests |
-| STEP-0082 | unified `sico run`, `eval` and safe caches | stdout purity, args/stdin contract, JSON diagnostics, build/machine cache mutation and concurrency refusals |
-| STEP-0083 | minimal useful script standard library | text/bytes/list primitives, JSON and scoped files; args echo, word count, JSON filter and file transform pilots |
-| STEP-0084 | performance, security, platform and M8 exit audit | Windows Runtime evidence, Linux runner evidence when available, quality gates, benchmark matrix and honest GO/NO-GO |
+| STEP-0079 | Script aggregate Canonical ABI | complete: WIT-driven layout table; bounded arena with checked arithmetic; Text/Bytes/list/record/Result lift-lower; 10,000 seeded Wasmtime roundtrips; 6 malicious-memory fail-closed fixtures |
+| STEP-0080 | compiler Script profile, adapter composition and manifest v1 | complete: `sico build --profile script-v0`; adapter digest `185ebf1d…502c7`; composed WASI 0.2.12 command echo/reject verified; strict manifest v1 with exact identities and closure |
+| STEP-0081 | structured in-process `sico-runner` | complete: typed outcomes for every RFC-0029 exit class; exact guest exits; fuel/timeout/memory/cancel; malicious-guest host survival; MSVC-only crate note |
+| STEP-0082 | unified `sico run`, `eval` and safe caches | complete: frozen cache identity with reuse/fresh/corrupt-closed evidence; stdout purity; JSON diagnostics; engine cache deferred (offline dep) |
+| STEP-0083 | minimal useful script standard library | complete: three-layer frozen intrinsic registry (text/bytes/list/JSON/fs), helper aggregate ABI, full-width Result + `case ok(x)`, scoped fs dual interface with typed refusals; four pilots green via `sico run`; `script-standard-library-v0` |
+| STEP-0084 | performance, security, platform and M8 exit audit | complete: §11 gate 8/8 verified; original benchmark P95 46.96/44.82/29.00 ms, 2026-07-19 quality rerun 79.65/49.03/34.20 ms (cold/warm/runner, all within gates); WSL Linux runner evidence + pilots; honest GO; `m8-exit-audit-v0` |
 
 ## 5. Architecture
 

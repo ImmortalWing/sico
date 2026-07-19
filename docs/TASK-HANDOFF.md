@@ -1,19 +1,19 @@
-# Sico 任务交接：M8 Script Profile 与外部阻塞轨
+# Sico 任务交接：M9 streaming/async/interactive 与外部阻塞轨
 
-> - 更新时间：2026-07-17
+> - 更新时间：2026-07-19
 > - 仓库：`.`（仓库根目录，相对路径）
 > - 分支：`main`
 > - 当前开发版本：`0.0.2-dev`；已发布归档：`v0.0.1`
 > - 当前已配置远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；本工作区未配置独立 `github` remote
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
 > - 开发归档：`codex/archive-v0.0.1-development-history` 为历史归档分支；当前推送目标仅为已配置的 `origin`
-> - 工作区状态：以包含本文件的当前提交为 clean baseline
+> - 工作区状态：STEP-0079–0089 工作仍未提交；不得将当前 HEAD 描述为这些步骤的 clean baseline
 
-当前 M8 的逐文件状态、验证边界与下一条命令见 [`M8 STEP-0079 接手文档`](./handoffs/M8-STEP-0079.md)。
+当前 M9 的逐文件状态、验证边界与下一条命令见 [`M9 STEP-0089 接手文档`](./handoffs/M9-STEP-0089.md)。
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner` 且不得宣称 Android 完成。M7 STEP-0062–0069 仓库本地轨已完成；STEP-0074 建立了只读 registry origin、operator bundle、Windows release 集成和 `sico-app dev` 单命令流程。公网 production 仍为 `blocked-external-deployment-inputs`。当前主动开发方向是 M8 Script Profile：STEP-0075 契约已冻结；STEP-0076 裁决为 `composition-go`；STEP-0077 已完成独立 `I64/U64` dynamic scalars与 typed overflow/underflow；STEP-0078 已完成 direct calls、dispatcher CFG、内部 record/variant codegen、7 个 Wasmtime 结果与 bounded-fuel loop trap，且未静默缩窄 `Int`。下一项 STEP-0079 实现 bounded Script aggregate Canonical ABI；M9 已规划 streaming/async/HTTP/watch/REPL，但不得误报为已实现。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 已完成并保持 GO。M9 STEP-0085–0088 已完成且在 2026-07-19 通过质量复核；STEP-0089 已开始，但仅有 RFC/WIT/codegen 草案，runner HTTP provider 保持未链接和默认拒绝。STEP-0090–0094 尚未开始，因此 M9 整体不能宣称完成。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 

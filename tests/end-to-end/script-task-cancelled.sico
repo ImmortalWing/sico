@@ -1,0 +1,42 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+async function failing() returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.Cancelled, message: "scope cancelled"))
+end function
+
+function match_failed(result: Result[ScriptOutput, ScriptError]) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(output):
+      return ok(output)
+    case error(failure):
+      return error(failure)
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  task group:
+    let failed = spawn failing()
+    return match_failed(await failed)
+  end task
+end function

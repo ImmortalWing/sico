@@ -101,6 +101,8 @@ Args and the current invocation's bounded stdio are visible capabilities named `
 
 The trusted adapter is the only code allowed to import the broad WASI CLI environment/stdio interfaces. Its exact digest is verified, and its v0 implementation obtains arguments but passes no environment variables or current working directory.
 
+STEP-0083 amendment (implemented): the scoped file channel is two versioned interfaces so the read/write split exists at import granularity — `sico:script/fs-read@0.1.0` (`read: func(path: string) -> result<list<u8>, string>`, `exists: func(path: string) -> result<bool, string>`) maps to `storage.read`, and `sico:script/fs-write@0.1.0` (`write: func(path: string, content: list<u8>) -> result<_, string>`) maps to `storage.write`. Both are declared as imports of the `sico:script/program@0.1.0` world; a program only imports what it calls. The Host grants canonical roots (`sico run --fs-read-root` / `--fs-write-root`); guest paths are relative (no parent components, drive prefixes, colons or backslashes), canonical containment is verified per call, path text is bounded to 4 KiB and file payloads to the 8 MiB channel budget. Without a matching grant every call fails closed with a typed `result` error; the error text never embeds a host path.
+
 ### Cache identity
 
 The source cache key is SHA-256 over domain `SICO-SCRIPT-SOURCE-CACHE-V0\0` followed by a fixed-order sequence of fields. Each variable-length field is encoded as unsigned 64-bit little-endian byte length followed by exact bytes. Fixed digests are raw 32-byte SHA-256 values. Fields are:
@@ -209,6 +211,22 @@ M8 therefore retains versioned Program/Adapter composition as the preferred path
 ### STEP-0077 fixed-width result
 
 The compiler now preserves the numeric contract through semantic analysis, verified IR, dynamic Core Wasm and Component exports. Deterministic Node execution compared 2,048 generated operand pairs across eight signed/unsigned arithmetic and comparison paths; exact Wasmtime 46.0.1 execution passed 11 Component boundary cases. Overflow and underflow lift as real Component `result` errors through a private Canonical ABI return area, not as traps. General calls/control, aggregate ABI, Script packaging and runner integration remain later gates, so this result does not accept the RFC.
+
+### STEP-0079 aggregate ABI result
+
+The frozen layout table in `docs/development/script-canonical-abi-layout-v0.md` is derived from the normative WIT by the compiler itself. Generated Program Components now cross the exact `sico:script/program@0.1.0` boundary with Text, Bytes, `list<string>`, the Script records and the boundary `result` through one bounded per-instance arena with checked pointer/length arithmetic and deterministic `cabi_post_run` cleanup. Evidence: 10,000 seeded Wasmtime 46.0.1 roundtrips byte/value exact on one instance, a 512 × 1 MiB + 8 × 4 MiB repeated-call cleanup oracle, the 1,024-argument/8 MiB boundary case, and six malicious-memory fixtures failing closed (invalid discriminants, invalid UTF-8, out-of-bounds/overflowing pointers, misaligned result area); see `docs/reports/script-aggregate-canonical-abi-v0.md`. Compiler profile integration, adapter packaging, manifest v1 and runner integration remain STEP-0080–0082 gates, so this result does not accept the RFC.
+
+### STEP-0080 compiler profile, adapter and manifest result
+
+`sico build --profile script-v0` turns one source file with explicit ABI-validated Script declarations into a deterministic Program Component. The versioned `sico:script/adapter@0.1.0` (SHA-256 `185ebf1d393cb2b93c1d023f89d19d36c323c64f858a2fef1092f6a0283502c7`) composes it into a WASI `0.2.12` command whose echo/reject behavior was executed through the Wasmtime 46.0.1 CLI with real arguments and binary stdin. Strict manifest v1 (`sico.sapp.manifest.v1`) records the exact world, semantics `sico.ir.v0`, WIT digest and adapter digest, and the composed import closure maps exactly to `script.args`/`script.stdio` with unknown values failing closed; see `docs/reports/compiler-script-profile-adapter-manifest-v0.md`. WASI 0.2 exit semantics collapse guest exit values to 0/1 on the composed path; exact guest codes, the in-process runner, unified `sico run`/caches and the standard library remain STEP-0081–0083 gates, so this result does not accept the RFC.
+
+### STEP-0081 runner result
+
+The in-process `sico-runner` (`runner/sico-runner`, built with the MSVC toolchain because the workspace GNU toolchain cannot link the Wasmtime crate on the evidence host) invokes the Program export directly with one Store per call and no WASI context: no environment, filesystem or network is reachable by construction. Every RFC-0029 exit class is produced by a typed path — exact guest exits 0..=119 (out-of-range rejected), domain errors at 122, cancellation at 123, epoch timeout at 124, fuel/memory/trap at 125, launch at 126, incompatible artifacts at 127 — and malicious guests (trap, non-termination, memory ceiling, malformed results) leave the host healthy for subsequent calls; see `docs/reports/in-process-script-runner-v0.md`. Unified `sico run`/`eval`, caches and the standard library remain STEP-0082–0083 gates, so this result does not accept the RFC.
+
+### STEP-0082 unified run, eval and cache result
+
+`sico run FILE.sico -- ARGS` and `sico eval "EXPR"` now work end to end: compile through the Script profile, cache the Program Component under the frozen `SICO-SCRIPT-SOURCE-CACHE-V0` identity, and execute through `sico-runner` with exact channel and exit behavior. Repeat runs reuse byte-identical entries without recompilation, changed sources compile fresh, corrupt or conflicting entries fail closed, `run -` never feeds source stdin to the guest, `eval` accepts compile-time-constant `Int` expressions only, and diagnostics are JSON on stderr with stdout reserved for guest output; see `docs/reports/unified-run-eval-caches-v0.md`. The Wasmtime engine machine-code cache is deferred because its crate is unavailable in the offline dependency cache of the evidence host; the standard library and the M8 audit remain STEP-0083–0084 gates, so this result does not accept the RFC.
 
 ## Links
 

@@ -195,6 +195,8 @@ fn all_phase_types_have_stable_serialization() {
         Type::Int,
         Type::Float64,
         Type::String,
+        Type::Bytes,
+        Type::List(Box::new(Type::String)),
         Type::Named("UserId".into()),
         Type::Option(Box::new(Type::Int)),
         Type::Result {

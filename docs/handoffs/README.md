@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M8 STEP-0079`](./M8-STEP-0079.md) | planned / ready | Script aggregate Canonical ABI；Text/Bytes/List/record/Result bounded lift/lower |
+| [`M9 STEP-0089`](./M9-STEP-0089.md) | in progress / runner disabled | scoped HTTP RFC/WIT/codegen draft；Host provider、安全策略与证据待完成 |
 
-本目录只保留当前活跃接手文档；已完成 step 的事实记录位于 `docs/steps` 与 `docs/reports`。
+旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

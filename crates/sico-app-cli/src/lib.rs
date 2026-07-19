@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub use sico_package::compose;
+
 use std::{
     collections::BTreeSet,
     ffi::{OsStr, OsString},
@@ -15,8 +17,9 @@ use std::{
 use clap::{Arg, ArgAction, ArgMatches, Command, error::ErrorKind};
 use serde_json::{Value, json};
 use sico_package::{
-    AuthorizedPackage, BuildInput, RuntimeLimits, TrustPolicy, TrustStatus, authorize,
-    build_unsigned, sha256_hex, sign_development, verify, verify_trusted,
+    AuthorizedPackage, BuildInput, BuildScriptInput, RuntimeLimits, TrustPolicy, TrustStatus,
+    authorize, build_script_v1, build_unsigned, sha256_hex, sign_development, verify,
+    verify_trusted,
 };
 use sico_runtime::{AppStorage, FaultClass, HostLimits, prepare_storage, run_authorized_package};
 
@@ -61,6 +64,7 @@ where
         Some(("run", command)) => run_package(command, stdout, stderr),
         Some(("inspect", command)) => run_inspect(command, stdout, stderr),
         Some(("dev", command)) => run_dev(command, stdout, stderr),
+        Some(("compose", command)) => run_compose(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
 }
@@ -78,7 +82,13 @@ fn command() -> Command {
                 .arg(output_arg())
                 .arg(app_id_arg())
                 .arg(app_version_arg())
-                .arg(sign_key_arg()),
+                .arg(sign_key_arg())
+                .arg(
+                    Arg::new("script")
+                        .long("script")
+                        .help("Pack as a strict manifest v1 Script package (composed command Component)")
+                        .action(ArgAction::SetTrue),
+                ),
         )
         .subcommand(
             Command::new("run")
@@ -132,6 +142,23 @@ fn command() -> Command {
                 ),
         )
         .subcommand(dev_command())
+        .subcommand(
+            Command::new("compose")
+                .about("Compose a Script Program Component with the versioned Script Adapter")
+                .arg(
+                    Arg::new("program")
+                        .value_name("PROGRAM.component.wasm")
+                        .help("sico:script/program@0.1.0 Program Component")
+                        .required(true),
+                )
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .value_name("COMMAND.component.wasm")
+                        .help("Composed WASI command Component (default: program path with .command.wasm extension)"),
+                ),
+        )
 }
 
 fn dev_command() -> Command {
@@ -241,15 +268,29 @@ fn run_pack(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write
             return EXIT_TOOL_ERROR;
         }
     };
-    let unsigned = match build_unsigned(BuildInput {
-        app_id: matches.get_one::<String>("app-id").unwrap().clone(),
-        app_version: matches.get_one::<String>("app-version").unwrap().clone(),
-        component,
-        resources: Vec::new(),
-        source_effects: Vec::new(),
-        capabilities: Vec::new(),
-        limits: RuntimeLimits::default(),
-    }) {
+    let unsigned = match if matches.get_flag("script") {
+        let adapter = compose::script_adapter_component();
+        build_script_v1(BuildScriptInput {
+            app_id: matches.get_one::<String>("app-id").unwrap().clone(),
+            app_version: matches.get_one::<String>("app-version").unwrap().clone(),
+            component,
+            resources: Vec::new(),
+            semantics: sico_ir::SCHEMA.to_owned(),
+            wit_sha256: sha256_hex(sico_codegen_wasm::SCRIPT_WIT.as_bytes()),
+            adapter_sha256: sha256_hex(&adapter),
+            limits: script_limits(),
+        })
+    } else {
+        build_unsigned(BuildInput {
+            app_id: matches.get_one::<String>("app-id").unwrap().clone(),
+            app_version: matches.get_one::<String>("app-version").unwrap().clone(),
+            component,
+            resources: Vec::new(),
+            source_effects: Vec::new(),
+            capabilities: Vec::new(),
+            limits: RuntimeLimits::default(),
+        })
+    } {
         Ok(package) => package,
         Err(error) => {
             let _ = writeln!(stderr, "sico-app: cannot build package: {error}");
@@ -283,6 +324,60 @@ fn run_pack(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write
         Ok(()) => {
             let _ = fs::remove_file(output);
             EXIT_TOOL_ERROR
+        }
+        Err(message) => {
+            let _ = writeln!(stderr, "{message}");
+            EXIT_TOOL_ERROR
+        }
+    }
+}
+
+fn run_compose(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let input = Path::new(matches.get_one::<String>("program").unwrap());
+    let program = match fs::read(input) {
+        Ok(program) => program,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico-app: cannot read Program Component {}: {error}",
+                input.display()
+            );
+            return EXIT_TOOL_ERROR;
+        }
+    };
+    let adapter = compose::script_adapter_component();
+    let composed = compose::compose_script_command(&program, &adapter);
+    if composed != compose::compose_script_command(&program, &adapter) {
+        let _ = writeln!(stderr, "sico-app: composition is not deterministic");
+        return EXIT_TOOL_ERROR;
+    }
+    let output = matches
+        .get_one::<String>("output")
+        .map_or_else(|| input.with_extension("command.wasm"), PathBuf::from);
+    match write_new_artifact(&output, &composed) {
+        Ok(()) => {
+            let report = json!({
+                "schema": "sico.script.compose.v0",
+                "adapter": {
+                    "id": compose::SCRIPT_ADAPTER_ID,
+                    "sha256": sha256_hex(&adapter),
+                    "bytes": adapter.len(),
+                },
+                "program": {
+                    "sha256": sha256_hex(&program),
+                    "bytes": program.len(),
+                },
+                "command": {
+                    "sha256": sha256_hex(&composed),
+                    "bytes": composed.len(),
+                    "wasi": compose::WASI_CLI_VERSION,
+                },
+            });
+            if writeln!(stdout, "composed {}\n{report}", output.display()).is_err() {
+                let _ = fs::remove_file(output);
+                return EXIT_TOOL_ERROR;
+            }
+            EXIT_SUCCESS
         }
         Err(message) => {
             let _ = writeln!(stderr, "{message}");
@@ -623,6 +718,7 @@ fn run_inspect(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Wr
     if matches.get_flag("json") {
         let output = serde_json::to_string_pretty(&json!({
             "schema": "sico.sapp.inspect.v0",
+            "manifest_schema": manifest.schema,
             "package_sha256": sha256_hex(&bytes),
             "app": manifest.app,
             "component": manifest.component,
@@ -631,6 +727,7 @@ fn run_inspect(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Wr
             "capabilities": manifest.capabilities,
             "component_imports": structural.component_imports,
             "limits": manifest.limits,
+            "script": manifest.script,
             "trust": { "status": trust, "public_key": public_key }
         }))
         .expect("inspect JSON serialization cannot fail");
@@ -695,6 +792,14 @@ fn read_hex_key<const N: usize>(path: &Path, label: &str) -> Result<[u8; N], Str
             .expect("validated lowercase hex pair");
     }
     Ok(bytes)
+}
+
+/// Script package limits: channel and memory bounds match RFC-0029 Script v0.
+fn script_limits() -> RuntimeLimits {
+    RuntimeLimits {
+        body_bytes: 8 * 1024 * 1024,
+        ..RuntimeLimits::default()
+    }
 }
 
 fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {

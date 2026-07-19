@@ -1,6 +1,6 @@
 # M9 plan: Streaming, async and interactive scripting
 
-> - status: planned-after-M8
+> - status: in-progress; STEP-0085–0088 quality-verified, STEP-0089 contract/codegen draft isolated
 > - created: 2026-07-17
 > - phase: M9
 > - entry requirement: M8 Script Profile GO with stable Script WIT/manifest/runner identities
@@ -42,11 +42,11 @@ Any future process capability must be supplied by a separately versioned plugin/
 
 | Step | Deliverable | Exit evidence |
 |---|---|---|
-| STEP-0085 | streaming Script WIT/resource/cancellation RFC | versioned InputStream/OutputStream, ownership, backpressure, close/error/cancel semantics |
-| STEP-0086 | resource Canonical ABI and stream codegen | owned/borrowed stream handles, exact drop, no use-after-close, bounded host calls |
-| STEP-0087 | Task/Future/Stream source backend | structured task scopes, single terminal winner, cancellation edges and bounded stream flow |
-| STEP-0088 | async runner and streaming stdio | async Store, timeout/cancel, 64 KiB-class chunks, bounded queues and no whole-output capture |
-| STEP-0089 | scoped HTTP Component provider | exact scheme/host/port policy, body/header limits, redirects and DNS behavior; no ambient sockets |
+| STEP-0085 | streaming Script WIT/resource/cancellation RFC | complete: RFC-0030 proposed; `sico:script/streams@0.1.0` WIT parses; ownership/EOF/backpressure/cancel matrix fixed |
+| STEP-0086 | resource Canonical ABI and stream codegen | complete: streams intrinsics + runner resources; exact drop (stale traps 125); mixing rule; 1/16/256 MiB passthrough at 10.8 MiB peak RSS; `script-streaming-v0` |
+| STEP-0087 | Task/Future/Stream source backend | complete: sequential executor (spawn eager/await identity/task group); E5101/E5102 typed including indirect escape; cancelled edge 123; `script-task-sequential-v0` |
+| STEP-0088 | async runner and streaming stdio | complete: worker-thread cancellable IO; blocked read/pump/write cancel 120–134 ms incl. spawn+timer; bounded queues; 256 MiB exact; `script-async-runner-v0` |
+| STEP-0089 | scoped HTTP Component provider | in progress: RFC-0031 and WIT/codegen draft exist; runner linking remains deliberately disabled until endpoint policy, host provider and denial/cancellation evidence are complete |
 | STEP-0090 | persistent development runner and watch mode | Engine/Linker/cache reuse, per-run new Store, file-change coalescing and crash isolation |
 | STEP-0091 | bounded REPL session model | deterministic cell IDs, recompile/replay policy, state/resource limits and reset/export behavior |
 | STEP-0092 | top-level script syntax decision | parser/formatter/HIR/LSP/AI evidence and desugaring to a normal entry; explicit accept/reject RFC |

@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod canonical;
+
 use std::{
     ffi::OsStr,
     fs::{self, OpenOptions},

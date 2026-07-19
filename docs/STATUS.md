@@ -1,12 +1,12 @@
 # Sico project status
 
-> - updated: 2026-07-17
-> - phase: M8 Script Profile backend foundation; M7 public deployment and M6/mobile deferred
+> - updated: 2026-07-19
+> - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0079 Script aggregate Canonical ABI (planned)
-> - last completed active step: STEP-0078 (general executable control and function codegen complete)
+> - current step: STEP-0089 scoped HTTP Component provider (contract/codegen draft; runner disabled)
+> - last completed active step: STEP-0088 (quality-verified async runner and streaming stdio)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: freeze the WIT-driven bounded aggregate layout/ownership table, then implement checked Text/Bytes/List/record/Result lift/lower and randomized host/guest roundtrips
+> - next step: finish STEP-0089 endpoint policy and runner provider, then prove default-deny, limits, redirect, timeout and cancellation before enabling HTTP linking
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md) 已冻结 M8 Script Profile 契约；[`STEP-0076`](./steps/STEP-0076-script-profile-vertical-prototype.md) 已完成 Program/Adapter `composition-go`；[`STEP-0077`](./steps/STEP-0077-fixed-width-dynamic-scalars.md) 已贯通独立 `I64/U64` dynamic scalars 与 typed overflow/underflow；[`STEP-0078`](./steps/STEP-0078-general-executable-control-codegen.md) 已完成 direct calls、dispatcher CFG、内部 record/variant codegen、7 个 Wasmtime 结果与 bounded-fuel loop trap，`Int` 未被静默缩窄。下一项 [`STEP-0079`](./steps/STEP-0079-script-aggregate-canonical-abi.md) 负责 bounded Text/Bytes/List/record/Result Canonical ABI。proposed [`RFC-0029`](./rfc/RFC-0029-script-profile-v0.md) 与 [`ADR-0009`](./adr/ADR-0009-script-adapter-runner.md) 仍等待后续 compiler/package/runner/security gate；[`M9 plan`](./plans/M9-streaming-async-interactive.md) 仅规划 M8 后的 streaming/async/HTTP/watch/REPL 路径。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0088`](./steps/STEP-0088-async-runner-streaming-stdio.md) 已完成并在 2026-07-19 质量复核中修正 Task 间接逃逸、取消退出码与阻塞写退出路径。当前 [`STEP-0089`](./steps/STEP-0089-scoped-http-component-provider.md) 只有 RFC-0031、WIT 与 codegen 草案；runner 未链接 HTTP provider，因此默认拒绝网络，不能宣称 scoped HTTP 已完成。
 
 ## 3. Verified repository facts
 

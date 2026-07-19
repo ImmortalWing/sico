@@ -1,0 +1,39 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function match_pump(result: Result[U64, Text]) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(total):
+      return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case error(message):
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: message))
+  end match
+end function
+
+function begin(input: InputStream, output: OutputStream) returns Result[ScriptOutput, ScriptError]:
+  return match_pump(sico.stream.pump(input, output))
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return begin(sico.stream.stdin(), sico.stream.stdout())
+end function

@@ -81,7 +81,7 @@ fn effect_resource_and_revision_mutations_are_rejected() {
 }
 
 #[test]
-fn cumulative_capability_is_seventeen_lowered_and_eight_typed_refused() {
+fn cumulative_capability_is_eighteen_lowered_and_seven_typed_refused() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut paths = Vec::new();
     collect_sico(&repository.join("syntax-candidates/b"), &mut paths);
@@ -108,7 +108,8 @@ fn cumulative_capability_is_seventeen_lowered_and_eight_typed_refused() {
             Err(error) => panic!("{}: {error:?}", path.display()),
         }
     }
-    assert_eq!((lowered, unsupported), (17, 8));
+    // STEP-0087: await-once now lowers through the sequential executor.
+    assert_eq!((lowered, unsupported), (18, 7));
 }
 
 fn load(relative: &str) -> sico_ir::Module {
@@ -167,6 +168,7 @@ fn operation_name(operation: &Operation) -> &'static str {
         Operation::ConstU64(_) => "const-u64",
         Operation::ConstBool(_) => "const-bool",
         Operation::ConstString(_) => "const-string",
+        Operation::ConstBytes(_) => "const-bytes",
         Operation::Copy(_) => "copy",
         Operation::AddInt { .. } => "add-int",
         Operation::CheckedAdd { .. } => "checked-add",

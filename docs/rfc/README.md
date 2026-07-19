@@ -35,7 +35,9 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0027`](./RFC-0027-language-server-editor-protocol-v0.md) | accepted | 固定 bounded stdio LSP、UTF-16、compiler-owned editor features 与 run/debug boundary |
 | [`RFC-0028`](./RFC-0028-ai-tooling-inspect-fix-v0.md) | accepted | 固定 compiler-backed inspect/fix、source/diagnostic binding 与 offline/live evidence boundary |
 | [`RFC-0029`](./RFC-0029-script-profile-v0.md) | proposed | 定义 bounded batch Script entry、args/stdin/stdout/stderr、WIT/adapter、缓存、权限与兼容边界 |
+| [`RFC-0030`](./RFC-0030-script-streaming-v0.md) | proposed | 定义 M9 streaming channel：versioned input/output-stream resources、ownership、EOF/backpressure/close/cancellation 语义 |
+| [`RFC-0031`](./RFC-0031-scoped-http-v0.md) | proposed | 定义 scoped HTTP provider：精确端点授权、无 redirect、body/header 上限、无凭证与默认无网络 |
 
-下一可用编号：`RFC-0030`。
+下一可用编号：`RFC-0032`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

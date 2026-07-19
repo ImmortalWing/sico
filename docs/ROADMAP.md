@@ -155,7 +155,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M8: Script Profile v0
 
-状态：`in-progress / STEP-0075–0078 complete / STEP-0079 planned`
+状态：`GO / STEP-0075–0084 complete`
 
 主要交付：bounded batch Script WIT、动态标量与通用 control/function codegen、Text/Bytes/List/record/Result Canonical ABI、versioned adapter、manifest v1、结构化 `sico-runner`、统一 `sico run`/`eval`、安全缓存，以及 text/bytes/list/JSON/scoped-file 最小标准库。
 
@@ -167,13 +167,13 @@ Entry gate：satisfied by STEP-0014。
 
 ## M9: Streaming, async and interactive scripting
 
-状态：`planned-after-M8`
+状态：`in-progress / STEP-0085–0088 complete / STEP-0089 draft isolated`
 
 主要交付：backpressured InputStream/OutputStream、resource Canonical ABI、Task/Future/Stream source backend、async runner/cancellation、scoped HTTP Component provider、persistent runner/watch、bounded REPL、top-level syntax decision与编辑器/AI执行集成。
 
 进入条件：M8 必须完成自己的 GO，且 Script WIT/manifest/runner identities 可版本化而不是继续重写。M9 不包含 unrestricted process/shell capability。
 
-执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094；单个 STEP 文件只在实际开始时创建。
+执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0089 已开始，但 HTTP runner linking 保持关闭，直到精确授权、Host provider 与拒绝/取消证据齐备。
 
 ## Immediate dependency chain
 

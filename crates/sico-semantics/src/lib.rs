@@ -578,6 +578,16 @@ fn analyze_function(
             }
             LineKind::Return if line.tokens.len() >= 2 => {
                 let value = infer_expression(&line.tokens[1..], &locals, model, diagnostics);
+                if line.depth > 0 && is_task_type(&value.ty) {
+                    push_diagnostic(
+                        diagnostics,
+                        "E5102",
+                        "TASK_ESCAPES_SCOPE",
+                        "task cannot leave its task group".to_owned(),
+                        [],
+                        line.range,
+                    );
+                }
                 if line.depth <= 1 {
                     require_type(&function.returns, &value, diagnostics);
                 }
@@ -829,7 +839,6 @@ fn check_resource_async_stream(
         check_resource_use(line, &mut resources, model, diagnostics, facts);
         track_future_binding(line, model, &mut futures, facts);
         check_future_await(line, &mut futures, diagnostics, facts);
-        check_task_escape(line, diagnostics);
         check_stream_operation(line, &streams, diagnostics, facts);
     }
 }
@@ -987,23 +996,8 @@ fn check_future_await(
     }
 }
 
-fn check_task_escape(line: &Line, diagnostics: &mut Vec<SemanticDiagnostic>) {
-    if line.kind == LineKind::Return
-        && line.depth > 0
-        && line
-            .tokens
-            .get(1)
-            .is_some_and(|token| token.kind == TokenKind::Spawn)
-    {
-        push_diagnostic(
-            diagnostics,
-            "E5102",
-            "TASK_ESCAPES_SCOPE",
-            "task cannot leave its task group".to_owned(),
-            [],
-            line.range,
-        );
-    }
+fn is_task_type(ty: &Type) -> bool {
+    matches!(ty, Type::Generic { name, arguments } if name == "Task" && arguments.len() == 1)
 }
 
 fn check_stream_operation(
@@ -1435,6 +1429,26 @@ fn check_match_exhaustiveness(
     model: &Model,
     diagnostics: &mut Vec<SemanticDiagnostic>,
 ) {
+    // Bool-literal matches have no enum variants: require both literals.
+    if enum_names.is_empty() && patterns.iter().all(|pattern| pattern.variants.is_empty()) {
+        let missing: Vec<String> = ["true", "false"]
+            .into_iter()
+            .filter(|literal| !covered.iter().any(|case| *case == *literal))
+            .map(str::to_owned)
+            .collect();
+        if !missing.is_empty() {
+            push_list_diagnostic(
+                diagnostics,
+                "E3001",
+                "NON_EXHAUSTIVE_MATCH",
+                format!("missing case: {}", missing.join(", ")),
+                "missing",
+                missing,
+                line.range,
+            );
+        }
+        return;
+    }
     let missing = if enum_names.len() == 1 {
         missing_enum_variants(&enum_names[0], patterns, model)
     } else {
@@ -1534,6 +1548,12 @@ fn parse_match_pattern(line: &Line) -> MatchPattern {
                 .last()
                 .map_or("<unknown>", |(_, variant)| variant.as_str())
         )
+    } else if variants.is_empty()
+        && let Some(token) = tokens
+            .iter()
+            .find(|token| matches!(token.kind, TokenKind::True | TokenKind::False))
+    {
+        token.text.clone()
     } else {
         variants
             .iter()
@@ -1791,6 +1811,10 @@ fn infer_call(
         return value;
     }
 
+    if let Some(value) = infer_stdlib_call(&callee, &values, range, diagnostics) {
+        return value;
+    }
+
     if callee == "Float64.from_int" {
         if let Some(value) = values.first() {
             require_type(&Type::named("Int"), value, diagnostics);
@@ -1943,6 +1967,129 @@ fn infer_fixed_width_call(
     };
     Some(Value {
         ty,
+        range,
+        integer: None,
+    })
+}
+
+#[allow(clippy::too_many_lines)]
+fn infer_stdlib_call(
+    callee: &str,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Value> {
+    let named = |name: &str| Type::Named(name.to_owned());
+    let generic = |name: &str, argument: Type| Type::Generic {
+        name: name.to_owned(),
+        arguments: vec![argument],
+    };
+    let list_text = || generic("List", named("Text"));
+    let numeric_result = |ok: Type| Type::Generic {
+        name: "Result".to_owned(),
+        arguments: vec![ok, named("NumericError")],
+    };
+    let (parameters, result) = match callee {
+        "sico.bytes.length" => (vec![named("Bytes")], named("U64")),
+        "sico.bytes.concat" => (vec![named("Bytes"), named("Bytes")], named("Bytes")),
+        "sico.bytes.slice" => (
+            vec![named("Bytes"), named("U64"), named("U64")],
+            numeric_result(named("Bytes")),
+        ),
+        "sico.bytes.is_utf8" => (vec![named("Bytes")], named("Bool")),
+        "sico.bytes.utf8_decode" => (vec![named("Bytes")], named("Text")),
+        "sico.text.encode" => (vec![named("Text")], named("Bytes")),
+        "sico.text.length" => (vec![named("Text")], named("U64")),
+        "sico.text.concat" | "sico.json.get" => (vec![named("Text"), named("Text")], named("Text")),
+        "sico.text.trim" | "sico.json.quote" => (vec![named("Text")], named("Text")),
+        "sico.text.contains" | "sico.text.starts_with" => {
+            (vec![named("Text"), named("Text")], named("Bool"))
+        }
+        "sico.text.split_lines" | "sico.text.split_words" => (vec![named("Text")], list_text()),
+        "sico.text.replace" => (
+            vec![named("Text"), named("Text"), named("Text")],
+            named("Text"),
+        ),
+        "sico.text.join" => (vec![list_text(), named("Text")], named("Text")),
+        "sico.json.is_valid" => (vec![named("Text")], named("Bool")),
+
+        "sico.json.has" => (vec![named("Text"), named("Text")], named("Bool")),
+
+        "sico.list.length" => (vec![list_text()], named("U64")),
+        "sico.list.get" => (
+            vec![list_text(), named("U64")],
+            numeric_result(named("Text")),
+        ),
+        "sico.list.append" => (vec![list_text(), named("Text")], list_text()),
+        "sico.u64.to_text" => (vec![named("U64")], named("Text")),
+        "sico.i64.to_text" => (vec![named("I64")], named("Text")),
+        "sico.fs.read" => (
+            vec![named("Text")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bytes"), named("Text")],
+            },
+        ),
+        "sico.fs.exists" => (
+            vec![named("Text")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.fs.write" => (
+            vec![named("Text"), named("Bytes")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.http.request" => (
+            vec![named("Text"), named("Text"), named("Bytes")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("HttpResponse"), named("Text")],
+            },
+        ),
+        "sico.stream.stdin" => (vec![], named("InputStream")),
+        "sico.stream.stdout" | "sico.stream.stderr" => (vec![], named("OutputStream")),
+        "sico.stream.read" => (
+            vec![named("InputStream"), named("U64")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bytes"), named("Text")],
+            },
+        ),
+        "sico.stream.write" => (
+            vec![named("OutputStream"), named("Bytes")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.stream.flush" => (
+            vec![named("OutputStream")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.stream.pump" => (
+            vec![named("InputStream"), named("OutputStream")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.stream.close_input" => (vec![named("InputStream")], named("Bool")),
+        "sico.stream.close_output" => (vec![named("OutputStream")], named("Bool")),
+        _ => return None,
+    };
+    for (parameter, value) in parameters.iter().zip(values) {
+        require_type(parameter, value, diagnostics);
+    }
+    Some(Value {
+        ty: result,
         range,
         integer: None,
     })

@@ -57,6 +57,8 @@ pub enum Type {
     U64,
     Float64,
     String,
+    Bytes,
+    List(Box<Self>),
     Named(String),
     Option(Box<Self>),
     Result { ok: Box<Self>, error: Box<Self> },
@@ -138,6 +140,7 @@ pub enum Operation {
     ConstU64(u64),
     ConstBool(bool),
     ConstString(String),
+    ConstBytes(Vec<u8>),
     Copy(ValueId),
     AddInt {
         left: ValueId,
@@ -207,7 +210,8 @@ impl Operation {
             | Self::ConstI64(_)
             | Self::ConstU64(_)
             | Self::ConstBool(_)
-            | Self::ConstString(_) => Vec::new(),
+            | Self::ConstString(_)
+            | Self::ConstBytes(_) => Vec::new(),
             Self::Copy(value)
             | Self::ResourceMove(value)
             | Self::ResourceBorrow(value)
@@ -506,6 +510,9 @@ impl<'a> Verifier<'a> {
             Operation::ConstString(_) if instruction.ty != Type::String => {
                 self.error(path, VerifyErrorKind::TypeMismatch);
             }
+            Operation::ConstBytes(_) if instruction.ty != Type::Bytes => {
+                self.error(path, VerifyErrorKind::TypeMismatch);
+            }
             Operation::Copy(value) => self.expect_type(path, available.get(value), &instruction.ty),
             Operation::AddInt { left, right } => {
                 self.expect_type(path, available.get(left), &Type::Int);
@@ -537,14 +544,16 @@ impl<'a> Verifier<'a> {
                 }
             }
             Operation::Intrinsic { name, arguments } => {
-                if name == "Float64.from_int" {
-                    if arguments.len() != 1 || instruction.ty != Type::Float64 {
-                        self.error(path, VerifyErrorKind::TypeMismatch);
-                    } else {
-                        self.expect_type(path, available.get(&arguments[0]), &Type::Int);
-                    }
-                } else {
+                let Some((parameters, result)) = intrinsic_signature(name) else {
                     self.error(path, VerifyErrorKind::UnknownTarget);
+                    return;
+                };
+                if parameters.len() != arguments.len() || result != instruction.ty {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                    return;
+                }
+                for (parameter, argument) in parameters.iter().zip(arguments) {
+                    self.expect_type(path, available.get(argument), parameter);
                 }
             }
             Operation::Construct { .. } | Operation::Project { .. } | Operation::Variant { .. } => {
@@ -591,9 +600,15 @@ impl<'a> Verifier<'a> {
                         .len()
                         == fields.len()
             }
-            Operation::Project { base, field } => {
-                matches!(available.get(base), Some(Type::Named(_))) && !field.is_empty()
-            }
+            Operation::Project { base, field } => match available.get(base) {
+                Some(Type::Named(_)) => !field.is_empty(),
+                // Variant payload projection (`case ok(x)` lowering, STEP-0083).
+                Some(Type::Result { ok, error }) => {
+                    (field == "ok" && ok.as_ref() == &instruction.ty)
+                        || (field == "error" && error.as_ref() == &instruction.ty)
+                }
+                _ => false,
+            },
             Operation::Variant { name, .. } => {
                 matches!(
                     (&instruction.ty, name.as_str()),
@@ -817,6 +832,123 @@ fn matching_fixed_operands<'a>(left: Option<&'a Type>, right: Option<&Type>) -> 
         (Some(left @ (Type::I64 | Type::U64)), Some(right)) if left == right => Some(left),
         _ => None,
     }
+}
+
+/// The closed, versioned Script standard-library intrinsic registry
+/// (STEP-0083). Every signature is pinned; unknown names are rejected.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
+    let result_of = |ok: Type| Type::Result {
+        ok: Box::new(ok),
+        error: Box::new(Type::Named(NUMERIC_ERROR_TYPE.to_owned())),
+    };
+    let list_of = |element: Type| Type::List(Box::new(element));
+    let (parameters, result) = match name {
+        "Float64.from_int" => (vec![Type::Int], Type::Float64),
+        "sico.bytes.length" => (vec![Type::Bytes], Type::U64),
+        "sico.bytes.concat" => (vec![Type::Bytes, Type::Bytes], Type::Bytes),
+        "sico.bytes.slice" => (
+            vec![Type::Bytes, Type::U64, Type::U64],
+            result_of(Type::Bytes),
+        ),
+        "sico.bytes.is_utf8" => (vec![Type::Bytes], Type::Bool),
+        "sico.bytes.utf8_decode" => (vec![Type::Bytes], Type::String),
+        "sico.text.encode" => (vec![Type::String], Type::Bytes),
+        "sico.text.length" => (vec![Type::String], Type::U64),
+        "sico.text.concat" | "sico.json.get" => (vec![Type::String, Type::String], Type::String),
+        "sico.text.trim" | "sico.json.quote" => (vec![Type::String], Type::String),
+        "sico.text.contains" | "sico.text.starts_with" => {
+            (vec![Type::String, Type::String], Type::Bool)
+        }
+        "sico.text.split_lines" | "sico.text.split_words" => {
+            (vec![Type::String], list_of(Type::String))
+        }
+        "sico.text.replace" => (vec![Type::String, Type::String, Type::String], Type::String),
+        "sico.text.join" => (vec![list_of(Type::String), Type::String], Type::String),
+        "sico.json.is_valid" => (vec![Type::String], Type::Bool),
+
+        "sico.json.has" => (vec![Type::String, Type::String], Type::Bool),
+
+        "sico.list.length" => (vec![list_of(Type::String)], Type::U64),
+        "sico.list.get" => (
+            vec![list_of(Type::String), Type::U64],
+            result_of(Type::String),
+        ),
+        "sico.list.append" => (
+            vec![list_of(Type::String), Type::String],
+            list_of(Type::String),
+        ),
+        "sico.u64.to_text" => (vec![Type::U64], Type::String),
+        "sico.i64.to_text" => (vec![Type::I64], Type::String),
+        "sico.fs.read" => (
+            vec![Type::String],
+            Type::Result {
+                ok: Box::new(Type::Bytes),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.fs.exists" => (
+            vec![Type::String],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.fs.write" => (
+            vec![Type::String, Type::Bytes],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.http.request" => (
+            vec![Type::String, Type::String, Type::Bytes],
+            Type::Result {
+                ok: Box::new(Type::Named("HttpResponse".to_owned())),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.stream.stdin" => (vec![], Type::Named("InputStream".to_owned())),
+        "sico.stream.stdout" | "sico.stream.stderr" => {
+            (vec![], Type::Named("OutputStream".to_owned()))
+        }
+        "sico.stream.read" => (
+            vec![Type::Named("InputStream".to_owned()), Type::U64],
+            Type::Result {
+                ok: Box::new(Type::Bytes),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.stream.write" => (
+            vec![Type::Named("OutputStream".to_owned()), Type::Bytes],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.stream.flush" => (
+            vec![Type::Named("OutputStream".to_owned())],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.stream.pump" => (
+            vec![
+                Type::Named("InputStream".to_owned()),
+                Type::Named("OutputStream".to_owned()),
+            ],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.stream.close_input" => (vec![Type::Named("InputStream".to_owned())], Type::Bool),
+        "sico.stream.close_output" => (vec![Type::Named("OutputStream".to_owned())], Type::Bool),
+        _ => return None,
+    };
+    Some((parameters, result))
 }
 
 fn canonical_integer(value: &str) -> bool {

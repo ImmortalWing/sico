@@ -4,6 +4,17 @@ use sico_semantics::{MAX_SEMANTIC_DIAGNOSTICS, analyze};
 use sico_source::{SourceFile, SourceId};
 
 #[test]
+fn task_escape_is_rejected_after_local_binding() {
+    let text = "async function compute() returns Int:\n  return 1\nend function\n\nasync function leak() returns Task[Int]:\n  task group:\n    let escaped = spawn compute()\n    return escaped\n  end task\nend function\n";
+    let source =
+        SourceFile::from_text(SourceId::new(0), "indirect-task-escape.sico", text).unwrap();
+    let analysis = analyze(&source).unwrap();
+    assert_eq!(analysis.diagnostics.len(), 1, "{:?}", analysis.diagnostics);
+    assert_eq!(analysis.diagnostics[0].code, "E5102");
+    assert_eq!(analysis.diagnostics[0].key, "TASK_ESCAPES_SCOPE");
+}
+
+#[test]
 fn fixed_width_intrinsics_have_explicit_checked_semantics() {
     let text = "function signed_add(left: I64, right: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(left, right)\nend function\n\nfunction unsigned_sub(left: U64, right: U64) returns Result[U64, NumericError]:\n  return U64.checked_sub(left, right)\nend function\n\nfunction signed_less(left: I64, right: I64) returns Bool:\n  return I64.less_than(left, right)\nend function\n\nfunction unsigned_equal(left: U64, right: U64) returns Bool:\n  return U64.equal(left, right)\nend function\n\nfunction signed_literal() returns I64:\n  return I64.literal(-9223372036854775808)\nend function\n\nfunction unsigned_literal() returns U64:\n  return U64.literal(18446744073709551615)\nend function\n";
     let source = SourceFile::from_text(SourceId::new(0), "fixed-valid.sico", text).unwrap();

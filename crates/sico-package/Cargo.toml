@@ -11,14 +11,14 @@ ed25519-dalek.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
+sico-codegen-wasm = { path = "../sico-codegen-wasm" }
 unicode-normalization.workspace = true
+wasm-encoder.workspace = true
 wasmparser.workspace = true
 
 [dev-dependencies]
-sico-codegen-wasm = { path = "../sico-codegen-wasm" }
 sico-ir = { path = "../sico-ir" }
 sico-source = { path = "../sico-source" }
-wasm-encoder.workspace = true
 
 [lints]
 workspace = true

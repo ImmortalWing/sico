@@ -1,0 +1,31 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match sico.bytes.is_utf8(input.stdin):
+    case true:
+      return ok(ScriptOutput(stdout: sico.text.encode(sico.u64.to_text(sico.list.length(sico.text.split_words(sico.text.trim(sico.bytes.utf8_decode(input.stdin)))))), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "stdin is not valid UTF-8"))
+  end match
+end function

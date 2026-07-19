@@ -27,7 +27,74 @@ interface types {
   }
 }
 
+interface fs-read {
+  // Read one file below a Host-granted read root; the error text is a
+  // bounded diagnostic (denied, escape, not-found or io), never a path.
+  read: func(path: string) -> result<list<u8>, string>;
+  // Existence check below a Host-granted read root.
+  exists: func(path: string) -> result<bool, string>;
+}
+
+interface fs-write {
+  // Write one file below a Host-granted write root, replacing it whole.
+  write: func(path: string, content: list<u8>) -> result<_, string>;
+}
+
+// Draft contract for RFC-0030. Streaming channel for M9; the buffered
+// script-input/script-output records stay the compatibility profile.
+interface streams {
+  enum stream-error {
+    // Host-side IO failure (typed, no host text leaked).
+    io,
+    // The run's cancellation token fired during a blocked call.
+    cancelled,
+    // Use after close on the guest side.
+    closed,
+    // A configured bound was exceeded (never silent truncation).
+    resource-limit,
+  }
+
+  resource input-stream {
+    // Bounded read: at most `max` bytes (Host clamps to 64 KiB). An empty
+    // ok list is EOF and is not an error; an error is always terminal.
+    read: func(max: u64) -> result<list<u8>, stream-error>;
+  }
+
+  resource output-stream {
+    // All-or-error bounded write (at most 1 MiB per call); backpressure
+    // blocks, never drops.
+    write: func(bytes: list<u8>) -> result<_, stream-error>;
+    flush: func() -> result<_, stream-error>;
+  }
+
+  // One owned handle per call; handles are per-run and die with the Store.
+  stdin: func() -> input-stream;
+  stdout: func() -> output-stream;
+  stderr: func() -> output-stream;
+
+  // Bounded host-side passthrough: read chunks from `input` and write them
+  // to `output` until EOF; returns the total bytes moved. Per-chunk guest
+  // transforms use read/write directly; pump exists so bulk forwarding
+  // never grows guest memory with the stream volume.
+  pump: func(input: borrow<input-stream>, output: borrow<output-stream>) -> result<u64, stream-error>;
+}
+
+// Draft contract for RFC-0031. Scoped outbound HTTP: exact endpoint grants,
+// no redirects, bounded bodies; https is absent from v0 (no TLS offline).
+interface http {
+  record response {
+    status: s64,
+    body: list<u8>,
+  }
+  // Error text is a bounded class diagnostic, never URL/header/body text.
+  request: func(method: string, url: string, body: list<u8>) -> result<response, string>;
+}
+
 world program {
   use types.{script-input, script-output, script-error};
+  import fs-read;
+  import fs-write;
+  import streams;
+  import http;
   export run: func(input: script-input) -> result<script-output, script-error>;
 }

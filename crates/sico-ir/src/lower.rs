@@ -43,11 +43,15 @@ struct Definitions {
     capabilities: BTreeSet<String>,
     resources: BTreeSet<String>,
     methods: BTreeMap<(String, String), MethodSignature>,
+    /// User-declared newtype/record/enum names that shadow profile types
+    /// such as `Bytes`/`List` (STEP-0080).
+    declared_types: BTreeSet<String>,
 }
 
 struct FunctionBuilder<'a> {
     definitions: &'a Definitions,
     next_value: u32,
+    parameter_count: u32,
     bindings: BTreeMap<String, (ValueId, Type)>,
     declared_effects: Vec<String>,
 }
@@ -104,6 +108,7 @@ impl Definitions {
                         declaration.name.clone(),
                         Type::Named(declaration.name.clone()),
                     );
+                    definitions.declared_types.insert(declaration.name.clone());
                 }
                 DeclarationKind::Capability => {
                     definitions.capabilities.insert(declaration.name.clone());
@@ -111,7 +116,10 @@ impl Definitions {
                 DeclarationKind::Resource => {
                     definitions.resources.insert(declaration.name.clone());
                 }
-                DeclarationKind::Enum | DeclarationKind::Function | DeclarationKind::Interface => {}
+                DeclarationKind::Enum => {
+                    definitions.declared_types.insert(declaration.name.clone());
+                }
+                DeclarationKind::Function | DeclarationKind::Interface => {}
             }
         }
         let mut next_function = 1_u32;
@@ -191,6 +199,8 @@ impl Definitions {
         match ty {
             Type::Named(name) if self.capabilities.contains(&name) => Type::Capability(name),
             Type::Named(name) if self.resources.contains(&name) => Type::OwnedResource(name),
+            Type::Bytes if self.declared_types.contains("Bytes") => Type::Named("Bytes".into()),
+            Type::List(_) if self.declared_types.contains("List") => Type::Named("List".into()),
             Type::Option(value) => Type::Option(Box::new(self.resolve_type(*value))),
             Type::Result { ok, error } => Type::Result {
                 ok: Box::new(self.resolve_type(*ok)),
@@ -199,6 +209,7 @@ impl Definitions {
             Type::Task(value) => Type::Task(Box::new(self.resolve_type(*value))),
             Type::Future(value) => Type::Future(Box::new(self.resolve_type(*value))),
             Type::Stream(value) => Type::Stream(Box::new(self.resolve_type(*value))),
+            Type::List(value) => Type::List(Box::new(self.resolve_type(*value))),
             other => other,
         }
     }
@@ -209,9 +220,11 @@ fn lower_function(
     definitions: &Definitions,
 ) -> Result<Function, CoreLowerError> {
     let signature = &definitions.functions[&declaration.name];
-    if signature.async_function {
-        return unsupported("async function", declaration.range);
-    }
+    // Sequential executor (STEP-0087): async functions lower as ordinary
+    // functions; `spawn` is an eager call and `await` an identity copy.
+    // The structured discipline (await-once, no task escaping its scope) is
+    // already enforced by semantic analysis before lowering.
+    let _ = signature.async_function;
     let parameters: Vec<_> = signature
         .parameters
         .iter()
@@ -233,6 +246,7 @@ fn lower_function(
     let mut builder = FunctionBuilder {
         definitions,
         next_value: u32::try_from(parameters.len()).expect("source limits bound parameters"),
+        parameter_count: u32::try_from(parameters.len()).expect("source limits bound parameters"),
         bindings,
         declared_effects: effects.clone(),
     };
@@ -324,7 +338,13 @@ fn lower_straight_line(
                     .iter()
                     .any(|token| token.kind == TokenKind::None);
             }
-            LineKind::End | LineKind::DeclarationHeader | LineKind::FunctionSignature => {}
+            // Sequential executor (STEP-0087): a task group is a
+            // straight-line scope; semantic analysis already enforced
+            // its structure.
+            LineKind::End
+            | LineKind::DeclarationHeader
+            | LineKind::FunctionSignature
+            | LineKind::TaskGroup => {}
             LineKind::If => return unsupported("nested if control flow", line.range),
             LineKind::Using => {
                 let Some(name) = line.tokens.get(1) else {
@@ -335,7 +355,6 @@ fn lower_straight_line(
                 };
                 using_resource = Some(*value);
             }
-            LineKind::TaskGroup => return unsupported("task group", line.range),
             LineKind::Match | LineKind::MatchArm => {
                 return unsupported("nested match", line.range);
             }
@@ -360,6 +379,7 @@ fn lower_straight_line(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn lower_match(
     declaration: &Declaration,
     match_index: usize,
@@ -377,12 +397,11 @@ fn lower_match(
     let expression_parts = split_top_level(expressions, TokenKind::Comma);
     let mut entry_instructions = Vec::new();
     let mut values = Vec::new();
+    let mut value_types = Vec::new();
     for expression in expression_parts {
-        values.push(
-            builder
-                .expression(expression, None, &mut entry_instructions)?
-                .0,
-        );
+        let (value, ty) = builder.expression(expression, None, &mut entry_instructions)?;
+        values.push(value);
+        value_types.push(ty);
     }
 
     let mut blocks = Vec::new();
@@ -401,8 +420,29 @@ fn lower_match(
             .into_iter()
             .map(parse_pattern)
             .collect();
-        if patterns.iter().any(pattern_binds) {
-            return unsupported("match payload binding", line.range);
+        // `case ok(x)` / `case error(x)` bind the variant payload through a
+        // Project instruction; every other binding shape stays refused.
+        let mut payload_binding = None;
+        for pattern in &patterns {
+            let single_result_binding = match pattern {
+                Pattern::Variant { name, payload } if matches!(name.as_str(), "ok" | "error") => {
+                    match payload.as_slice() {
+                        [Pattern::Binding(name)] => Some((pattern, name.clone())),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            match single_result_binding {
+                Some((pattern, name)) if patterns.len() == 1 && payload_binding.is_none() => {
+                    let _ = pattern;
+                    payload_binding = Some(name);
+                }
+                _ if pattern_binds(pattern) => {
+                    return unsupported("match payload binding", line.range);
+                }
+                _ => {}
+            }
         }
         cursor += 1;
         let Some(body) = declaration.lines.get(cursor) else {
@@ -412,6 +452,35 @@ fn lower_match(
             return unsupported("non-return match arm", body.range);
         }
         let mut instructions = Vec::new();
+        if let Some(binding) = payload_binding {
+            let [Pattern::Variant { name: variant, .. }] = patterns.as_slice() else {
+                return unsupported("match payload binding", line.range);
+            };
+            let (Some(Type::Result { ok, error }), [base]) =
+                (value_types.first(), values.as_slice())
+            else {
+                return unsupported("match payload binding on non-Result", line.range);
+            };
+            // IR values are block-scoped: only a match subject that is a
+            // function parameter stays visible inside the arm block.
+            if base.0 >= builder.parameter_count {
+                return unsupported("match payload binding", line.range);
+            }
+            let payload_type = match variant.as_str() {
+                "ok" => ok.as_ref().clone(),
+                _ => error.as_ref().clone(),
+            };
+            let value = builder.emit(
+                payload_type.clone(),
+                Operation::Project {
+                    base: *base,
+                    field: variant.clone(),
+                },
+                line.range,
+                &mut instructions,
+            );
+            builder.bindings.insert(binding, (value, payload_type));
+        }
         let (value, _) =
             builder.expression(&body.tokens[1..], Some(return_type), &mut instructions)?;
         let target = BlockId(u32::try_from(blocks.len() + 1).expect("source limits bound blocks"));
@@ -548,6 +617,22 @@ impl FunctionBuilder<'_> {
         output: &mut Vec<Instruction>,
     ) -> Result<(ValueId, Type), CoreLowerError> {
         let tokens = strip_outer_parens(tokens);
+        if tokens
+            .first()
+            .is_some_and(|token| token.kind == TokenKind::Spawn)
+        {
+            // Sequential executor (STEP-0087): spawn is an eager call; the
+            // bound value is the async function's inner result.
+            return self.expression(&tokens[1..], expected, output);
+        }
+        if tokens
+            .first()
+            .is_some_and(|token| token.kind == TokenKind::Await)
+        {
+            // Sequential executor: await is the identity over the eagerly
+            // produced value (completion already happened at spawn).
+            return self.expression(&tokens[1..], expected, output);
+        }
         if tokens
             .first()
             .is_some_and(|token| token.kind == TokenKind::Try)
@@ -731,6 +816,30 @@ impl FunctionBuilder<'_> {
             let value = self.emit(ty.clone(), operation, token_range(tokens), output);
             return Ok((value, ty));
         }
+        if callee.starts_with("sico.")
+            && let Some((parameters, result)) = crate::intrinsic_signature(&callee)
+        {
+            if parameters.len() != arguments.len() {
+                return unsupported("stdlib intrinsic arity", token_range(tokens));
+            }
+            let mut values = Vec::with_capacity(arguments.len());
+            for (argument, parameter) in arguments.iter().zip(&parameters) {
+                values.push(
+                    self.expression(argument_value(argument), Some(parameter), output)?
+                        .0,
+                );
+            }
+            let value = self.emit(
+                result.clone(),
+                Operation::Intrinsic {
+                    name: callee,
+                    arguments: values,
+                },
+                token_range(tokens),
+                output,
+            );
+            return Ok((value, result));
+        }
         if let Some(signature) = self.definitions.functions.get(&callee) {
             if arguments.len() != signature.parameters.len() {
                 return unsupported("call arity", token_range(tokens));
@@ -867,6 +976,28 @@ impl FunctionBuilder<'_> {
                 ty.clone(),
                 Operation::Variant {
                     name: "ok".into(),
+                    payload: vec![argument],
+                },
+                token_range(tokens),
+                output,
+            );
+            return Ok((value, ty));
+        }
+        if callee == "error" {
+            let Some(Type::Result { error, .. }) = expected else {
+                return unsupported("unconstrained error", token_range(tokens));
+            };
+            let [argument] = arguments.as_slice() else {
+                return unsupported("error arity", token_range(tokens));
+            };
+            let argument = self
+                .expression(argument_value(argument), Some(error), output)?
+                .0;
+            let ty = expected.expect("checked above").clone();
+            let value = self.emit(
+                ty.clone(),
+                Operation::Variant {
+                    name: "error".into(),
                     payload: vec![argument],
                 },
                 token_range(tokens),
@@ -1028,6 +1159,8 @@ fn parse_type(tokens: &[HirToken]) -> Type {
         "U64" => Type::U64,
         "Float64" => Type::Float64,
         "Text" => Type::String,
+        "Bytes" => Type::Bytes,
+        "List" if arguments.len() == 1 => Type::List(Box::new(arguments[0].clone())),
         "Option" if arguments.len() == 1 => Type::Option(Box::new(arguments[0].clone())),
         "Result" if arguments.len() == 2 => Type::Result {
             ok: Box::new(arguments[0].clone()),

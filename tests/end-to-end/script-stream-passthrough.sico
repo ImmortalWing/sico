@@ -1,0 +1,79 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.DomainError, message: message))
+end function
+
+function close_input_and_finish(done: Bool, output: OutputStream) returns Result[ScriptOutput, ScriptError]:
+  match sico.stream.close_output(output):
+    case true:
+      return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "close output failed"))
+  end match
+end function
+
+function finish(result: Result[Bool, Text], input: InputStream, output: OutputStream) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(done):
+      return close_input_and_finish(sico.stream.close_input(input), output)
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function continue_after_write(input: InputStream, output: OutputStream, result: Result[Bool, Text]) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(done):
+      return pump(input, output, sico.stream.read(input, U64.literal(65536)))
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function step(input: InputStream, output: OutputStream, chunk: Bytes) returns Result[ScriptOutput, ScriptError]:
+  match U64.equal(sico.bytes.length(chunk), U64.literal(0)):
+    case true:
+      return finish(sico.stream.flush(output), input, output)
+    case false:
+      return continue_after_write(input, output, sico.stream.write(output, chunk))
+  end match
+end function
+
+function pump(input: InputStream, output: OutputStream, result: Result[Bytes, Text]) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(chunk):
+      return step(input, output, chunk)
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function begin(input: InputStream, output: OutputStream) returns Result[ScriptOutput, ScriptError]:
+  return pump(input, output, sico.stream.read(input, U64.literal(65536)))
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return begin(sico.stream.stdin(), sico.stream.stdout())
+end function

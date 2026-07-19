@@ -9,11 +9,11 @@ publish.workspace = true
 [dependencies]
 sico-ir = { path = "../sico-ir" }
 wasm-encoder.workspace = true
+wit-parser.workspace = true
 
 [dev-dependencies]
 sico-source = { path = "../sico-source" }
 wasmparser.workspace = true
-wit-parser.workspace = true
 
 [lints]
 workspace = true

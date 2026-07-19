@@ -5,7 +5,8 @@ use sico_codegen_wasm::compile_component;
 use sico_ir::lower_core;
 use sico_package::{
     BuildInput, PackageError, ResourceInput, RuntimeLimits, TrustPolicy, TrustStatus, authorize,
-    build_unsigned, capabilities_for_imports, sign_development, verify, verify_trusted,
+    build_script_v1, build_unsigned, capabilities_for_imports, sign_development, verify,
+    verify_trusted,
 };
 use sico_source::{SourceFile, SourceId};
 use wasm_encoder::{
@@ -253,4 +254,124 @@ fn importing_component(name: &str) -> Vec<u8> {
     exports.export("capability-probe", ComponentExportKind::Value, 0, None);
     component.section(&exports);
     component.finish()
+}
+
+#[test]
+fn script_v1_package_roundtrips_exact_identities() {
+    let input = script_input();
+    let package = build_script_v1(input.clone()).unwrap();
+    assert_eq!(package, build_script_v1(input).unwrap());
+    let verified = verify(&package).unwrap();
+    let manifest = &verified.manifest;
+    assert_eq!(manifest.schema, "sico.sapp.manifest.v1");
+    assert_eq!(manifest.app.entry, "run");
+    let script = manifest.script.as_ref().unwrap();
+    assert_eq!(script.profile, "script-v0");
+    assert_eq!(script.world, "sico:script/program@0.1.0");
+    assert_eq!(script.semantics, "sico.ir.v0");
+    assert_eq!(script.wit.package, "sico:script@0.1.0");
+    assert_eq!(script.wit.sha256.len(), 64);
+    assert_eq!(script.adapter.id, "sico:script/adapter@0.1.0");
+    assert_eq!(
+        manifest.capabilities,
+        vec!["script.args".to_owned(), "script.stdio".to_owned()]
+    );
+    assert_eq!(manifest.source_effects, manifest.capabilities);
+    // The scalar probe component has no imports, so the declared script
+    // capabilities cannot match its import closure.
+    let trusted = sico_package::TrustedPackage {
+        package: verified,
+        trust: sico_package::TrustStatus::UnsignedDevelopment,
+    };
+    assert_eq!(
+        authorize(
+            trusted,
+            &BTreeSet::from(["script.args".to_owned(), "script.stdio".to_owned()])
+        )
+        .unwrap_err(),
+        PackageError::ImportManifestMismatch
+    );
+}
+
+#[test]
+fn script_v1_rejects_invalid_identities() {
+    let mut bad_digest = script_input();
+    bad_digest.wit_sha256 = "ABCD".to_owned();
+    assert!(matches!(
+        build_script_v1(bad_digest),
+        Err(PackageError::Manifest(_))
+    ));
+    let mut uppercase = script_input();
+    uppercase.adapter_sha256 = uppercase.adapter_sha256.to_uppercase();
+    assert!(matches!(
+        build_script_v1(uppercase),
+        Err(PackageError::Manifest(_))
+    ));
+    let mut bad_app = script_input();
+    bad_app.app_id = "not an app id".to_owned();
+    assert!(build_script_v1(bad_app).is_err());
+}
+
+#[test]
+fn script_v1_manifest_rejects_tampered_script_identity() {
+    let package = build_script_v1(script_input()).unwrap();
+    // Flip the script profile value inside the manifest JSON in place: the
+    // structure stays canonical, so the strict identity check must reject.
+    let needle = b"script-v0";
+    let offset = package
+        .windows(needle.len())
+        .position(|window| window == needle)
+        .expect("manifest carries the script profile");
+    let mut tampered = package;
+    tampered[offset..offset + needle.len()].copy_from_slice(b"script-v9");
+    assert_eq!(
+        verify(&tampered).unwrap_err(),
+        PackageError::InvalidIdentity("script.profile")
+    );
+}
+
+#[test]
+fn script_import_mapping_is_exact_and_fails_closed() {
+    let composed = [
+        "sico:script/types@0.1.0".to_owned(),
+        "wasi:cli/environment@0.2.12".to_owned(),
+        "wasi:cli/exit@0.2.12".to_owned(),
+        "wasi:cli/stderr@0.2.12".to_owned(),
+        "wasi:cli/stdin@0.2.12".to_owned(),
+        "wasi:cli/stdout@0.2.12".to_owned(),
+        "wasi:io/error@0.2.12".to_owned(),
+        "wasi:io/streams@0.2.12".to_owned(),
+    ];
+    let mapped = capabilities_for_imports(&composed).unwrap();
+    assert_eq!(
+        mapped,
+        BTreeSet::from(["script.args".to_owned(), "script.stdio".to_owned()])
+    );
+    for unknown in [
+        "wasi:cli/environment@0.2.6".to_owned(),
+        "wasi:cli/environment@0.3.0".to_owned(),
+        "wasi:cli/sockets@0.2.12".to_owned(),
+        "sico:script/types@0.2.0".to_owned(),
+    ] {
+        assert_eq!(
+            capabilities_for_imports(std::slice::from_ref(&unknown)).unwrap_err(),
+            PackageError::UnknownCapability(unknown)
+        );
+    }
+}
+
+fn script_input() -> sico_package::BuildScriptInput {
+    sico_package::BuildScriptInput {
+        app_id: "dev.sico.script".to_owned(),
+        app_version: "0.1.0".to_owned(),
+        component: component(),
+        resources: Vec::new(),
+        semantics: "sico.ir.v0".to_owned(),
+        wit_sha256: "a".repeat(64),
+        adapter_sha256: "b".repeat(64),
+        limits: RuntimeLimits {
+            body_bytes: 8 * 1024 * 1024,
+            ..RuntimeLimits::default()
+        },
+    }
 }

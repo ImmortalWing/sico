@@ -2,6 +2,9 @@
 
 #![forbid(unsafe_code)]
 
+mod cache;
+mod run;
+
 use std::{
     ffi::{OsStr, OsString},
     fs::{self, OpenOptions},
@@ -63,6 +66,8 @@ where
         Some(("format", command)) => run_format(command, stdin, stdout, stderr),
         Some(("outline", command)) => run_outline(command, stdin, stdout, stderr),
         Some(("build", command)) => run_build(command, stdin, stdout, stderr),
+        Some(("run", command)) => run::run_run(command, stdin, stdout, stderr),
+        Some(("eval", command)) => run::run_eval(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
 }
@@ -115,6 +120,8 @@ fn command() -> Command {
                 ),
         )
         .subcommand(build_command())
+        .subcommand(run::run_command())
+        .subcommand(run::eval_command())
 }
 
 fn build_command() -> Command {
@@ -122,6 +129,13 @@ fn build_command() -> Command {
         .about("Compile source to a deterministic WebAssembly Component")
         .arg(input_arg())
         .arg(output_arg())
+        .arg(
+            Arg::new("profile")
+                .long("profile")
+                .value_name("PROFILE")
+                .help("Build profile: component-v0 (default) or script-v0")
+                .default_value("component-v0"),
+        )
 }
 
 fn input_arg() -> Arg {
@@ -147,6 +161,11 @@ fn run_build(
     stderr: &mut dyn Write,
 ) -> i32 {
     let input = matches.get_one::<String>("input").unwrap();
+    let profile = matches.get_one::<String>("profile").unwrap();
+    if profile != "component-v0" && profile != "script-v0" {
+        let _ = writeln!(stderr, "sico: unknown build profile {profile}");
+        return EXIT_TOOL_ERROR;
+    }
     let output = match build_output_path(input, matches.get_one::<String>("output")) {
         Ok(output) => output,
         Err(message) => {
@@ -154,7 +173,7 @@ fn run_build(
             return EXIT_TOOL_ERROR;
         }
     };
-    let component = match compile_source(input, stdin, stdout, stderr) {
+    let component = match compile_source(input, profile, stdin, stdout, stderr) {
         Ok(component) => component,
         Err(exit) => return exit,
     };
@@ -176,6 +195,7 @@ fn run_build(
 
 fn compile_source(
     input: &str,
+    profile: &str,
     stdin: &mut dyn Read,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
@@ -187,12 +207,13 @@ fn compile_source(
             return Err(EXIT_TOOL_ERROR);
         }
     };
-    compile_source_bytes(&name, &bytes, stdout, stderr)
+    compile_source_bytes(&name, &bytes, profile, stdout, stderr)
 }
 
-fn compile_source_bytes(
+pub(crate) fn compile_source_bytes(
     name: &str,
     bytes: &[u8],
+    profile: &str,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<Vec<u8>, i32> {
@@ -221,6 +242,12 @@ fn compile_source_bytes(
             &source, &analysis, false, stdout, stderr,
         ));
     }
+    if profile == "script-v0"
+        && let Err(message) = validate_script_declarations(&analysis)
+    {
+        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        return Err(EXIT_TOOL_ERROR);
+    }
     let module = match lower_core(&source) {
         Ok(module) => module,
         Err(error) => {
@@ -233,6 +260,9 @@ fn compile_source_bytes(
             return Err(EXIT_TOOL_ERROR);
         }
     };
+    if profile == "script-v0" {
+        return compile_script_module(&module, &source, stderr);
+    }
     if let Err(message) = validate_entry(&module) {
         let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
         return Err(EXIT_TOOL_ERROR);
@@ -249,6 +279,146 @@ fn compile_source_bytes(
             Err(EXIT_TOOL_ERROR)
         }
     }
+}
+
+/// Compiles the validated Script profile module, mapping the source `main`
+/// entry to the boundary `run` export.
+fn compile_script_module(
+    module: &Module,
+    source: &SourceFile,
+    stderr: &mut dyn Write,
+) -> Result<Vec<u8>, i32> {
+    let mut module = module.clone();
+    if let Err(message) = validate_script_entry(&module) {
+        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        return Err(EXIT_TOOL_ERROR);
+    }
+    for function in &mut module.functions {
+        if function.name == "main" {
+            "run".clone_into(&mut function.name);
+        }
+    }
+    match sico_codegen_wasm::compile_script_program(&module) {
+        Ok(component) => Ok(component),
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot generate Script Component for {}: {}",
+                source.name(),
+                codegen_error(&error)
+            );
+            Err(EXIT_TOOL_ERROR)
+        }
+    }
+}
+
+/// The frozen Script v0 entry: exactly one
+/// `main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]`.
+fn validate_script_entry(module: &Module) -> Result<(), &'static str> {
+    let mut entries = module
+        .functions
+        .iter()
+        .filter(|function| function.name == "main");
+    let Some(main) = entries.next() else {
+        return Err("script entry function main is missing");
+    };
+    if entries.next().is_some() {
+        return Err("multiple main functions are not supported");
+    }
+    let script_input = Type::Named("ScriptInput".into());
+    let script_result = Type::Result {
+        ok: Box::new(Type::Named("ScriptOutput".into())),
+        error: Box::new(Type::Named("ScriptError".into())),
+    };
+    if main.parameters.len() != 1 || main.parameters[0].ty != script_input {
+        return Err("script main must take exactly one input: ScriptInput parameter");
+    }
+    if main.return_type != script_result {
+        return Err("script main must return Result[ScriptOutput, ScriptError]");
+    }
+    if !main.effects.is_empty() {
+        return Err("script v0 does not allow effect declarations");
+    }
+    Ok(())
+}
+
+/// Validates the four explicit Script declarations against the frozen ABI
+/// shapes; unknown or mismatched shapes fail closed.
+fn validate_script_declarations(analysis: &Analysis) -> Result<(), String> {
+    let fields = |record: &str| -> Vec<(String, sico_semantics::Type)> {
+        analysis
+            .facts
+            .iter()
+            .filter(|fact| fact.kind == sico_semantics::SemanticFactKind::Field)
+            .filter_map(|fact| {
+                let (owner, name) = fact.name.split_once('.')?;
+                let ty = fact.ty.clone()?;
+                (owner == record).then_some((name.to_owned(), ty))
+            })
+            .collect()
+    };
+    let named = |name: &str| sico_semantics::Type::Named(name.to_owned());
+    let bytes = named("Bytes");
+    let text_list = sico_semantics::Type::Generic {
+        name: "List".to_owned(),
+        arguments: vec![named("Text")],
+    };
+    let expected: [(&str, Vec<(&str, sico_semantics::Type)>); 3] = [
+        (
+            "ScriptInput",
+            vec![("arguments", text_list), ("stdin", bytes.clone())],
+        ),
+        (
+            "ScriptOutput",
+            vec![
+                ("stdout", bytes.clone()),
+                ("stderr", bytes.clone()),
+                ("exit_code", named("I64")),
+            ],
+        ),
+        (
+            "ScriptError",
+            vec![
+                ("code", named("ScriptErrorCode")),
+                ("message", named("Text")),
+            ],
+        ),
+    ];
+    for (record, expected_fields) in expected {
+        let actual = fields(record);
+        let expected: Vec<(String, sico_semantics::Type)> = expected_fields
+            .into_iter()
+            .map(|(name, ty)| (name.to_owned(), ty))
+            .collect();
+        if actual.is_empty() {
+            return Err(format!(
+                "script profile requires an explicit record {record} declaration"
+            ));
+        }
+        if actual != expected {
+            return Err(format!(
+                "record {record} does not match the frozen Script ABI shape {expected:?}"
+            ));
+        }
+    }
+    let variants: Vec<&str> = analysis
+        .facts
+        .iter()
+        .filter(|fact| fact.kind == sico_semantics::SemanticFactKind::Variant)
+        .filter_map(|fact| {
+            let (owner, name) = fact.name.split_once('.')?;
+            (owner == "ScriptErrorCode").then_some(name)
+        })
+        .collect();
+    if variants.is_empty() {
+        return Err("script profile requires an explicit enum ScriptErrorCode declaration".into());
+    }
+    if variants != ["InvalidInput", "ResourceLimit", "DomainError", "Cancelled"] {
+        return Err(format!(
+            "enum ScriptErrorCode does not match the frozen Script ABI cases {variants:?}"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_entry(module: &Module) -> Result<(), &'static str> {
@@ -331,7 +501,7 @@ fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {
     })
 }
 
-fn lower_error(error: &CoreLowerError) -> String {
+pub(crate) fn lower_error(error: &CoreLowerError) -> String {
     match error {
         CoreLowerError::Unsupported { feature, range } => format!(
             "unsupported {feature} at bytes {}..{}",
@@ -508,7 +678,10 @@ fn load_source(input: &str, stdin: &mut dyn Read) -> Result<SourceFile, String> 
     })
 }
 
-fn read_input_bytes(input: &str, stdin: &mut dyn Read) -> Result<(String, Vec<u8>), String> {
+pub(crate) fn read_input_bytes(
+    input: &str,
+    stdin: &mut dyn Read,
+) -> Result<(String, Vec<u8>), String> {
     if input == "-" {
         let mut bytes = Vec::new();
         stdin

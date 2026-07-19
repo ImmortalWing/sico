@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod compose;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
@@ -36,7 +38,46 @@ pub struct Manifest {
     pub source_effects: Vec<String>,
     pub capabilities: Vec<String>,
     pub limits: RuntimeLimits,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script: Option<ScriptIdentity>,
 }
+
+/// Strict Script profile identity recorded by manifest v1 (RFC-0029).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptIdentity {
+    pub profile: String,
+    pub world: String,
+    pub entry: String,
+    pub semantics: String,
+    pub wit: WitIdentity,
+    pub adapter: AdapterIdentity,
+}
+
+/// Exact Script WIT package identity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WitIdentity {
+    pub package: String,
+    pub sha256: String,
+}
+
+/// Exact versioned Script Adapter identity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterIdentity {
+    pub id: String,
+    pub sha256: String,
+}
+
+pub const MANIFEST_SCHEMA_V0: &str = "sico.sapp.manifest.v0";
+pub const MANIFEST_SCHEMA_V1: &str = "sico.sapp.manifest.v1";
+pub const SCRIPT_PROFILE_V0: &str = "script-v0";
+pub const SCRIPT_WORLD_V0: &str = "sico:script/program@0.1.0";
+pub const SCRIPT_WIT_PACKAGE_V0: &str = "sico:script@0.1.0";
+pub const SCRIPT_ADAPTER_ID_V0: &str = "sico:script/adapter@0.1.0";
+pub const SCRIPT_ARGS_CAPABILITY: &str = "script.args";
+pub const SCRIPT_STDIO_CAPABILITY: &str = "script.stdio";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -102,6 +143,21 @@ pub struct BuildInput {
     pub resources: Vec<ResourceInput>,
     pub source_effects: Vec<String>,
     pub capabilities: Vec<String>,
+    pub limits: RuntimeLimits,
+}
+
+/// Inputs for a strict manifest v1 Script package.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BuildScriptInput {
+    pub app_id: String,
+    pub app_version: String,
+    /// The composed WASI command Component.
+    pub component: Vec<u8>,
+    pub resources: Vec<ResourceInput>,
+    /// Language semantics version (`sico.ir.v0`).
+    pub semantics: String,
+    pub wit_sha256: String,
+    pub adapter_sha256: String,
     pub limits: RuntimeLimits,
 }
 
@@ -270,14 +326,109 @@ pub fn build_unsigned(mut input: BuildInput) -> Result<Vec<u8>, PackageError> {
     component_imports(&input.component)?;
     normalize_sorted_unique(&mut input.source_effects, "source effect")?;
     normalize_sorted_unique(&mut input.capabilities, "capability")?;
+    let (resource_artifacts, resource_entries) = prepare_resources(input.resources)?;
 
-    input
-        .resources
-        .sort_by(|left, right| left.path.cmp(&right.path));
-    let mut resource_entries = Vec::with_capacity(input.resources.len());
-    let mut resource_artifacts = Vec::with_capacity(input.resources.len());
+    let manifest = Manifest {
+        schema: MANIFEST_SCHEMA_V0.to_owned(),
+        format_version: FORMAT_VERSION,
+        app: AppIdentity {
+            id: input.app_id,
+            version: input.app_version,
+            entry: "main()".to_owned(),
+        },
+        component: artifact(COMPONENT_PATH, &input.component),
+        resources: resource_artifacts,
+        source_effects: input.source_effects,
+        capabilities: input.capabilities,
+        limits: input.limits,
+        script: None,
+    };
+    let manifest_bytes = canonical_manifest(&manifest)?;
+    let mut entries = Vec::with_capacity(resource_entries.len() + 2);
+    entries.push(Entry {
+        path: MANIFEST_PATH.to_owned(),
+        bytes: manifest_bytes,
+    });
+    entries.push(Entry {
+        path: COMPONENT_PATH.to_owned(),
+        bytes: input.component,
+    });
+    entries.extend(resource_entries);
+    encode_archive(&entries)
+}
+
+/// Builds a canonical unsigned `.sapp` v1 Script package with exact
+/// semantics, WIT and adapter identities (RFC-0029).
+///
+/// # Errors
+///
+/// Rejects invalid identity, Component, resource paths, limits, digests that
+/// are not 64 lowercase hex characters, or inputs exceeding package ceilings.
+pub fn build_script_v1(input: BuildScriptInput) -> Result<Vec<u8>, PackageError> {
+    validate_app_id(&input.app_id)?;
+    validate_app_version(&input.app_version)?;
+    validate_limits(&input.limits)?;
+    if input.component.len() > MAX_COMPONENT_BYTES {
+        return Err(PackageError::TooLarge("Component"));
+    }
+    component_imports(&input.component)?;
+    validate_digest(&input.wit_sha256)?;
+    validate_digest(&input.adapter_sha256)?;
+    let (resource_artifacts, resource_entries) = prepare_resources(input.resources)?;
+    let capabilities = vec![
+        SCRIPT_ARGS_CAPABILITY.to_owned(),
+        SCRIPT_STDIO_CAPABILITY.to_owned(),
+    ];
+    let manifest = Manifest {
+        schema: MANIFEST_SCHEMA_V1.to_owned(),
+        format_version: FORMAT_VERSION,
+        app: AppIdentity {
+            id: input.app_id,
+            version: input.app_version,
+            entry: "run".to_owned(),
+        },
+        component: artifact(COMPONENT_PATH, &input.component),
+        resources: resource_artifacts,
+        source_effects: capabilities.clone(),
+        capabilities,
+        limits: input.limits,
+        script: Some(ScriptIdentity {
+            profile: SCRIPT_PROFILE_V0.to_owned(),
+            world: SCRIPT_WORLD_V0.to_owned(),
+            entry: "run".to_owned(),
+            semantics: input.semantics,
+            wit: WitIdentity {
+                package: SCRIPT_WIT_PACKAGE_V0.to_owned(),
+                sha256: input.wit_sha256,
+            },
+            adapter: AdapterIdentity {
+                id: SCRIPT_ADAPTER_ID_V0.to_owned(),
+                sha256: input.adapter_sha256,
+            },
+        }),
+    };
+    let manifest_bytes = canonical_manifest(&manifest)?;
+    let mut entries = Vec::with_capacity(resource_entries.len() + 2);
+    entries.push(Entry {
+        path: MANIFEST_PATH.to_owned(),
+        bytes: manifest_bytes,
+    });
+    entries.push(Entry {
+        path: COMPONENT_PATH.to_owned(),
+        bytes: input.component,
+    });
+    entries.extend(resource_entries);
+    encode_archive(&entries)
+}
+
+fn prepare_resources(
+    mut resources: Vec<ResourceInput>,
+) -> Result<(Vec<Artifact>, Vec<Entry>), PackageError> {
+    resources.sort_by(|left, right| left.path.cmp(&right.path));
+    let mut resource_artifacts = Vec::with_capacity(resources.len());
+    let mut resource_entries = Vec::with_capacity(resources.len());
     let mut previous = None;
-    for resource in input.resources {
+    for resource in resources {
         let path = format!("resources/{}", resource.path);
         validate_path(&path)?;
         if resource.bytes.len() > MAX_RESOURCE_BYTES {
@@ -294,33 +445,21 @@ pub fn build_unsigned(mut input: BuildInput) -> Result<Vec<u8>, PackageError> {
             bytes: resource.bytes,
         });
     }
+    Ok((resource_artifacts, resource_entries))
+}
 
-    let manifest = Manifest {
-        schema: "sico.sapp.manifest.v0".to_owned(),
-        format_version: FORMAT_VERSION,
-        app: AppIdentity {
-            id: input.app_id,
-            version: input.app_version,
-            entry: "main()".to_owned(),
-        },
-        component: artifact(COMPONENT_PATH, &input.component),
-        resources: resource_artifacts,
-        source_effects: input.source_effects,
-        capabilities: input.capabilities,
-        limits: input.limits,
-    };
-    let manifest_bytes = canonical_manifest(&manifest)?;
-    let mut entries = Vec::with_capacity(resource_entries.len() + 2);
-    entries.push(Entry {
-        path: MANIFEST_PATH.to_owned(),
-        bytes: manifest_bytes,
-    });
-    entries.push(Entry {
-        path: COMPONENT_PATH.to_owned(),
-        bytes: input.component,
-    });
-    entries.extend(resource_entries);
-    encode_archive(&entries)
+fn validate_digest(digest: &str) -> Result<(), PackageError> {
+    if digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        Ok(())
+    } else {
+        Err(PackageError::Manifest(
+            "identity digest must be 64 lowercase hex characters".to_owned(),
+        ))
+    }
 }
 
 /// Strictly verifies and extracts a `.sapp` v0 package without executing it.
@@ -542,6 +681,10 @@ pub fn capabilities_for_imports(imports: &[String]) -> Result<BTreeSet<String>, 
         let capability =
             if import.starts_with("wasi:filesystem/") || import.starts_with("sico:storage/") {
                 "storage.read-write"
+            } else if import.starts_with("sico:script/fs-read@") {
+                "storage.read"
+            } else if import.starts_with("sico:script/fs-write@") {
+                "storage.write"
             } else if import.starts_with("wasi:clocks/") {
                 "clock.read"
             } else if import.starts_with("wasi:random/") {
@@ -550,6 +693,20 @@ pub fn capabilities_for_imports(imports: &[String]) -> Result<BTreeSet<String>, 
                 "network.connect"
             } else if import.starts_with("sico:log/") {
                 "log.write"
+            } else if import == "wasi:cli/environment@0.2.12" {
+                SCRIPT_ARGS_CAPABILITY
+            } else if matches!(
+                import.as_str(),
+                "wasi:cli/stdin@0.2.12"
+                    | "wasi:cli/stdout@0.2.12"
+                    | "wasi:cli/stderr@0.2.12"
+                    | "wasi:cli/exit@0.2.12"
+                    | "wasi:io/streams@0.2.12"
+            ) {
+                SCRIPT_STDIO_CAPABILITY
+            } else if import == "sico:script/types@0.1.0" || import == "wasi:io/error@0.2.12" {
+                // Types-only instances carry no authority.
+                continue;
             } else {
                 return Err(PackageError::UnknownCapability(import.clone()));
             };
@@ -561,20 +718,47 @@ pub fn capabilities_for_imports(imports: &[String]) -> Result<BTreeSet<String>, 
 fn is_supported_capability(capability: &str) -> bool {
     matches!(
         capability,
-        "storage.read-write" | "clock.read" | "random.read" | "network.connect" | "log.write"
+        "storage.read-write"
+            | "storage.read"
+            | "storage.write"
+            | "clock.read"
+            | "random.read"
+            | "network.connect"
+            | "log.write"
+            | SCRIPT_ARGS_CAPABILITY
+            | SCRIPT_STDIO_CAPABILITY
     )
 }
 
 fn validate_manifest(manifest: &Manifest) -> Result<(), PackageError> {
-    if manifest.schema != "sico.sapp.manifest.v0" {
-        return Err(PackageError::Manifest("unknown schema".to_owned()));
+    match manifest.schema.as_str() {
+        MANIFEST_SCHEMA_V0 => {
+            if manifest.script.is_some() {
+                return Err(PackageError::Manifest(
+                    "v0 manifest must not carry a script identity".to_owned(),
+                ));
+            }
+        }
+        MANIFEST_SCHEMA_V1 => {
+            let Some(script) = &manifest.script else {
+                return Err(PackageError::Manifest(
+                    "v1 manifest requires a script identity".to_owned(),
+                ));
+            };
+            validate_script_identity(script)?;
+        }
+        _ => return Err(PackageError::Manifest("unknown schema".to_owned())),
     }
     if manifest.format_version != FORMAT_VERSION {
         return Err(PackageError::UnsupportedVersion(manifest.format_version));
     }
     validate_app_id(&manifest.app.id)?;
     validate_app_version(&manifest.app.version)?;
-    if manifest.app.entry != "main()" {
+    let expected_entry = match manifest.schema.as_str() {
+        MANIFEST_SCHEMA_V0 => "main()",
+        _ => "run",
+    };
+    if manifest.app.entry != expected_entry {
         return Err(PackageError::InvalidIdentity("entry"));
     }
     if manifest.component.path != COMPONENT_PATH {
@@ -585,6 +769,16 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), PackageError> {
     validate_limits(&manifest.limits)?;
     validate_sorted_unique(&manifest.source_effects, "source effect")?;
     validate_sorted_unique(&manifest.capabilities, "capability")?;
+    if manifest.schema == MANIFEST_SCHEMA_V1 {
+        for capability in manifest.capabilities.iter().chain(&manifest.source_effects) {
+            if !matches!(
+                capability.as_str(),
+                SCRIPT_ARGS_CAPABILITY | SCRIPT_STDIO_CAPABILITY
+            ) {
+                return Err(PackageError::UnknownCapability(capability.clone()));
+            }
+        }
+    }
     let paths: Vec<_> = manifest
         .resources
         .iter()
@@ -599,6 +793,31 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), PackageError> {
             return Err(PackageError::ResourceSetMismatch);
         }
     }
+    Ok(())
+}
+
+fn validate_script_identity(script: &ScriptIdentity) -> Result<(), PackageError> {
+    let invalid = |field: &'static str| PackageError::InvalidIdentity(field);
+    if script.profile != SCRIPT_PROFILE_V0 {
+        return Err(invalid("script.profile"));
+    }
+    if script.world != SCRIPT_WORLD_V0 {
+        return Err(invalid("script.world"));
+    }
+    if script.entry != "run" {
+        return Err(invalid("script.entry"));
+    }
+    if script.semantics.is_empty() {
+        return Err(invalid("script.semantics"));
+    }
+    if script.wit.package != SCRIPT_WIT_PACKAGE_V0 {
+        return Err(invalid("script.wit.package"));
+    }
+    validate_digest(&script.wit.sha256)?;
+    if script.adapter.id != SCRIPT_ADAPTER_ID_V0 {
+        return Err(invalid("script.adapter.id"));
+    }
+    validate_digest(&script.adapter.sha256)?;
     Ok(())
 }
 

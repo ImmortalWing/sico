@@ -1,9 +1,10 @@
 # STEP-0079: Script aggregate Canonical ABI
 
-> - status: planned
+> - status: complete
 > - phase: M8
-> - started: -
-> - completed: -
+> - started: 2026-07-17
+> - completed: 2026-07-17
+> - evidence: [`script-aggregate-canonical-abi-v0`](../reports/script-aggregate-canonical-abi-v0.md), [`layout table`](../development/script-canonical-abi-layout-v0.md), `tools/validate-step-0079.ps1`
 > - owners: autonomous-agent
 
 ## 1. Objective

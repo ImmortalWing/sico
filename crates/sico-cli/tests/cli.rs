@@ -254,6 +254,109 @@ fn build_emits_a_deterministic_component() {
 }
 
 #[test]
+fn build_script_profile_emits_deterministic_valid_components() {
+    let echo = root().join("tests/end-to-end/script-echo.sico");
+    let reject = root().join("tests/end-to-end/script-reject.sico");
+    let first = temp_file("script-echo-1.component.wasm");
+    let second = temp_file("script-echo-2.component.wasm");
+    let reject_out = temp_file("script-reject.component.wasm");
+
+    for output in [&first, &second] {
+        let result = run(
+            [
+                "build",
+                "--profile",
+                "script-v0",
+                "--output",
+                path(output),
+                path(&echo),
+            ],
+            None,
+        );
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    }
+    let first_bytes = fs::read(&first).unwrap();
+    assert_eq!(first_bytes, fs::read(&second).unwrap());
+    wasmparser::Validator::new()
+        .validate_all(&first_bytes)
+        .unwrap();
+
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v0",
+            "--output",
+            path(&reject_out),
+            path(&reject),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    wasmparser::Validator::new()
+        .validate_all(&fs::read(&reject_out).unwrap())
+        .unwrap();
+
+    let unknown_profile = temp_file("unknown-profile.component.wasm");
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v9",
+            "--output",
+            path(&unknown_profile),
+            path(&echo),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(2));
+    assert!(stderr(&result).contains("unknown build profile"));
+    assert!(!unknown_profile.exists());
+
+    let scalar = root().join("tests/end-to-end/answer.sico");
+    let scalar_out = temp_file("script-scalar.component.wasm");
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v0",
+            "--output",
+            path(&scalar_out),
+            path(&scalar),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(2));
+    assert!(stderr(&result).contains("explicit record ScriptInput"));
+    assert!(!scalar_out.exists());
+
+    let missing_fields = temp_file("script-missing-fields.sico");
+    fs::write(
+        &missing_fields,
+        b"record ScriptInput:\n  field stdin: Bytes\nend record\n",
+    )
+    .unwrap();
+    let result = run(
+        [
+            "build",
+            "--profile",
+            "script-v0",
+            "--output",
+            path(&scalar_out),
+            path(&missing_fields),
+        ],
+        None,
+    );
+    assert_eq!(result.status.code(), Some(2));
+    assert!(stderr(&result).contains("does not match the frozen Script ABI"));
+
+    fs::remove_file(first).unwrap();
+    fs::remove_file(second).unwrap();
+    fs::remove_file(reject_out).unwrap();
+    fs::remove_file(missing_fields).unwrap();
+}
+
+#[test]
 fn usage_io_and_unimplemented_commands_are_tool_errors() {
     let output = run::<0>([], None);
     assert_eq!(output.status.code(), Some(2));

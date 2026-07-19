@@ -335,6 +335,7 @@ fn shape(module: &sico_ir::Module) -> String {
                             Operation::ConstU64(_) => "const-u64",
                             Operation::ConstBool(_) => "const-bool",
                             Operation::ConstString(_) => "const-string",
+                            Operation::ConstBytes(_) => "const-bytes",
                             Operation::Copy(_) => "copy",
                             Operation::AddInt { .. } => "add-int",
                             Operation::CheckedAdd { .. } => "checked-add",
