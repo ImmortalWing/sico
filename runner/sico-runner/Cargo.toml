@@ -10,6 +10,7 @@ publish = false
 sico-codegen-wasm = { path = "../../crates/sico-codegen-wasm" }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
+sha2 = "=0.10.9"
 wasmtime = { version = "=46.0.1", default-features = false, features = ["anyhow", "component-model", "cranelift", "runtime", "std"] }
 
 [dev-dependencies]

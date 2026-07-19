@@ -239,6 +239,63 @@ fn cancellation_reaches_a_blocked_guest() {
 }
 
 #[test]
+fn prepared_program_reruns_are_isolated_and_survive_a_trap() {
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
+            &echo_component(0),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let mut elapsed = Vec::new();
+    for index in 0..32_u8 {
+        let input = ScriptInput {
+            arguments: vec![index.to_string()],
+            stdin: vec![index; 128],
+        };
+        let started = std::time::Instant::now();
+        let outcome = prepared.run(&input, &limits(), &no_cancel()).unwrap();
+        elapsed.push(started.elapsed());
+        assert_eq!(
+            outcome,
+            RunOutcome::Output(ScriptOutput {
+                stdout: input.stdin.clone(),
+                stderr: input.stdin,
+                exit_code: 0,
+            })
+        );
+    }
+    elapsed.sort_unstable();
+    println!(
+        "PERSISTENT_WARM_MEDIAN_US={}",
+        elapsed[elapsed.len() / 2].as_micros()
+    );
+    assert!(
+        elapsed[elapsed.len() / 2] <= std::time::Duration::from_millis(20),
+        "warm median {:?}",
+        elapsed[elapsed.len() / 2]
+    );
+
+    let trapped = runner
+        .prepare_program_with_net(
+            &trap_component(),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap()
+        .run(&ScriptInput::default(), &limits(), &no_cancel())
+        .unwrap();
+    assert!(matches!(trapped, RunOutcome::Trap(_)));
+    assert!(matches!(
+        prepared
+            .run(&ScriptInput::default(), &limits(), &no_cancel())
+            .unwrap(),
+        RunOutcome::Output(_)
+    ));
+}
+
+#[test]
 fn incompatible_artifacts_and_input_bounds_fail_closed() {
     let outcome = run(b"not-a-component", &ScriptInput::default());
     assert!(matches!(outcome, RunOutcome::Incompatible(_)));

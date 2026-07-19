@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use sha2::{Digest, Sha256};
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
 
@@ -422,8 +423,22 @@ impl ResourceLimiter for RunState {
 }
 
 /// Runner engine with component model, fuel and epoch interruption enabled.
+#[derive(Clone)]
 pub struct Runner {
     engine: Engine,
+    components: ComponentCache,
+}
+
+type ComponentCache = Arc<std::sync::Mutex<Vec<([u8; 32], Component)>>>;
+
+/// Compiled Component and linked Host providers reusable across executions.
+/// Every [`PreparedProgram::run`] still constructs a fresh Store, resource
+/// table, capability state, IO workers and cancellation boundary.
+pub struct PreparedProgram {
+    runner: Runner,
+    component: Component,
+    linker: Linker<RunState>,
+    streams_component: bool,
 }
 
 impl Runner {
@@ -444,6 +459,7 @@ impl Runner {
         config.max_wasm_stack(4 * 1024 * 1024);
         Ok(Self {
             engine: Engine::new(&config)?,
+            components: Arc::new(std::sync::Mutex::new(Vec::new())),
         })
     }
 
@@ -452,7 +468,7 @@ impl Runner {
     /// component reports false and fails later at instantiation.
     #[must_use]
     pub fn component_imports_streams(&self, component: &[u8]) -> bool {
-        let Ok(component) = Component::new(&self.engine, component) else {
+        let Ok(component) = self.compile_cached(component) else {
             return false;
         };
         component
@@ -491,35 +507,99 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<RunOutcome, InputViolation> {
+        match self.prepare_program_with_net(component, fs, net) {
+            Ok(prepared) => prepared.run(input, limits, cancel),
+            Err(outcome) => Ok(outcome),
+        }
+    }
+
+    /// Compiles and links a Program once for persistent development reruns.
+    /// Provider grants are frozen into this prepared generation; callers must
+    /// prepare a new generation to change authority.
+    pub fn prepare_program_with_net(
+        &self,
+        component: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+    ) -> Result<PreparedProgram, RunOutcome> {
+        let component = match self.compile_cached(component) {
+            Ok(component) => component,
+            Err(error) => return Err(RunOutcome::Incompatible(format!("{error:#}"))),
+        };
+        let streams_component = component
+            .component_type()
+            .imports(&self.engine)
+            .any(|(name, _)| name == "sico:script/streams@0.1.0");
+        let mut linker = Linker::new(&self.engine);
+        if let Err(error) = link_fs(&mut linker, fs) {
+            return Err(RunOutcome::Launch(format!("fs host setup failed: {error}")));
+        }
+        if let Err(error) = link_streams(&mut linker) {
+            return Err(RunOutcome::Launch(format!(
+                "streams host setup failed: {error}"
+            )));
+        }
+        if let Err(error) = link_http(&mut linker, net) {
+            return Err(RunOutcome::Launch(format!(
+                "http host setup failed: {error}"
+            )));
+        }
+        Ok(PreparedProgram {
+            runner: self.clone(),
+            component,
+            linker,
+            streams_component,
+        })
+    }
+
+    fn compile_cached(&self, bytes: &[u8]) -> Result<Component, wasmtime::Error> {
+        let digest: [u8; 32] = Sha256::digest(bytes).into();
+        let mut components = self
+            .components
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, component)) = components.iter().find(|(key, _)| *key == digest) {
+            return Ok(component.clone());
+        }
+        let component = Component::new(&self.engine, bytes)?;
+        if components.len() == 8 {
+            components.remove(0);
+        }
+        components.push((digest, component.clone()));
+        Ok(component)
+    }
+}
+
+impl PreparedProgram {
+    /// True when this generation owns the streaming stdin channel.
+    #[must_use]
+    pub fn imports_streams(&self) -> bool {
+        self.streams_component
+    }
+
+    /// Executes one isolated generation using the cached Component and Linker.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] before creating a Store.
+    pub fn run(
+        &self,
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+    ) -> Result<RunOutcome, InputViolation> {
         check_input(input)?;
-        Ok(self.run_unchecked(component, input, limits, cancel, fs, net))
+        Ok(self.run_unchecked(input, limits, cancel))
     }
 
     fn run_unchecked(
         &self,
-        component: &[u8],
         input: &ScriptInput,
         limits: &RunnerLimits,
         cancel: &CancelToken,
-        fs: &FsGrants,
-        net: &NetGrants,
     ) -> RunOutcome {
-        let component = match Component::new(&self.engine, component) {
-            Ok(component) => component,
-            Err(error) => return RunOutcome::Incompatible(format!("{error:#}")),
-        };
-        let mut linker = Linker::new(&self.engine);
-        if let Err(error) = link_fs(&mut linker, fs) {
-            return RunOutcome::Launch(format!("fs host setup failed: {error}"));
-        }
-        if let Err(error) = link_streams(&mut linker) {
-            return RunOutcome::Launch(format!("streams host setup failed: {error}"));
-        }
-        if let Err(error) = link_http(&mut linker, net) {
-            return RunOutcome::Launch(format!("http host setup failed: {error}"));
-        }
         let mut store = Store::new(
-            &self.engine,
+            &self.runner.engine,
             RunState {
                 memory_ceiling: limits.memory_bytes,
                 denied: false,
@@ -553,7 +633,7 @@ impl Runner {
         });
         // Watchdog: advance the engine epoch until the call finishes.
         let done = Arc::new(AtomicBool::new(false));
-        let engine = self.engine.clone();
+        let engine = self.runner.engine.clone();
         let watchdog_done = done.clone();
         let watchdog = std::thread::spawn(move || {
             for _ in 0..timeout_ticks.max(1).saturating_add(1) {
@@ -565,7 +645,7 @@ impl Runner {
             }
         });
 
-        let outcome = match linker.instantiate(&mut store, &component) {
+        let outcome = match self.linker.instantiate(&mut store, &self.component) {
             Ok(instance) => match instance.get_func(&mut store, "run") {
                 Some(run) => self.invoke(&mut store, &run, input, limits),
                 None => RunOutcome::Incompatible("component does not export run".to_owned()),

@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0090 persistent development runner and watch mode (planned)
-> - last completed active step: STEP-0089 (scoped HTTP Component provider complete)
+> - current step: STEP-0091 bounded REPL session model (planned)
+> - last completed active step: STEP-0090 (persistent runner/watch complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: freeze STEP-0090 persistent-runner isolation/watch contract before reusing Engine, Linker or compiled artifacts across runs
+> - next step: freeze STEP-0091 cell identity, bounded history, replay and reset/export contract before adding interactive state
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0089`](./steps/STEP-0089-scoped-http-component-provider.md) 已完成：streaming、structured task、可取消 blocked IO 与 scoped HTTP provider 均有真实证据。HTTP 默认无网络，只有 `--allow-net HOST:PORT` 精确授权；TLS/IPv6/代理/凭证仍明确不在 v0。下一项 STEP-0090 是 persistent development runner/watch，不得在 Store、capability 或 resource-table 隔离证据前复用执行状态。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0090`](./steps/STEP-0090-persistent-runner-watch.md) 已完成：streaming、structured task、可取消 blocked IO、scoped HTTP 与 persistent runner/watch 均有真实证据。Watch 重用 Engine/compiled Component/Prepared Linker，但每次运行新建 Store/resource table/IO/cancellation state；多次 release 验证的 warm median 为 5.8–6.1 ms。下一项 STEP-0091 是 bounded REPL session model。
 
 ## 3. Verified repository facts
 

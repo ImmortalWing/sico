@@ -15,12 +15,12 @@
 ## 语言与 Runtime 限制
 
 - 语言前端覆盖范围大于 Component codegen；
-- 已验证 Runtime 入口主要是同步 scalar `main()`；
-- Task/Future/Stream 有静态协议证据，但 source backend 会明确拒绝；
-- application args 与 guest stdin 尚未实现；
+- Script Profile 已验证 aggregate `ScriptInput/ScriptOutput/Error`、bounded args/stdin 和 streaming resources；
+- Task/Future/Stream source backend 当前是 structured sequential executor，不提供并行调度；
+- `sico watch` 只接受单文件与 buffered empty stdin，streaming stdin 不可重放；
 - source-level debugging/DAP 尚未实现；
 - `sico-app` 只接收 Component 或 `.sapp`，不会隐式编译源码；
-- 旧 source-run/cache 只保存在 `v0.0.1` 归档中。
+- 本地源码执行使用 `sico run`；persistent 单文件重编译使用 `sico watch`。
 
 ## 工具限制
 

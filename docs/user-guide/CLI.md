@@ -34,6 +34,17 @@ sico build [-o|--output <COMPONENT>] <FILE|->
 
 把源码编译为 WebAssembly Component。文件输入默认输出同名 `.component.wasm`；stdin 必须指定输出路径。不会打包、签名或执行。
 
+## `sico run` 与 `sico watch`
+
+```text
+sico run [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... <FILE|-> [-- [ARG]...]
+sico watch [--poll-ms 25] [--max-runs COUNT] [相同 provider grants] <FILE> [-- [ARG]...]
+```
+
+`run` 编译 Script Profile 并通过独立 `sico-runner` 执行。`watch` 保持一个 runner 进程，只在新源码成功编译且稳定 100 ms 后重跑；无效源码不会替换上一健康 generation。每次重跑都有新的 Store 与资源表，provider grants 在进程启动后不可扩大。
+
+Watch v0 只监视一个文件并使用轮询；不接受 stdin source，也拒绝 streaming-stdin Component。`--max-runs` 主要用于自动化验证，默认持续运行。
+
 ## `sico-app pack`
 
 ```text

@@ -104,5 +104,6 @@
 | [STEP-0087](./STEP-0087-task-future-stream-source-backend.md) | complete | M9 | sequential executor：structured task scope、E5101/E5102（含间接逃逸）、cancellation edge 123 |
 | [STEP-0088](./STEP-0088-async-runner-streaming-stdio.md) | complete | M9 | worker-thread 可取消 IO、blocked read/pump/write 取消 120–134ms、bounded queues |
 | [STEP-0089](./STEP-0089-scoped-http-component-provider.md) | complete | M9 | scoped HTTP Component provider：精确 endpoint grant、默认拒绝、loopback、redirect/limit/timeout/cancel 证据 |
+| [STEP-0090](./STEP-0090-persistent-runner-watch.md) | complete | M9 | persistent Engine/Component/Linker、per-run Store isolation、watch coalescing/failure recovery、5.8–6.1 ms warm median |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0089 完成 streaming/structured-task/async-runner/scoped-HTTP 基础。M9 下一项 STEP-0090，保留 STEP-0090–0094。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0090 完成 streaming/structured-task/async-runner/scoped-HTTP/persistent-watch 基础。M9 下一项 STEP-0091，保留 STEP-0091–0094。真实域名/TLS/生产身份部署保持外部输入 gate，恢复时分配新的 STEP，不复用已有编号。

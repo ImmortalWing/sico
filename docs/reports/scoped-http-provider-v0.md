@@ -19,8 +19,8 @@ The Host checks GET/POST, URL syntax, `http` scheme, canonical ASCII DNS/IPv4 ho
 - no grant and wrong port → typed `denied` 122 before socket; wildcard grant rejected by runner CLI 121;
 - HTTPS and unsupported method fail closed; 302 + Location is returned as `302:redirect` and never followed;
 - response headers over 64 KiB and declared body over 8 MiB → typed `resource-limit` without truncation;
-- silent server → typed `timeout` in 5,175 ms for the final run (5 s provider deadline);
-- cancellation during blocked response read → runner `Cancelled` exit 123 in 128 ms for the final run;
+- silent server → typed `timeout` in 5,160 ms for the final regression run (5 s provider deadline);
+- cancellation during blocked response read → runner `Cancelled` exit 123 in 129 ms for the final regression run;
 - workspace codegen/package/CLI tests and runner release tests green; package import maps exactly to `network.connect`.
 
 ## Honest limits

@@ -6,9 +6,12 @@
 
 use std::{
     collections::BTreeMap,
+    fs,
     io::{Read, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command as ProcessCommand, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
 };
 
 use clap::{Arg, ArgAction, ArgMatches, Command};
@@ -27,6 +30,8 @@ pub const EXIT_RESOURCE_LIMIT: i32 = 125;
 pub const EXIT_RUNNER_INCOMPATIBLE: i32 = 127;
 
 const MAX_GUEST_STDIN: usize = 8 * 1024 * 1024;
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(100);
+static WATCH_ID: AtomicU64 = AtomicU64::new(0);
 
 pub fn run_command() -> Command {
     Command::new("run")
@@ -92,6 +97,61 @@ pub fn eval_command() -> Command {
         )
 }
 
+pub fn watch_command() -> Command {
+    Command::new("watch")
+        .about("Recompile and rerun a Script after coalesced source changes")
+        .arg(
+            Arg::new("input")
+                .value_name("FILE")
+                .help("Script source file; stdin sources are not supported in watch v0")
+                .required(true),
+        )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .help("Emit JSON runner diagnostics on stderr")
+                .action(ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("fs-read-root")
+                .long("fs-read-root")
+                .value_name("PATH")
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("fs-write-root")
+                .long("fs-write-root")
+                .value_name("PATH")
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("allow-net")
+                .long("allow-net")
+                .value_name("HOST:PORT")
+                .action(ArgAction::Append),
+        )
+        .arg(
+            Arg::new("max-runs")
+                .long("max-runs")
+                .value_name("COUNT")
+                .help("Stop after COUNT accepted generations (useful for automation)"),
+        )
+        .arg(
+            Arg::new("poll-ms")
+                .long("poll-ms")
+                .value_name("MILLISECONDS")
+                .help("Filesystem polling interval in 5..=1000")
+                .default_value("25"),
+        )
+        .arg(
+            Arg::new("args")
+                .value_name("ARG")
+                .num_args(0..)
+                .last(true)
+                .allow_hyphen_values(true),
+        )
+}
+
 pub fn run_run(
     matches: &ArgMatches,
     stdin: &mut dyn Read,
@@ -145,27 +205,7 @@ pub fn run_run(
         }
         bytes
     };
-    let mut provider_flags: Vec<String> = Vec::new();
-    for (flag, values) in [
-        ("--fs-read-root", matches.get_many::<String>("fs-read-root")),
-        (
-            "--fs-write-root",
-            matches.get_many::<String>("fs-write-root"),
-        ),
-    ] {
-        if let Some(values) = values {
-            for value in values {
-                provider_flags.push(flag.to_owned());
-                provider_flags.push(value.clone());
-            }
-        }
-    }
-    if let Some(values) = matches.get_many::<String>("allow-net") {
-        for value in values {
-            provider_flags.push("--allow-net".to_owned());
-            provider_flags.push(value.clone());
-        }
-    }
+    let provider_flags = collect_provider_flags(matches);
     execute_runner(
         &component_path,
         &provider_flags,
@@ -176,6 +216,250 @@ pub fn run_run(
         stdout,
         stderr,
     )
+}
+
+pub fn run_watch(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let input = matches.get_one::<String>("input").unwrap();
+    if input == "-" {
+        return tool_failure(stderr, false, "cli", "sico: watch requires a source file");
+    }
+    let poll_ms = match matches
+        .get_one::<String>("poll-ms")
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        Some(ms) if (5..=1000).contains(&ms) => ms,
+        _ => return tool_failure(stderr, false, "cli", "sico: --poll-ms expects 5..=1000"),
+    };
+    let max_runs = match matches.get_one::<String>("max-runs") {
+        Some(value) => match value.parse::<u32>() {
+            Ok(value) if value > 0 => Some(value),
+            _ => {
+                return tool_failure(
+                    stderr,
+                    false,
+                    "cli",
+                    "sico: --max-runs expects a positive integer",
+                );
+            }
+        },
+        None => None,
+    };
+    let source_path = PathBuf::from(input);
+    let initial = match read_watch_source(&source_path) {
+        Ok(bytes) => bytes,
+        Err(message) => return tool_failure(stderr, false, "cli", &message),
+    };
+    let component = match compile_source_bytes(input, &initial, "script-v0", stdout, stderr) {
+        Ok(component) => component,
+        Err(exit) => return exit,
+    };
+    let artifact = match create_watch_artifact(&component) {
+        Ok(path) => path,
+        Err(error) => {
+            return tool_failure(
+                stderr,
+                false,
+                "cli",
+                &format!("sico: cannot create watch artifact: {error}"),
+            );
+        }
+    };
+    let result = watch_source_loop(
+        matches,
+        &source_path,
+        initial,
+        &artifact,
+        max_runs,
+        Duration::from_millis(poll_ms),
+        stdout,
+        stderr,
+    );
+    let _ = fs::remove_file(artifact);
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn watch_source_loop(
+    matches: &ArgMatches,
+    source_path: &Path,
+    mut accepted: Vec<u8>,
+    artifact: &Path,
+    max_runs: Option<u32>,
+    poll: Duration,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> i32 {
+    let Some(runner) = find_runner() else {
+        return tool_failure(
+            stderr,
+            false,
+            "incompatible",
+            "sico: sico-runner executable not found",
+        );
+    };
+    let mut command = ProcessCommand::new(runner);
+    command
+        .arg("--watch")
+        .arg("--watch-poll-ms")
+        .arg(poll.as_millis().to_string());
+    if matches.get_flag("json") {
+        command.arg("--json");
+    }
+    if let Some(runs) = max_runs {
+        command.arg("--watch-runs").arg(runs.to_string());
+    }
+    command.args(collect_provider_flags(matches)).arg(artifact);
+    if let Some(arguments) = matches.get_many::<String>("args") {
+        command.arg("--").args(arguments);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            return tool_failure(
+                stderr,
+                false,
+                "incompatible",
+                &format!("sico: cannot launch watch runner: {error}"),
+            );
+        }
+    };
+    let mut pending: Option<(Vec<u8>, Instant)> = None;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.code().unwrap_or(EXIT_RUNNER_INCOMPATIBLE),
+            Ok(None) => {}
+            Err(error) => {
+                return tool_failure(
+                    stderr,
+                    false,
+                    "cli",
+                    &format!("sico: watch runner wait failed: {error}"),
+                );
+            }
+        }
+        std::thread::sleep(poll);
+        let Ok(candidate) = read_watch_source(source_path) else {
+            continue;
+        };
+        if candidate == accepted {
+            pending = None;
+            continue;
+        }
+        match &mut pending {
+            Some((bytes, since)) if *bytes == candidate => {
+                if since.elapsed() < WATCH_DEBOUNCE {
+                    continue;
+                }
+            }
+            _ => {
+                pending = Some((candidate, Instant::now()));
+                continue;
+            }
+        }
+        let (candidate, _) = pending.take().expect("stable watch source");
+        accepted.clone_from(&candidate);
+        let Ok(component) = compile_source_bytes(
+            &source_path.display().to_string(),
+            &candidate,
+            "script-v0",
+            stdout,
+            stderr,
+        ) else {
+            continue;
+        };
+        if let Err(error) = replace_watch_artifact(artifact, &component) {
+            let _ = child.kill();
+            return tool_failure(
+                stderr,
+                false,
+                "cli",
+                &format!("sico: cannot replace watch artifact: {error}"),
+            );
+        }
+    }
+}
+
+fn collect_provider_flags(matches: &ArgMatches) -> Vec<String> {
+    let mut flags = Vec::new();
+    for name in ["fs-read-root", "fs-write-root", "allow-net"] {
+        if let Some(values) = matches.get_many::<String>(name) {
+            for value in values {
+                flags.push(format!("--{name}"));
+                flags.push(value.clone());
+            }
+        }
+    }
+    flags
+}
+
+fn read_watch_source(path: &Path) -> Result<Vec<u8>, String> {
+    let file =
+        fs::File::open(path).map_err(|error| format!("sico: cannot open watch source: {error}"))?;
+    let mut bytes = Vec::new();
+    file.take((MAX_GUEST_STDIN + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("sico: cannot read watch source: {error}"))?;
+    if bytes.len() > MAX_GUEST_STDIN {
+        return Err("sico: watch source exceeds 8 MiB".to_owned());
+    }
+    Ok(bytes)
+}
+
+fn replace_watch_artifact(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let next = path.with_extension(format!(
+        "next-{}.wasm",
+        WATCH_ID.fetch_add(1, Ordering::Relaxed)
+    ));
+    write_exclusive(&next, bytes)?;
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            let _ = fs::remove_file(&next);
+            return Err(error);
+        }
+    }
+    if let Err(error) = fs::rename(&next, path) {
+        let _ = fs::remove_file(next);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn create_watch_artifact(bytes: &[u8]) -> std::io::Result<PathBuf> {
+    for _ in 0..16 {
+        let path = std::env::temp_dir().join(format!(
+            "sico-watch-{}-{}.component.wasm",
+            std::process::id(),
+            WATCH_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        match write_exclusive(&path, bytes) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "cannot allocate an exclusive watch artifact",
+    ))
+}
+
+fn write_exclusive(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    if let Err(error) = file.write_all(bytes) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
+    file.flush()
 }
 
 /// True when the compiled component imports `sico:script/streams@0.1.0`.

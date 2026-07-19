@@ -167,13 +167,13 @@ Entry gate：satisfied by STEP-0014。
 
 ## M9: Streaming, async and interactive scripting
 
-状态：`in-progress / STEP-0085–0089 complete / STEP-0090 next`
+状态：`in-progress / STEP-0085–0090 complete / STEP-0091 next`
 
 主要交付：backpressured InputStream/OutputStream、resource Canonical ABI、Task/Future/Stream source backend、async runner/cancellation、scoped HTTP Component provider、persistent runner/watch、bounded REPL、top-level syntax decision与编辑器/AI执行集成。
 
 进入条件：M8 必须完成自己的 GO，且 Script WIT/manifest/runner identities 可版本化而不是继续重写。M9 不包含 unrestricted process/shell capability。
 
-执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0089 已完成精确 HTTP grants、Host provider 与拒绝/限制/超时/取消证据；下一项 STEP-0090。
+执行计划：[`M9 streaming, async and interactive scripting`](./plans/M9-streaming-async-interactive.md)，预留 STEP-0085–0094。STEP-0090 已完成 persistent Engine/Component/Linker reuse、per-run Store isolation、watch coalescing/failure isolation；多次 release 验证的 warm median 为 5.8–6.1 ms。下一项 STEP-0091。
 
 ## Immediate dependency chain
 
