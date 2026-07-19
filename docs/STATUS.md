@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、bounded events 与可实证的 minimal DAP。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨。
+M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、bounded events 与可实证的 minimal DAP。M10 GO 后的 M11 已完整规划为 Secure HTTP Provider/Automation SDK，TLS/DNS/redirect/secrets 属于 Host provider 而非语言核心。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨。
 
 ## 2. Current step
 

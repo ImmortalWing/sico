@@ -15,6 +15,8 @@
 
 M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 与 M9 STEP-0085–0094 均已完成并保持 GO；M9 Runtime 只在 Windows x64 实证。下一项为 M10 STEP-0095 observability/debug/source-identity contract，当前仍不得宣称 Runtime source frames、typed Ctrl+C 或 DAP。
 
+M10 STEP-0095–0102 与后续 M11 STEP-0103–0110 的完整计划分别见 [`M10 plan`](./plans/M10-runtime-observability-debugging.md) 和 [`M11 plan`](./plans/M11-secure-http-automation-sdk.md)。M11 只有在 M10 GO 后进入；不得把 TLS/provider 工作提前混入 STEP-0095，也不得让 compiler 依赖 TLS、DNS 或 secret 实现。
+
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 
 ## 2. 已完成工作

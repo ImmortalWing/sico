@@ -16,6 +16,7 @@
 - [M8 Script Profile 计划](./plans/M8-script-profile.md)
 - [M9 streaming/async/interactive 计划](./plans/M9-streaming-async-interactive.md)
 - [M10 Runtime observability/debugging 计划](./plans/M10-runtime-observability-debugging.md)
+- [M11 Secure HTTP Provider/Automation SDK 计划](./plans/M11-secure-http-automation-sdk.md)
 - [M9 exit audit](./reports/m9-exit-audit-v0.md)
 - [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)

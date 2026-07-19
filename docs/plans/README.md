@@ -14,3 +14,4 @@
 | [`M8 Script Profile v0`](./M8-script-profile.md) | GO; STEP-0075–0084 complete | bounded args/stdin/stdout, general executable codegen, Script WIT/adapter/runner, cache and minimal useful standard library |
 | [`M9 streaming, async and interactive scripting`](./M9-streaming-async-interactive.md) | GO; STEP-0085–0094 complete | streaming resources, Task/Future/Stream backend, scoped HTTP, persistent runner, watch, REPL, syntax/tooling integration and exit audit |
 | [`M10 Runtime observability and debugging`](./M10-runtime-observability-debugging.md) | planned; STEP-0095 next | source/debug identity, Runtime frames, typed signal cancellation, bounded events, DAP and client integration |
+| [`M11 Secure HTTP Provider and Automation SDK`](./M11-secure-http-automation-sdk.md) | planned after M10 GO; STEP-0103–0110 reserved | mature TLS, exact endpoint/DNS policy, streaming bodies, redirects, opaque secrets, SDK/tooling and exit audit |

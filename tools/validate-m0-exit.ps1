@@ -79,7 +79,7 @@ foreach ($relative in $expectedDecisions.Keys) {
 }
 
 $roadmap = Read-Utf8 (Join-Path $root 'docs/ROADMAP.md')
-$currentPhaseMatch = [regex]::Match($roadmap, '(?m)^> - current phase: (M[1-9])\r?$')
+$currentPhaseMatch = [regex]::Match($roadmap, '(?m)^> - current phase: (M[1-9][0-9]*)\r?$')
 $missingCurrentPhase = -not $currentPhaseMatch.Success
 $m0Start = $roadmap.IndexOf('## M0:', [StringComparison]::Ordinal)
 $m1Start = $roadmap.IndexOf('## M1:', [StringComparison]::Ordinal)
@@ -96,7 +96,7 @@ if ($missingCurrentPhase -or $missingM0Complete -or $missingM0Audit) {
 
 $statusText = Read-Utf8 (Join-Path $root 'docs/STATUS.md')
 foreach ($pattern in @(
-  '(?m)^> - phase: M[1-9] '
+  '(?m)^> - phase: M[1-9][0-9]* '
 )) {
   if ($statusText -notmatch $pattern) {
     throw "STATUS is missing expected state: $pattern"

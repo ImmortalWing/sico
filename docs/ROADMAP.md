@@ -2,8 +2,8 @@
 
 > - updated: 2026-07-19
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M9
-> - phase context: streaming/async/interactive in progress; M7 public rollout and M6 mobile remain externally blocked
+> - current phase: M10
+> - phase context: Runtime observability/debugging planned; M11 secure HTTP planned after M10 GO; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
 
@@ -184,7 +184,23 @@ Entry gate：satisfied by STEP-0014。
 
 进入条件：M9 GO，且 `sico.execution-plan.v0` 的 compile-only source coordinates、client-owned cancellation 与 debug refusal 已明确冻结。
 
-执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。首项 STEP-0095 只冻结 identity/schema/redaction/race contracts，不提前宣称 debugger。
+执行计划：[`M10 Runtime observability and debugging`](./plans/M10-runtime-observability-debugging.md)，预留 STEP-0095–0102。首项 STEP-0095 只冻结 identity/schema/redaction/race contracts，不提前宣称 debugger。Compiler 只拥有 deterministic debug map；Runtime fault/signal/event 与 DAP 分属 runner/tooling，不允许形成 `compiler → Runtime` 反向依赖。
+
+退出证据：exact source/compiler/Component/debug-map identity、真实 Runtime source frames、typed signal cancellation、bounded event/log queues、真实 Component 上逐项验证的 DAP 子集、session isolation、M0–M9 regression 与 actual-platform matrix。底层 Runtime 若不能支持真实 breakpoint/pause，必须记录 DAP NO-GO，不得把 post-mortem inspection 改名为 debugger。
+
+## M11: Secure HTTP Provider and Automation SDK
+
+状态：`planned after M10 GO / STEP-0103–0110 reserved`
+
+主要交付：成熟 TLS 实现上的 HTTPS/SNI/certificate validation、exact scheme/host/port authority、IPv6/IDNA 与 DNS pinning、bounded streaming upload/download、redirect reauthorization、opaque Host secret injection、per-Store connection lifecycle、automation SDK/tooling 和出口审计。
+
+进入条件：M10 GO，尤其是 structured events、mandatory redaction 和 typed cancellation 已稳定；M9 `http@0.1.0` compatibility profile 保留。若离线依赖中没有成熟 TLS stack，M11 在 contract/prototype gate 暂停，绝不自研 TLS。
+
+模块边界：语言 semantics/IR 只拥有 HTTP 类型/effect/capability；codegen 只生成 versioned Component import；TLS/DNS/redirect/credentials 位于独立 Host provider；runner/manifest 负责默认拒绝的 endpoint/secret grants；标准库只提供不扩权的 helpers。
+
+执行计划：[`M11 Secure HTTP Provider and Automation SDK`](./plans/M11-secure-http-automation-sdk.md)，STEP-0103–0110。M11 不包含 general sockets、ambient proxy/credentials、browser state、parallel Task scheduler、public deployment 或 mobile Runtime completion。
+
+退出证据：真实 HTTPS 正反证书矩阵、IDNA/IPv4/IPv6/DNS rebinding 拒绝语料、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、one-Store connection isolation、M0–M10 regression 与 actual-platform matrix。
 
 ## Immediate dependency chain
 

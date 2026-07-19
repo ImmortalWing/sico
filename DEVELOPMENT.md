@@ -1205,6 +1205,26 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 
 退出条件：真实 Runtime fault 可稳定映射到源码，signal/cancel race 只有一个 typed terminal outcome，事件队列和日志保持有界，声明的 DAP 子集端到端可执行，且 M0–M9 regression 保持通过。
 
+模块边界：compiler 只生成 digest-bound debug map；Runtime 生成 typed fault/frame 并拥有 signal/cancellation；tooling 拥有 DAP/event framing；LSP/AI 只消费 bounded redacted data。任何 `compiler → runner/DAP/platform` 依赖都不允许。
+
+### M11：Secure HTTP Provider 与 Automation SDK
+
+交付：
+
+- 使用成熟 TLS stack 的 HTTPS、SNI、certificate chain/hostname validation；
+- exact scheme/host/port endpoint authority、IPv6/IDNA 与 DNS pinning；
+- bounded streaming request/response、chunked framing 与 backpressure；
+- redirect reauthorization、downgrade refusal 与 cross-origin secret stripping；
+- Host-owned opaque secret provider、exact injection grants 与全链路 redaction；
+- per-Store connection pool/deadline/cancellation，以及 JSON/form/pagination/retry helpers；
+- CLI/package/tooling policy integration 和 security/performance/platform exit audit。
+
+模块边界：semantics/IR 只检查 HTTP effect/capability，codegen 只生成 versioned Component import，WIT/manifest 冻结接口与 authority，TLS/DNS/redirect/secrets 全部由独立 Host provider 实现。不得自研 TLS，不得让 compiler 依赖网络或凭据实现。
+
+退出条件：真实 HTTPS 信任/拒绝矩阵、DNS rebinding/private-address 防护、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、cancellation/connection lifecycle 和 M0–M10 regression 全部通过；平台声明只来自实际 native execution。
+
+非目标：general sockets/listeners、ambient env/home/cloud credentials、browser cookies、unrestricted proxy、parallel Task scheduler、public deployment 和 mobile Runtime completion。
+
 ## 20. 性能与质量指标
 
 第一阶段不提前写死数值，但从首个原型开始持续记录：
