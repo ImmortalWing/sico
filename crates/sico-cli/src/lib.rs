@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod cache;
+mod repl;
 mod run;
 
 use std::{
@@ -68,6 +69,7 @@ where
         Some(("build", command)) => run_build(command, stdin, stdout, stderr),
         Some(("run", command)) => run::run_run(command, stdin, stdout, stderr),
         Some(("watch", command)) => run::run_watch(command, stdout, stderr),
+        Some(("repl", command)) => repl::run_repl(command, stdin, stdout, stderr),
         Some(("eval", command)) => run::run_eval(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
@@ -123,6 +125,7 @@ fn command() -> Command {
         .subcommand(build_command())
         .subcommand(run::run_command())
         .subcommand(run::watch_command())
+        .subcommand(repl::repl_command())
         .subcommand(run::eval_command())
 }
 

@@ -45,6 +45,16 @@ sico watch [--poll-ms 25] [--max-runs COUNT] [相同 provider grants] <FILE> [--
 
 Watch v0 只监视一个文件并使用轮询；不接受 stdin source，也拒绝 streaming-stdin Component。`--max-runs` 主要用于自动化验证，默认持续运行。
 
+## `sico repl`
+
+```text
+sico repl [--json]
+```
+
+逐行计算现有 compile-time `Int` expression。命令为 `:history`、`:reset`、`:export PATH`、`:quit`。每个 cell 最多 4 KiB，会话最多 256 cells/16 KiB source history；失败 cell 不进入历史。`:history` 与 `:export` 会重新编译并校验全部 cell，export 只创建新文件、不覆盖已有路径。
+
+REPL v0 不支持跨 cell 声明或 top-level statements；该语法由 STEP-0092 单独裁决。
+
 ## `sico-app pack`
 
 ```text

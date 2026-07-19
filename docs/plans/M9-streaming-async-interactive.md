@@ -1,6 +1,6 @@
 # M9 plan: Streaming, async and interactive scripting
 
-> - status: in-progress; STEP-0085–0090 complete, STEP-0091 next
+> - status: in-progress; STEP-0085–0091 complete, STEP-0092 next
 > - created: 2026-07-17
 > - phase: M9
 > - entry requirement: M8 Script Profile GO with stable Script WIT/manifest/runner identities
@@ -48,7 +48,7 @@ Any future process capability must be supplied by a separately versioned plugin/
 | STEP-0088 | async runner and streaming stdio | complete: worker-thread cancellable IO; blocked read/pump/write cancel 120–134 ms incl. spawn+timer; bounded queues; 256 MiB exact; `script-async-runner-v0` |
 | STEP-0089 | scoped HTTP Component provider | complete: exact ASCII host/IPv4 + port grants; real `sico run` loopback POST; no redirect/TLS; 8 KiB URL, 64 KiB headers, 8 MiB body; timeout/cancel; `scoped-http-provider-v0` |
 | STEP-0090 | persistent development runner and watch mode | complete: Engine/Component cache/Prepared Linker reuse; fresh Store per run; `sico watch`; coalescing/failure/trap isolation; 5.8–6.1 ms warm median |
-| STEP-0091 | bounded REPL session model | deterministic cell IDs, recompile/replay policy, state/resource limits and reset/export behavior |
+| STEP-0091 | bounded REPL session model | complete: RFC-0032 expression cells; deterministic IDs; rollback/replay/reset/export; 4 KiB/256/16 KiB bounds; 7.8 MiB peak RSS |
 | STEP-0092 | top-level script syntax decision | parser/formatter/HIR/LSP/AI evidence and desugaring to a normal entry; explicit accept/reject RFC |
 | STEP-0093 | editor/debug/AI execution integration | run/watch/REPL protocol, cancellation, source maps, bounded logs and no shell interpolation |
 | STEP-0094 | M9 security, performance and exit audit | large-stream throughput/RSS, HTTP denial tests, cancellation races, persistent-runner isolation and platform matrix |

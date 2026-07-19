@@ -507,7 +507,7 @@ pub fn run_eval(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn W
 
 /// Evaluates a compile-time constant `Int` expression through the scalar
 /// frontend, refusing anything else without executing code.
-fn eval_constant(expression: &str) -> Result<i64, String> {
+pub(crate) fn eval_constant(expression: &str) -> Result<i64, String> {
     let text = format!("function main() returns Int:\n  return {expression}\nend function\n");
     let source = SourceFile::from_text(SourceId::new(0), "eval.sico", text)
         .map_err(|error| format!("sico: eval source contract error {error:?}"))?;

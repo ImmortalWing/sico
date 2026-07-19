@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M9 STEP-0090`](./M9-STEP-0090.md) | complete; STEP-0091 next | persistent runner/watch 已闭环；接手上下文转向 bounded REPL session contract |
+| [`M9 STEP-0091`](./M9-STEP-0091.md) | complete; STEP-0092 next | bounded REPL 已闭环；接手上下文转向 top-level syntax evidence/decision |
 
 旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

@@ -383,6 +383,30 @@ fn build_script_profile_emits_valid_http_component_import() {
 }
 
 #[test]
+fn repl_replays_resets_and_exports_bounded_cells() {
+    let export = temp_file("repl-session.json");
+    let input = format!(
+        "40 + 2\nunknown\n41 + 1\n:history\n:reset\n40 + 2\n:export {}\n:quit\n",
+        export.display()
+    );
+    let output = run(["repl"], Some(input.as_bytes()));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stderr(&output).contains("eval expression is not valid"));
+    let stdout = stdout(&output);
+    let cells: Vec<_> = stdout
+        .lines()
+        .filter(|line| line.len() > 66 && line.as_bytes()[64] == b' ')
+        .collect();
+    assert!(cells.len() >= 3, "{stdout}");
+    assert_eq!(&cells[0][..64], &cells[cells.len() - 1][..64]);
+    let session: Value = serde_json::from_slice(&fs::read(&export).unwrap()).unwrap();
+    assert_eq!(session["schema"], "sico.repl.session.v0");
+    assert_eq!(session["cells"].as_array().unwrap().len(), 1);
+    assert_eq!(session["cells"][0]["value"], 42);
+    fs::remove_file(export).unwrap();
+}
+
+#[test]
 fn usage_io_and_unimplemented_commands_are_tool_errors() {
     let output = run::<0>([], None);
     assert_eq!(output.status.code(), Some(2));
