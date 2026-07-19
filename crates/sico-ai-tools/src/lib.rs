@@ -636,6 +636,26 @@ mod tests {
     }
 
     #[test]
+    fn inspect_rejects_top_level_execution_with_actionable_identity() {
+        let response = execute_value(request(
+            "inspect",
+            json!({ "files": [{
+                "uri": "file:///top-level.sico",
+                "text": "stdout.write(stdin.read_all())\n"
+            }] }),
+        ));
+        assert_eq!(
+            response["result"]["diagnostics"][0]["diagnostic"]["code"],
+            "E1013"
+        );
+        assert_eq!(
+            response["result"]["diagnostics"][0]["diagnostic"]["key"],
+            "SYNTAX_UNEXPECTED_TOP_LEVEL"
+        );
+        assert!(response.to_string().find("stdin.read_all").is_none());
+    }
+
+    #[test]
     fn budgets_duplicate_uris_and_invalid_sources_fail_closed() {
         let mut invalid_budget = request(
             "inspect",

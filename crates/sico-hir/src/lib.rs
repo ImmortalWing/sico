@@ -459,6 +459,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn top_level_execution_cannot_reach_hir() {
+        let statement = SourceFile::from_text(
+            SourceId::new(100),
+            "statement.sico",
+            "stdout.write(stdin.read_all())\n".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(lower(&statement), Err(LowerError::Syntax { count: 1 }));
+
+        let labeled = SourceFile::from_text(
+            SourceId::new(101),
+            "labeled.sico",
+            "script:\n  return input.stdin\nend script\n".to_owned(),
+        )
+        .unwrap();
+        assert_eq!(lower(&labeled), Err(LowerError::Syntax { count: 1 }));
+    }
+
     fn collect_sico(root: &Path, output: &mut Vec<std::path::PathBuf>) {
         for entry in fs::read_dir(root).unwrap() {
             let path = entry.unwrap().path();

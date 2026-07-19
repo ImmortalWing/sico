@@ -396,6 +396,20 @@ foreach ($syntaxCase in @($syntaxMap.cases)) {
   }
   $seenSyntaxKeys[[string]$syntaxCase.key] = $true
 }
+$topLevelMap = Read-Json (Join-Path $diagnosticsRoot 'top-level-syntax-map.json')
+if ($topLevelMap.schema -ne 'sico.top-level-syntax-diagnostics.v0' -or @($topLevelMap.cases).Count -ne 2) {
+  throw 'top-level syntax diagnostic map must contain two candidates'
+}
+foreach ($topLevelCase in @($topLevelMap.cases)) {
+  if ([string]::IsNullOrWhiteSpace([string]$topLevelCase.source) -or
+      $topLevelCase.anchor -ne 'next-definition' -or
+      -not $catalogByCode.ContainsKey([string]$topLevelCase.code) -or
+      $catalogByCode[[string]$topLevelCase.code].key -ne $topLevelCase.key -or
+      $catalogByCode[[string]$topLevelCase.code].message_template -ne $topLevelCase.message) {
+    throw "top-level syntax catalog identity mismatch: $($topLevelCase.candidate)"
+  }
+  $seenSyntaxKeys[[string]$topLevelCase.key] = $true
+}
 $syntaxCatalogKeys = @($catalog.diagnostics | Where-Object { [int]$_.code.Substring(1) -lt 2000 } | ForEach-Object { [string]$_.key })
 Compare-StringSets @($seenSyntaxKeys.Keys) $syntaxCatalogKeys 'syntax catalog usage'
 
@@ -442,4 +456,4 @@ foreach ($fixture in @($fixtureManifest.fixtures)) {
   }
 }
 
-Write-Output "DIAGNOSTICS_OK catalog=$($catalogByCode.Count) semantic_cases=$($cases.Count) syntax_mutations=$(@($syntaxMap.cases).Count) partitions=$($partitions.Count) fixtures=$(@($fixtureManifest.fixtures).Count) accepted=$acceptedFixtures rejected=$rejectedFixtures max_message_bytes=$maxMessageBytes"
+Write-Output "DIAGNOSTICS_OK catalog=$($catalogByCode.Count) semantic_cases=$($cases.Count) syntax_mutations=$(@($syntaxMap.cases).Count) top_level_cases=$(@($topLevelMap.cases).Count) partitions=$($partitions.Count) fixtures=$(@($fixtureManifest.fixtures).Count) accepted=$acceptedFixtures rejected=$rejectedFixtures max_message_bytes=$maxMessageBytes"

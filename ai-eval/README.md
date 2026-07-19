@@ -66,7 +66,7 @@ generation 和 understanding 使用相同的 10 个语义 pair，覆盖全部 P0
 
 ## AI-oriented error taxonomy
 
-[`error-taxonomy.json`](./error-taxonomy.json) 将当前设计失败语料分成 12 类，精确覆盖 24 个稳定语义诊断、29 个语义负例和 12 类/36 个语法 mutation。每类记录 compiler prevention 与 AI repair constraint。
+[`error-taxonomy.json`](./error-taxonomy.json) 将当前设计失败语料分成 12 类，精确覆盖 24 个稳定语义诊断、E1001–E1013、29 个语义负例、12 类/36 个语法 mutation 与 STEP-0092 top-level rejection。每类记录 compiler prevention 与 AI repair constraint。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-error-taxonomy.ps1

@@ -19,6 +19,8 @@ function main() returns Int:
 end function
 ```
 
+顶层只允许声明。可执行入口必须写成显式 `function main(...)`；直接书写顶层语句或 `script:` block 会产生 E1013，编译器不会静默忽略这些行。
+
 入口必须名为 `main`。当前真正经过 Component/Wasmtime 端到端验证的入口返回类型是：
 
 - `Int`；

@@ -7,10 +7,10 @@
   "classes": [
     {
       "id": "syntax-block-boundary",
-      "failure_signal": "A declaration or scoped construct loses its required typed close.",
-      "compiler_prevention": "Report the expected block kind at the local recovery anchor and retain an error node.",
-      "ai_repair_constraint": "Restore only the missing close; do not move or delete the following definition.",
-      "diagnostic_keys": ["SYNTAX_MISSING_FUNCTION_CLOSE", "SYNTAX_MISSING_RECORD_CLOSE", "SYNTAX_MISSING_ENUM_CLOSE", "SYNTAX_MISSING_CAPABILITY_CLOSE", "SYNTAX_MISSING_RESOURCE_CLOSE", "SYNTAX_MISSING_USING_CLOSE", "SYNTAX_MISSING_TASK_GROUP_CLOSE", "SYNTAX_MISSING_INTERFACE_CLOSE"],
+      "failure_signal": "A declaration or scoped construct loses its required typed close, or executable text appears at the declaration-only module root.",
+      "compiler_prevention": "Report the expected block kind or declaration-only root rule at the local recovery anchor and retain an error node.",
+      "ai_repair_constraint": "Restore only the missing close, or wrap intended execution in an explicit main function; do not move or delete the following definition.",
+      "diagnostic_keys": ["SYNTAX_MISSING_FUNCTION_CLOSE", "SYNTAX_MISSING_RECORD_CLOSE", "SYNTAX_MISSING_ENUM_CLOSE", "SYNTAX_MISSING_CAPABILITY_CLOSE", "SYNTAX_MISSING_RESOURCE_CLOSE", "SYNTAX_MISSING_USING_CLOSE", "SYNTAX_MISSING_TASK_GROUP_CLOSE", "SYNTAX_MISSING_INTERFACE_CLOSE", "SYNTAX_UNEXPECTED_TOP_LEVEL"],
       "mutation_ids": ["MUT-001", "MUT-003", "MUT-005", "MUT-007", "MUT-008", "MUT-009", "MUT-010", "MUT-011"],
       "related_issue_ids": ["C04"]
     },

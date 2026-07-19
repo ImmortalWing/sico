@@ -3,10 +3,10 @@
 > - updated: 2026-07-19
 > - phase: M9 streaming/async/interactive; M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0092 top-level script syntax decision (planned)
-> - last completed active step: STEP-0091 (bounded REPL complete)
+> - current step: STEP-0093 editor/debug/AI execution integration (planned)
+> - last completed active step: STEP-0092 (top-level syntax decision complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: compare explicit main, script block and unrestricted top-level syntax with parser/formatter/HIR/LSP/AI evidence
+> - next step: unify run/watch/REPL execution protocols, cancellation, source maps and bounded logs without shell interpolation
 
 ## 0. M6 exit state
 
@@ -26,7 +26,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0091`](./steps/STEP-0091-bounded-repl-session.md) 已完成。REPL v0 使用现有 `Int` expression，不预判 top-level syntax；4 KiB/cell、256 cells、16 KiB history、reset/replay/export 均有证据。下一项 STEP-0092 独立裁决 top-level script syntax。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0092`](./steps/STEP-0092-top-level-script-syntax-decision.md) 已完成。RFC-0033 保留 explicit typed `main`，拒绝 top-level statements 与 `script:` block；E1013 已关闭 parser 成功但 AST/HIR 静默丢弃的缺陷。下一项 STEP-0093。
 
 ## 3. Verified repository facts
 
@@ -41,7 +41,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 | 候选 C 案例 | 54 | verified by semantic case validator |
 | 单点语法错误变体 | 36 | verified by mutation validator |
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
-| 稳定诊断 code/key | 36（其中 12 个由 parser 产生） | verified by diagnostic validator |
+| 稳定诊断 code/key | 37（其中 13 个由 parser 产生） | verified by diagnostic validator |
 | 已映射非法 case | 29 | verified by diagnostic validator |
 | Rust `.rs` 文件 | 89 | measured |
 | `Cargo.toml` | 29 | measured |
@@ -55,7 +55,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 | source/line index | 6 tests passed | verified |
 | lossless lexer | 8 tests; B 54/54 | verified |
 | B happy-path parser | 54/54 + 54 snapshots | verified |
-| parser recovery/E1xxx | 12/12 mutation；E1001–E1012 | verified |
+| parser recovery/E1xxx | 12/12 mutation；E1001–E1012；top-level E1013 | verified |
 | canonical formatter | 54/54 AST stable + idempotent | verified |
 | `sico` CLI | 6 commands；8 integration tests；`.sapp` build/run/inspect | verified |
 | deterministic frontend properties | 8,192 inputs | verified |
@@ -119,7 +119,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - 正式 Rust workspace、lexical/source v0 与 21 个 contract case：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md)、[`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；
 - strict source/span、line index 与 54-file lossless lexer：[`STEP-0016`](./steps/STEP-0016-source-span-lossless-lexer.md)；
 - B happy-path lossless parser 与 AST shape：[`STEP-0017`](./steps/STEP-0017-b-grammar-lossless-parser.md)；
-- parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；
+- parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；top-level E1013：[`STEP-0092`](./steps/STEP-0092-top-level-script-syntax-decision.md)；
 - canonical formatter、comment/trivia policy 与 error-tree refusal：[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md)；
 - `sico check`/`format`/`outline`、退出码与 M2 capability boundary：[`STEP-0020`](./steps/STEP-0020-cli-check-format-outline.md)；
 - frontend fuzz/limits/performance 与 M1 GO：[`STEP-0021`](./steps/STEP-0021-fuzz-performance-m1-exit.md)、[`M1 exit audit`](./reports/m1-exit-audit.md)；

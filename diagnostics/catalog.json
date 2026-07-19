@@ -112,6 +112,14 @@
       "required_arguments": []
     },
     {
+      "code": "E1013",
+      "key": "SYNTAX_UNEXPECTED_TOP_LEVEL",
+      "category": "syntax-module",
+      "severity": "error",
+      "message_template": "top level accepts declarations only; use an explicit main function",
+      "required_arguments": []
+    },
+    {
       "code": "E2001",
       "key": "TYPE_MISMATCH",
       "category": "type",

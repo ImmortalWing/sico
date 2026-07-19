@@ -63,7 +63,7 @@ v0 必须先固定协议，未来 parser/type checker 才能生成可审计输�
 
 | 范围 | 领域 | v0 状态 |
 |---|---|---|
-| `E1000`–`E1999` | 词法、语法、恢复 | active；E1001–E1012 由 STEP-0018 parser/mutation 证据激活 |
+| `E1000`–`E1999` | 词法、语法、恢复 | active；E1001–E1012 由 STEP-0018 激活；E1013 由 STEP-0092 top-level fail-closed 证据激活 |
 | `E2000`–`E2999` | 名称、类型、字段、契约 | active |
 | `E3000`–`E3999` | 模式、Result、控制流 | active |
 | `E4000`–`E4999` | 效果、能力、边界声明 | active |
@@ -232,6 +232,8 @@ JSON Schema 位于 [`diagnostics/schema/diagnostics-v0.schema.json`](../../diagn
 - **只保存 line/column**：Unicode 和编辑器编码会产生歧义；拒绝。
 - **立即固定自动 edits**：没有正式语法树和 formatter，容易产生错误修复；推迟。
 - **在 parser 证据前为 mutation 分配 E1xxx**：M0 时拒绝并只预留分区；STEP-0018 已用 12/12 B mutation 的根因、span 和 recovery 证据激活 E1001–E1012。
+
+STEP-0092 追加 `E1013 / SYNTAX_UNEXPECTED_TOP_LEVEL`：top level 仅允许 declarations，unrestricted statements 与 `script:` block 在 semantics/HIR 前失败，并恢复到 close 或下一 declaration。该追加不改变 E1001–E1012 的历史 mutation 映射。
 
 ## Validation and acceptance criteria
 

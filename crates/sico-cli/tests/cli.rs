@@ -68,6 +68,28 @@ fn check_runs_semantics_for_file_stdin_text_and_json() {
 }
 
 #[test]
+fn top_level_execution_candidates_fail_closed_with_e1013() {
+    for candidate in [
+        "stdout.write(stdin.read_all())\n",
+        "script:\n  return input.stdin\nend script\n",
+    ] {
+        let output = run(["check", "--json", "-"], Some(candidate.as_bytes()));
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stderr.is_empty());
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(json["diagnostics"].as_array().unwrap().len(), 1);
+        assert_eq!(json["diagnostics"][0]["code"], "E1013");
+        assert_eq!(json["diagnostics"][0]["key"], "SYNTAX_UNEXPECTED_TOP_LEVEL");
+        assert_eq!(json["status"]["semantic_checks_performed"], false);
+
+        let output = run(["format", "-"], Some(candidate.as_bytes()));
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        assert!(stderr(&output).contains("E1013"));
+    }
+}
+
+#[test]
 fn check_matches_all_54_semantic_oracles() {
     let repository = root();
     let map: Value = serde_json::from_str(

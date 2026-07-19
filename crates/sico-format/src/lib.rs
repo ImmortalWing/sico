@@ -312,6 +312,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn rejected_top_level_execution_is_never_formatted() {
+        assert_eq!(
+            format(&source("stdout.write(stdin.read_all())\n")),
+            Err(FormatError::Syntax { count: 1 })
+        );
+        assert_eq!(
+            format(&source("script:\n  return input.stdin\nend script\n")),
+            Err(FormatError::Syntax { count: 1 })
+        );
+    }
+
     fn collect_sico(root: &Path, output: &mut Vec<std::path::PathBuf>) {
         for entry in fs::read_dir(root).unwrap() {
             let path = entry.unwrap().path();

@@ -1,0 +1,21 @@
+{
+  "schema": "sico.top-level-syntax-diagnostics.v0",
+  "cases": [
+    {
+      "candidate": "unrestricted-statement",
+      "source": "stdout.write(stdin.read_all())\n",
+      "code": "E1013",
+      "key": "SYNTAX_UNEXPECTED_TOP_LEVEL",
+      "message": "top level accepts declarations only; use an explicit main function",
+      "anchor": "next-definition"
+    },
+    {
+      "candidate": "labeled-script-block",
+      "source": "script:\n  return input.stdin\nend script\n",
+      "code": "E1013",
+      "key": "SYNTAX_UNEXPECTED_TOP_LEVEL",
+      "message": "top level accepts declarations only; use an explicit main function",
+      "anchor": "next-definition"
+    }
+  ]
+}

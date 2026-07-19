@@ -53,7 +53,7 @@ sico repl [--json]
 
 逐行计算现有 compile-time `Int` expression。命令为 `:history`、`:reset`、`:export PATH`、`:quit`。每个 cell 最多 4 KiB，会话最多 256 cells/16 KiB source history；失败 cell 不进入历史。`:history` 与 `:export` 会重新编译并校验全部 cell，export 只创建新文件、不覆盖已有路径。
 
-REPL v0 不支持跨 cell 声明或 top-level statements；该语法由 STEP-0092 单独裁决。
+REPL v0 不支持跨 cell 声明。源码 top level 只接受 declarations；请使用显式 `function main(...)`。unrestricted statements 与 `script:` block 会以 E1013 拒绝。
 
 ## `sico-app pack`
 

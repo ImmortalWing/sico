@@ -124,6 +124,7 @@ pub enum ParseErrorKind {
     MissingTaskClose,
     MissingInterfaceClose,
     MissingParameterListClose,
+    UnexpectedTopLevel,
     NestingLimitExceeded {
         limit: usize,
     },
@@ -243,8 +244,13 @@ pub fn parse(source: &SourceFile) -> Parse {
     let mut declarations = Vec::new();
     let mut errors = Vec::new();
     let mut depth_limit_exceeded = false;
+    // RFC-0033 rejects Candidate C without reserving `script` as a keyword.
+    // This recovery state suppresses one diagnostic per body line and resumes
+    // at the explicit close or the next declaration.
+    let mut rejected_script_block = false;
 
     for line in &lines {
+        let errors_before_line = errors.len();
         if validate_delimiters(tokens, line, &mut delimiters, &mut errors, &mut empty_nodes) {
             depth_limit_exceeded = true;
             break;
@@ -253,6 +259,35 @@ pub fn parse(source: &SourceFile) -> Parse {
             continue;
         }
         let first = tokens[line.significant[0]].kind;
+
+        if rejected_script_block {
+            if is_rejected_script_close(source.text(), tokens, line) {
+                rejected_script_block = false;
+                continue;
+            }
+            if starts_top_level_declaration(tokens, line) {
+                rejected_script_block = false;
+            } else {
+                continue;
+            }
+        }
+
+        if blocks.is_empty()
+            && errors.len() == errors_before_line
+            && is_rejected_script_opener(source.text(), tokens, line)
+        {
+            push_parse_error(
+                &mut errors,
+                ParseError {
+                    kind: ParseErrorKind::UnexpectedTopLevel,
+                    range: tokens[line.significant[0]].range,
+                    related: None,
+                    anchor: RecoveryAnchor::NextDefinition,
+                },
+            );
+            rejected_script_block = true;
+            continue;
+        }
 
         if first == TokenKind::Case
             && blocks.iter().any(|block| block.kind == BlockKind::Match)
@@ -348,23 +383,22 @@ pub fn parse(source: &SourceFile) -> Parse {
                         }
                     }
                 }
+            } else if blocks.is_empty() && errors.len() == errors_before_line {
+                push_parse_error(
+                    &mut errors,
+                    ParseError {
+                        kind: ParseErrorKind::UnexpectedTopLevel,
+                        range: tokens[line.significant[0]].range,
+                        related: None,
+                        anchor: RecoveryAnchor::NextDefinition,
+                    },
+                );
             }
             continue;
         }
 
         let candidate = opener(tokens, line);
-        let starts_top_level = line.significant[0] == line.start
-            && (matches!(
-                first,
-                TokenKind::Newtype
-                    | TokenKind::Record
-                    | TokenKind::Enum
-                    | TokenKind::Capability
-                    | TokenKind::Resource
-                    | TokenKind::Interface
-                    | TokenKind::Function
-            ) || (matches!(first, TokenKind::Export | TokenKind::Async)
-                && candidate.is_some_and(|(kind, _)| kind == BlockKind::Function)));
+        let starts_top_level = starts_top_level_declaration(tokens, line);
         if starts_top_level && blocks.len() == 1 && blocks[0].top_level {
             let missing = blocks.pop().unwrap();
             push_recovery_error(
@@ -399,6 +433,20 @@ pub fn parse(source: &SourceFile) -> Parse {
         }
 
         if let Some((kind, opener_index)) = candidate {
+            if blocks.is_empty()
+                && kind.declaration().is_none()
+                && errors.len() == errors_before_line
+            {
+                push_parse_error(
+                    &mut errors,
+                    ParseError {
+                        kind: ParseErrorKind::UnexpectedTopLevel,
+                        range: tokens[line.significant[0]].range,
+                        related: None,
+                        anchor: RecoveryAnchor::NextDefinition,
+                    },
+                );
+            }
             if blocks.len() >= MAX_PARSE_DEPTH {
                 push_recovery_error(
                     &mut errors,
@@ -431,6 +479,16 @@ pub fn parse(source: &SourceFile) -> Parse {
                 name,
                 top_level,
             });
+        } else if blocks.is_empty() && errors.len() == errors_before_line {
+            push_parse_error(
+                &mut errors,
+                ParseError {
+                    kind: ParseErrorKind::UnexpectedTopLevel,
+                    range: tokens[line.significant[0]].range,
+                    related: None,
+                    anchor: RecoveryAnchor::NextDefinition,
+                },
+            );
         }
     }
 
@@ -549,6 +607,42 @@ fn close_kind(kind: TokenKind) -> Option<BlockKind> {
         TokenKind::Task => BlockKind::Task,
         _ => return None,
     })
+}
+
+fn is_rejected_script_opener(text: &str, tokens: &[Token], line: &Line) -> bool {
+    line.significant.len() == 2
+        && token_text_is(text, tokens[line.significant[0]], "script")
+        && tokens[line.significant[1]].kind == TokenKind::Colon
+}
+
+fn starts_top_level_declaration(tokens: &[Token], line: &Line) -> bool {
+    if line.significant[0] != line.start {
+        return false;
+    }
+    let first = tokens[line.significant[0]].kind;
+    matches!(
+        first,
+        TokenKind::Newtype
+            | TokenKind::Record
+            | TokenKind::Enum
+            | TokenKind::Capability
+            | TokenKind::Resource
+            | TokenKind::Interface
+            | TokenKind::Function
+    ) || (matches!(first, TokenKind::Export | TokenKind::Async)
+        && opener(tokens, line).is_some_and(|(kind, _)| kind == BlockKind::Function))
+}
+
+fn is_rejected_script_close(text: &str, tokens: &[Token], line: &Line) -> bool {
+    line.significant.len() == 2
+        && tokens[line.significant[0]].kind == TokenKind::End
+        && token_text_is(text, tokens[line.significant[1]], "script")
+}
+
+fn token_text_is(text: &str, token: Token, expected: &str) -> bool {
+    let start = usize::from(token.range.start());
+    let end = usize::from(token.range.end());
+    &text[start..end] == expected
 }
 
 fn identifier_after(
@@ -890,6 +984,33 @@ mod tests {
         assert!(kinds.contains(&SyntaxKind::FUNCTION_DECL));
         assert!(kinds.contains(&SyntaxKind::IF_BLOCK));
         assert!(kinds.contains(&SyntaxKind::MATCH_BLOCK));
+    }
+
+    #[test]
+    fn top_level_execution_candidates_fail_closed_and_recover_at_declarations() {
+        let statement = source(
+            "stdout.write(stdin.read_all())\nfunction main() returns Int:\n  return 1\nend function\n",
+        );
+        let parsed = parse(&statement);
+        assert_eq!(parsed.errors().len(), 1);
+        assert_eq!(parsed.errors()[0].kind, ParseErrorKind::UnexpectedTopLevel);
+        assert_eq!(parsed.errors()[0].anchor, RecoveryAnchor::NextDefinition);
+        assert_eq!(parsed.recovered_ast().shape(), "Function:main");
+
+        let labeled = source(
+            "script:\n  return input.stdin\nend script\nfunction main() returns Int:\n  return 1\nend function\n",
+        );
+        let parsed = parse(&labeled);
+        assert_eq!(parsed.errors().len(), 1);
+        assert_eq!(parsed.errors()[0].kind, ParseErrorKind::UnexpectedTopLevel);
+        assert_eq!(parsed.recovered_ast().shape(), "Function:main");
+
+        let missing_close = source(
+            "script:\n  return input.stdin\nfunction main() returns Int:\n  return 1\nend function\n",
+        );
+        let parsed = parse(&missing_close);
+        assert_eq!(parsed.errors().len(), 1);
+        assert_eq!(parsed.recovered_ast().shape(), "Function:main");
     }
 
     #[test]

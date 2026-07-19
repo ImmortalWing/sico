@@ -7,13 +7,13 @@
 > - 当前已配置远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；本工作区未配置独立 `github` remote
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
 > - 开发归档：`codex/archive-v0.0.1-development-history` 为历史归档分支；当前推送目标仅为已配置的 `origin`
-> - 提交状态：STEP-0079–0088 为 `fbf5be8`；STEP-0089 为 `c71e8a6`；STEP-0090 为 `4adbd78`；STEP-0091 由包含本文件的独立提交闭环
+> - 提交状态：STEP-0079–0088 为 `fbf5be8`；STEP-0089 为 `c71e8a6`；STEP-0090 为 `4adbd78`；STEP-0091 为 `31177bc`；STEP-0092 由包含本文件的独立提交闭环
 
-当前 M9 的逐文件状态、验证边界与下一条命令见 [`M9 STEP-0091 接手文档`](./handoffs/M9-STEP-0091.md)。
+当前 M9 的逐文件状态、验证边界与下一条命令见 [`M9 STEP-0092 接手文档`](./handoffs/M9-STEP-0092.md)。
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 已完成并保持 GO。M9 STEP-0085–0091 已完成；bounded REPL 不预判 top-level syntax。STEP-0092–0094 尚未开始，因此 M9 整体不能宣称完成；下一项为 STEP-0092 syntax decision。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 已完成并保持 GO。M9 STEP-0085–0092 已完成；explicit typed `main` 已接受，另外两种 top-level 候选以 E1013 拒绝。STEP-0093–0094 尚未开始，因此 M9 整体不能宣称完成；下一项为 STEP-0093 execution integration。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 

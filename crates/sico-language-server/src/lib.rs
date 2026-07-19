@@ -1046,6 +1046,43 @@ mod tests {
     }
 
     #[test]
+    fn top_level_execution_candidates_publish_e1013() {
+        let mut server = ready();
+        let statement = open(
+            &mut server,
+            "file:///workspace/statement.sico",
+            1,
+            "stdout.write(stdin.read_all())\n",
+        );
+        assert_eq!(statement[0]["params"]["diagnostics"][0]["code"], "E1013");
+        assert_eq!(
+            statement[0]["params"]["diagnostics"][0]["data"]["key"],
+            "SYNTAX_UNEXPECTED_TOP_LEVEL"
+        );
+
+        let labeled = open(
+            &mut server,
+            "file:///workspace/labeled.sico",
+            1,
+            "script:\n  return input.stdin\nend script\n",
+        );
+        assert_eq!(
+            labeled[0]["params"]["diagnostics"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            labeled[0]["params"]["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|diagnostic| diagnostic["code"] == "E1013")
+        );
+    }
+
+    #[test]
     fn semantic_index_drives_symbols_completion_hover_definition_and_references() {
         let mut server = ready();
         let uri = "file:///workspace/main.sico";

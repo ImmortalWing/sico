@@ -1,6 +1,6 @@
 # M9 plan: Streaming, async and interactive scripting
 
-> - status: in-progress; STEP-0085–0091 complete, STEP-0092 next
+> - status: in-progress; STEP-0085–0092 complete, STEP-0093 next
 > - created: 2026-07-17
 > - phase: M9
 > - entry requirement: M8 Script Profile GO with stable Script WIT/manifest/runner identities
@@ -49,7 +49,7 @@ Any future process capability must be supplied by a separately versioned plugin/
 | STEP-0089 | scoped HTTP Component provider | complete: exact ASCII host/IPv4 + port grants; real `sico run` loopback POST; no redirect/TLS; 8 KiB URL, 64 KiB headers, 8 MiB body; timeout/cancel; `scoped-http-provider-v0` |
 | STEP-0090 | persistent development runner and watch mode | complete: Engine/Component cache/Prepared Linker reuse; fresh Store per run; `sico watch`; coalescing/failure/trap isolation; 5.8–6.1 ms warm median |
 | STEP-0091 | bounded REPL session model | complete: RFC-0032 expression cells; deterministic IDs; rollback/replay/reset/export; 4 KiB/256/16 KiB bounds; 7.8 MiB peak RSS |
-| STEP-0092 | top-level script syntax decision | parser/formatter/HIR/LSP/AI evidence and desugaring to a normal entry; explicit accept/reject RFC |
+| STEP-0092 | top-level script syntax decision | complete: RFC-0033 accepts explicit typed `main`; B/C rejected with E1013 across parser/formatter/HIR/LSP/AI |
 | STEP-0093 | editor/debug/AI execution integration | run/watch/REPL protocol, cancellation, source maps, bounded logs and no shell interpolation |
 | STEP-0094 | M9 security, performance and exit audit | large-stream throughput/RSS, HTTP denial tests, cancellation races, persistent-runner isolation and platform matrix |
 
@@ -89,7 +89,7 @@ The persistent process may reuse Engine, Linker, adapter and compiled artifacts,
 
 Watch mode coalesces filesystem events and reruns only after a successful new compilation. REPL cells are recorded as bounded source history and recompiled/replayed deterministically; M9 does not require a dynamic object VM. Reset discards the Store and cell state.
 
-Top-level syntax is not presumed. STEP-0092 must compare explicit `main`, a labeled `script:` block and unrestricted top-level statements using parser recovery, formatter stability, LSP and AI-generation evidence.
+RFC-0033 retains explicit typed `main`. STEP-0092 compared a labeled `script:` block and unrestricted top-level statements using parser recovery, formatter stability, HIR, LSP and AI-tool evidence; both shorthand candidates are rejected with E1013 before semantic analysis.
 
 ## 9. Performance gates
 

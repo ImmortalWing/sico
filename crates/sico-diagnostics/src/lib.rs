@@ -70,6 +70,11 @@ pub const fn syntax_identity(kind: &ParseErrorKind) -> Option<DiagnosticIdentity
             "SYNTAX_MISSING_PARAMETER_LIST_CLOSE",
             "missing ')' in parameter list",
         ),
+        ParseErrorKind::UnexpectedTopLevel => (
+            "E1013",
+            "SYNTAX_UNEXPECTED_TOP_LEVEL",
+            "top level accepts declarations only; use an explicit main function",
+        ),
         _ => return None,
     };
     Some(DiagnosticIdentity {
@@ -278,5 +283,34 @@ mod tests {
                 include_str!("../../../tests/diagnostics/b-mutations.snap")
             );
         }
+    }
+
+    #[test]
+    fn rejected_top_level_execution_has_stable_e1013_diagnostics() {
+        let source = SourceFile::from_text(
+            SourceId::new(13),
+            "top-level.sico",
+            "stdout.write(stdin.read_all())\n".to_owned(),
+        )
+        .unwrap();
+        let parsed = parse(&source);
+        assert_eq!(parsed.errors().len(), 1);
+        let identity = syntax_identity(&parsed.errors()[0].kind).unwrap();
+        assert_eq!(identity.code, "E1013");
+        assert_eq!(identity.key, "SYNTAX_UNEXPECTED_TOP_LEVEL");
+        assert_eq!(
+            render_syntax_text(&source, "top-level.sico", parsed.errors()),
+            "E1013 top-level.sico:1:1 top level accepts declarations only; use an explicit main function"
+        );
+        let rendered: Value = serde_json::from_str(
+            &render_syntax_json(&source, "top-level.sico", parsed.errors()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(rendered["diagnostics"][0]["code"], "E1013");
+        assert_eq!(
+            rendered["diagnostics"][0]["recovery_anchor"],
+            "next-definition"
+        );
+        assert!(rendered["diagnostics"][0].get("related").is_none());
     }
 }

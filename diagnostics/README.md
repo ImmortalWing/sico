@@ -4,8 +4,9 @@
 
 ## Files
 
-- [`catalog.json`](./catalog.json)：编号分区、36 个正式 code/key、消息模板和必需参数；
+- [`catalog.json`](./catalog.json)：编号分区、37 个正式 code/key、消息模板和必需参数；
 - [`syntax-mutation-map.json`](./syntax-mutation-map.json)：12 个 B mutation 到 E1001–E1012、默认消息和 recovery anchor 的映射；
+- [`top-level-syntax-map.json`](./top-level-syntax-map.json)：STEP-0092 两种 rejected top-level candidates 到 E1013 的映射；
 - [`semantic-case-map.json`](./semantic-case-map.json)：29 个非法 P0 case 到 code、arguments 和期望消息的映射；
 - [`schema/diagnostics-v0.schema.json`](./schema/diagnostics-v0.schema.json)：JSON envelope 的结构约束；
 - [`fixtures/`](./fixtures/README.md)：通过和失败协议样本；
@@ -39,4 +40,4 @@ hint: handle none before using the value
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/validate-diagnostics.ps1
 ```
 
-该校验同时验证设计资产和 12 个真实 parser syntax diagnostic 映射。当前只有 E1001–E1012 由编译器前端产生；E2xxx 及以后仍是 M2 设计资产，不能解释为已经实现的语义检查。
+该校验同时验证设计资产、12 个 parser mutation 映射和两种 top-level candidate 映射。编译器前端当前产生 E1001–E1013；E2xxx 及以后由语义前端按各步骤证据实现，目录中的设计项不能单独解释为实现声明。

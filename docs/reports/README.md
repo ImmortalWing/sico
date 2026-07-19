@@ -13,6 +13,7 @@
 | [`scoped-http-provider-v0`](./scoped-http-provider-v0.md) | verified implementation evidence | STEP-0089 | 精确端点 grant、GET/POST loopback、默认拒绝、redirect/limit/timeout/cancel 与 `network.connect` closure |
 | [`persistent-runner-watch-v0`](./persistent-runner-watch-v0.md) | verified implementation evidence | STEP-0090 | Engine/Component/Linker reuse、fresh Store、watch coalescing/failure/trap isolation 与 5.8–6.1 ms warm median |
 | [`bounded-repl-session-v0`](./bounded-repl-session-v0.md) | verified implementation evidence | STEP-0091 | deterministic cells、rollback/replay/reset/export、4 KiB/256/16 KiB bounds 与 7.8 MiB sampled peak RSS |
+| [`top-level-script-syntax-decision-v0`](./top-level-script-syntax-decision-v0.md) | verified decision and implementation evidence | STEP-0092 | explicit main accepted；B/C rejected；E1013 closes silent AST/HIR drop across parser/formatter/LSP/AI |
 | [`ecosystem-release-contract-v0`](./ecosystem-release-contract-v0.md) | complete | STEP-0062 | 32-threat ecosystem trust boundary, 12 compatibility surfaces and split-track evidence |
 | [`m6-exit-audit`](./m6-exit-audit.md) | blocked-external-runner | STEP-0061 | host evidence complete; Android Runtime/UI/startup gate NO-GO |
 | [`desktop-android-parity-v0`](./desktop-android-parity-v0.md) | partial-runtime-evidence | STEP-0060 | same package Desktop result and Mobile Host metadata parity |
