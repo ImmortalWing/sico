@@ -1,0 +1,388 @@
+{
+  "schema": "sico.dap-claimed-subset.v0",
+  "dap_protocol": "base-protocol-v0",
+  "unknown_request_policy": "typed-unsupported-request",
+  "unclaimed_event_policy": "must-not-emit",
+  "claims": [
+    {
+      "kind": "request",
+      "name": "initialize",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-initialize",
+      "behavior": "Advertise only capabilities implied by this allowlist; unknown optional capabilities remain false or absent."
+    },
+    {
+      "kind": "request",
+      "name": "launch",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["initialized", "identity-matched-source-and-component"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-launch",
+      "behavior": "Launch exactly one owned identity-bound Component using the already accepted invocation grants."
+    },
+    {
+      "kind": "request",
+      "name": "setBreakpoints",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["initialized", "exact-source-digest", "unconditional-source-lines-only"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-set-breakpoints",
+      "behavior": "Accept only unconditional source line breakpoints; condition, hitCondition and logMessage are typed-refused; every line is verified, rejected or reported unbound."
+    },
+    {
+      "kind": "request",
+      "name": "configurationDone",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["launched", "breakpoint-configuration-closed"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-configuration-done",
+      "behavior": "Begin or resume the owned launch only after its accepted configuration sequence."
+    },
+    {
+      "kind": "request",
+      "name": "threads",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["launched"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-threads",
+      "behavior": "Return one logical Script execution in M10; no native thread or parallel task claim."
+    },
+    {
+      "kind": "request",
+      "name": "stackTrace",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["stopped", "identity-matched-debug-map"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-stack-trace",
+      "behavior": "Return at most 256 ordered source-mapped frames for the selected logical execution."
+    },
+    {
+      "kind": "request",
+      "name": "scopes",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["stopped", "valid-frame"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-scopes",
+      "behavior": "Expose fixed read-only locals, arguments and result scopes only when Runtime data exists."
+    },
+    {
+      "kind": "request",
+      "name": "variables",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["stopped", "valid-scope", "redaction-complete"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-variables",
+      "behavior": "Return read-only redacted values with depth 8 and 256 children per container; unavailable values are labeled unavailable."
+    },
+    {
+      "kind": "request",
+      "name": "continue",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["stopped"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-continue",
+      "behavior": "Resume the stopped execution and emit exactly one matching continued event."
+    },
+    {
+      "kind": "request",
+      "name": "pause",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["running", "runtime-safe-pause-hook"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-pause",
+      "behavior": "Stop only through a proven Runtime safe-pause hook; absence of that hook makes STEP-0100 NO-GO."
+    },
+    {
+      "kind": "request",
+      "name": "disconnect",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["initialized"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-disconnect",
+      "behavior": "Cancel or terminate the adapter-owned launch and leave no paused process, worker or session state."
+    },
+    {
+      "kind": "request",
+      "name": "terminate",
+      "direction": "client-to-adapter",
+      "state": "supported",
+      "preconditions": ["launched"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-request-terminate",
+      "behavior": "Enter the shared typed cancellation path and publish one terminal outcome."
+    },
+    {
+      "kind": "request",
+      "name": "attach",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-attach",
+      "behavior": "Refuse arbitrary process or Store attachment."
+    },
+    {
+      "kind": "request",
+      "name": "next",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-next",
+      "behavior": "Refuse source stepping in v0."
+    },
+    {
+      "kind": "request",
+      "name": "stepIn",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-step-in",
+      "behavior": "Refuse source stepping in v0."
+    },
+    {
+      "kind": "request",
+      "name": "stepOut",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-step-out",
+      "behavior": "Refuse source stepping in v0."
+    },
+    {
+      "kind": "request",
+      "name": "evaluate",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-evaluate",
+      "behavior": "Refuse arbitrary guest expression execution."
+    },
+    {
+      "kind": "request",
+      "name": "setExpression",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-set-expression",
+      "behavior": "Refuse guest expression mutation."
+    },
+    {
+      "kind": "request",
+      "name": "setVariable",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-set-variable",
+      "behavior": "Refuse mutation of observed values."
+    },
+    {
+      "kind": "request",
+      "name": "readMemory",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-read-memory",
+      "behavior": "Refuse native or guest memory reads."
+    },
+    {
+      "kind": "request",
+      "name": "writeMemory",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-write-memory",
+      "behavior": "Refuse native or guest memory mutation."
+    },
+    {
+      "kind": "request",
+      "name": "disassemble",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-disassemble",
+      "behavior": "Refuse native or Component disassembly."
+    },
+    {
+      "kind": "request",
+      "name": "setFunctionBreakpoints",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-function-breakpoints",
+      "behavior": "Refuse function breakpoints; only unconditional source lines are claimed."
+    },
+    {
+      "kind": "request",
+      "name": "setDataBreakpoints",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-data-breakpoints",
+      "behavior": "Refuse data breakpoints."
+    },
+    {
+      "kind": "request",
+      "name": "setInstructionBreakpoints",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-instruction-breakpoints",
+      "behavior": "Refuse Component/native instruction breakpoints."
+    },
+    {
+      "kind": "request",
+      "name": "setExceptionBreakpoints",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-exception-breakpoints",
+      "behavior": "Refuse exception filter configuration; only accepted breakpoint and fault reasons stop."
+    },
+    {
+      "kind": "request",
+      "name": "restartFrame",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-restart-frame",
+      "behavior": "Refuse frame or control-flow rewrite."
+    },
+    {
+      "kind": "request",
+      "name": "goto",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-goto",
+      "behavior": "Refuse control-flow rewrite."
+    },
+    {
+      "kind": "request",
+      "name": "stepBack",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-step-back",
+      "behavior": "Refuse reverse execution."
+    },
+    {
+      "kind": "request",
+      "name": "reverseContinue",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-reverse-continue",
+      "behavior": "Refuse reverse execution."
+    },
+    {
+      "kind": "request",
+      "name": "restart",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-restart",
+      "behavior": "Refuse in-session restart; persistent generations remain isolated launches."
+    },
+    {
+      "kind": "request",
+      "name": "terminateThreads",
+      "direction": "client-to-adapter",
+      "state": "refused",
+      "preconditions": [],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-refuse-terminate-threads",
+      "behavior": "Refuse independent logical-thread termination in M10."
+    },
+    {
+      "kind": "event",
+      "name": "initialized",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["capabilities-fixed"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-initialized",
+      "behavior": "Emit once after the adapter capabilities are fixed."
+    },
+    {
+      "kind": "event",
+      "name": "stopped",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["runtime-safe-stop"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-stopped",
+      "behavior": "Carry a typed stop reason and valid logical execution identity."
+    },
+    {
+      "kind": "event",
+      "name": "continued",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["accepted-resume"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-continued",
+      "behavior": "Match one accepted continue and report the affected logical execution set exactly."
+    },
+    {
+      "kind": "event",
+      "name": "output",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["redaction-complete"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-output",
+      "behavior": "Derive bounded redacted output from sico.execution-event.v0."
+    },
+    {
+      "kind": "event",
+      "name": "terminated",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["terminal-outcome-committed"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-terminated",
+      "behavior": "Emit once after the owned session reaches its terminal outcome."
+    },
+    {
+      "kind": "event",
+      "name": "exited",
+      "direction": "adapter-to-client",
+      "state": "supported",
+      "preconditions": ["stable-runner-exit-exists"],
+      "max_payload_bytes": 1048576,
+      "evidence_id": "dap-v0-event-exited",
+      "behavior": "Carry the stable process or runner exit code when one exists."
+    }
+  ]
+}

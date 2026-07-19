@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sico.dev/schema/observability-contract-v0.schema.json",
+  "title": "Sico observability contracts v0",
+  "oneOf": [
+    { "$ref": "#/$defs/debugIdentity" },
+    { "$ref": "#/$defs/debugMap" },
+    { "$ref": "#/$defs/runtimeFault" },
+    { "$ref": "#/$defs/executionEvent" }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "boundedId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]*$"
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["document_id", "start", "end"],
+      "properties": {
+        "document_id": { "$ref": "#/$defs/boundedId" },
+        "start": { "$ref": "#/$defs/safeInteger" },
+        "end": { "$ref": "#/$defs/safeInteger" }
+      }
+    },
+    "debugIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "source", "compiler", "language_semantics", "ir_schema", "component_code_sha256", "component_sha256", "debug_map_sha256", "adapter_identities", "wit_identities"],
+      "properties": {
+        "schema": { "const": "sico.debug.identity.v0" },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["document_id", "sha256", "byte_length", "display_uri"],
+          "properties": {
+            "document_id": { "$ref": "#/$defs/boundedId" },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "byte_length": { "$ref": "#/$defs/safeInteger" },
+            "display_uri": { "type": ["string", "null"], "maxLength": 65536 }
+          }
+        },
+        "compiler": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["package", "version", "executable_sha256"],
+          "properties": {
+            "package": { "$ref": "#/$defs/boundedId" },
+            "version": { "$ref": "#/$defs/boundedId" },
+            "executable_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "language_semantics": { "$ref": "#/$defs/boundedId" },
+        "ir_schema": { "$ref": "#/$defs/boundedId" },
+        "component_code_sha256": { "$ref": "#/$defs/sha256" },
+        "component_sha256": { "$ref": "#/$defs/sha256" },
+        "debug_map_sha256": { "$ref": "#/$defs/sha256" },
+        "adapter_identities": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/boundedId" }
+        },
+        "wit_identities": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/boundedId" }
+        }
+      }
+    },
+    "debugMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "binding", "coordinate_system", "documents", "functions", "mappings"],
+      "properties": {
+        "schema": { "const": "sico.debug-map.v0" },
+        "binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_sha256", "compiler_executable_sha256", "component_code_sha256"],
+          "properties": {
+            "source_sha256": { "$ref": "#/$defs/sha256" },
+            "compiler_executable_sha256": { "$ref": "#/$defs/sha256" },
+            "component_code_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "coordinate_system": { "const": "utf8-byte-half-open" },
+        "documents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "sha256", "byte_length"],
+            "properties": {
+              "id": { "$ref": "#/$defs/boundedId" },
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "byte_length": { "$ref": "#/$defs/safeInteger" }
+            }
+          }
+        },
+        "functions": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "component_function"],
+            "properties": {
+              "id": { "$ref": "#/$defs/boundedId" },
+              "component_function": { "$ref": "#/$defs/safeInteger" }
+            }
+          }
+        },
+        "mappings": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["component_function", "instruction_start", "instruction_end", "function_id", "source", "call_site", "inline_parent", "generated"],
+            "properties": {
+              "component_function": { "$ref": "#/$defs/safeInteger" },
+              "instruction_start": { "$ref": "#/$defs/safeInteger" },
+              "instruction_end": { "$ref": "#/$defs/safeInteger" },
+              "function_id": { "$ref": "#/$defs/boundedId" },
+              "source": { "oneOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }] },
+              "call_site": { "oneOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }] },
+              "inline_parent": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+              "generated": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["function_id", "source", "generated", "unavailable_reason"],
+      "properties": {
+        "function_id": { "$ref": "#/$defs/boundedId" },
+        "source": { "oneOf": [{ "$ref": "#/$defs/span" }, { "type": "null" }] },
+        "generated": { "type": "boolean" },
+        "unavailable_reason": { "type": ["string", "null"], "maxLength": 65536 }
+      }
+    },
+    "runtimeFault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "run_id", "generation_id", "class", "code", "key", "message", "provider_id", "frames"],
+      "properties": {
+        "schema": { "const": "sico.runtime-fault.v0" },
+        "run_id": { "$ref": "#/$defs/boundedId" },
+        "generation_id": { "$ref": "#/$defs/safeInteger" },
+        "class": { "enum": ["domain-error", "cancelled", "timeout", "resource-limit.fuel", "resource-limit.memory", "resource-limit.other", "trap", "host-provider-failure", "incompatible-artifact", "launch-failure", "external-termination", "internal-invariant"] },
+        "code": { "$ref": "#/$defs/boundedId" },
+        "key": { "$ref": "#/$defs/boundedId" },
+        "message": { "type": "string", "maxLength": 65536 },
+        "provider_id": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+        "frames": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/frame" }
+        }
+      }
+    },
+    "executionEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "run_id", "generation_id", "sequence", "kind", "task_id", "parent_task_id", "scope_id", "cause", "payload"],
+      "properties": {
+        "schema": { "const": "sico.execution-event.v0" },
+        "run_id": { "$ref": "#/$defs/boundedId" },
+        "generation_id": { "$ref": "#/$defs/safeInteger" },
+        "sequence": { "$ref": "#/$defs/safeInteger" },
+        "kind": { "enum": ["accepted", "started", "generation-published", "stdout", "stderr", "breakpoint", "stopped", "continued", "cancellation-requested", "terminal", "fault", "truncated", "dropped"] },
+        "task_id": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+        "parent_task_id": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+        "scope_id": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+        "cause": { "enum": ["launch", "guest", "host", "timeout", "signal", "client", "debugger", "overflow", "internal"] },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bytes_base64": { "type": "string", "maxLength": 87384 },
+            "message": { "type": "string", "maxLength": 65536 },
+            "breakpoint_id": { "oneOf": [{ "$ref": "#/$defs/boundedId" }, { "type": "null" }] },
+            "terminal_class": { "type": ["string", "null"], "maxLength": 256 },
+            "dropped_events": { "$ref": "#/$defs/safeInteger" }
+          }
+        }
+      }
+    }
+  }
+}

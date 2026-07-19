@@ -9,13 +9,13 @@
 > - 开发归档：`codex/archive-v0.0.1-development-history` 为历史归档分支；当前推送目标仅为已配置的 `origin`
 > - 提交状态：STEP-0079–0088 为 `fbf5be8`；STEP-0089 为 `c71e8a6`；STEP-0090 为 `4adbd78`；STEP-0091 为 `31177bc`；STEP-0092 为 `842ed0d`；STEP-0093 为 `0fb1908`；STEP-0094 由包含本文件的独立提交闭环
 
-当前 M9 结论、验证边界与下一条命令见 [`M9 STEP-0094 接手文档`](./handoffs/M9-STEP-0094.md)。
+当前 M10 合同结论、验证边界与下一条命令见 [`M10 STEP-0095 接手文档`](./handoffs/M10-STEP-0095.md)。
 
 ## 1. 一句话状态
 
-M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 与 M9 STEP-0085–0094 均已完成并保持 GO；M9 Runtime 只在 Windows x64 实证。下一项为 M10 STEP-0095 observability/debug/source-identity contract，当前仍不得宣称 Runtime source frames、typed Ctrl+C 或 DAP。
+M0–M5 已 GO；M6 仍为 `blocked-external-runner`。M7 本地轨已完成，公网 production 仍为 `blocked-external-deployment-inputs`。M8 STEP-0075–0084 与 M9 STEP-0085–0094 均已完成并保持 GO；M9 Runtime 只在 Windows x64 实证。M10 STEP-0095 已冻结 observability/debug contract；下一项为 STEP-0096 deterministic debug-map sidecar/link。当前仍不得宣称 Runtime source frames、typed Ctrl+C 或 DAP。
 
-M10 STEP-0095–0102、M11 STEP-0103–0110 与 M12 STEP-0111–0118 的完整计划分别见 [`M10 plan`](./plans/M10-runtime-observability-debugging.md)、[`M11 plan`](./plans/M11-structured-concurrency-runtime.md) 和 [`M12 plan`](./plans/M12-secure-http-automation-sdk.md)。STEP-0095 必须冻结精确 DAP claimed subset；STEP-0098 后可并行启动 documentation-only STEP-0103 Store/arena ADR，但 M11 scheduler 实现仍等待 M10 GO。M11 并行不扩大 authority，Windows x64 与 Linux x64 native runner 都是出口硬门槛；TLS/provider 工作顺延 M12，compiler 不得依赖 scheduler、TLS、DNS 或 secret 实现。
+M10 STEP-0095–0102、M11 STEP-0103–0110 与 M12 STEP-0111–0118 的完整计划分别见 [`M10 plan`](./plans/M10-runtime-observability-debugging.md)、[`M11 plan`](./plans/M11-structured-concurrency-runtime.md) 和 [`M12 plan`](./plans/M12-secure-http-automation-sdk.md)。STEP-0095 的 [`RFC-0035`](./rfc/RFC-0035-runtime-observability-debug-v0.md)、[`observability contracts`](../observability/README.md) 与 validator 已完成；STEP-0098 后可并行启动 documentation-only STEP-0103 Store/arena ADR，但 M11 scheduler 实现仍等待 M10 GO。M11 并行不扩大 authority，Windows x64 与 Linux x64 native runner 都是出口硬门槛；TLS/provider 工作顺延 M12，compiler 不得依赖 scheduler、TLS、DNS 或 secret 实现。
 
 当前权威结论：[`M7 exit audit`](./reports/m7-exit-audit.md)；Android 子轨仍服从 [`M6 exit audit`](./reports/m6-exit-audit.md)。
 

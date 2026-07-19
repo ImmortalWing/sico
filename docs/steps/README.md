@@ -109,5 +109,6 @@
 | [STEP-0092](./STEP-0092-top-level-script-syntax-decision.md) | complete | M9 | explicit typed `main` accepted；top-level statements 与 `script:` rejected；E1013 fail-closed |
 | [STEP-0093](./STEP-0093-editor-ai-execution-integration.md) | complete | M9 | shared LSP/AI execution plan；direct argv；bounded logs/cancel/source-map/debug honesty |
 | [STEP-0094](./STEP-0094-m9-exit-audit.md) | complete / GO | M9 | aggregate M8/M9 security/performance regression、Windows-only Runtime matrix 与 M10 plan |
+| [STEP-0095](./STEP-0095-observability-debug-contract.md) | complete-contract | M10 | RFC-0035、strict identity/map/fault/event schemas、exact DAP allowlist、cancellation races 与双 Component identity evidence |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。下一项为 M10 STEP-0095 observability/debug contract。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095 已冻结 M10 observability/debug contract；下一项为 STEP-0096 deterministic compiler debug-map artifact。

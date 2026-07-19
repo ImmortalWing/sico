@@ -40,7 +40,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0032`](./RFC-0032-bounded-repl-session-v0.md) | proposed | 定义 bounded expression REPL：deterministic cell ID、replay/reset/export、cell/history 上限与无 top-level syntax 预判 |
 | [`RFC-0033`](./RFC-0033-top-level-script-syntax-decision.md) | accepted | 保留 explicit typed `main`，拒绝 unrestricted top-level statements 与 `script:` block，并以 E1013 fail closed |
 | [`RFC-0034`](./RFC-0034-tooling-execution-plan-v0.md) | accepted | 统一 LSP/AI direct-argv execution plan、1 MiB logs、client cancellation 与 compile-only source-map/debug 边界 |
+| [`RFC-0035`](./RFC-0035-runtime-observability-debug-v0.md) | accepted | 冻结 digest-bound debug identity/map、Runtime fault/event、typed cancellation race 与机器 DAP claimed subset |
 
-下一可用编号：`RFC-0035`。
+下一可用编号：`RFC-0036`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

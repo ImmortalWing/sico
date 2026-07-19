@@ -1,0 +1,290 @@
+{
+  "schema": "sico.observability-fixtures.v0",
+  "cases": [
+    {
+      "id": "valid-contract-set",
+      "expected": "accept",
+      "error": null,
+      "documents": [
+        {
+          "schema": "sico.debug.identity.v0",
+          "source": {
+            "document_id": "doc.main",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "byte_length": 100,
+            "display_uri": "workspace://main.sico"
+          },
+          "compiler": {
+            "package": "sico-compiler",
+            "version": "0.0.2-dev",
+            "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "language_semantics": "sico.semantics.v0",
+          "ir_schema": "sico.ir.v0",
+          "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "component_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "debug_map_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "adapter_identities": ["sico:script-adapter@0.1.0"],
+          "wit_identities": ["sico:script@0.1.0"]
+        },
+        {
+          "schema": "sico.debug-map.v0",
+          "binding": {
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "compiler_executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          "coordinate_system": "utf8-byte-half-open",
+          "documents": [
+            {
+              "id": "doc.main",
+              "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "byte_length": 100
+            }
+          ],
+          "functions": [
+            {
+              "id": "fn.main",
+              "component_function": 0
+            }
+          ],
+          "mappings": [
+            {
+              "component_function": 0,
+              "instruction_start": 0,
+              "instruction_end": 10,
+              "function_id": "fn.main",
+              "source": {
+                "document_id": "doc.main",
+                "start": 0,
+                "end": 20
+              },
+              "call_site": null,
+              "inline_parent": null,
+              "generated": false
+            }
+          ]
+        },
+        {
+          "schema": "sico.runtime-fault.v0",
+          "run_id": "run-1",
+          "generation_id": 0,
+          "class": "trap",
+          "code": "runtime.trap",
+          "key": "runtime_trap",
+          "message": "guest trapped",
+          "provider_id": null,
+          "frames": [
+            {
+              "function_id": "fn.main",
+              "source": {
+                "document_id": "doc.main",
+                "start": 0,
+                "end": 20
+              },
+              "generated": false,
+              "unavailable_reason": null
+            }
+          ]
+        },
+        {
+          "schema": "sico.execution-event.v0",
+          "run_id": "run-1",
+          "generation_id": 0,
+          "sequence": 0,
+          "kind": "started",
+          "task_id": "task-0",
+          "parent_task_id": null,
+          "scope_id": "scope-0",
+          "cause": "launch",
+          "payload": {}
+        }
+      ]
+    },
+    {
+      "id": "invalid-unknown-field",
+      "expected": "reject",
+      "error": "unknown-field",
+      "documents": [
+        {
+          "schema": "sico.debug.identity.v0",
+          "source": {
+            "document_id": "doc.main",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "byte_length": 100,
+            "display_uri": null
+          },
+          "compiler": {
+            "package": "sico-compiler",
+            "version": "0.0.2-dev",
+            "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "language_semantics": "sico.semantics.v0",
+          "ir_schema": "sico.ir.v0",
+          "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "component_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "debug_map_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "adapter_identities": [],
+          "wit_identities": [],
+          "unexpected": true
+        }
+      ]
+    },
+    {
+      "id": "invalid-duplicate-identity",
+      "expected": "reject",
+      "error": "duplicate-identity",
+      "documents": [
+        {
+          "schema": "sico.debug-map.v0",
+          "binding": {
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "compiler_executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          "coordinate_system": "utf8-byte-half-open",
+          "documents": [
+            { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 100 }
+          ],
+          "functions": [
+            { "id": "fn.main", "component_function": 0 },
+            { "id": "fn.main", "component_function": 1 }
+          ],
+          "mappings": []
+        }
+      ]
+    },
+    {
+      "id": "invalid-duplicate-mapping",
+      "expected": "reject",
+      "error": "duplicate-mapping",
+      "documents": [
+        {
+          "schema": "sico.debug-map.v0",
+          "binding": {
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "compiler_executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          "coordinate_system": "utf8-byte-half-open",
+          "documents": [
+            { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 100 }
+          ],
+          "functions": [
+            { "id": "fn.main", "component_function": 0 }
+          ],
+          "mappings": [
+            {
+              "component_function": 0,
+              "instruction_start": 0,
+              "instruction_end": 10,
+              "function_id": "fn.main",
+              "source": { "document_id": "doc.main", "start": 0, "end": 20 },
+              "call_site": null,
+              "inline_parent": null,
+              "generated": false
+            },
+            {
+              "component_function": 0,
+              "instruction_start": 0,
+              "instruction_end": 10,
+              "function_id": "fn.main",
+              "source": { "document_id": "doc.main", "start": 0, "end": 20 },
+              "call_site": null,
+              "inline_parent": null,
+              "generated": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "invalid-unsafe-integer",
+      "expected": "reject",
+      "error": "unsafe-integer",
+      "documents": [
+        {
+          "schema": "sico.debug-map.v0",
+          "binding": {
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "compiler_executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          "coordinate_system": "utf8-byte-half-open",
+          "documents": [
+            { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 9007199254740992 }
+          ],
+          "functions": [],
+          "mappings": []
+        }
+      ]
+    },
+    {
+      "id": "invalid-stale-digest",
+      "expected": "reject",
+      "error": "stale-digest",
+      "documents": [
+        {
+          "schema": "sico.debug.identity.v0",
+          "source": {
+            "document_id": "doc.main",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "byte_length": 100,
+            "display_uri": null
+          },
+          "compiler": {
+            "package": "sico-compiler",
+            "version": "0.0.2-dev",
+            "executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "language_semantics": "sico.semantics.v0",
+          "ir_schema": "sico.ir.v0",
+          "component_code_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "component_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "debug_map_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "adapter_identities": [],
+          "wit_identities": []
+        },
+        {
+          "schema": "sico.debug-map.v0",
+          "binding": {
+            "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "compiler_executable_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "component_code_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          },
+          "coordinate_system": "utf8-byte-half-open",
+          "documents": [
+            { "id": "doc.main", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "byte_length": 100 }
+          ],
+          "functions": [],
+          "mappings": []
+        }
+      ]
+    },
+    {
+      "id": "invalid-over-limit",
+      "expected": "reject",
+      "error": "over-limit",
+      "documents": [
+        {
+          "schema": "sico.dap-claimed-subset.v0",
+          "dap_protocol": "base-protocol-v0",
+          "unknown_request_policy": "typed-unsupported-request",
+          "unclaimed_event_policy": "must-not-emit",
+          "claims": [
+            {
+              "kind": "request",
+              "name": "initialize",
+              "direction": "client-to-adapter",
+              "state": "supported",
+              "preconditions": [],
+              "max_payload_bytes": 1048577,
+              "evidence_id": "dap-v0-invalid-over-limit",
+              "behavior": "This fixture exceeds the hard DAP frame limit."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

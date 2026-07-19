@@ -1,0 +1,122 @@
+{
+  "schema": "sico.cancellation-race.v0",
+  "states": ["running", "cancellation-requested", "terminal"],
+  "winner_rule": "first-runtime-observed-committed-terminal-wins",
+  "typed_cancellation_exit": 123,
+  "cases": [
+    {
+      "id": "cancel-v0-guest-completion",
+      "input": "guest-completion",
+      "runner_observed": true,
+      "terminal_class": "output",
+      "exit_code": 0,
+      "typed_cancel": false
+    },
+    {
+      "id": "cancel-v0-guest-failure",
+      "input": "guest-failure",
+      "runner_observed": true,
+      "terminal_class": "domain-error",
+      "exit_code": 122,
+      "typed_cancel": false
+    },
+    {
+      "id": "cancel-v0-timeout",
+      "input": "timeout",
+      "runner_observed": true,
+      "terminal_class": "timeout",
+      "exit_code": 124,
+      "typed_cancel": false
+    },
+    {
+      "id": "cancel-v0-signal",
+      "input": "signal",
+      "runner_observed": true,
+      "terminal_class": "cancelled",
+      "exit_code": 123,
+      "typed_cancel": true
+    },
+    {
+      "id": "cancel-v0-client-request",
+      "input": "client-request",
+      "runner_observed": true,
+      "terminal_class": "cancelled",
+      "exit_code": 123,
+      "typed_cancel": true
+    },
+    {
+      "id": "cancel-v0-host-failure",
+      "input": "host-failure",
+      "runner_observed": true,
+      "terminal_class": "host-provider-failure",
+      "exit_code": 122,
+      "typed_cancel": false
+    },
+    {
+      "id": "cancel-v0-external-kill-fallback",
+      "input": "external-kill-fallback",
+      "runner_observed": false,
+      "terminal_class": "external-termination",
+      "exit_code": null,
+      "typed_cancel": false
+    }
+  ],
+  "races": [
+    {
+      "id": "race-v0-completion-before-client",
+      "first_observed": "guest-completion",
+      "second_observed": "client-request",
+      "expected_winner": "guest-completion",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-client-before-completion",
+      "first_observed": "client-request",
+      "second_observed": "guest-completion",
+      "expected_winner": "client-request",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-timeout-before-signal",
+      "first_observed": "timeout",
+      "second_observed": "signal",
+      "expected_winner": "timeout",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-signal-before-timeout",
+      "first_observed": "signal",
+      "second_observed": "timeout",
+      "expected_winner": "signal",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-host-before-client",
+      "first_observed": "host-failure",
+      "second_observed": "client-request",
+      "expected_winner": "host-failure",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-client-before-host",
+      "first_observed": "client-request",
+      "second_observed": "host-failure",
+      "expected_winner": "client-request",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-failure-before-timeout",
+      "first_observed": "guest-failure",
+      "second_observed": "timeout",
+      "expected_winner": "guest-failure",
+      "terminal_count": 1
+    },
+    {
+      "id": "race-v0-timeout-before-failure",
+      "first_observed": "timeout",
+      "second_observed": "guest-failure",
+      "expected_winner": "timeout",
+      "terminal_count": 1
+    }
+  ]
+}

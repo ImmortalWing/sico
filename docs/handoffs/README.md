@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M9 STEP-0094`](./M9-STEP-0094.md) | complete; M9 GO; STEP-0095 next | M9 aggregate exit audit 已闭环；接手上下文转向 M10 observability/debug contract |
+| [`M10 STEP-0095`](./M10-STEP-0095.md) | complete-contract; M10 in progress; STEP-0096 next | observability/debug 合同与机器证据已冻结；下一项只实现 deterministic debug-map sidecar/link |
 
 旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。

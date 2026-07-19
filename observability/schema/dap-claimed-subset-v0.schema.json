@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sico.dev/schema/dap-claimed-subset-v0.schema.json",
+  "title": "Sico DAP claimed subset v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "dap_protocol", "unknown_request_policy", "unclaimed_event_policy", "claims"],
+  "properties": {
+    "schema": { "const": "sico.dap-claimed-subset.v0" },
+    "dap_protocol": { "const": "base-protocol-v0" },
+    "unknown_request_policy": { "const": "typed-unsupported-request" },
+    "unclaimed_event_policy": { "const": "must-not-emit" },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name", "direction", "state", "preconditions", "max_payload_bytes", "evidence_id", "behavior"],
+        "properties": {
+          "kind": { "enum": ["request", "event"] },
+          "name": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9]*$" },
+          "direction": { "enum": ["client-to-adapter", "adapter-to-client"] },
+          "state": { "enum": ["supported", "refused"] },
+          "preconditions": {
+            "type": "array",
+            "maxItems": 16,
+            "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+          },
+          "max_payload_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 },
+          "evidence_id": { "type": "string", "pattern": "^dap-v0-[a-z0-9-]+$", "maxLength": 128 },
+          "behavior": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        }
+      }
+    }
+  }
+}

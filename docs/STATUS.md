@@ -1,12 +1,12 @@
 # Sico project status
 
 > - updated: 2026-07-19
-> - phase: M10 Runtime observability/debugging planned; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
-> - phase status: planned
-> - current step: STEP-0095 observability/debug/source-identity RFC (planned)
-> - last completed active step: STEP-0094 (M9 exit audit, GO)
+> - phase: M10 Runtime observability/debugging in progress; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
+> - phase status: in-progress
+> - current step: STEP-0096 deterministic compiler debug-map artifact (next)
+> - last completed active step: STEP-0095 (observability/debug contract, complete)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: freeze M10 source/artifact identity, event/frame schemas, exact DAP claimed subset, redaction and cancellation race matrix
+> - next step: implement canonical debug-map sidecar and compact digest-bound Component link
 
 ## 0. M6 exit state
 
@@ -28,7 +28,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。下一项为 [`M10 STEP-0095`](./plans/M10-runtime-observability-debugging.md)，先冻结 observability/debug contract，不提前宣称 DAP。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。[`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md) 已冻结 identity/map/fault/event/cancellation/DAP 合同并保持 debugger refusal；下一项为 STEP-0096 deterministic compiler debug-map artifact。
 
 ## 3. Verified repository facts
 
@@ -177,4 +177,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 STEP-0095：先冻结 exact source bytes/compiler/Component identity、debug-map 与 Runtime frame/event schema、redaction/size limits、signal/timeout/client-cancel/guest/Host 单终态矩阵，以及逐 request/event 的 `dap-claimed-subset-v0.json`。合同接受前不修改 compiler/runner 来隐式创造 DAP。STEP-0098 接受后只可提前开展 M11 STEP-0103 ADR，scheduler 代码等待 M10 GO；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
+下一项执行 STEP-0096：在 compiler/codegen 边界实现 RFC-0035 的 canonical `sico.debug-map.v0` sidecar 与 compact `sico.debug-link.v0` Component custom section，完成 exact source/compiler/Component/map digest binding、deterministic rebuild、malformed/stale/limit+1 fail-closed 和 debug-disabled honesty。不得提前实现 Runtime frames、signal bridge、event server 或 DAP。STEP-0098 接受后才可提前开展 M11 STEP-0103 ADR；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。

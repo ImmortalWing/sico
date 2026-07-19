@@ -1,6 +1,6 @@
 # M10 plan: Runtime observability and debugging
 
-> - status: planned; STEP-0095 next
+> - status: in progress; STEP-0095 complete, STEP-0096 next
 > - created: 2026-07-19
 > - expanded: 2026-07-19
 > - phase: M10
@@ -75,7 +75,7 @@ The remaining gap is identity and control continuity. A compiler span cannot cur
 
 The compiler may emit data consumed by the Runtime, but it must not depend on runner, DAP or platform crates. Runtime and tooling communicate through versioned serialized contracts, not shared mutable compiler state.
 
-## 5. Versioned contracts to freeze in STEP-0095
+## 5. Versioned contracts frozen by STEP-0095
 
 ### 5.1 Identity chain
 
@@ -85,6 +85,7 @@ The compiler may emit data consumed by the Runtime, but it must not depend on ru
 - stable source document ID and optional display path that is never an authority-bearing path;
 - compiler package/version and compiler executable digest;
 - language semantics and IR identity;
+- executable Component-code digest computed before `sico.debug-*` custom sections;
 - final Component SHA-256;
 - debug-map SHA-256 and schema identity;
 - adapter/WIT identities when composition is involved.
@@ -93,14 +94,14 @@ A missing, stale or mismatched link fails closed. A display URI may help a clien
 
 ### 5.2 Debug map
 
-Candidate `sico.debug-map.v0` records sorted, non-overlapping mappings from Component function/instruction locations to:
+Accepted `sico.debug-map.v0` records sorted, non-overlapping mappings from Component function/instruction locations to:
 
 - stable Sico function/declaration ID;
 - UTF-8 half-open source span;
 - optional call-site span and inline parent ID;
 - generated/synthetic marker when no user span exists.
 
-Hard candidate limits to accept or revise explicitly in STEP-0095:
+Accepted hard limits from STEP-0095 / RFC-0035:
 
 - map file at most 16 MiB;
 - at most 256 source documents and 100,000 functions;
@@ -115,21 +116,22 @@ The compiler uses UTF-8 byte coordinates. LSP/DAP converts to UTF-16 or one-base
 
 `sico.runtime-fault.v0` has stable classes rather than engine text:
 
-- guest-domain failure;
+- domain error;
 - cancelled;
-- timeout/epoch deadline;
-- fuel/resource/memory limit;
-- guest trap;
+- timeout;
+- fuel, memory and other resource limits;
+- trap;
 - Host provider failure;
-- incompatible or invalid artifact;
-- runner/tool launch failure;
+- incompatible artifact;
+- launch failure;
+- external termination when a process dies without a runner-observed typed cancellation;
 - internal invariant failure.
 
 Each record carries one terminal class, stable code/key, run/generation identity, bounded frames, optional provider identity and a redacted human message. Raw engine text is diagnostic detail only and is excluded from equality, routing and AI classification.
 
 ### 5.4 Execution event stream
 
-`sico.execution-events.v0` is an ordered stream with monotonically increasing sequence IDs. Event kinds are:
+The execution-event stream carries strict `sico.execution-event.v0` frames with monotonically increasing sequence IDs. Event kinds are:
 
 - accepted/started;
 - generation-published;
@@ -139,9 +141,9 @@ Each record carries one terminal class, stable code/key, run/generation identity
 - terminal outcome/fault;
 - truncation or dropped-event marker.
 
-Every event carries `runId` and `generationId`. STEP-0095 also reserves bounded optional `taskId`, `parentTaskId` and `scopeId` fields plus a typed causal relation. M10 producers emit one logical task and do not claim parallel execution; reserving these fields prevents STEP-0099 from freezing a schema that M11 would immediately have to replace. Unknown task relationships and cross-run identities fail validation rather than being treated as display-only strings.
+Every event carries `run_id` and `generation_id`. STEP-0095 also reserves bounded optional `task_id`, `parent_task_id` and `scope_id` fields plus a typed causal relation. M10 producers emit one logical task and do not claim parallel execution; reserving these fields prevents STEP-0099 from freezing a schema that M11 would immediately have to replace. Unknown task relationships and cross-run identities fail validation rather than being treated as display-only strings.
 
-Candidate hard bounds:
+Accepted hard bounds:
 
 - each frame/event at most 1 MiB;
 - stdout/stderr chunks at most 64 KiB;
@@ -224,6 +226,8 @@ All other DAP requests and events are unclaimed. Requests receive a typed unsupp
 
 ### STEP-0095: observability/debug/source-identity RFC
 
+Status: complete. Contract and evidence: [`RFC-0035`](../rfc/RFC-0035-runtime-observability-debug-v0.md), [`STEP-0095`](../steps/STEP-0095-observability-debug-contract.md) and [`observability/`](../../observability/README.md).
+
 Deliver:
 
 - RFC for the identity chain, debug map, runtime fault, execution events, cancellation race and minimal DAP subset;
@@ -291,7 +295,7 @@ Exit evidence:
 
 Deliver:
 
-- runner event producer and client decoder for `sico.execution-events.v0`;
+- runner event producer and client decoder for `sico.execution-event.v0` frames;
 - bounded stdout/stderr chunking, ordering, truncation and backpressure;
 - lifecycle events for one-shot, watch, REPL and debug runs;
 - reserved task/parent/scope identities and causal relationships that remain valid when M11 adds multiple logical tasks;
@@ -375,7 +379,7 @@ Hard gates:
 
 ## 8. Performance and resource plan
 
-Hard resource limits are contractual; latency figures are measured non-SLA goals until STEP-0095 accepts them.
+Hard resource limits are contractual and were accepted by STEP-0095; latency figures remain measured non-SLA goals until implementation evidence promotes them.
 
 | Dimension | Hard limit / candidate goal |
 |---|---|
