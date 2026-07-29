@@ -1,12 +1,12 @@
 # Sico project status
 
-> - updated: 2026-07-19
-> - phase: M10 Runtime observability/debugging in progress; M11 concurrency design after STEP-0098; M7 public deployment and M6/mobile deferred
+> - updated: 2026-07-29
+> - phase: M11 structured concurrency started; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred
 > - phase status: in-progress
-> - current step: STEP-0099 bounded execution events and logs (next); M11 STEP-0103 ADR design unlocked
-> - last completed active step: STEP-0098 (OS signal and client cancellation bridge, complete)
+> - current step: M11 STEP-0104 semantic/IR structured-concurrency contract (next); STEP-0103 ADR-0010 accepted-design
+> - last completed active step: STEP-0102 (M10 security/performance/platform exit audit, GO)
 > - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: emit bounded task-aware execution events with mandatory redaction; settle M11 Store/arena ADR in the unlocked design lane
+> - next step: implement the M11 semantic and IR structured-concurrency contract from accepted ADR-0010; keep task-aware bounded events and exact DAP claims stable
 
 ## 0. M6 exit state
 
@@ -14,7 +14,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。当前主动目标是 M10 Runtime observability/debugging：在不扩大 Script authority 的前提下建立稳定 debug/source identity、Runtime source frames、typed signal cancellation、task-aware bounded events 与机器清单驱动的 minimal DAP。STEP-0098 后可提前启动 M11 Store/arena ADR，M11 实现仍等待 M10 GO；M11 完成 bounded structured-concurrency Runtime 后，M12 再实现 Secure HTTP Provider/Automation SDK。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows M9 runner 继续保留为外部/后置平台轨，内部里程碑不替代这些 gate。
+M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。M10 Runtime observability/debugging 已由 STEP-0102 发出 GO（Windows x64 GNU 实证）：identity-bound debug triplet、typed Runtime source faults、typed signal/client cancellation、task-aware bounded events、机器清单驱动的 minimal DAP 与 data-only editor/AI boundary 全部完成。当前主动目标是 M11 bounded structured-concurrency Runtime：STEP-0103 的 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md) 已接受 single-Store cooperative 设计，下一项为 STEP-0104 semantic/IR contract；M11 完成后 M12 再实现 Secure HTTP Provider/Automation SDK。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows runner 继续保留为外部/后置平台轨，内部里程碑不替代这些 gate。
 
 ## 2. Current step
 
@@ -28,11 +28,11 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0098`](./steps/STEP-0098-os-signal-client-cancellation-bridge.md) 已完成 contract、debug triplet、typed source faults 与 Windows console/client cancellation。下一项为 STEP-0099 bounded events；M11 STEP-0103 ADR 设计轨已解锁；debugger 仍未宣称。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0102`](./steps/STEP-0102-m10-exit-audit.md) 已全部完成：contract、debug triplet、typed source faults、Windows console/client cancellation、bounded task-aware events、exact DAP subset（12/20/6）与 editor/AI data boundary，exit audit 在重跑 M0–M9 aggregate 后发出 GO（[`M10 exit audit`](./reports/m10-exit-audit-v0.md)，Windows x64 GNU）。M11 STEP-0103 设计轨已完成 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md)（accepted-design）；下一项为 STEP-0104 semantic/IR structured-concurrency contract。
 
 ## 3. Verified repository facts
 
-基线检查时间：2026-07-19。
+基线检查时间：2026-07-29。
 
 | 事实 | 结果 | 状态 |
 |---|---:|---|
@@ -97,6 +97,12 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | M5 desktop adapters | Windows runtime；macOS/Linux generated association artifacts | contract-verified where no runner |
 | M5 host properties | 10,240 identity/capability/UI/open inputs | verified |
 | M5 startup performance | median mean 32.344 ms；3 × 20 release launches；no SLA | measured |
+| M10 deterministic debug triplet | atomic Component/map/identity；real Core offsets；byte-identical rebuilds | verified |
+| M10 typed Runtime faults | 9 stable classes；exact verified source frames；256-frame bound | Windows runtime-verified |
+| M10 bounded execution events | 64 KiB chunks；1 MiB/channel capture；256-event/4 MiB queue；explicit overflow marker | verified |
+| M10 minimal DAP | 12 supported requests；20 typed refusals；6 events；real entry/source breakpoint、pause、nested stack、scalar locals | Windows runtime-verified |
+| M10 session isolation | 100 sequential DAP sessions；handles 92 → 92；bounded RSS | measured |
+| M10 exit audit | M0–M9 aggregate green；Windows x64 GNU only；external gates unchanged | verified |
 
 M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
 
@@ -174,7 +180,9 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 - Wasmtime Android aarch64/x86_64 仍是 Tier 3；Pulley/真机/JNI/商店政策只有 M0 选择，尚无仓库实测；
 - E1xxx 与 catalog-mapped E2–E7 已有真实 compiler code、跨度、bounded cascade 与 CLI text/JSON；
 - 语义查询已有 compiler producer 与五类直接查询；跨包/IR facts、accuracy/latency 和真实模型收益仍未测量。
+- M10 DAP/debug 已把 runner 固定到 Wasmtime 47.0.2（unaligned debug-frame reads 修复）；未来引擎升级必须重跑 exact DAP 与 mapping 证据，process-global console 测试保持串行；
+- M10 非 SLA cold/warm launch 目标未达（P95 691.2816/138.9047 ms），已记录为待更多主机采样，不构成 correctness failure。
 
 ## 8. Next step
 
-下一项执行 STEP-0099：建立 bounded `sico.execution-event.v0` producer/decoder、binary-safe stdout/stderr chunking、backpressure/overflow terminal delivery 与 mandatory redaction。并行完成 documentation-only M11 STEP-0103 Store/arena ADR，但 scheduler code 仍等待 M10 GO。不得提前实现 DAP；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
+下一项执行 M11 STEP-0104：依据已接受的 ADR-0010 建立 semantic/IR structured-concurrency contract（task scope、await/group/select/race 的静态语义与 IR 表示），随后 STEP-0105 实现 single-Store cooperative scheduler core。实现期间不得改变 M10 冻结的 bounded events、redaction 与 exact DAP claims；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。

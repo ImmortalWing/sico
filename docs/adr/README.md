@@ -13,7 +13,8 @@ ADR 记录工程与架构决定，例如 Component Runtime 引擎、`.sapp` 物�
 | [ADR-0007](./ADR-0007-openjdk-style-modular-monorepo.md) | accepted | OpenJDK-style 单仓模块化、依赖边界与命令所有权 |
 | [ADR-0008](./ADR-0008-production-registry-origin.md) | accepted | bounded read-only production registry origin、loopback default 与 operator deployment boundary |
 | [ADR-0009](./ADR-0009-script-adapter-runner.md) | proposed | versioned Script adapter、独立 in-process runner 与 compiler/Runtime 进程边界 |
+| [ADR-0010](./ADR-0010-single-store-structured-concurrency.md) | accepted-design | single-Store cooperative structured concurrency |
 
-下一可用编号：`ADR-0010`。
+下一可用编号：`ADR-0011`。
 
 创建时使用 [`ADR template`](../templates/ADR.md)，并在本页登记状态和替代关系。

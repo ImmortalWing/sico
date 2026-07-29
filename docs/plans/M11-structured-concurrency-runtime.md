@@ -1,6 +1,6 @@
 # M11 plan: Bounded structured-concurrency Runtime
 
-> - status: STEP-0103 documentation-only design lane unlocked; implementation remains gated on M10 GO
+> - status: STEP-0103 ADR-0010 accepted-design; implementation unlocked by M10 GO, STEP-0104 next
 > - created: 2026-07-19
 > - phase: M11
 > - reserved steps: STEP-0103–0110

@@ -113,5 +113,9 @@
 | [STEP-0096](./STEP-0096-deterministic-compiler-debug-map.md) | complete | M10 | deterministic debug triplet、真实 Core offset/source mapping、generated rows、atomic CLI/package integration |
 | [STEP-0097](./STEP-0097-structured-runtime-faults-source-frames.md) | complete | M10 | typed Runtime fault classes、verified exact source frames、256-frame bound、JSON/text CLI 与 stale/missing map fail-closed |
 | [STEP-0098](./STEP-0098-os-signal-client-cancellation-bridge.md) | complete | M10 | real Windows console control、canonical client/watch cancellation、single terminal winner 与 M9 blocked-I/O/HTTP regression |
+| [STEP-0099](./STEP-0099-bounded-execution-events.md) | complete-core | M10 | bounded canonical events、binary chunking、mandatory redaction、overflow marker 与 terminal reservation |
+| [STEP-0100](./STEP-0100-minimal-dap-implementation.md) | complete / GO | M10 | exact DAP allowlist、real entry/source breakpoints、safe pause、nested stack/scalars、bounded stdio 与 owned teardown |
+| [STEP-0101](./STEP-0101-editor-ai-execution-feedback.md) | complete / GO | M10 | shell-free debug launch plan、LSP handoff 与 data-only AI redacted execution summaries |
+| [STEP-0102](./STEP-0102-m10-exit-audit.md) | complete / GO | M10 | M0–M9 aggregate regression、M10 security/performance/platform audit 与 external-gate recheck |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0098 已完成 M10 contract、debug artifact、Runtime source faults 与 typed cancellation；下一项为 STEP-0099 bounded events，同时 documentation-only M11 STEP-0103 ADR 已解锁。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；documentation-only M11 STEP-0103 ADR 已完成设计，下一项为 M11 scheduler 实现（STEP-0104 起）。
