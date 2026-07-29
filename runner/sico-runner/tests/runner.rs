@@ -6,6 +6,7 @@ use sico_observability::{canonical_json, parse_runtime_fault};
 use sico_runner::{
     CancelToken, FsGrants, ObservedRun, RunOutcome, Runner, RunnerLimits, ScriptInput, ScriptOutput,
 };
+use sico_tooling_protocol::{DapSession, decode_dap_frame, encode_dap_frame};
 
 fn runner() -> Runner {
     Runner::new().unwrap()
@@ -260,6 +261,748 @@ fn observed_trap_uses_verified_exact_source_frames() {
         ),
         Err(RunOutcome::Incompatible(_))
     ));
+}
+
+#[test]
+fn source_breakpoint_stops_real_debug_store_then_continues_to_one_terminal() {
+    let artifact = trap_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let bindings = prepared.bind_source_breakpoints("doc.trap", &[10]);
+    assert_eq!(bindings.len(), 1);
+    let breakpoint = bindings[0]
+        .breakpoint
+        .clone()
+        .expect("the exact source row must bind to a guest module PC");
+    assert_eq!(breakpoint.source_offset, 10);
+
+    let session = prepared
+        .start_debug(
+            &ScriptInput::default(),
+            &limits(),
+            &no_cancel(),
+            &[breakpoint],
+            "debug-source-breakpoint",
+            9,
+        )
+        .unwrap();
+    let stop = session
+        .wait_for_stop(std::time::Duration::from_secs(5))
+        .expect("the Wasmtime Store must stop at the installed source breakpoint");
+    assert_eq!(stop.reason, "breakpoint");
+    assert!(!stop.frames.is_empty());
+    assert!(
+        stop.frames
+            .iter()
+            .flat_map(|frame| &frame.locals)
+            .any(|local| local.available
+                && matches!(local.type_name, "i32" | "i64" | "f32" | "f64" | "v128")),
+        "the stopped Wasmtime frame must expose at least one bounded scalar local"
+    );
+    assert!(session.continue_execution());
+
+    let observed = session.finish(std::time::Duration::from_secs(5)).unwrap();
+    assert!(matches!(observed.outcome, RunOutcome::Trap(_)));
+    let fault = observed.fault.expect("trap has one strict terminal fault");
+    assert_eq!(fault.run_id, "debug-source-breakpoint");
+    assert_eq!(fault.generation_id, 9);
+    assert!(fault.frames.iter().any(|frame| {
+        frame.source.as_ref().is_some_and(|source| {
+            source.document_id == "doc.trap" && source.start == 10 && source.end == 20
+        })
+    }));
+}
+
+#[test]
+fn exact_dap_session_drives_real_component_stack_scopes_and_terminal() {
+    let artifact = trap_debug_artifact();
+    let source = trap_debug_source();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepared,
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.trap",
+            display_uri: "workspace://trap.sico",
+            source: source.to_vec(),
+            input: ScriptInput::default(),
+            limits: limits(),
+            cancel: no_cancel(),
+            run_id: "dap-real-component",
+            generation_id: 11,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, command: &str, arguments: serde_json::Value| serde_json::json!({"seq": seq, "type": "request", "command": command, "arguments": arguments});
+
+    let initialized = dap
+        .handle(&request(1, "initialize", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(initialized[1]["event"], "initialized");
+    let breakpoints = dap
+        .handle(&request(
+            2,
+            "setBreakpoints",
+            serde_json::json!({
+                "source": {"documentId": "doc.trap"},
+                "breakpoints": [{"line": 2}]
+            }),
+        ))
+        .unwrap();
+    assert_eq!(breakpoints[0]["body"]["breakpoints"][0]["verified"], true);
+    assert!(
+        dap.handle(&request(3, "launch", serde_json::json!({})))
+            .unwrap()[0]["success"]
+            .as_bool()
+            .unwrap()
+    );
+    let configured = dap
+        .handle(&request(4, "configurationDone", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(configured[1]["event"], "stopped");
+    assert_eq!(configured[1]["body"]["reason"], "breakpoint");
+
+    let threads = dap
+        .handle(&request(5, "threads", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(threads[0]["body"]["threads"][0]["id"], 1);
+    let stack = dap
+        .handle(&request(
+            6,
+            "stackTrace",
+            serde_json::json!({"threadId": 1}),
+        ))
+        .unwrap();
+    assert!(stack[0]["body"]["totalFrames"].as_u64().unwrap() > 0);
+    assert_eq!(stack[0]["body"]["stackFrames"][0]["line"], 2);
+    let scopes = dap
+        .handle(&request(7, "scopes", serde_json::json!({"frameId": 1})))
+        .unwrap();
+    let locals_reference = scopes[0]["body"]["scopes"][1]["variablesReference"]
+        .as_u64()
+        .unwrap();
+    let arguments_reference = scopes[0]["body"]["scopes"][0]["variablesReference"]
+        .as_u64()
+        .unwrap();
+    let arguments = dap
+        .handle(&request(
+            8,
+            "variables",
+            serde_json::json!({"variablesReference": arguments_reference}),
+        ))
+        .unwrap();
+    assert_eq!(
+        arguments[0]["body"]["variables"][0]["name"],
+        "argumentCount"
+    );
+    assert_eq!(arguments[0]["body"]["variables"][0]["type"], "i64");
+    let variables = dap
+        .handle(&request(
+            9,
+            "variables",
+            serde_json::json!({"variablesReference": locals_reference}),
+        ))
+        .unwrap();
+    let locals = variables[0]["body"]["variables"].as_array().unwrap();
+    assert!(locals.iter().any(|local| {
+        local["value"] != "<unavailable>"
+            && matches!(
+                local["type"].as_str(),
+                Some("i32" | "i64" | "f32" | "f64" | "v128")
+            )
+    }));
+
+    let continued = dap
+        .handle(&request(10, "continue", serde_json::json!({"threadId": 1})))
+        .unwrap();
+    assert_eq!(continued[1]["event"], "continued");
+    let terminated = dap
+        .handle(&request(11, "terminate", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(terminated[1]["event"], "terminated");
+    assert_eq!(terminated[2]["event"], "exited");
+    assert_eq!(terminated[2]["body"]["exitCode"], 125);
+}
+
+#[test]
+fn dap_stop_on_entry_is_a_real_breakpoint_and_disconnect_owns_teardown() {
+    let artifact = trap_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepared,
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.trap",
+            display_uri: "workspace://trap.sico",
+            source: trap_debug_source().to_vec(),
+            input: ScriptInput::default(),
+            limits: limits(),
+            cancel: no_cancel(),
+            run_id: "dap-entry",
+            generation_id: 12,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, command: &str, arguments: serde_json::Value| serde_json::json!({"seq": seq, "type": "request", "command": command, "arguments": arguments});
+    dap.handle(&request(1, "initialize", serde_json::json!({})))
+        .unwrap();
+    dap.handle(&request(
+        2,
+        "launch",
+        serde_json::json!({"stopOnEntry": true}),
+    ))
+    .unwrap();
+    let configured = dap
+        .handle(&request(3, "configurationDone", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(configured[1]["event"], "stopped");
+    assert_eq!(configured[1]["body"]["reason"], "entry");
+    let disconnected = dap
+        .handle(&request(4, "disconnect", serde_json::json!({})))
+        .unwrap();
+    assert_eq!(disconnected[1]["event"], "terminated");
+    assert_eq!(disconnected[2]["event"], "exited");
+    assert_eq!(disconnected[2]["body"]["exitCode"], 123);
+}
+
+#[test]
+fn dap_pause_stops_a_busy_real_component_at_a_safe_epoch() {
+    let artifact = spin_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepared,
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.spin",
+            display_uri: "workspace://spin.sico",
+            source: vec![b' '; 64],
+            input: ScriptInput::default(),
+            limits: RunnerLimits {
+                fuel: u64::MAX,
+                timeout: std::time::Duration::from_secs(10),
+                ..limits()
+            },
+            cancel: no_cancel(),
+            run_id: "dap-pause",
+            generation_id: 13,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, command: &str| serde_json::json!({"seq": seq, "type": "request", "command": command, "arguments": {}});
+    dap.handle(&request(1, "initialize")).unwrap();
+    dap.handle(&request(2, "launch")).unwrap();
+    let configured = dap.handle(&request(3, "configurationDone")).unwrap();
+    assert_eq!(
+        configured.len(),
+        1,
+        "no breakpoint means no fabricated stop"
+    );
+    let paused = dap.handle(&request(4, "pause")).unwrap();
+    assert_eq!(paused[1]["event"], "stopped");
+    assert_eq!(paused[1]["body"]["reason"], "pause");
+    let terminated = dap.handle(&request(5, "terminate")).unwrap();
+    assert_eq!(terminated[1]["event"], "terminated");
+    assert_eq!(terminated[2]["body"]["exitCode"], 123);
+}
+
+#[test]
+fn dap_output_is_bounded_redacted_and_derived_before_terminal_events() {
+    let artifact = echo_debug_artifact(0);
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepared,
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.echo",
+            display_uri: "workspace://echo.sico",
+            source: vec![b' '; 64],
+            input: ScriptInput {
+                arguments: Vec::new(),
+                stdin: b"must-not-leak".to_vec(),
+            },
+            limits: limits(),
+            cancel: no_cancel(),
+            run_id: "dap-output",
+            generation_id: 14,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, command: &str| serde_json::json!({"seq": seq, "type": "request", "command": command, "arguments": {}});
+    dap.handle(&request(1, "initialize")).unwrap();
+    dap.handle(&request(2, "launch")).unwrap();
+    dap.handle(&request(3, "configurationDone")).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let messages = dap.poll().unwrap();
+    let output = messages
+        .iter()
+        .filter(|message| message["event"] == "output")
+        .collect::<Vec<_>>();
+    assert_eq!(output.len(), 2);
+    assert!(
+        output
+            .iter()
+            .all(|message| message["body"]["output"] == "<redacted-output>")
+    );
+    assert!(
+        !serde_json::to_string(&messages)
+            .unwrap()
+            .contains("must-not-leak")
+    );
+    assert_eq!(messages[messages.len() - 2]["event"], "terminated");
+    assert_eq!(messages[messages.len() - 1]["event"], "exited");
+    assert_eq!(messages[messages.len() - 1]["body"]["exitCode"], 0);
+}
+
+#[test]
+fn dap_stdio_server_uses_exact_bounded_frames_against_a_real_component() {
+    let artifact = trap_debug_artifact();
+    let unique = format!(
+        "sico-dap-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let directory = std::env::temp_dir().join(unique);
+    std::fs::create_dir(&directory).unwrap();
+    let component = directory.join("trap.component.wasm");
+    let map = directory.join("trap.debug-map.json");
+    let identity = directory.join("trap.debug-identity.json");
+    let source = directory.join("trap.sico");
+    std::fs::write(&component, &artifact.component).unwrap();
+    std::fs::write(&map, &artifact.debug_map).unwrap();
+    std::fs::write(&identity, &artifact.identity).unwrap();
+    std::fs::write(&source, trap_debug_source()).unwrap();
+
+    let requests = [
+        serde_json::json!({"seq": 1, "type": "request", "command": "initialize", "arguments": {}}),
+        serde_json::json!({"seq": 2, "type": "request", "command": "setBreakpoints", "arguments": {"source": {"documentId": "doc.trap"}, "breakpoints": [{"line": 2}]}}),
+        serde_json::json!({"seq": 3, "type": "request", "command": "launch", "arguments": {}}),
+        serde_json::json!({"seq": 4, "type": "request", "command": "configurationDone", "arguments": {}}),
+        serde_json::json!({"seq": 5, "type": "request", "command": "continue", "arguments": {"threadId": 1}}),
+        serde_json::json!({"seq": 6, "type": "request", "command": "terminate", "arguments": {}}),
+    ];
+    let mut input = Vec::new();
+    for request in requests {
+        input.extend_from_slice(&encode_dap_frame(&request).unwrap());
+    }
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_sico-dap"))
+        .arg(&component)
+        .arg(&map)
+        .arg(&identity)
+        .arg(&source)
+        .arg("doc.trap")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    use std::io::Write as _;
+    child.stdin.take().unwrap().write_all(&input).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let messages = split_dap_frames(&output.stdout);
+    assert!(messages.iter().any(|message| message["event"] == "stopped"));
+    assert!(
+        messages
+            .iter()
+            .any(|message| message["event"] == "continued")
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message["event"] == "terminated")
+    );
+    assert!(messages.iter().any(|message| message["event"] == "exited"));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn dap_nested_call_stack_is_source_mapped_in_innermost_first_order() {
+    let artifact = nested_trap_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepared,
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.nested",
+            display_uri: "workspace://nested.sico",
+            source: nested_debug_source().to_vec(),
+            input: ScriptInput::default(),
+            limits: limits(),
+            cancel: no_cancel(),
+            run_id: "dap-nested",
+            generation_id: 15,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, command: &str, arguments: serde_json::Value| serde_json::json!({"seq": seq, "type": "request", "command": command, "arguments": arguments});
+    dap.handle(&request(1, "initialize", serde_json::json!({})))
+        .unwrap();
+    dap.handle(&request(
+        2,
+        "setBreakpoints",
+        serde_json::json!({"source": {"documentId": "doc.nested"}, "breakpoints": [{"line": 3}]}),
+    ))
+    .unwrap();
+    dap.handle(&request(3, "launch", serde_json::json!({})))
+        .unwrap();
+    dap.handle(&request(4, "configurationDone", serde_json::json!({})))
+        .unwrap();
+    let stack = dap
+        .handle(&request(
+            5,
+            "stackTrace",
+            serde_json::json!({"threadId": 1}),
+        ))
+        .unwrap();
+    let frames = stack[0]["body"]["stackFrames"].as_array().unwrap();
+    assert!(
+        frames.len() >= 2,
+        "nested guest call must produce at least two frames: {frames:?}"
+    );
+    assert_eq!(frames[0]["line"], 3, "callee frame must be innermost");
+    assert!(
+        frames.iter().skip(1).any(|frame| frame["line"] == 2),
+        "caller frame must follow the callee: {frames:?}"
+    );
+    dap.handle(&request(6, "terminate", serde_json::json!({})))
+        .unwrap();
+}
+
+#[test]
+fn dap_source_identity_and_breakpoint_modes_fail_closed_with_typed_codes() {
+    let artifact = trap_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepare = || {
+        runner
+            .prepare_program_with_debug(
+                &artifact.component,
+                &artifact.debug_map,
+                &artifact.identity,
+                &FsGrants::default(),
+                &sico_runner::NetGrants::default(),
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        sico_runner::RuntimeDapBackend::new(
+            prepare(),
+            sico_runner::RuntimeDapConfig {
+                document_id: "doc.trap",
+                display_uri: "workspace://trap.sico",
+                source: vec![b'x'; 64],
+                input: ScriptInput::default(),
+                limits: limits(),
+                cancel: no_cancel(),
+                run_id: "dap-stale-source",
+                generation_id: 16,
+            },
+        )
+        .err(),
+        Some("source-identity-mismatch".to_owned())
+    );
+
+    let backend = sico_runner::RuntimeDapBackend::new(
+        prepare(),
+        sico_runner::RuntimeDapConfig {
+            document_id: "doc.trap",
+            display_uri: "workspace://trap.sico",
+            source: trap_debug_source().to_vec(),
+            input: ScriptInput::default(),
+            limits: limits(),
+            cancel: no_cancel(),
+            run_id: "dap-negative",
+            generation_id: 17,
+        },
+    )
+    .unwrap();
+    let mut dap = DapSession::new(backend);
+    let request = |seq, breakpoints: serde_json::Value| serde_json::json!({"seq": seq, "type": "request", "command": "setBreakpoints", "arguments": {"source": {"documentId": "doc.trap"}, "breakpoints": breakpoints}});
+    dap.handle(
+        &serde_json::json!({"seq": 1, "type": "request", "command": "initialize", "arguments": {}}),
+    )
+    .unwrap();
+    let conditional = dap
+        .handle(&request(
+            2,
+            serde_json::json!([{"line": 2, "condition": "true"}]),
+        ))
+        .unwrap();
+    assert_eq!(conditional[0]["success"], false);
+    assert_eq!(
+        conditional[0]["body"]["code"],
+        "unsupported-breakpoint-mode"
+    );
+    let invalid_line = dap
+        .handle(&request(3, serde_json::json!([{"line": 999}])))
+        .unwrap();
+    assert_eq!(invalid_line[0]["success"], false);
+    assert_eq!(invalid_line[0]["body"]["code"], "invalid-source-line");
+}
+
+#[cfg(windows)]
+#[test]
+fn dap_hundred_sequential_sessions_have_bounded_rss_handles_and_no_poisoning() {
+    let artifact = trap_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let breakpoint = prepared.bind_source_breakpoints("doc.trap", &[10])[0]
+        .breakpoint
+        .clone()
+        .unwrap();
+    let run_one = |generation_id| {
+        let session = prepared
+            .start_debug(
+                &ScriptInput::default(),
+                &limits(),
+                &no_cancel(),
+                std::slice::from_ref(&breakpoint),
+                &format!("dap-repeat-{generation_id}"),
+                generation_id,
+            )
+            .unwrap();
+        assert_eq!(
+            session
+                .wait_for_stop(std::time::Duration::from_secs(2))
+                .unwrap()
+                .reason,
+            "breakpoint"
+        );
+        assert!(session.continue_execution());
+        assert!(matches!(
+            session
+                .finish(std::time::Duration::from_secs(2))
+                .unwrap()
+                .outcome,
+            RunOutcome::Trap(_)
+        ));
+    };
+    run_one(1);
+    let (baseline_handles, baseline_rss) = windows_process_metrics();
+    for generation_id in 2..=101 {
+        run_one(generation_id);
+    }
+    let (final_handles, final_rss) = windows_process_metrics();
+    println!(
+        "DAP_REPEAT_100 baseline_handles={baseline_handles} final_handles={final_handles} baseline_rss={baseline_rss} final_rss={final_rss}"
+    );
+    assert!(
+        final_handles <= baseline_handles + 8,
+        "handle growth: {baseline_handles} -> {final_handles}"
+    );
+    assert!(
+        final_rss <= baseline_rss + 64 * 1024 * 1024,
+        "RSS growth: {baseline_rss} -> {final_rss}"
+    );
+}
+
+#[test]
+fn dap_pause_continue_latency_is_measured_separately_from_launch() {
+    let artifact = spin_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let debug_limits = RunnerLimits {
+        fuel: u64::MAX,
+        timeout: std::time::Duration::from_secs(10),
+        ..limits()
+    };
+    let mut pause_samples = Vec::new();
+    let mut continue_samples = Vec::new();
+    for generation_id in 1..=20 {
+        let session = prepared
+            .start_debug(
+                &ScriptInput::default(),
+                &debug_limits,
+                &no_cancel(),
+                &[],
+                &format!("dap-latency-{generation_id}"),
+                generation_id,
+            )
+            .unwrap();
+        let pause_started = std::time::Instant::now();
+        session.request_pause();
+        assert_eq!(
+            session
+                .wait_for_stop(std::time::Duration::from_secs(2))
+                .unwrap()
+                .reason,
+            "pause"
+        );
+        pause_samples.push(pause_started.elapsed());
+        let continue_started = std::time::Instant::now();
+        assert!(session.continue_execution());
+        continue_samples.push(continue_started.elapsed());
+        session.terminate();
+        assert_eq!(
+            session
+                .finish(std::time::Duration::from_secs(2))
+                .unwrap()
+                .outcome,
+            RunOutcome::Cancelled
+        );
+    }
+    pause_samples.sort_unstable();
+    continue_samples.sort_unstable();
+    println!(
+        "DAP_LATENCY pause_median_us={} pause_p95_us={} continue_median_us={} continue_p95_us={}",
+        pause_samples[10].as_micros(),
+        pause_samples[18].as_micros(),
+        continue_samples[10].as_micros(),
+        continue_samples[18].as_micros()
+    );
+}
+
+#[test]
+fn dap_debug_build_overhead_is_measured_against_same_ir() {
+    let mut normal = Vec::new();
+    let mut debug = Vec::new();
+    let source = [b' '; 64];
+    let compiler_sha256 = "f".repeat(64);
+    for _ in 0..20 {
+        let mut module = echo_module(0);
+        module.source_len = 64;
+        let started = std::time::Instant::now();
+        let component = sico_codegen_wasm::compile_script_program(&module).unwrap();
+        normal.push(started.elapsed());
+        let started = std::time::Instant::now();
+        let artifact = sico_codegen_wasm::compile_script_program_with_debug(
+            &module,
+            &sico_codegen_wasm::DebugBuildInput {
+                document_id: "doc.build-overhead",
+                source_bytes: &source,
+                display_uri: Some("workspace://build-overhead.sico"),
+                compiler_package: "sico-compiler",
+                compiler_version: "0.0.2-dev",
+                compiler_executable_sha256: &compiler_sha256,
+                adapter_identities: vec!["sico:script-adapter@0.1.0".into()],
+                wit_identities: vec!["sico:script@0.1.0".into()],
+            },
+        )
+        .unwrap();
+        debug.push(started.elapsed());
+        assert!(artifact.component.len() > component.len());
+    }
+    normal.sort_unstable();
+    debug.sort_unstable();
+    println!(
+        "DAP_BUILD normal_median_us={} debug_median_us={} normal_p95_us={} debug_p95_us={}",
+        normal[10].as_micros(),
+        debug[10].as_micros(),
+        normal[18].as_micros(),
+        debug[18].as_micros()
+    );
+}
+
+#[cfg(windows)]
+fn windows_process_metrics() -> (u64, u64) {
+    let script = format!(
+        "$p=Get-Process -Id {}; Write-Output \"$($p.HandleCount),$($p.WorkingSet64)\"",
+        std::process::id()
+    );
+    let output = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-Command", &script])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    let (handles, rss) = text.trim().split_once(',').unwrap();
+    (handles.parse().unwrap(), rss.parse().unwrap())
+}
+
+fn split_dap_frames(mut bytes: &[u8]) -> Vec<serde_json::Value> {
+    let mut messages = Vec::new();
+    while !bytes.is_empty() {
+        let header_end = bytes
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .unwrap();
+        let header = std::str::from_utf8(&bytes[..header_end]).unwrap();
+        let length = header
+            .split("\r\n")
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        let end = header_end + 4 + length;
+        messages.push(decode_dap_frame(&bytes[..end]).unwrap());
+        bytes = &bytes[end..];
+    }
+    messages
 }
 
 #[test]
@@ -765,6 +1508,10 @@ fn run_function(name: &str, instructions: Vec<Instruction>, result: ValueId) -> 
 }
 
 fn echo_component(exit_code: i64) -> Vec<u8> {
+    sico_codegen_wasm::compile_script_program(&echo_module(exit_code)).unwrap()
+}
+
+fn echo_module(exit_code: i64) -> Module {
     let range = SourceRange { start: 0, end: 0 };
     let mut module = Module::new("echo.sico", 0);
     module.functions.push(run_function(
@@ -825,7 +1572,28 @@ fn echo_component(exit_code: i64) -> Vec<u8> {
         ],
         ValueId(5),
     ));
-    sico_codegen_wasm::compile_script_program(&module).unwrap()
+    module
+}
+
+fn echo_debug_artifact(exit_code: i64) -> sico_codegen_wasm::DebugArtifact {
+    let mut module = echo_module(exit_code);
+    module.source_len = 64;
+    let source = [b' '; 64];
+    let compiler_sha256 = "d".repeat(64);
+    sico_codegen_wasm::compile_script_program_with_debug(
+        &module,
+        &sico_codegen_wasm::DebugBuildInput {
+            document_id: "doc.echo",
+            source_bytes: &source,
+            display_uri: Some("workspace://echo.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &compiler_sha256,
+            adapter_identities: vec!["sico:script-adapter@0.1.0".into()],
+            wit_identities: vec!["sico:script@0.1.0".into()],
+        },
+    )
+    .unwrap()
 }
 
 fn error_component() -> Vec<u8> {
@@ -899,6 +1667,10 @@ fn trap_component() -> Vec<u8> {
 }
 
 fn spin_component() -> Vec<u8> {
+    sico_codegen_wasm::compile_script_program(&spin_module()).unwrap()
+}
+
+fn spin_module() -> Module {
     let range = SourceRange { start: 0, end: 0 };
     let mut module = Module::new("spin.sico", 0);
     module.functions.push(Function {
@@ -929,7 +1701,28 @@ fn spin_component() -> Vec<u8> {
         ],
         range,
     });
-    sico_codegen_wasm::compile_script_program(&module).unwrap()
+    module
+}
+
+fn spin_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
+    let mut module = spin_module();
+    module.source_len = 64;
+    let source = [b' '; 64];
+    let compiler_sha256 = "c".repeat(64);
+    sico_codegen_wasm::compile_script_program_with_debug(
+        &module,
+        &sico_codegen_wasm::DebugBuildInput {
+            document_id: "doc.spin",
+            source_bytes: &source,
+            display_uri: Some("workspace://spin.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &compiler_sha256,
+            adapter_identities: vec!["sico:script-adapter@0.1.0".into()],
+            wit_identities: vec!["sico:script@0.1.0".into()],
+        },
+    )
+    .unwrap()
 }
 
 fn trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
@@ -955,7 +1748,7 @@ fn trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
         }],
         range: SourceRange { start: 0, end: 20 },
     });
-    let source = [b' '; 64];
+    let source = trap_debug_source();
     let compiler_sha256 = "b".repeat(64);
     sico_codegen_wasm::compile_script_program_with_debug(
         &module,
@@ -971,6 +1764,82 @@ fn trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
         },
     )
     .unwrap()
+}
+
+fn trap_debug_source() -> [u8; 64] {
+    let mut source = [b' '; 64];
+    source[9] = b'\n';
+    source
+}
+
+fn nested_trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
+    let run_range = SourceRange { start: 0, end: 20 };
+    let mut module = Module::new("nested.sico", 64);
+    module.functions.push(Function {
+        id: FunctionId(1),
+        name: "run".into(),
+        parameters: vec![Parameter {
+            id: ValueId(0),
+            name: "input".into(),
+            ty: Type::Named("ScriptInput".into()),
+            range: SourceRange { start: 0, end: 10 },
+        }],
+        return_type: script_result(),
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: vec![Instruction {
+                result: ValueId(1),
+                ty: script_result(),
+                operation: Operation::Call {
+                    function: FunctionId(2),
+                    arguments: Vec::new(),
+                },
+                range: SourceRange { start: 10, end: 20 },
+            }],
+            terminator: Terminator::Return(Some(ValueId(1))),
+            range: SourceRange { start: 10, end: 20 },
+        }],
+        range: run_range,
+    });
+    module.functions.push(Function {
+        id: FunctionId(2),
+        name: "nested_trap".into(),
+        parameters: Vec::new(),
+        return_type: script_result(),
+        effects: Vec::new(),
+        entry: BlockId(0),
+        blocks: vec![Block {
+            id: BlockId(0),
+            instructions: Vec::new(),
+            terminator: Terminator::Unreachable,
+            range: SourceRange { start: 20, end: 30 },
+        }],
+        range: SourceRange { start: 20, end: 30 },
+    });
+    let source = nested_debug_source();
+    sico_codegen_wasm::compile_script_program_with_debug(
+        &module,
+        &sico_codegen_wasm::DebugBuildInput {
+            document_id: "doc.nested",
+            source_bytes: &source,
+            display_uri: Some("workspace://nested.sico"),
+            compiler_package: "sico-compiler",
+            compiler_version: "0.0.2-dev",
+            compiler_executable_sha256: &"e".repeat(64),
+            adapter_identities: vec!["sico:script-adapter@0.1.0".into()],
+            wit_identities: vec!["sico:script@0.1.0".into()],
+        },
+    )
+    .unwrap()
+}
+
+fn nested_debug_source() -> [u8; 64] {
+    let mut source = [b' '; 64];
+    source[9] = b'\n';
+    source[19] = b'\n';
+    source
 }
 
 /// A malicious core guest whose result discriminant is out of range, wrapped

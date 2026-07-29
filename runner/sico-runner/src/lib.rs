@@ -9,6 +9,10 @@
 
 #![forbid(unsafe_code)]
 
+mod dap;
+
+pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
+
 use std::error::Error;
 use std::fmt;
 use std::io::{Read as _, Write as _};
@@ -16,14 +20,16 @@ use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::num::NonZeroUsize;
 use std::path::{Component as PathComponent, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 use sico_observability::{
-    ContractError, DebugMap, EngineFrame, RuntimeFault, RuntimeFrame, parse_cancel_request,
-    resolve_engine_frame, validate_runtime_fault, verify_debug_artifacts,
+    ContractError, DebugMap, EXECUTION_EVENT_SCHEMA, EngineFrame, EventQueue, EventRedactor,
+    ExecutionEvent, ExecutionEventPayload, MAX_CAPTURED_CHANNEL_BYTES, RuntimeFault, RuntimeFrame,
+    parse_cancel_request, resolve_engine_frame, validate_runtime_fault, verify_debug_artifacts,
 };
+use wasmparser::{Parser, Payload};
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
 
@@ -169,6 +175,310 @@ pub struct ObservedRun {
     pub cancellation_source: Option<CancellationSource>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugStopFrame {
+    pub core_module: Option<String>,
+    pub module_pc: u32,
+    pub locals: Vec<DebugLocalValue>,
+}
+
+/// One bounded, read-only scalar captured while the Store is stopped. Core
+/// references are never formatted or dereferenced because they could expose
+/// engine addresses or unbounded guest graphs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugLocalValue {
+    pub name: String,
+    pub type_name: &'static str,
+    pub value: String,
+    pub available: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugStop {
+    pub reason: &'static str,
+    pub frames: Vec<DebugStopFrame>,
+}
+
+#[derive(Debug, Default)]
+struct DebugControlState {
+    pause_requested: bool,
+    stopped: Option<DebugStop>,
+    resume: bool,
+}
+
+/// Thread-safe control plane used by the DAP adapter. A pause request advances
+/// the Wasmtime epoch; the guest-debug handler freezes the Store and waits for
+/// an explicit continue without exposing mutation or capability APIs.
+#[derive(Clone, Debug)]
+pub struct RuntimeDebugControl {
+    engine: Engine,
+    state: Arc<(Mutex<DebugControlState>, Condvar)>,
+}
+
+impl RuntimeDebugControl {
+    fn new(engine: Engine) -> Self {
+        Self {
+            engine,
+            state: Arc::new((Mutex::new(DebugControlState::default()), Condvar::new())),
+        }
+    }
+
+    pub fn request_pause(&self) {
+        self.state
+            .0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pause_requested = true;
+        self.engine.increment_epoch();
+    }
+
+    #[must_use]
+    pub fn wait_for_stop(&self, timeout: Duration) -> Option<DebugStop> {
+        let (lock, changed) = &*self.state;
+        let state = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let state = changed
+            .wait_timeout_while(state, timeout, |state| state.stopped.is_none())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .0;
+        state.stopped.clone()
+    }
+
+    pub fn continue_execution(&self) -> bool {
+        let (lock, changed) = &*self.state;
+        let mut state = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.stopped.is_none() {
+            return false;
+        }
+        state.resume = true;
+        changed.notify_all();
+        true
+    }
+
+    fn handler(&self) -> RuntimeDebugHandler {
+        RuntimeDebugHandler {
+            state: self.state.clone(),
+        }
+    }
+
+    fn release_stop(&self) {
+        let (lock, changed) = &*self.state;
+        let mut state = lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.resume = true;
+        changed.notify_all();
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DebugStartError {
+    Input(InputViolation),
+    Runtime(RunOutcome),
+    DebugDisabled,
+    MissingDebugMap,
+    UnboundBreakpoint(DebugBreakpoint),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DebugSessionError {
+    Timeout,
+    Disconnected,
+    Contract(ContractError),
+}
+
+/// One owned debug execution. Drop, terminate and disconnect all converge on
+/// the same typed cancellation token and release a stopped Store before join.
+pub struct RuntimeDebugSession {
+    control: RuntimeDebugControl,
+    cancel: CancelToken,
+    result: std::sync::mpsc::Receiver<Execution>,
+    worker: Option<std::thread::JoinHandle<()>>,
+    debug_map: Arc<DebugMap>,
+    run_id: String,
+    generation_id: u64,
+}
+
+impl RuntimeDebugSession {
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.worker
+            .as_ref()
+            .is_none_or(std::thread::JoinHandle::is_finished)
+    }
+
+    pub fn request_pause(&self) {
+        self.control.request_pause();
+    }
+
+    #[must_use]
+    pub fn wait_for_stop(&self, timeout: Duration) -> Option<DebugStop> {
+        self.control.wait_for_stop(timeout)
+    }
+
+    pub fn continue_execution(&self) -> bool {
+        self.control.continue_execution()
+    }
+
+    pub fn terminate(&self) -> bool {
+        let accepted = self.cancel.request(CancellationSource::Debugger);
+        self.control.release_stop();
+        accepted
+    }
+
+    /// Waits for the one terminal winner and converts it to the same strict
+    /// observed fault envelope used by ordinary execution.
+    pub fn finish(mut self, timeout: Duration) -> Result<ObservedRun, DebugSessionError> {
+        let execution = self
+            .result
+            .recv_timeout(timeout)
+            .map_err(|error| match error {
+                std::sync::mpsc::RecvTimeoutError::Timeout => DebugSessionError::Timeout,
+                std::sync::mpsc::RecvTimeoutError::Disconnected => DebugSessionError::Disconnected,
+            })?;
+        if let Some(worker) = self.worker.take() {
+            worker.join().map_err(|_| DebugSessionError::Disconnected)?;
+        }
+        let fault = runtime_fault(
+            &execution.outcome,
+            &execution.frames,
+            Some(&self.debug_map),
+            &self.run_id,
+            self.generation_id,
+        )
+        .map_err(DebugSessionError::Contract)?;
+        Ok(ObservedRun {
+            outcome: execution.outcome,
+            fault,
+            cancellation_source: execution.cancellation_source,
+        })
+    }
+}
+
+impl Drop for RuntimeDebugSession {
+    fn drop(&mut self) {
+        if self.worker.is_none() {
+            return;
+        }
+        let _ = self.cancel.request(CancellationSource::Debugger);
+        self.control.release_stop();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RuntimeDebugHandler {
+    state: Arc<(Mutex<DebugControlState>, Condvar)>,
+}
+
+impl wasmtime::DebugHandler for RuntimeDebugHandler {
+    type Data = RunState;
+
+    fn handle(
+        &self,
+        mut store: wasmtime::StoreContextMut<'_, Self::Data>,
+        event: wasmtime::DebugEvent<'_>,
+    ) -> impl std::future::Future<Output = ()> + Send {
+        let state = self.state.clone();
+        async move {
+            let reason = match event {
+                wasmtime::DebugEvent::Breakpoint => "breakpoint",
+                wasmtime::DebugEvent::EpochYield => {
+                    if !state
+                        .0
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .pause_requested
+                    {
+                        return;
+                    }
+                    "pause"
+                }
+                _ => return,
+            };
+            let frames = collect_debug_frames(&mut store);
+            let (lock, changed) = &*state;
+            let mut control = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            control.pause_requested = false;
+            control.stopped = Some(DebugStop { reason, frames });
+            control.resume = false;
+            changed.notify_all();
+            while !control.resume {
+                control = changed
+                    .wait(control)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            }
+            control.stopped = None;
+            control.resume = false;
+        }
+    }
+}
+
+fn collect_debug_frames(
+    store: &mut wasmtime::StoreContextMut<'_, RunState>,
+) -> Vec<DebugStopFrame> {
+    let mut result = Vec::new();
+    let activations: Vec<_> = store.debug_exit_frames().take(256).collect();
+    for frame in activations {
+        let mut current = Some(frame);
+        while let Some(frame) = current.take() {
+            if result.len() == 256 {
+                break;
+            }
+            let module = frame
+                .module(&mut *store)
+                .ok()
+                .flatten()
+                .and_then(|module| module.name().map(str::to_owned));
+            if let Ok(Some((_, pc))) = frame.wasm_function_index_and_pc(&mut *store) {
+                let locals = collect_debug_locals(&frame, &mut *store);
+                result.push(DebugStopFrame {
+                    core_module: module,
+                    module_pc: pc.raw(),
+                    locals,
+                });
+            }
+            current = frame.parent(&mut *store).ok().flatten();
+        }
+    }
+    result
+}
+
+fn collect_debug_locals(
+    frame: &wasmtime::FrameHandle,
+    store: &mut wasmtime::StoreContextMut<'_, RunState>,
+) -> Vec<DebugLocalValue> {
+    let count = frame.num_locals(&mut *store).unwrap_or(0).min(256);
+    (0..count)
+        .map(|index| {
+            let (type_name, value, available) = match frame.local(&mut *store, index) {
+                Ok(wasmtime::Val::I32(value)) => ("i32", value.to_string(), true),
+                Ok(wasmtime::Val::I64(value)) => ("i64", value.to_string(), true),
+                Ok(wasmtime::Val::F32(bits)) => ("f32", f32::from_bits(bits).to_string(), true),
+                Ok(wasmtime::Val::F64(bits)) => ("f64", f64::from_bits(bits).to_string(), true),
+                Ok(wasmtime::Val::V128(value)) => {
+                    ("v128", format!("0x{:032x}", value.as_u128()), true)
+                }
+                Ok(_) => ("reference", "<unavailable>".to_owned(), false),
+                Err(_) => ("unknown", "<unavailable>".to_owned(), false),
+            };
+            DebugLocalValue {
+                name: format!("local{index}"),
+                type_name,
+                value,
+                available,
+            }
+        })
+        .collect()
+}
+
 impl ObservedRun {
     /// Converts a typed pre-execution outcome (for example incompatible or
     /// launch failure) into the same strict fault envelope.
@@ -187,6 +497,139 @@ impl ObservedRun {
             fault,
             cancellation_source: None,
         })
+    }
+}
+
+/// Produces the canonical bounded event stream for one completed execution.
+/// Lifecycle and terminal records use only typed Runtime state; guest output
+/// crosses the mandatory redactor before it enters the queue.
+///
+/// # Errors
+///
+/// Rejects invalid identities, sequence overflow, event contract violations,
+/// or a terminal record too large for the reserved queue capacity.
+pub fn execution_events<R: EventRedactor>(
+    observed: &ObservedRun,
+    run_id: &str,
+    generation_id: u64,
+    redactor: &R,
+) -> Result<Vec<Vec<u8>>, ContractError> {
+    let mut queue = EventQueue::new();
+    let mut sequence = 0_u64;
+    for kind in ["accepted", "started"] {
+        queue.push(base_event(run_id, generation_id, sequence, kind, "launch"))?;
+        sequence += 1;
+    }
+    if let RunOutcome::Output(output) = &observed.outcome {
+        sequence = emit_channel(
+            &mut queue,
+            run_id,
+            generation_id,
+            sequence,
+            "stdout",
+            &output.stdout,
+            redactor,
+        )?;
+        sequence = emit_channel(
+            &mut queue,
+            run_id,
+            generation_id,
+            sequence,
+            "stderr",
+            &output.stderr,
+            redactor,
+        )?;
+    }
+    if let Some(source) = observed.cancellation_source {
+        let cause = match source {
+            CancellationSource::Timer => "timeout",
+            CancellationSource::Signal => "signal",
+            CancellationSource::Client => "client",
+            CancellationSource::Debugger => "debugger",
+            CancellationSource::Host => "host",
+        };
+        queue.push(base_event(
+            run_id,
+            generation_id,
+            sequence,
+            "cancellation-requested",
+            cause,
+        ))?;
+        sequence += 1;
+    }
+    let kind = if observed.fault.is_some() {
+        "fault"
+    } else {
+        "terminal"
+    };
+    let cause = match observed.outcome {
+        RunOutcome::Timeout => "timeout",
+        RunOutcome::Cancelled => {
+            observed
+                .cancellation_source
+                .map_or("internal", |source| match source {
+                    CancellationSource::Timer => "timeout",
+                    CancellationSource::Signal => "signal",
+                    CancellationSource::Client => "client",
+                    CancellationSource::Debugger => "debugger",
+                    CancellationSource::Host => "host",
+                })
+        }
+        RunOutcome::HostProviderFailure { .. } => "host",
+        RunOutcome::Launch(_) | RunOutcome::Incompatible(_) => "internal",
+        _ => "guest",
+    };
+    let mut terminal = base_event(run_id, generation_id, sequence, kind, cause);
+    terminal.payload.terminal_class = Some(observed.outcome.class().to_owned());
+    queue.push(terminal)?;
+    Ok(queue.drain().collect())
+}
+
+fn emit_channel<R: EventRedactor>(
+    queue: &mut EventQueue,
+    run_id: &str,
+    generation_id: u64,
+    sequence: u64,
+    kind: &str,
+    bytes: &[u8],
+    redactor: &R,
+) -> Result<u64, ContractError> {
+    let captured = &bytes[..bytes.len().min(MAX_CAPTURED_CHANNEL_BYTES)];
+    let emitted = queue.push_output(
+        base_event(run_id, generation_id, sequence, kind, "guest"),
+        captured,
+        redactor,
+    )?;
+    let mut next = sequence
+        .checked_add(emitted)
+        .ok_or(ContractError::Limit("event-sequence"))?;
+    if bytes.len() > MAX_CAPTURED_CHANNEL_BYTES {
+        let mut truncated = base_event(run_id, generation_id, next, "truncated", "overflow");
+        truncated.payload.message = Some(format!("{kind} capture limit reached"));
+        queue.push(truncated)?;
+        next += 1;
+    }
+    Ok(next)
+}
+
+fn base_event(
+    run_id: &str,
+    generation_id: u64,
+    sequence: u64,
+    kind: &str,
+    cause: &str,
+) -> ExecutionEvent {
+    ExecutionEvent {
+        schema: EXECUTION_EVENT_SCHEMA.to_owned(),
+        run_id: run_id.to_owned(),
+        generation_id,
+        sequence,
+        kind: kind.to_owned(),
+        task_id: Some("task-0".to_owned()),
+        parent_task_id: None,
+        scope_id: Some("scope-0".to_owned()),
+        cause: cause.to_owned(),
+        payload: ExecutionEventPayload::default(),
     }
 }
 
@@ -770,6 +1213,7 @@ impl ResourceLimiter for RunState {
 pub struct Runner {
     engine: Engine,
     components: ComponentCache,
+    debug_enabled: bool,
 }
 
 type ComponentCache = Arc<std::sync::Mutex<Vec<([u8; 32], Component)>>>;
@@ -783,6 +1227,20 @@ pub struct PreparedProgram {
     linker: Linker<RunState>,
     streams_component: bool,
     debug_map: Option<Arc<DebugMap>>,
+    debug_core_base: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugBreakpoint {
+    pub core_module: String,
+    pub module_pc: u32,
+    pub source_offset: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceBreakpointBinding {
+    pub requested_offset: u64,
+    pub breakpoint: Option<DebugBreakpoint>,
 }
 
 impl Runner {
@@ -793,19 +1251,40 @@ impl Runner {
     ///
     /// Returns an engine configuration error.
     pub fn new() -> Result<Self, wasmtime::Error> {
+        Self::new_with_debug(false)
+    }
+
+    /// Creates a runner with Wasmtime guest-debug instrumentation enabled.
+    /// Ordinary runs remain uninstrumented because this mode has measurable
+    /// compilation and execution overhead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an engine configuration error.
+    pub fn new_debug() -> Result<Self, wasmtime::Error> {
+        Self::new_with_debug(true)
+    }
+
+    fn new_with_debug(debug: bool) -> Result<Self, wasmtime::Error> {
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
         config.epoch_interruption(true);
         config.generate_address_map(true);
+        config.guest_debug(debug);
         config.wasm_backtrace_max_frames(NonZeroUsize::new(256));
         // Streaming pumps are recursive until the source-level loop lands
         // (STEP-0087): 4 MiB stack covers ~8k iterations at 64 KiB chunks
         // (512 MiB streamed) while staying a hard bound.
         config.max_wasm_stack(4 * 1024 * 1024);
+        // The Wasmtime `debug` crate feature also enables async support at
+        // compile time, so this invariant applies to ordinary engines even
+        // when `guest_debug(false)` keeps their code uninstrumented.
+        config.async_stack_size(8 * 1024 * 1024);
         Ok(Self {
             engine: Engine::new(&config)?,
             components: Arc::new(std::sync::Mutex::new(Vec::new())),
+            debug_enabled: debug,
         })
     }
 
@@ -883,7 +1362,9 @@ impl Runner {
     ) -> Result<PreparedProgram, RunOutcome> {
         let (map, _) = verify_debug_artifacts(component, debug_map, debug_identity)
             .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
-        self.prepare_program_inner(component, fs, net, Some(Arc::new(map)))
+        let core_base = embedded_guest_core_base(component)
+            .ok_or_else(|| RunOutcome::Incompatible("debug guest core is missing".into()))?;
+        self.prepare_program_inner(component, fs, net, Some((Arc::new(map), core_base)))
     }
 
     fn prepare_program_inner(
@@ -891,7 +1372,7 @@ impl Runner {
         component: &[u8],
         fs: &FsGrants,
         net: &NetGrants,
-        debug_map: Option<Arc<DebugMap>>,
+        debug: Option<(Arc<DebugMap>, u64)>,
     ) -> Result<PreparedProgram, RunOutcome> {
         let component = match self.compile_cached(component) {
             Ok(component) => component,
@@ -920,7 +1401,8 @@ impl Runner {
             component,
             linker,
             streams_component,
-            debug_map,
+            debug_map: debug.as_ref().map(|(map, _)| map.clone()),
+            debug_core_base: debug.map(|(_, base)| base),
         })
     }
 
@@ -947,6 +1429,201 @@ impl PreparedProgram {
     #[must_use]
     pub fn imports_streams(&self) -> bool {
         self.streams_component
+    }
+
+    /// Binds requested UTF-8 source byte offsets to exact guest-debug PCs.
+    /// Unmapped/generated rows remain explicitly unbound.
+    #[must_use]
+    pub fn bind_source_breakpoints(
+        &self,
+        document_id: &str,
+        offsets: &[u64],
+    ) -> Vec<SourceBreakpointBinding> {
+        let Some(map) = self.debug_map.as_deref() else {
+            return offsets
+                .iter()
+                .map(|offset| SourceBreakpointBinding {
+                    requested_offset: *offset,
+                    breakpoint: None,
+                })
+                .collect();
+        };
+        let Some(core_base) = self.debug_core_base else {
+            return Vec::new();
+        };
+        offsets
+            .iter()
+            .map(|offset| {
+                let breakpoint = map
+                    .mappings
+                    .iter()
+                    .filter(|mapping| {
+                        !mapping.generated
+                            && mapping.source.as_ref().is_some_and(|span| {
+                                span.document_id == document_id
+                                    && span.start <= *offset
+                                    && *offset < span.end
+                            })
+                    })
+                    .min_by_key(|mapping| mapping.instruction_start)
+                    .and_then(|mapping| {
+                        let pc = mapping.instruction_start.checked_sub(core_base)?;
+                        Some(DebugBreakpoint {
+                            core_module: mapping.core_module.clone(),
+                            module_pc: u32::try_from(pc).ok()?,
+                            source_offset: *offset,
+                        })
+                    });
+                SourceBreakpointBinding {
+                    requested_offset: *offset,
+                    breakpoint,
+                }
+            })
+            .collect()
+    }
+
+    /// Starts one identity-bound Program debug execution with exact core
+    /// breakpoints. The Store is fresh and owned by the returned session.
+    ///
+    /// # Errors
+    ///
+    /// Rejects ordinary non-debug runners, missing maps, input bounds,
+    /// unbound module PCs, instantiation failures and malformed Programs.
+    pub fn start_debug(
+        &self,
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+        breakpoints: &[DebugBreakpoint],
+        run_id: &str,
+        generation_id: u64,
+    ) -> Result<RuntimeDebugSession, DebugStartError> {
+        if !self.runner.debug_enabled {
+            return Err(DebugStartError::DebugDisabled);
+        }
+        check_input(input).map_err(DebugStartError::Input)?;
+        let debug_map = self
+            .debug_map
+            .clone()
+            .ok_or(DebugStartError::MissingDebugMap)?;
+        let arbiter = Arc::new(TerminalArbiter::new());
+        let binding = cancel.bind(&arbiter).map_err(DebugStartError::Runtime)?;
+        let mut store = Store::new(
+            &self.runner.engine,
+            RunState {
+                memory_ceiling: limits.memory_bytes,
+                denied: false,
+                table: ResourceTable::new(),
+                streams_live: 0,
+                http_abandoned: false,
+                cancel: cancel.clone(),
+                io: spawn_io_workers(),
+            },
+        );
+        store.limiter(|state| state);
+        store.set_fuel(limits.fuel).map_err(|_| {
+            DebugStartError::Runtime(RunOutcome::Launch("fuel configuration failed".into()))
+        })?;
+        let instance = self
+            .linker
+            .instantiate(&mut store, &self.component)
+            .map_err(|error| {
+                DebugStartError::Runtime(if store.data().denied {
+                    RunOutcome::MemoryLimit
+                } else {
+                    RunOutcome::Launch(format!("{error}"))
+                })
+            })?;
+        let modules = store.debug_all_modules();
+        {
+            let mut edit = store
+                .edit_breakpoints()
+                .ok_or(DebugStartError::DebugDisabled)?;
+            for breakpoint in breakpoints {
+                let module = modules
+                    .iter()
+                    .find(|module| module.name() == Some(breakpoint.core_module.as_str()))
+                    .or_else(|| (modules.len() == 1).then(|| &modules[0]))
+                    .ok_or_else(|| DebugStartError::UnboundBreakpoint(breakpoint.clone()))?;
+                edit.add_breakpoint(module, wasmtime::ModulePC::new(breakpoint.module_pc))
+                    .map_err(|_| DebugStartError::UnboundBreakpoint(breakpoint.clone()))?;
+            }
+        }
+        let run = instance.get_func(&mut store, "run").ok_or_else(|| {
+            DebugStartError::Runtime(RunOutcome::Incompatible(
+                "component does not export run".into(),
+            ))
+        })?;
+        let control = RuntimeDebugControl::new(self.runner.engine.clone());
+        store.set_debug_handler(control.handler());
+        let timeout_ticks = ticks_for(limits.timeout).max(1);
+        store.set_epoch_deadline(1);
+        let deadline_cancel = cancel.clone();
+        let deadline_arbiter = arbiter.clone();
+        let mut remaining_ticks = timeout_ticks;
+        store.epoch_deadline_callback(move |_| {
+            if deadline_cancel.is_cancelled() {
+                Err(Marker("cancelled").into())
+            } else if remaining_ticks <= 1 {
+                let _ = deadline_arbiter.commit(RunOutcome::Timeout);
+                Err(Marker("timeout").into())
+            } else {
+                remaining_ticks -= 1;
+                Ok(UpdateDeadline::Continue(1))
+            }
+        });
+        let params = [input_val(input)];
+        let hostcall_fuel = input
+            .stdin
+            .len()
+            .saturating_mul(64)
+            .saturating_add(64 << 20)
+            .max(limits.hostcall_fuel);
+        store.set_hostcall_fuel(hostcall_fuel);
+        let engine = self.runner.engine.clone();
+        let cancel_for_result = cancel.clone();
+        let (sender, result) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let done = Arc::new(AtomicBool::new(false));
+            let watchdog_done = done.clone();
+            let watchdog = std::thread::spawn(move || {
+                for _ in 0..timeout_ticks.saturating_add(1) {
+                    std::thread::sleep(TICK);
+                    engine.increment_epoch();
+                    if watchdog_done.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            });
+            let mut results = [Val::Result(Ok(None))];
+            let mut execution =
+                match runtime_block_on(run.call_async(&mut store, &params, &mut results)) {
+                    Ok(()) => Execution::without_frames(read_result(&results[0])),
+                    Err(error) => Execution {
+                        outcome: classify_error(&store, &error),
+                        frames: engine_frames(&error),
+                        cancellation_source: None,
+                    },
+                };
+            let decision = arbiter.commit(execution.outcome);
+            execution.outcome = decision.outcome;
+            execution.cancellation_source = decision
+                .cancellation_source
+                .or_else(|| cancel_for_result.requested_source());
+            done.store(true, Ordering::Relaxed);
+            let _ = watchdog.join();
+            drop(binding);
+            let _ = sender.send(execution);
+        });
+        Ok(RuntimeDebugSession {
+            control,
+            cancel: cancel.clone(),
+            result,
+            worker: Some(worker),
+            debug_map,
+            run_id: run_id.to_owned(),
+            generation_id,
+        })
     }
 
     /// Executes one isolated generation using the cached Component and Linker.
@@ -1107,6 +1784,42 @@ impl PreparedProgram {
                 frames: engine_frames(&error),
                 cancellation_source: None,
             },
+        }
+    }
+}
+
+fn embedded_guest_core_base(component: &[u8]) -> Option<u64> {
+    Parser::new(0)
+        .parse_all(component)
+        .filter_map(|payload| match payload.ok()? {
+            Payload::ModuleSection {
+                unchecked_range, ..
+            } => u64::try_from(unchecked_range.start).ok(),
+            _ => None,
+        })
+        .last()
+}
+
+struct RuntimeThreadWake(std::thread::Thread);
+
+impl std::task::Wake for RuntimeThreadWake {
+    fn wake(self: Arc<Self>) {
+        self.0.unpark();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.unpark();
+    }
+}
+
+fn runtime_block_on<F: std::future::Future>(future: F) -> F::Output {
+    let waker = std::task::Waker::from(Arc::new(RuntimeThreadWake(std::thread::current())));
+    let mut context = std::task::Context::from_waker(&waker);
+    let mut future = std::pin::pin!(future);
+    loop {
+        match future.as_mut().poll(&mut context) {
+            std::task::Poll::Ready(output) => return output,
+            std::task::Poll::Pending => std::thread::park(),
         }
     }
 }
@@ -2199,6 +2912,63 @@ fn read_result_inner(value: &Val) -> Result<RunOutcome, RunOutcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::future::Future;
+    use std::task::{Context, Poll, Wake, Waker};
+
+    struct SecretRedactor;
+
+    impl EventRedactor for SecretRedactor {
+        fn redact(&self, bytes: &[u8]) -> Vec<u8> {
+            bytes
+                .windows(6)
+                .enumerate()
+                .fold(bytes.to_vec(), |mut output, (index, window)| {
+                    if window == b"secret" {
+                        output[index..index + 6].copy_from_slice(b"******");
+                    }
+                    output
+                })
+        }
+    }
+
+    #[test]
+    fn observed_output_produces_redacted_bounded_terminal_stream() {
+        let observed = ObservedRun {
+            outcome: RunOutcome::Output(ScriptOutput {
+                stdout: [
+                    vec![0xff],
+                    b"secret".to_vec(),
+                    vec![b'x'; MAX_CAPTURED_CHANNEL_BYTES],
+                ]
+                .concat(),
+                stderr: b"ok".to_vec(),
+                exit_code: 0,
+            }),
+            fault: None,
+            cancellation_source: None,
+        };
+        let frames = execution_events(&observed, "run-1", 7, &SecretRedactor).unwrap();
+        let events: Vec<_> = frames
+            .iter()
+            .map(|frame| sico_observability::parse_execution_event(frame).unwrap())
+            .collect();
+        assert_eq!(events[0].kind, "accepted");
+        assert_eq!(events[1].kind, "started");
+        assert!(events.iter().any(|event| event.kind == "truncated"));
+        assert_eq!(events.last().unwrap().kind, "terminal");
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event.kind.as_str(), "terminal" | "fault"))
+                .count(),
+            1
+        );
+        assert!(
+            !frames
+                .iter()
+                .any(|frame| frame.windows(6).any(|window| window == b"secret"))
+        );
+    }
 
     #[test]
     fn full_worker_queue_observes_later_cancellation() {
@@ -2439,5 +3209,155 @@ mod tests {
             Err(CancelRequestError::IdentityMismatch)
         );
         assert_eq!(other.requested_source(), None);
+    }
+
+    #[test]
+    fn real_component_exposes_guest_debug_modules_and_patchable_breakpoint() {
+        let runner = Runner::new_debug().unwrap();
+        let prepared = runner
+            .prepare_program_with_net(
+                &debug_probe_component(),
+                &FsGrants::default(),
+                &NetGrants::default(),
+            )
+            .unwrap();
+        let mut store = Store::new(
+            &prepared.runner.engine,
+            RunState {
+                memory_ceiling: RunnerLimits::default().memory_bytes,
+                denied: false,
+                table: ResourceTable::new(),
+                streams_live: 0,
+                http_abandoned: false,
+                cancel: CancelToken::new(),
+                io: spawn_io_workers(),
+            },
+        );
+        let instance = prepared
+            .linker
+            .instantiate(&mut store, &prepared.component)
+            .unwrap();
+        let modules = store.debug_all_modules();
+        assert_eq!(modules.len(), 1);
+        let mut edit = store.edit_breakpoints().expect("guest debug is enabled");
+        edit.add_breakpoint(&modules[0], wasmtime::ModulePC::new(0))
+            .unwrap();
+        drop(edit);
+        assert_eq!(store.breakpoints().unwrap().count(), 1);
+        let control = RuntimeDebugControl::new(prepared.runner.engine.clone());
+        store.set_debug_handler(control.handler());
+        store.set_fuel(20_000_000).unwrap();
+        store.set_epoch_deadline(u64::MAX);
+        let function = instance.get_func(&mut store, "probe").unwrap();
+        let execution = std::thread::spawn(move || {
+            block_on(function.call_async(&mut store, &[], &mut [])).unwrap();
+            (store, instance)
+        });
+        let stopped = control
+            .wait_for_stop(Duration::from_secs(2))
+            .expect("real Component breakpoint must stop");
+        assert_eq!(stopped.reason, "breakpoint");
+        assert_eq!(stopped.frames.len(), 1);
+        assert!(control.continue_execution());
+        let (mut store, instance) = execution.join().unwrap();
+
+        store.set_epoch_deadline(1);
+        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(1)));
+        let busy = instance.get_func(&mut store, "busy").unwrap();
+        let paused_control = control.clone();
+        let execution = std::thread::spawn(move || {
+            block_on(busy.call_async(&mut store, &[], &mut [])).unwrap();
+        });
+        paused_control.request_pause();
+        let stopped = paused_control
+            .wait_for_stop(Duration::from_secs(2))
+            .expect("epoch pause must stop busy Component code");
+        assert_eq!(stopped.reason, "pause");
+        assert!(paused_control.continue_execution());
+        execution.join().unwrap();
+    }
+
+    struct ThreadWake(std::thread::Thread);
+
+    impl Wake for ThreadWake {
+        fn wake(self: Arc<Self>) {
+            self.0.unpark();
+        }
+
+        fn wake_by_ref(self: &Arc<Self>) {
+            self.0.unpark();
+        }
+    }
+
+    fn block_on<F: Future>(future: F) -> F::Output {
+        let waker = Waker::from(Arc::new(ThreadWake(std::thread::current())));
+        let mut context = Context::from_waker(&waker);
+        let mut future = std::pin::pin!(future);
+        loop {
+            match future.as_mut().poll(&mut context) {
+                Poll::Ready(output) => return output,
+                Poll::Pending => std::thread::park(),
+            }
+        }
+    }
+
+    fn debug_probe_component() -> Vec<u8> {
+        use wasm_encoder::{
+            CodeSection, ComponentBuilder, ComponentExportKind, ExportKind, ExportSection,
+            Function, FunctionSection, Instruction, Module, ModuleArg, TypeSection,
+        };
+
+        let mut types = TypeSection::new();
+        types.ty().function([], []);
+        let mut functions = FunctionSection::new();
+        functions.function(0);
+        functions.function(0);
+        let mut exports = ExportSection::new();
+        exports.export("probe", ExportKind::Func, 0);
+        exports.export("busy", ExportKind::Func, 1);
+        let mut body = Function::new([]);
+        body.instruction(&Instruction::Nop);
+        body.instruction(&Instruction::End);
+        let mut code = CodeSection::new();
+        code.function(&body);
+        let mut busy = Function::new([(1, wasm_encoder::ValType::I32)]);
+        busy.instruction(&Instruction::I32Const(2_000_000));
+        busy.instruction(&Instruction::LocalSet(0));
+        busy.instruction(&Instruction::Loop(wasm_encoder::BlockType::Empty));
+        busy.instruction(&Instruction::LocalGet(0));
+        busy.instruction(&Instruction::I32Const(1));
+        busy.instruction(&Instruction::I32Sub);
+        busy.instruction(&Instruction::LocalTee(0));
+        busy.instruction(&Instruction::BrIf(0));
+        busy.instruction(&Instruction::End);
+        busy.instruction(&Instruction::End);
+        code.function(&busy);
+        let mut module = Module::new();
+        module.section(&types);
+        module.section(&functions);
+        module.section(&exports);
+        module.section(&code);
+
+        let mut component = ComponentBuilder::default();
+        let module = component.core_module_raw(Some("debug-probe"), &module.finish());
+        let instance = component.core_instantiate(
+            Some("debug-probe"),
+            module,
+            std::iter::empty::<(&str, ModuleArg)>(),
+        );
+        let function =
+            component.core_alias_export(Some("probe"), instance, "probe", ExportKind::Func);
+        let busy = component.core_alias_export(Some("busy"), instance, "busy", ExportKind::Func);
+        let (function_type, mut encoder) = component.type_function(Some("probe"));
+        encoder.params(std::iter::empty::<(&str, wasm_encoder::ComponentValType)>());
+        encoder.result(None);
+        let lifted = component.lift_func(Some("probe"), function, function_type, []);
+        component.export("probe", ComponentExportKind::Func, lifted, None);
+        let (busy_type, mut encoder) = component.type_function(Some("busy"));
+        encoder.params(std::iter::empty::<(&str, wasm_encoder::ComponentValType)>());
+        encoder.result(None);
+        let lifted = component.lift_func(Some("busy"), busy, busy_type, []);
+        component.export("busy", ComponentExportKind::Func, lifted, None);
+        component.finish()
     }
 }
