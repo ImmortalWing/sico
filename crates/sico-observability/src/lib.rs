@@ -4,7 +4,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
 };
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,12 @@ pub const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 pub const MAX_RUNTIME_FRAMES: usize = 256;
 pub const MAX_MESSAGE_BYTES: usize = 65_536;
 pub const MAX_CANCEL_REQUEST_BYTES: usize = 4_096;
+pub const EXECUTION_EVENT_SCHEMA: &str = "sico.execution-event.v0";
+pub const MAX_EXECUTION_EVENT_BYTES: usize = 1024 * 1024;
+pub const MAX_OUTPUT_CHUNK_BYTES: usize = 64 * 1024;
+pub const MAX_CAPTURED_CHANNEL_BYTES: usize = 1024 * 1024;
+pub const MAX_EVENT_QUEUE_ITEMS: usize = 256;
+pub const MAX_EVENT_QUEUE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -143,6 +149,56 @@ pub struct CancelRequest {
     pub run_id: String,
     pub generation_id: u64,
     pub cause: String,
+}
+
+/// A strict, binary-safe event record crossing the Runtime/client boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionEvent {
+    pub schema: String,
+    pub run_id: String,
+    pub generation_id: u64,
+    pub sequence: u64,
+    pub kind: String,
+    pub task_id: Option<String>,
+    pub parent_task_id: Option<String>,
+    pub scope_id: Option<String>,
+    pub cause: String,
+    pub payload: ExecutionEventPayload,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExecutionEventPayload {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_base64: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakpoint_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub terminal_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dropped_events: Option<u64>,
+}
+
+/// Redaction is deliberately injected: no event producer may cross the runner
+/// boundary without an explicit policy owning the transformation.
+pub trait EventRedactor {
+    fn redact(&self, bytes: &[u8]) -> Vec<u8>;
+}
+
+/// Bounded, ordered frames awaiting a client. Overflow discards ordinary
+/// records but reserves space for a deterministic `dropped` marker and the
+/// sole terminal record.
+#[derive(Debug)]
+pub struct EventQueue {
+    frames: VecDeque<Vec<u8>>,
+    bytes: usize,
+    dropped: u64,
+    terminal: bool,
+    identity: Option<(String, u64)>,
+    last_sequence: Option<u64>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -279,6 +335,291 @@ pub fn parse_cancel_request(bytes: &[u8]) -> Result<CancelRequest, ContractError
         return Err(ContractError::NonCanonical("cancel-request-json"));
     }
     Ok(request)
+}
+
+/// Parses one canonical execution-event frame before a client consumes it.
+///
+/// # Errors
+///
+/// Rejects oversized, non-canonical, unknown-field and invalid identity/event
+/// records. This decoder is intentionally independent of any transport.
+pub fn parse_execution_event(bytes: &[u8]) -> Result<ExecutionEvent, ContractError> {
+    if bytes.len() > MAX_EXECUTION_EVENT_BYTES {
+        return Err(ContractError::Limit("execution-event-bytes"));
+    }
+    let event: ExecutionEvent =
+        serde_json::from_slice(bytes).map_err(|error| ContractError::Json(error.to_string()))?;
+    validate_execution_event(&event)?;
+    if canonical_json(&event)? != bytes {
+        return Err(ContractError::NonCanonical("execution-event-json"));
+    }
+    Ok(event)
+}
+
+/// Validates every stable execution-event identity and payload bound.
+///
+/// # Errors
+///
+/// Rejects unknown kinds/causes, incompatible output payloads and unbounded
+/// message or terminal metadata before the event becomes observable.
+pub fn validate_execution_event(event: &ExecutionEvent) -> Result<(), ContractError> {
+    if event.schema != EXECUTION_EVENT_SCHEMA {
+        return Err(ContractError::UnknownSchema(event.schema.clone()));
+    }
+    validate_id(&event.run_id)?;
+    if event.generation_id > MAX_SAFE_INTEGER || event.sequence > MAX_SAFE_INTEGER {
+        return Err(ContractError::Limit("event-integer"));
+    }
+    if !matches!(
+        event.kind.as_str(),
+        "accepted"
+            | "started"
+            | "generation-published"
+            | "stdout"
+            | "stderr"
+            | "breakpoint"
+            | "stopped"
+            | "continued"
+            | "cancellation-requested"
+            | "terminal"
+            | "fault"
+            | "truncated"
+            | "dropped"
+    ) {
+        return Err(ContractError::InvalidIdentity("event-kind".into()));
+    }
+    for value in [&event.task_id, &event.parent_task_id, &event.scope_id]
+        .into_iter()
+        .flatten()
+    {
+        validate_id(value)?;
+    }
+    if !matches!(
+        event.cause.as_str(),
+        "launch"
+            | "guest"
+            | "host"
+            | "timeout"
+            | "signal"
+            | "client"
+            | "debugger"
+            | "overflow"
+            | "internal"
+    ) {
+        return Err(ContractError::InvalidIdentity("event-cause".into()));
+    }
+    let payload = &event.payload;
+    if let Some(bytes) = &payload.bytes_base64 {
+        let decoded = decode_base64(bytes)
+            .ok_or_else(|| ContractError::InvalidIdentity("event-base64".into()))?;
+        if decoded.len() > MAX_OUTPUT_CHUNK_BYTES {
+            return Err(ContractError::Limit("event-output-chunk"));
+        }
+        if !matches!(event.kind.as_str(), "stdout" | "stderr") {
+            return Err(ContractError::InvalidIdentity("event-bytes-kind".into()));
+        }
+    }
+    if let Some(message) = &payload.message
+        && message.len() > MAX_MESSAGE_BYTES
+    {
+        return Err(ContractError::Limit("event-message"));
+    }
+    if let Some(id) = &payload.breakpoint_id {
+        validate_id(id)?;
+    }
+    if let Some(class) = &payload.terminal_class
+        && class.len() > 256
+    {
+        return Err(ContractError::Limit("event-terminal-class"));
+    }
+    if payload
+        .dropped_events
+        .is_some_and(|value| value > MAX_SAFE_INTEGER)
+    {
+        return Err(ContractError::Limit("event-dropped"));
+    }
+    if canonical_json(event)?.len() > MAX_EXECUTION_EVENT_BYTES {
+        return Err(ContractError::Limit("execution-event-bytes"));
+    }
+    Ok(())
+}
+
+impl EventQueue {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            frames: VecDeque::new(),
+            bytes: 0,
+            dropped: 0,
+            terminal: false,
+            identity: None,
+            last_sequence: None,
+        }
+    }
+
+    /// Applies redaction, chunks output and queues canonical frames. Output
+    /// is binary-safe Base64; no UTF-8 conversion is performed.
+    ///
+    /// # Errors
+    ///
+    /// Rejects an invalid output kind, redacted chunk or sequence overflow.
+    pub fn push_output<R: EventRedactor>(
+        &mut self,
+        mut event: ExecutionEvent,
+        bytes: &[u8],
+        redactor: &R,
+    ) -> Result<u64, ContractError> {
+        if !matches!(event.kind.as_str(), "stdout" | "stderr") {
+            return Err(ContractError::InvalidIdentity("event-output-kind".into()));
+        }
+        let mut emitted = 0_u64;
+        for chunk in redactor.redact(bytes).chunks(MAX_OUTPUT_CHUNK_BYTES) {
+            event.payload = ExecutionEventPayload {
+                bytes_base64: Some(encode_base64(chunk)),
+                ..ExecutionEventPayload::default()
+            };
+            self.push(event.clone())?;
+            emitted += 1;
+            event.sequence = event
+                .sequence
+                .checked_add(1)
+                .ok_or(ContractError::Limit("event-sequence"))?;
+        }
+        Ok(emitted)
+    }
+
+    /// Queues a validated record. A duplicate terminal is rejected.
+    ///
+    /// # Errors
+    ///
+    /// Rejects invalid identities, ordering, limits and duplicate terminals.
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn push(&mut self, event: ExecutionEvent) -> Result<(), ContractError> {
+        validate_execution_event(&event)?;
+        if self.terminal {
+            return Err(ContractError::InvalidIdentity(
+                "event-after-terminal".into(),
+            ));
+        }
+        if let Some((run_id, generation_id)) = &self.identity {
+            if run_id != &event.run_id || *generation_id != event.generation_id {
+                return Err(ContractError::InvalidIdentity(
+                    "event-run-generation".into(),
+                ));
+            }
+        } else {
+            self.identity = Some((event.run_id.clone(), event.generation_id));
+        }
+        if self
+            .last_sequence
+            .is_some_and(|previous| event.sequence <= previous)
+        {
+            return Err(ContractError::NonCanonical("event-sequence"));
+        }
+        let terminal = event.kind == "terminal" || event.kind == "fault";
+        let frame = canonical_json(&event)?;
+        if terminal {
+            self.reserve_terminal(&event, frame)?;
+            self.terminal = true;
+        } else if !self.fits(frame.len()) {
+            self.dropped = self.dropped.saturating_add(1);
+        } else {
+            self.bytes += frame.len();
+            self.frames.push_back(frame);
+        }
+        self.last_sequence = Some(event.sequence);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn pop(&mut self) -> Option<Vec<u8>> {
+        let frame = self.frames.pop_front()?;
+        self.bytes -= frame.len();
+        Some(frame)
+    }
+
+    #[must_use]
+    pub const fn is_terminal(&self) -> bool {
+        self.terminal
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.frames.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.frames.is_empty()
+    }
+
+    #[must_use]
+    pub const fn queued_bytes(&self) -> usize {
+        self.bytes
+    }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = Vec<u8>> + '_ {
+        std::iter::from_fn(|| self.pop())
+    }
+
+    fn fits(&self, length: usize) -> bool {
+        self.frames.len() < MAX_EVENT_QUEUE_ITEMS
+            && self.bytes.saturating_add(length) <= MAX_EVENT_QUEUE_BYTES
+    }
+
+    fn reserve_terminal(
+        &mut self,
+        event: &ExecutionEvent,
+        frame: Vec<u8>,
+    ) -> Result<(), ContractError> {
+        let marker_for = |dropped| ExecutionEvent {
+            schema: EXECUTION_EVENT_SCHEMA.into(),
+            run_id: event.run_id.clone(),
+            generation_id: event.generation_id,
+            sequence: event.sequence.saturating_sub(1),
+            kind: "dropped".into(),
+            task_id: event.task_id.clone(),
+            parent_task_id: event.parent_task_id.clone(),
+            scope_id: event.scope_id.clone(),
+            cause: "overflow".into(),
+            payload: ExecutionEventPayload {
+                dropped_events: Some(dropped),
+                ..ExecutionEventPayload::default()
+            },
+        };
+        let marker_present = self.dropped != 0 || !self.fits(frame.len());
+        let marker_len = marker_present
+            .then(|| canonical_json(&marker_for(self.dropped)).map(|value| value.len()))
+            .transpose()?
+            .unwrap_or(0);
+        let needed = frame.len() + marker_len;
+        let marker_items = usize::from(marker_present);
+        while !self.frames.is_empty()
+            && (self.frames.len() + 1 + marker_items > MAX_EVENT_QUEUE_ITEMS
+                || self.bytes.saturating_add(needed) > MAX_EVENT_QUEUE_BYTES)
+        {
+            let removed = self.frames.pop_front().expect("checked nonempty");
+            self.bytes -= removed.len();
+            self.dropped = self.dropped.saturating_add(1);
+        }
+        if needed > MAX_EVENT_QUEUE_BYTES {
+            return Err(ContractError::Limit("terminal-event-bytes"));
+        }
+        if self.dropped != 0 {
+            let marker = canonical_json(&marker_for(self.dropped))?;
+            self.bytes += marker.len();
+            self.frames.push_back(marker);
+        }
+        self.bytes += frame.len();
+        self.frames.push_back(frame);
+        Ok(())
+    }
+}
+
+impl Default for EventQueue {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Validates a decoded debug identity.
@@ -563,18 +904,34 @@ pub fn resolve_engine_frame(map: &DebugMap, frame: &EngineFrame<'_>) -> RuntimeF
             function.id.starts_with("generated."),
         );
     };
-    let Some(mapping) = map.mappings.iter().find(|mapping| {
-        mapping.core_module == core_module
-            && mapping.component_function == frame.component_function
-            && mapping.instruction_start <= offset
-            && offset < mapping.instruction_end
-    }) else {
+    let upper = map.mappings.partition_point(|mapping| {
+        (
+            mapping.core_module.as_str(),
+            mapping.component_function,
+            mapping.instruction_start,
+        ) <= (core_module, frame.component_function, offset)
+    });
+    let Some(mapping) = upper
+        .checked_sub(1)
+        .and_then(|index| map.mappings.get(index))
+    else {
         return unavailable_frame(
             &function.id,
             "instruction-unmapped",
             function.id.starts_with("generated."),
         );
     };
+    if mapping.core_module != core_module
+        || mapping.component_function != frame.component_function
+        || mapping.instruction_start > offset
+        || offset >= mapping.instruction_end
+    {
+        return unavailable_frame(
+            &function.id,
+            "instruction-unmapped",
+            function.id.starts_with("generated."),
+        );
+    }
     RuntimeFrame {
         function_id: mapping.function_id.clone(),
         source: mapping.source.clone(),
@@ -771,6 +1128,78 @@ fn validate_debug_link(link: &DebugLink) -> Result<(), ContractError> {
         validate_digest(digest)?;
     }
     Ok(())
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let value = u32::from(chunk[0]) << 16
+            | u32::from(*chunk.get(1).unwrap_or(&0)) << 8
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        output.push(char::from(TABLE[((value >> 18) & 63) as usize]));
+        output.push(char::from(TABLE[((value >> 12) & 63) as usize]));
+        output.push(if chunk.len() > 1 {
+            char::from(TABLE[((value >> 6) & 63) as usize])
+        } else {
+            '='
+        });
+        output.push(if chunk.len() > 2 {
+            char::from(TABLE[(value & 63) as usize])
+        } else {
+            '='
+        });
+    }
+    output
+}
+
+fn decode_base64(value: &str) -> Option<Vec<u8>> {
+    if !value.len().is_multiple_of(4) {
+        return None;
+    }
+    let mut output = Vec::with_capacity(value.len() / 4 * 3);
+    for chunk in value.as_bytes().chunks_exact(4) {
+        let padding = usize::from(chunk[2] == b'=') + usize::from(chunk[3] == b'=');
+        if padding > 0 && chunk != &value.as_bytes()[value.len() - 4..] {
+            return None;
+        }
+        let sextet = |byte| match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        };
+        let first = sextet(chunk[0])?;
+        let second = sextet(chunk[1])?;
+        let third = if chunk[2] == b'=' {
+            0
+        } else {
+            sextet(chunk[2])?
+        };
+        let fourth = if chunk[3] == b'=' {
+            0
+        } else {
+            sextet(chunk[3])?
+        };
+        if padding == 2 && chunk[3] != b'=' || padding == 1 && chunk[2] == b'=' {
+            return None;
+        }
+        let packed = u32::from(first) << 18
+            | u32::from(second) << 12
+            | u32::from(third) << 6
+            | u32::from(fourth);
+        let bytes = packed.to_be_bytes();
+        output.push(bytes[1]);
+        if padding < 2 {
+            output.push(bytes[2]);
+        }
+        if padding == 0 {
+            output.push(bytes[3]);
+        }
+    }
+    Some(output)
 }
 
 fn validate_id(value: &str) -> Result<(), ContractError> {
@@ -1019,5 +1448,141 @@ mod tests {
             parse_cancel_request(&canonical_json(&invalid_cause).unwrap()),
             Err(ContractError::InvalidIdentity(_))
         ));
+    }
+
+    struct TestRedactor;
+    impl EventRedactor for TestRedactor {
+        fn redact(&self, bytes: &[u8]) -> Vec<u8> {
+            bytes
+                .windows(6)
+                .enumerate()
+                .fold(bytes.to_vec(), |mut output, (index, window)| {
+                    if window == b"secret" {
+                        output[index..index + 6].copy_from_slice(b"******");
+                    }
+                    output
+                })
+        }
+    }
+
+    fn event(sequence: u64, kind: &str) -> ExecutionEvent {
+        ExecutionEvent {
+            schema: EXECUTION_EVENT_SCHEMA.into(),
+            run_id: "run-1".into(),
+            generation_id: 0,
+            sequence,
+            kind: kind.into(),
+            task_id: Some("task-0".into()),
+            parent_task_id: None,
+            scope_id: Some("scope-0".into()),
+            cause: "guest".into(),
+            payload: ExecutionEventPayload::default(),
+        }
+    }
+
+    #[test]
+    fn execution_events_are_canonical_binary_safe_and_bounded() {
+        let mut queue = EventQueue::new();
+        queue
+            .push_output(
+                event(0, "stdout"),
+                &[0, 255, b's', b'e', b'c', b'r', b'e', b't'],
+                &TestRedactor,
+            )
+            .unwrap();
+        let frame = queue.pop().unwrap();
+        let decoded = parse_execution_event(&frame).unwrap();
+        assert_eq!(decoded.kind, "stdout");
+        assert_eq!(
+            decode_base64(decoded.payload.bytes_base64.as_deref().unwrap()).unwrap(),
+            [0, 255, b'*', b'*', b'*', b'*', b'*', b'*']
+        );
+        let mut invalid = event(1, "started");
+        invalid.payload.bytes_base64 = Some("AA==".into());
+        assert!(matches!(
+            validate_execution_event(&invalid),
+            Err(ContractError::InvalidIdentity(_))
+        ));
+    }
+
+    #[test]
+    fn overflow_has_a_marker_and_terminal_is_never_lost() {
+        let mut queue = EventQueue::new();
+        for sequence in 0..=MAX_EVENT_QUEUE_ITEMS as u64 {
+            queue.push(event(sequence, "started")).unwrap();
+        }
+        let mut terminal = event(999, "terminal");
+        terminal.cause = "internal".into();
+        terminal.payload.terminal_class = Some("success".into());
+        queue.push(terminal).unwrap();
+        let frames: Vec<_> = std::iter::from_fn(|| queue.pop())
+            .map(|frame| parse_execution_event(&frame).unwrap())
+            .collect();
+        assert!(frames.iter().any(|frame| frame.kind == "dropped"));
+        assert_eq!(frames.last().unwrap().kind, "terminal");
+        assert!(queue.is_terminal());
+    }
+
+    #[test]
+    fn source_lookup_over_one_hundred_thousand_rows_is_measured_and_exact() {
+        let mappings = (0..100_000_u64)
+            .map(|offset| DebugMapping {
+                core_module: "core".into(),
+                component_function: 7,
+                instruction_start: offset,
+                instruction_end: offset + 1,
+                function_id: "fn.main".into(),
+                source: Some(DebugSpan {
+                    document_id: "doc".into(),
+                    start: offset,
+                    end: offset + 1,
+                }),
+                call_site: None,
+                inline_parent: None,
+                generated: false,
+            })
+            .collect();
+        let map = DebugMap {
+            schema: DEBUG_MAP_SCHEMA.into(),
+            binding: DebugBinding {
+                source_sha256: "a".repeat(64),
+                compiler_executable_sha256: "b".repeat(64),
+                component_code_sha256: "c".repeat(64),
+            },
+            coordinate_system: "utf8-byte-half-open".into(),
+            documents: vec![DebugDocument {
+                id: "doc".into(),
+                sha256: "a".repeat(64),
+                byte_length: 100_000,
+            }],
+            functions: vec![DebugFunction {
+                id: "fn.main".into(),
+                core_module: "core".into(),
+                component_function: 7,
+            }],
+            mappings,
+        };
+        validate_debug_map(&map).unwrap();
+        let frame = EngineFrame {
+            core_module: Some("core"),
+            component_function: 7,
+            instruction_offset: Some(99_999),
+        };
+        let mut samples = Vec::new();
+        for _ in 0..20 {
+            let started = std::time::Instant::now();
+            for _ in 0..1_000 {
+                let resolved = resolve_engine_frame(&map, &frame);
+                assert_eq!(resolved.source.as_ref().unwrap().start, 99_999);
+            }
+            samples.push(started.elapsed().as_nanos() / 1_000);
+        }
+        samples.sort_unstable();
+        let p95 = samples[18];
+        println!("DEBUG_LOOKUP_100K_P95_NS={p95}");
+        assert!(
+            p95 < 5_000_000_000,
+            "lookup batch unexpectedly stalled: {p95}ns"
+        );
     }
 }
