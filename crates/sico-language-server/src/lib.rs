@@ -14,7 +14,7 @@ use sico_index::{IndexInput, SemanticIndex, Symbol, build_index};
 use sico_parser::parse;
 use sico_semantics::analyze;
 use sico_source::{SourceFile, SourceId, TextRange};
-use sico_tooling_protocol::{ExecutionMode, MAX_LOG_BYTES, execution_plan};
+use sico_tooling_protocol::{ExecutionMode, MAX_LOG_BYTES, debug_launch_plan, execution_plan};
 
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 pub const MAX_HEADER_BYTES: usize = 8 * 1024;
@@ -508,16 +508,37 @@ impl LanguageServer {
             .get("command")
             .and_then(Value::as_str)
             .ok_or_else(|| ProtocolError::invalid("executeCommand requires command"))?;
+        if command == "sico.debug" {
+            let arguments = params
+                .get("arguments")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let [input] = arguments else {
+                return Err(ProtocolError::invalid(
+                    "debug command requires one launch descriptor",
+                ));
+            };
+            let required = |name| {
+                input
+                    .get(name)
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| ProtocolError::invalid("debug launch descriptor is invalid"))
+            };
+            return debug_launch_plan(
+                required("component")?,
+                required("debugMap")?,
+                required("debugIdentity")?,
+                required("source")?,
+                required("documentId")?,
+            )
+            .map_err(|_| ProtocolError::invalid("debug launch descriptor is invalid"));
+        }
         let mode = match command {
             "sico.check" => ExecutionMode::Check,
             "sico.run" => ExecutionMode::Run,
             "sico.watch" => ExecutionMode::Watch,
             "sico.repl" => ExecutionMode::Repl,
-            "sico.debug" => {
-                return Err(ProtocolError::unavailable(
-                    "source debugging is unavailable until Runtime pause/step/inspect hooks exist",
-                ));
-            }
             _ => return Err(ProtocolError::invalid("unknown Sico editor command")),
         };
         let arguments = params
@@ -562,13 +583,6 @@ impl ProtocolError {
     const fn internal(message: &'static str) -> Self {
         Self {
             code: -32603,
-            message,
-        }
-    }
-
-    const fn unavailable(message: &'static str) -> Self {
-        Self {
-            code: -32004,
             message,
         }
     }
@@ -1217,9 +1231,21 @@ mod tests {
         let debug = server.process(request(
             6,
             "workspace/executeCommand",
-            json!({ "command": "sico.debug", "arguments": ["app.sico"] }),
+            json!({
+                "command": "sico.debug",
+                "arguments": [{
+                    "component": "out/app.component.wasm",
+                    "debugMap": "out/app.debug-map.json",
+                    "debugIdentity": "out/app.debug-identity.json",
+                    "source": "app.sico",
+                    "documentId": "doc.app"
+                }]
+            }),
         ));
-        assert_eq!(debug[0]["error"]["code"], -32004);
+        assert_eq!(debug[0]["result"]["schema"], "sico.debug-launch-plan.v0");
+        assert_eq!(debug[0]["result"]["executable"], "sico-dap");
+        assert_eq!(debug[0]["result"]["shell"], false);
+        assert_eq!(debug[0]["result"]["arguments"].as_array().unwrap().len(), 5);
     }
 
     #[test]

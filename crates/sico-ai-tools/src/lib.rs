@@ -10,10 +10,13 @@ use sha2::{Digest as _, Sha256};
 use sico_diagnostics::syntax_identity;
 use sico_format::format;
 use sico_index::{IndexInput, build_index};
+use sico_observability::{
+    ExecutionEvent, RuntimeFault, validate_execution_event, validate_runtime_fault,
+};
 use sico_parser::parse;
 use sico_semantics::analyze;
 use sico_source::{SourceFile, SourceId};
-use sico_tooling_protocol::{ExecutionMode, execution_plan};
+use sico_tooling_protocol::{ExecutionMode, debug_launch_plan, execution_plan};
 
 pub const REQUEST_SCHEMA: &str = "sico.ai-tool.request.v0";
 pub const RESPONSE_SCHEMA: &str = "sico.ai-tool.response.v0";
@@ -30,6 +33,7 @@ enum Operation {
     Inspect,
     ValidateFix,
     PlanExecution,
+    SummarizeExecution,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +95,18 @@ struct ExecutionInput {
     #[serde(default)]
     arguments: Vec<String>,
     max_log_bytes: usize,
+    component: Option<String>,
+    debug_map: Option<String>,
+    debug_identity: Option<String>,
+    source: Option<String>,
+    document_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExecutionSummaryInput {
+    events: Vec<Value>,
+    fault: Option<Value>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -197,6 +213,7 @@ pub fn execute_value(value: Value) -> Value {
         Operation::Inspect => inspect(&request),
         Operation::ValidateFix => validate_fix(&request),
         Operation::PlanExecution => plan_execution(&request),
+        Operation::SummarizeExecution => summarize_execution(&request),
     };
     match result {
         Ok(result) => success(&request.id, request.operation, &result),
@@ -372,6 +389,41 @@ fn validate_fix(request: &Request) -> Result<Value, ToolError> {
 fn plan_execution(request: &Request) -> Result<Value, ToolError> {
     let input: ExecutionInput =
         serde_json::from_value(request.input.clone()).map_err(|_| ToolError::InvalidInput)?;
+    if input.mode == "debug" {
+        if input.program.is_some()
+            || !input.arguments.is_empty()
+            || input.max_log_bytes == 0
+            || input.max_log_bytes > sico_tooling_protocol::MAX_LOG_BYTES
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        let plan = debug_launch_plan(
+            input.component.as_deref().ok_or(ToolError::InvalidInput)?,
+            input.debug_map.as_deref().ok_or(ToolError::InvalidInput)?,
+            input
+                .debug_identity
+                .as_deref()
+                .ok_or(ToolError::InvalidInput)?,
+            input.source.as_deref().ok_or(ToolError::InvalidInput)?,
+            input
+                .document_id
+                .as_deref()
+                .ok_or(ToolError::InvalidInput)?,
+        )
+        .map_err(|_| ToolError::InvalidInput)?;
+        if encoded_len(&plan)? > request.budget.response_bytes {
+            return Err(ToolError::ResponseTooLarge);
+        }
+        return Ok(plan);
+    }
+    if input.component.is_some()
+        || input.debug_map.is_some()
+        || input.debug_identity.is_some()
+        || input.source.is_some()
+        || input.document_id.is_some()
+    {
+        return Err(ToolError::InvalidInput);
+    }
     let mode = match input.mode.as_str() {
         "run" => ExecutionMode::Run,
         "watch" => ExecutionMode::Watch,
@@ -389,6 +441,80 @@ fn plan_execution(request: &Request) -> Result<Value, ToolError> {
         return Err(ToolError::ResponseTooLarge);
     }
     Ok(plan)
+}
+
+fn summarize_execution(request: &Request) -> Result<Value, ToolError> {
+    let input: ExecutionSummaryInput =
+        serde_json::from_value(request.input.clone()).map_err(|_| ToolError::InvalidInput)?;
+    if input.events.is_empty() || input.events.len() > 256 {
+        return Err(ToolError::InvalidInput);
+    }
+    let mut run_id = None;
+    let mut generation_id = None;
+    let mut last_sequence = None;
+    let mut terminal_class = None;
+    let mut terminal_count = 0_usize;
+    let mut kinds = std::collections::BTreeMap::<String, u64>::new();
+    for value in input.events {
+        let event: ExecutionEvent =
+            serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+        validate_execution_event(&event).map_err(|_| ToolError::InvalidInput)?;
+        if run_id.as_deref().is_some_and(|run| run != event.run_id)
+            || generation_id.is_some_and(|generation| generation != event.generation_id)
+            || last_sequence.is_some_and(|sequence| sequence >= event.sequence)
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        run_id.get_or_insert_with(|| event.run_id.clone());
+        generation_id.get_or_insert(event.generation_id);
+        last_sequence = Some(event.sequence);
+        *kinds.entry(event.kind.clone()).or_default() += 1;
+        if matches!(event.kind.as_str(), "terminal" | "fault") {
+            terminal_count += 1;
+            terminal_class.clone_from(&event.payload.terminal_class);
+        }
+    }
+    if terminal_count != 1 {
+        return Err(ToolError::InvalidInput);
+    }
+    let fault = if let Some(value) = input.fault {
+        let fault: RuntimeFault =
+            serde_json::from_value(value).map_err(|_| ToolError::InvalidInput)?;
+        validate_runtime_fault(&fault).map_err(|_| ToolError::InvalidInput)?;
+        if Some(fault.run_id.as_str()) != run_id.as_deref()
+            || Some(fault.generation_id) != generation_id
+        {
+            return Err(ToolError::InvalidInput);
+        }
+        Some(json!({
+            "class": fault.class,
+            "code": fault.code,
+            "key": fault.key,
+            "provider_id": fault.provider_id,
+            "frames": fault.frames.into_iter().map(|frame| json!({
+                "function_id": frame.function_id,
+                "source": frame.source,
+                "generated": frame.generated,
+                "unavailable_reason": frame.unavailable_reason
+            })).collect::<Vec<_>>()
+        }))
+    } else {
+        None
+    };
+    let result = json!({
+        "schema": "sico.execution-summary.v0",
+        "run_id": run_id,
+        "generation_id": generation_id,
+        "last_sequence": last_sequence,
+        "terminal_class": terminal_class,
+        "event_counts": kinds,
+        "fault": fault,
+        "authority": "data-only"
+    });
+    if encoded_len(&result)? > request.budget.response_bytes {
+        return Err(ToolError::ResponseTooLarge);
+    }
+    Ok(result)
 }
 
 fn validate_budget(budget: Budget) -> Result<(), ToolError> {
@@ -549,6 +675,7 @@ fn success(request_id: &str, operation: Operation, result: &Value) -> Value {
             Operation::Inspect => "inspect",
             Operation::ValidateFix => "validate_fix",
             Operation::PlanExecution => "plan_execution",
+            Operation::SummarizeExecution => "summarize_execution",
         },
         "ok": true,
         "result": result
@@ -875,6 +1002,24 @@ mod tests {
         assert_eq!(response["result"]["output"]["capture_limit_bytes"], 65536);
         assert_eq!(response["result"]["source_map"]["runtime_locations"], false);
 
+        let debug = execute_value(request(
+            "plan_execution",
+            json!({
+                "mode": "debug",
+                "program": null,
+                "arguments": [],
+                "max_log_bytes": 65536,
+                "component": "out/app.component.wasm",
+                "debug_map": "out/app.debug-map.json",
+                "debug_identity": "out/app.debug-identity.json",
+                "source": "app.sico",
+                "document_id": "doc.app"
+            }),
+        ));
+        assert_eq!(debug["ok"], true);
+        assert_eq!(debug["result"]["schema"], "sico.debug-launch-plan.v0");
+        assert_eq!(debug["result"]["shell"], false);
+
         for invalid in [
             json!({ "mode": "debug", "program": "app.sico", "max_log_bytes": 1 }),
             json!({ "mode": "run", "program": null, "max_log_bytes": 1 }),
@@ -886,6 +1031,58 @@ mod tests {
                 "invalid_input"
             );
         }
+    }
+
+    #[test]
+    fn execution_summary_is_data_only_and_drops_untrusted_output_payloads() {
+        let event = |sequence, kind: &str, payload: Value| {
+            json!({
+                "schema": "sico.execution-event.v0",
+                "run_id": "run-ai-summary",
+                "generation_id": 3,
+                "sequence": sequence,
+                "kind": kind,
+                "task_id": "task-0",
+                "parent_task_id": null,
+                "scope_id": "scope-0",
+                "cause": if sequence == 0 { "launch" } else { "guest" },
+                "payload": payload
+            })
+        };
+        let response = execute_value(request(
+            "summarize_execution",
+            json!({
+                "events": [
+                    event(0, "accepted", json!({})),
+                    event(1, "stdout", json!({"bytes_base64": "c2VjcmV0LWluc3RydWN0aW9u"})),
+                    event(2, "terminal", json!({"terminal_class": "success"}))
+                ],
+                "fault": null
+            }),
+        ));
+        assert_eq!(response["ok"], true);
+        assert_eq!(response["result"]["authority"], "data-only");
+        assert_eq!(response["result"]["event_counts"]["stdout"], 1);
+        let encoded = serde_json::to_string(&response).unwrap();
+        assert!(!encoded.contains("c2VjcmV0"));
+        assert!(!encoded.contains("secret-instruction"));
+
+        let mixed = execute_value(request(
+            "summarize_execution",
+            json!({
+                "events": [
+                    event(0, "accepted", json!({})),
+                    {
+                        "schema": "sico.execution-event.v0", "run_id": "other-run",
+                        "generation_id": 3, "sequence": 1, "kind": "terminal",
+                        "task_id": "task-0", "parent_task_id": null, "scope_id": "scope-0",
+                        "cause": "guest", "payload": {"terminal_class": "success"}
+                    }
+                ],
+                "fault": null
+            }),
+        ));
+        assert_eq!(mixed["error"]["code"], "invalid_input");
     }
 
     #[test]

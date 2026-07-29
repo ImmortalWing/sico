@@ -17,6 +17,7 @@ sha2.workspace = true
 sico-diagnostics = { path = "../sico-diagnostics" }
 sico-format = { path = "../sico-format" }
 sico-index = { path = "../sico-index" }
+sico-observability = { path = "../sico-observability" }
 sico-parser = { path = "../sico-parser" }
 sico-semantics = { path = "../sico-semantics" }
 sico-source = { path = "../sico-source" }

@@ -410,6 +410,7 @@ dependencies = [
  "sico-diagnostics",
  "sico-format",
  "sico-index",
+ "sico-observability",
  "sico-parser",
  "sico-semantics",
  "sico-source",

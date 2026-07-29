@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sico.dev/schema/debug-launch-plan-v0.schema.json",
+  "title": "Sico debug launch plan v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "mode", "executable", "arguments", "shell", "cwd", "protocol", "identity", "cancellation"],
+  "properties": {
+    "schema": { "const": "sico.debug-launch-plan.v0" },
+    "mode": { "const": "debug" },
+    "executable": { "const": "sico-dap" },
+    "arguments": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+    },
+    "shell": { "const": false },
+    "cwd": { "type": "null" },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "framing", "max_frame_bytes", "claimed_subset"],
+      "properties": {
+        "transport": { "const": "stdio" },
+        "framing": { "const": "dap-content-length-crlf" },
+        "max_frame_bytes": { "const": 1048576 },
+        "claimed_subset": { "const": "sico.dap-claimed-subset.v0" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_coordinates", "component_debug_map_source", "display_paths_are_authority"],
+      "properties": {
+        "source_coordinates": { "const": "utf8-byte-half-open" },
+        "component_debug_map_source": { "const": "sha256-bound" },
+        "display_paths_are_authority": { "const": false }
+      }
+    },
+    "cancellation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "action", "typed_runner_exit_guaranteed", "fallback"],
+      "properties": {
+        "owner": { "const": "editor" },
+        "action": { "const": "dap-terminate-or-disconnect" },
+        "typed_runner_exit_guaranteed": { "const": true },
+        "fallback": { "const": "terminate-owned-child-tree" }
+      }
+    }
+  }
+}
