@@ -1,28 +1,37 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
-if (-not (Test-Path -LiteralPath $vcvars)) {
-    throw 'msvc-environment-missing|STEP-0097 requires the native Windows runner toolchain'
-}
 $runner = Join-Path $root 'runner\sico-runner'
-$command = 'call "{0}" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d "{1}" && cargo test --release --offline && cargo clippy --release --offline --all-targets -- -D warnings' -f $vcvars, $runner
-& cmd.exe /d /s /c $command
-if ($LASTEXITCODE -ne 0) { throw 'native-runner-validation-failed|STEP-0097' }
-
-$cargo = Join-Path $HOME '.cargo\bin\cargo.exe'
+$runnerManifest = Join-Path $runner 'Cargo.toml'
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) {
     $cargo = (Get-Command cargo -ErrorAction Stop).Source
 }
+$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'
+. (Join-Path $root 'tools\lib\native-command.ps1')
+Invoke-NativeChecked $cargo @(
+    'test', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest,
+    '--', '--test-threads=1'
+) 'native-runner-tests-failed|STEP-0097'
+Invoke-NativeChecked $cargo @(
+    'clippy', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest,
+    '--all-targets', '--', '-D', 'warnings'
+) 'native-runner-clippy-failed|STEP-0097'
+
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
-& $cargo test --offline -p sico-observability -p sico-codegen-wasm
-if ($LASTEXITCODE -ne 0) { throw 'contract-codegen-regression|STEP-0097' }
+Invoke-NativeChecked $cargo @(
+    'test', '--offline', '-p', 'sico-observability', '-p', 'sico-codegen-wasm'
+) 'contract-codegen-regression|STEP-0097'
 
 $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
-& $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\validate-step-0096.ps1') | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'debug-triplet-regression|STEP-0096 validator' }
-& $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools\validate-module-boundaries.ps1') | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'module-boundary-regression|STEP-0097 validator' }
+Invoke-NativeChecked $powershell @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    (Join-Path $root 'tools/validate-step-0096.ps1')
+) 'debug-triplet-regression|STEP-0096 validator' | Out-Null
+Invoke-NativeChecked $powershell @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    (Join-Path $root 'tools/validate-module-boundaries.ps1')
+) 'module-boundary-regression|STEP-0097 validator' | Out-Null
 
 $runnerSource = Get-Content -LiteralPath (Join-Path $runner 'src\lib.rs') -Raw -Encoding UTF8
 if ($runnerSource -notmatch 'downcast_ref::<wasmtime::WasmBacktrace>') {

@@ -6,11 +6,18 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-tooling-protocol -p sico-language-server -p sico-ai-tools
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0093 tooling tests failed' }
-cargo build --offline --locked -p sico-language-server -p sico-ai-tools
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0093 tooling build failed' }
+Invoke-NativeChecked $cargo @(
+    'test', '--offline', '--locked',
+    '-p', 'sico-tooling-protocol', '-p', 'sico-language-server', '-p', 'sico-ai-tools'
+) 'STEP-0093 tooling tests failed'
+Invoke-NativeChecked $cargo @(
+    'build', '--offline', '--locked',
+    '-p', 'sico-language-server', '-p', 'sico-ai-tools'
+) 'STEP-0093 tooling build failed'
 & (Join-Path $root 'tools\validate-module-boundaries.ps1')
 
 $schema = Get-Content (Join-Path $root 'tooling\schema\execution-plan-v0.schema.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -74,13 +81,28 @@ if ($ai.Exit -ne 0 -or $aiResult.ok -ne $true -or $aiResult.result.shell -ne $fa
     throw "AI execution plan mismatch: $($ai.Stdout)"
 }
 
-# Real LSP binary over Content-Length framing: run/watch/repl plans and honest debug refusal.
+# Real LSP binary over Content-Length framing: run/watch/repl plans and the
+# subsequently-added M10 data-only debug launch plan.
 $messages = @(
     @{ jsonrpc = '2.0'; id = 1; method = 'initialize'; params = @{} },
     @{ jsonrpc = '2.0'; id = 2; method = 'workspace/executeCommand'; params = @{ command = 'sico.run'; arguments = @('path with spaces\$(literal);app.sico') } },
     @{ jsonrpc = '2.0'; id = 3; method = 'workspace/executeCommand'; params = @{ command = 'sico.watch'; arguments = @('watch.sico') } },
     @{ jsonrpc = '2.0'; id = 4; method = 'workspace/executeCommand'; params = @{ command = 'sico.repl'; arguments = @() } },
-    @{ jsonrpc = '2.0'; id = 5; method = 'workspace/executeCommand'; params = @{ command = 'sico.debug'; arguments = @('app.sico') } },
+    @{
+        jsonrpc = '2.0'
+        id = 5
+        method = 'workspace/executeCommand'
+        params = @{
+            command = 'sico.debug'
+            arguments = @(@{
+                component = 'out/app.component.wasm'
+                debugMap = 'out/app.debug-map.json'
+                debugIdentity = 'out/app.debug-identity.json'
+                source = 'app.sico'
+                documentId = 'doc.app'
+            })
+        }
+    },
     @{ jsonrpc = '2.0'; id = 6; method = 'shutdown'; params = @{} },
     @{ jsonrpc = '2.0'; method = 'exit'; params = @{} }
 )
@@ -92,10 +114,10 @@ foreach ($message in $messages) {
 }
 $lsp = Invoke-JsonProcess (Join-Path $root 'target\debug\sico-lsp.exe') $framed
 if ($lsp.Exit -ne 0 -or ([regex]::Matches($lsp.Stdout, 'sico.execution-plan.v0')).Count -ne 3 -or
-    ([regex]::Matches($lsp.Stdout, '"shell":false')).Count -ne 3 -or
+    ([regex]::Matches($lsp.Stdout, '"shell":false')).Count -ne 4 -or
     $lsp.Stdout -notmatch 'terminate-direct-child-tree' -or
-    $lsp.Stdout -notmatch '"code":-32004') {
+    $lsp.Stdout -notmatch 'sico.debug-launch-plan.v0') {
     throw "LSP execution protocol mismatch: $($lsp.Stdout) $($lsp.Stderr)"
 }
 
-Write-Output 'STEP_0093_OK schema=sico.execution-plan.v0 lsp=run,watch,repl ai=plan_execution shell=false logs=1MiB-bounded cancel=client-tree source-map=compile-only debug=honest-refusal'
+Write-Output 'STEP_0093_OK schema=sico.execution-plan.v0 lsp=run,watch,repl ai=plan_execution shell=false logs=1MiB-bounded cancel=client-tree source-map=compile-only debug=m10-data-only-plan'

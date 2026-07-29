@@ -1,23 +1,28 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent $PSScriptRoot
-$cargo = Join-Path $HOME '.cargo/bin/cargo.exe'
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) {
     $cargo = (Get-Command cargo -ErrorAction Stop).Source
 }
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-& $cargo test --offline -p sico-observability -p sico-codegen-wasm -p sico-cli -p sico-package
-if ($LASTEXITCODE -ne 0) { throw 'rust-tests-failed|STEP-0096 packages' }
-
-& $cargo build --offline -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'cli-build-failed|STEP-0096 sico-cli' }
+Invoke-NativeChecked $cargo @(
+    'test', '--offline', '-p', 'sico-observability', '-p', 'sico-codegen-wasm',
+    '-p', 'sico-cli', '-p', 'sico-package'
+) 'rust-tests-failed|STEP-0096 packages'
+Invoke-NativeChecked $cargo @('build', '--offline', '-p', 'sico-cli') 'cli-build-failed|STEP-0096 sico-cli'
 
 $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
-& $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools/validate-step-0095.ps1') | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'contract-regression|STEP-0095 validator' }
-& $powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'tools/validate-module-boundaries.ps1') | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'module-boundary-regression|STEP-0096 validator' }
+Invoke-NativeChecked $powershell @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    (Join-Path $root 'tools/validate-step-0095.ps1')
+) 'contract-regression|STEP-0095 validator' | Out-Null
+Invoke-NativeChecked $powershell @(
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+    (Join-Path $root 'tools/validate-module-boundaries.ps1')
+) 'module-boundary-regression|STEP-0096 validator' | Out-Null
 
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ("sico-step-0096-" + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($temporary) | Out-Null

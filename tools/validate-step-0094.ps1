@@ -5,6 +5,8 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+. (Join-Path $root 'tools\lib\native-command.ps1')
+$powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
 
 function Require-Text([string]$path, [string]$pattern) {
     $full = Join-Path $root $path
@@ -19,8 +21,10 @@ function Invoke-Step([string]$step) {
     if (-not (Test-Path $script)) { throw "missing STEP-$step validator" }
     # Each runner-heavy validator gets a fresh PowerShell host. This prevents a
     # blocked pipe or native runner failure from poisoning later audit steps.
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -RepositoryRoot $root
-    if ($LASTEXITCODE -ne 0) { throw "STEP-$step validator failed with exit $LASTEXITCODE" }
+    Invoke-NativeChecked $powershell @(
+        '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script,
+        '-RepositoryRoot', $root
+    ) "STEP-$step validator failed"
 }
 
 # STEP-0085 is a contract step. Its WIT parser test is rerun by STEP-0086; the

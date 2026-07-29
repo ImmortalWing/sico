@@ -6,17 +6,24 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-codegen-wasm -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0088 workspace tests failed' }
+Invoke-NativeChecked $cargo @(
+    'test', '--offline', '--locked', '-p', 'sico-codegen-wasm', '-p', 'sico-cli'
+) 'STEP-0088 workspace tests failed'
 
-$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
 $runnerDir = Join-Path $root 'runner\sico-runner'
-$build = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo test --release --offline && cargo build --release --offline"
-$null = & cmd.exe /c $build
-if ($LASTEXITCODE -ne 0) { throw 'sico-runner build failed' }
-cargo build -q --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
+$runnerManifest = Join-Path $runnerDir 'Cargo.toml'
+Invoke-NativeChecked $cargo @(
+    'test', '--release', '--offline', '--locked', '--manifest-path',
+    $runnerManifest, '--', '--test-threads=1'
+) 'sico-runner tests failed'
+Invoke-NativeChecked $cargo @(
+    'build', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest
+) 'sico-runner build failed'
+Invoke-NativeChecked $cargo @('build', '-q', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 $sico = Join-Path $root 'target\debug\sico.exe'
 $runner = Join-Path $runnerDir 'target\release\sico-runner.exe'
 $env:SICO_RUNNER = $runner

@@ -6,17 +6,17 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-codegen-wasm -p sico-package -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0089 workspace tests failed' }
-cargo build --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
+Invoke-NativeChecked $cargo @('test', '--offline', '--locked', '-p', 'sico-codegen-wasm', '-p', 'sico-package', '-p', 'sico-cli') 'STEP-0089 workspace tests failed'
+Invoke-NativeChecked $cargo @('build', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 
-$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
 $runnerDir = Join-Path $root 'runner\sico-runner'
-$build = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo test --release --offline -- --test-threads=1 && cargo build --release --offline"
-& cmd.exe /c $build
-if ($LASTEXITCODE -ne 0) { throw 'sico-runner build failed' }
+$runnerManifest = Join-Path $runnerDir 'Cargo.toml'
+Invoke-NativeChecked $cargo @('test', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest, '--', '--test-threads=1') 'sico-runner tests failed'
+Invoke-NativeChecked $cargo @('build', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest) 'sico-runner build failed'
 
 $sico = Join-Path $root 'target\debug\sico.exe'
 $runner = Join-Path $runnerDir 'target\release\sico-runner.exe'
@@ -111,8 +111,10 @@ function Invoke-ServerCase(
     $accept = $listener.AcceptTcpClientAsync()
     $arguments = $argumentTemplate.Replace('{PORT}', [string]$port)
     $process = Start-CapturedProcess $program $arguments $stdin $environment
-    if (-not $accept.Wait(5000)) {
-        $result = Finish-Process $process 1000
+    # A cold `sico run` may compile before opening the socket. This is harness
+    # startup budget, not the HTTP timeout/cancellation latency contract.
+    if (-not $accept.Wait(15000)) {
+        $result = Finish-Process $process 5000
         $listener.Stop()
         throw "expected HTTP connection, got exit=$($result.Exit) $($result.Stderr)"
     }
@@ -188,7 +190,9 @@ $timeout = Invoke-ServerCase $runner $redirectArgs '' $empty 7000
 if ($timeout.Exit -ne 122 -or $timeout.Stderr -notmatch 'timeout' -or $timeoutWatch.Elapsed.TotalSeconds -gt 6.5) { throw 'HTTP total timeout failed' }
 $cancelArgs = "--cancel-after-ms 100 --allow-net 127.0.0.1:{PORT} `"$component`" -- http://127.0.0.1:{PORT}/slow"
 $cancelWatch = [Diagnostics.Stopwatch]::StartNew()
-$cancel = Invoke-ServerCase $runner $cancelArgs '' $empty 1000
+# The harness wait is deliberately wider than the product latency assertion:
+# host scheduling must not kill the process before we can inspect its result.
+$cancel = Invoke-ServerCase $runner $cancelArgs '' $empty 3000
 if ($cancel.Exit -ne 123 -or $cancel.Stderr -notmatch 'cancelled' -or $cancelWatch.Elapsed.TotalMilliseconds -gt 500) { throw 'HTTP cancellation failed' }
 
 Write-Output ("STEP_0089_OK cli=POST status=202 body=exact GET=200 default-deny/wrong-port/https/method=typed redirect=not-followed header/body=bounded timeout={0:N0}ms cancel={1:N0}ms capability=network.connect work={2}" -f $timeoutWatch.Elapsed.TotalMilliseconds, $cancelWatch.Elapsed.TotalMilliseconds, $work)

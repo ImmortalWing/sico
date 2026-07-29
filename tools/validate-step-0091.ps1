@@ -6,11 +6,12 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0091 CLI tests failed' }
-cargo build --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
+Invoke-NativeChecked $cargo @('test', '--offline', '--locked', '-p', 'sico-cli') 'STEP-0091 CLI tests failed'
+Invoke-NativeChecked $cargo @('build', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 
 $sico = Join-Path $root 'target\debug\sico.exe'
 $runId = [Guid]::NewGuid().ToString('N')

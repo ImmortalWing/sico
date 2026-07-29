@@ -14,7 +14,7 @@ This directory is the machine-readable source of truth for M10 observability and
 
 ## Current evidence boundary
 
-STEP-0096 proves deterministic debug artifacts, STEP-0097 proves typed Runtime source faults, and STEP-0098 proves the bounded cancellation request plus real Windows console bridge. Execution events, cross-platform signal parity and DAP remain STEP-0099–0102 claims.
+STEP-0096 proves deterministic debug artifacts, STEP-0097 proves typed Runtime source faults, STEP-0098 proves bounded cancellation plus real Windows console control, STEP-0099 proves the bounded execution-event core, and STEP-0100 proves the exact claimed DAP subset on real Windows x64 Components. Cross-platform parity remains unclaimed without native runners.
 
 ## Validate
 

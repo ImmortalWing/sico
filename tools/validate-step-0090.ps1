@@ -6,21 +6,21 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0090 CLI tests failed' }
-cargo build --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
+Invoke-NativeChecked $cargo @('test', '--offline', '--locked', '-p', 'sico-cli') 'STEP-0090 CLI tests failed'
+Invoke-NativeChecked $cargo @('build', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 
-$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
 $runnerDir = Join-Path $root 'runner\sico-runner'
-$runnerCommand = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo test --release --offline prepared_program_reruns_are_isolated_and_survive_a_trap -- --nocapture && cargo build --release --offline"
-$ErrorActionPreference = 'Continue'
-$runnerOutput = (& cmd.exe /c $runnerCommand 2>&1) -join "`n"
-$runnerExit = $LASTEXITCODE
-$ErrorActionPreference = 'Stop'
+$runnerManifest = Join-Path $runnerDir 'Cargo.toml'
+$runnerOutput = (Invoke-NativeChecked $cargo @(
+    'test', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest,
+    'prepared_program_reruns_are_isolated_and_survive_a_trap', '--', '--nocapture'
+) 'persistent runner release test failed' 2>&1) -join "`n"
+Invoke-NativeChecked $cargo @('build', '--release', '--offline', '--locked', '--manifest-path', $runnerManifest) 'persistent runner release build failed' | Out-Null
 Write-Output $runnerOutput
-if ($runnerExit -ne 0) { throw 'persistent runner release test/build failed' }
 $medianMatch = [regex]::Match($runnerOutput, 'PERSISTENT_WARM_MEDIAN_US=(\d+)')
 if (-not $medianMatch.Success) { throw 'persistent warm median evidence missing' }
 $medianUs = [int64]$medianMatch.Groups[1].Value

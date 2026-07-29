@@ -6,15 +6,19 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
 # Release binaries: the audit measures the shipping pipeline, not debug builds.
-cargo build --release --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico-cli release build failed' }
-$vcvars = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat'
+Invoke-NativeChecked $cargo @(
+    'build', '--release', '--offline', '--locked', '-p', 'sico-cli'
+) 'sico-cli release build failed'
 $runnerDir = Join-Path $root 'runner\sico-runner'
-$build = "call `"$vcvars`" && set RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-msvc&& cd /d `"$runnerDir`" && cargo build --release --offline"
-$null = & cmd.exe /c $build
-if ($LASTEXITCODE -ne 0) { throw 'sico-runner release build failed' }
+Invoke-NativeChecked $cargo @(
+    'build', '--release', '--offline', '--locked', '--manifest-path',
+    (Join-Path $runnerDir 'Cargo.toml')
+) 'sico-runner release build failed'
 
 $sico = Join-Path $root 'target\release\sico.exe'
 $env:SICO_RUNNER = Join-Path $runnerDir 'target\release\sico-runner.exe'
@@ -70,10 +74,10 @@ for ($i = 0; $i -lt ($Iterations * 2); $i++) {
 
 $report = [ordered]@{
     benchmark = 'step-0084-m8-final-pipeline-v0'
-    date = '2026-07-19'
+    date = '2026-07-23'
     host = [System.Environment]::OSVersion.VersionString
     iterations = $Iterations
-    method = 'wall-clock Stopwatch around sico run (script-echo) and direct sico-runner invocation; release binaries; fresh OS process per run'
+    method = 'wall-clock Stopwatch around sico run (script-echo) and direct sico-runner invocation; Windows x64 GNU release binaries; fresh OS process per run'
     sico_run_cold_cache_miss_ms = Stats $cold
     sico_run_warm_cache_hit_ms = Stats $warm
     runner_only_warm_component_ms = Stats $runnerOnly

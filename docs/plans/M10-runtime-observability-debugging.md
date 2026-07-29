@@ -1,6 +1,6 @@
 # M10 plan: Runtime observability and debugging
 
-> - status: in progress; STEP-0095–0098 complete, STEP-0099 next
+> - status: complete / GO; STEP-0095–0102 complete
 > - created: 2026-07-19
 > - expanded: 2026-07-19
 > - phase: M10
@@ -314,6 +314,8 @@ Exit evidence:
 
 ### STEP-0100: minimal DAP implementation
 
+Status: complete / GO. Implementation and evidence: [`STEP-0100`](../steps/STEP-0100-minimal-dap-implementation.md), `sico-tooling-protocol`, `sico-runner`, `sico-dap` and `tools/validate-step-0100.ps1`.
+
 Deliver:
 
 - bounded DAP framing/server and launch adapter over the accepted Runtime control hooks;
@@ -334,6 +336,8 @@ If Wasmtime/runtime hooks cannot support real pause/breakpoint semantics without
 
 ### STEP-0101: editor and AI execution feedback integration
 
+Status: complete / GO. Implementation and evidence: [`STEP-0101`](../steps/STEP-0101-editor-ai-execution-feedback.md), `sico.debug-launch-plan.v0`, LSP/AI protocol tests and `tools/validate-step-0101.ps1`.
+
 Deliver:
 
 - LSP commands return launch/debug plans referencing the versioned contracts;
@@ -349,6 +353,8 @@ Exit evidence:
 - malformed/stale event streams and diagnostic confusion fail closed.
 
 ### STEP-0102: M10 security, performance and platform exit audit
+
+Status: complete / GO. Aggregate evidence: [`STEP-0102`](../steps/STEP-0102-m10-exit-audit.md), [`M10 exit audit`](../reports/m10-exit-audit-v0.md) and `tools/validate-step-0102.ps1`.
 
 Deliver:
 

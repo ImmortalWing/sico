@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
 $maxSafeInteger = [int64]9007199254740991
 $maxFrameBytes = 1048576
@@ -445,8 +446,9 @@ foreach ($case in @($fixtures.cases)) {
 # Components, while rebuilding the same source stays byte-identical. This does
 # not claim that STEP-0096 debug-map emission exists.
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
-cargo build -q --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'component-build-failed|sico-cli build failed' }
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+Invoke-NativeChecked $cargo @('build', '-q', '--offline', '--locked', '-p', 'sico-cli') 'component-build-failed|sico-cli build failed'
 $sico = Join-Path $root 'target\debug\sico.exe'
 $work = Join-Path $root 'target\evidence\step-0095'
 New-Item -ItemType Directory -Force -Path $work | Out-Null
@@ -458,12 +460,9 @@ $componentB = Join-Path $work 'reject.component.wasm'
 foreach ($artifact in @($componentA, $componentARepeat, $componentB)) {
     if (Test-Path -LiteralPath $artifact) { Remove-Item -LiteralPath $artifact -Force }
 }
-& $sico build --profile script-v0 --output $componentA $sourceA | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'component-build-failed|echo Component build failed' }
-& $sico build --profile script-v0 --output $componentARepeat $sourceA | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'component-build-failed|echo repeat Component build failed' }
-& $sico build --profile script-v0 --output $componentB $sourceB | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'component-build-failed|reject Component build failed' }
+Invoke-NativeChecked $sico @('build', '--profile', 'script-v0', '--output', $componentA, $sourceA) 'component-build-failed|echo Component build failed' | Out-Null
+Invoke-NativeChecked $sico @('build', '--profile', 'script-v0', '--output', $componentARepeat, $sourceA) 'component-build-failed|echo repeat Component build failed' | Out-Null
+Invoke-NativeChecked $sico @('build', '--profile', 'script-v0', '--output', $componentB, $sourceB) 'component-build-failed|reject Component build failed' | Out-Null
 $sourceAHash = (Get-FileHash -LiteralPath $sourceA -Algorithm SHA256).Hash.ToLowerInvariant()
 $sourceBHash = (Get-FileHash -LiteralPath $sourceB -Algorithm SHA256).Hash.ToLowerInvariant()
 $componentAHash = (Get-FileHash -LiteralPath $componentA -Algorithm SHA256).Hash.ToLowerInvariant()

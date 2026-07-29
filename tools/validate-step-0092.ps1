@@ -6,11 +6,17 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
+$cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
+. (Join-Path $root 'tools\lib\native-command.ps1')
 
-cargo test --offline --locked -p sico-parser -p sico-diagnostics -p sico-format -p sico-hir -p sico-language-server -p sico-ai-tools -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'STEP-0092 frontend/editor/AI tests failed' }
-cargo build --offline --locked -p sico-cli
-if ($LASTEXITCODE -ne 0) { throw 'sico build failed' }
+Invoke-NativeChecked $cargo @(
+    'test', '--offline', '--locked',
+    '-p', 'sico-parser', '-p', 'sico-diagnostics', '-p', 'sico-format',
+    '-p', 'sico-hir', '-p', 'sico-language-server', '-p', 'sico-ai-tools',
+    '-p', 'sico-cli'
+) 'STEP-0092 frontend/editor/AI tests failed'
+Invoke-NativeChecked $cargo @('build', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 & (Join-Path $root 'tools\validate-diagnostics.ps1') -RepositoryRoot $root
 & (Join-Path $root 'tools\validate-error-taxonomy.ps1') -RepositoryRoot $root
 

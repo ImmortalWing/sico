@@ -59,7 +59,7 @@ The cancellation totals include process creation and the 100 ms test timer; toke
 
 | Platform | Build/contract evidence | M9 runner execution | Claim |
 |---|---|---|---|
-| Windows x64 | GNU workspace plus MSVC runner builds/tests | stream, cancel, HTTP, watch and Script execution | runtime-verified for M9 |
+| Windows x64 | GNU workspace and runner builds/tests | stream, cancel, HTTP, watch and Script execution | runtime-verified for M9 |
 | Linux/WSL | older M8 evidence only | no STEP-0085–0094 native rerun | not M9-verified |
 | macOS | declarations/contracts only | none | not verified |
 | Android/Harmony | separate blocked/deferred tracks | none | not verified |
