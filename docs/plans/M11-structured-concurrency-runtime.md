@@ -1,6 +1,6 @@
 # M11 plan: Bounded structured-concurrency Runtime
 
-> - status: STEP-0103 ADR-0010 accepted-design; implementation unlocked by M10 GO, STEP-0104 next
+> - status: STEP-0103 ADR-0010 accepted-design; STEP-0104 semantic/IR contract complete; STEP-0105 scheduler core complete (2026-08-31); STEP-0106 next
 > - created: 2026-07-19
 > - phase: M11
 > - reserved steps: STEP-0103–0110

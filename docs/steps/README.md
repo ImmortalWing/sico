@@ -118,6 +118,7 @@
 | [STEP-0101](./STEP-0101-editor-ai-execution-feedback.md) | complete / GO | M10 | shell-free debug launch plan、LSP handoff 与 data-only AI redacted execution summaries |
 | [STEP-0102](./STEP-0102-m10-exit-audit.md) | complete / GO | M10 | M0–M9 aggregate regression、M10 security/performance/platform audit 与 external-gate recheck |
 | [STEP-0104](./STEP-0104-semantic-ir-structured-concurrency.md) | complete | M11 | RFC-0036 task scope 语义/IR 契约、忠实 lowering、sequential-v1 codegen 投影与 collect_tasks 执行证据 |
+| [STEP-0105](./STEP-0105-scheduler-core.md) | complete | M11 | single-Store cooperative scheduler core：有界任务表/scope 树/FIFO 队列、identity-checked Host completion ingress、canonical turn order、typed limits 与 teardown 稳定性证据 |
 | [STEP-0119](./STEP-0119-ai-generation-quality-baseline.md) | complete | M13 | generation 失败归因、prompt/guide canonical 修正、fixture 修复与重测基线 0.8846→0.9744 |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；documentation-only M11 STEP-0103 ADR 已完成设计，下一项为 M11 scheduler 实现（STEP-0104 起）。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，STEP-0119 已完成，权威 live-model 评测等待所有者提供 DeepSeek 凭据。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；M11 STEP-0103 ADR（accepted-design）、STEP-0104 semantic/IR contract 与 STEP-0105 scheduler core 均已完成，下一项为 STEP-0106 cancellation/timeout/race/select。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，STEP-0119 已完成，权威 live-model 评测等待所有者提供 DeepSeek 凭据。

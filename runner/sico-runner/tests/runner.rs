@@ -3,6 +3,11 @@ use sico_ir::{
     Parameter, SourceRange, Terminator, Type, ValueId,
 };
 use sico_observability::{canonical_json, parse_runtime_fault};
+use sico_runner::scheduler::{
+    CompletionRecord, MAX_COMPLETION_BYTES, MAX_COMPLETION_RECORDS, MAX_LIVE_TASKS,
+    MAX_READY_QUEUE, MAX_SCOPE_CHILDREN, MAX_SCOPE_DEPTH, OperationId, ReadinessClass, RunIdentity,
+    SchedulerCore, SchedulerFault, ScopeId, TaskId, TerminalKind,
+};
 use sico_runner::{
     CancelToken, FsGrants, ObservedRun, RunOutcome, Runner, RunnerLimits, ScriptInput, ScriptOutput,
 };
@@ -1934,4 +1939,413 @@ fn malformed_component() -> Vec<u8> {
         false,
         0,
     )
+}
+
+// ---- STEP-0105: single-Store cooperative scheduler core (M11) ----
+
+fn step0105_scheduler(run_id: &str) -> SchedulerCore {
+    SchedulerCore::new(RunIdentity {
+        run_id: run_id.to_owned(),
+        generation_id: 1,
+    })
+}
+
+fn step0105_record(
+    scheduler: &SchedulerCore,
+    task: TaskId,
+    operation: OperationId,
+    payload_bytes: usize,
+) -> CompletionRecord {
+    CompletionRecord {
+        run_id: scheduler.identity().run_id.clone(),
+        generation_id: scheduler.identity().generation_id,
+        task,
+        operation,
+        payload_bytes,
+    }
+}
+
+/// Drives one full synthetic workload through the core: open a scope, spawn
+/// `spawned` tasks, run each through `created → runnable → suspended →
+/// runnable → completing → succeeded` with one Host operation per task, then
+/// close and tear down. Returns the canonical turn order observed.
+fn step0105_drive(scheduler: &mut SchedulerCore, spawned: usize) -> Vec<OperationId> {
+    let root = scheduler.root_task();
+    assert_eq!(scheduler.parent_of(root), None);
+    scheduler.make_runnable(root).unwrap();
+    assert_eq!(scheduler.next_ready(), Some(root));
+    let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+    let mut entries = Vec::new();
+    for _ in 0..spawned {
+        let task = scheduler.spawn_task(scope, root).unwrap();
+        assert_eq!(scheduler.parent_of(task), Some(root));
+        scheduler.make_runnable(task).unwrap();
+        assert_eq!(scheduler.next_ready(), Some(task));
+        let operation = scheduler
+            .register_operation(task, ReadinessClass::HostCompletion)
+            .unwrap();
+        scheduler.suspend(task).unwrap();
+        scheduler
+            .publish_completion(step0105_record(scheduler, task, operation, 16))
+            .unwrap();
+        entries.push((task, operation));
+    }
+    let turn: Vec<_> = scheduler
+        .drain_turn()
+        .iter()
+        .map(|record| record.operation)
+        .collect();
+    for (task, _) in &entries {
+        scheduler.make_runnable(*task).unwrap();
+        assert_eq!(scheduler.next_ready(), Some(*task));
+        scheduler.begin_completion(*task).unwrap();
+        scheduler
+            .commit_terminal(*task, TerminalKind::Succeeded)
+            .unwrap();
+    }
+    scheduler.close_scope(scope).unwrap();
+    scheduler.commit_root(TerminalKind::Succeeded).unwrap();
+    scheduler.teardown().unwrap();
+    turn
+}
+
+#[test]
+fn scheduler_scale_workloads_execute_within_run_bounds() {
+    // `total` counts every live task including the root, so the largest
+    // workload sits exactly on the ADR-0010 1,024 live-task bound.
+    for total in [1_usize, 2, 16, 256, MAX_LIVE_TASKS] {
+        let mut scheduler = step0105_scheduler(&format!("run-scale-{total}"));
+        let started = std::time::Instant::now();
+        let turn = step0105_drive(&mut scheduler, total - 1);
+        println!(
+            "SCHEDULER_SCALE tasks={total} wall_us={}",
+            started.elapsed().as_micros()
+        );
+        // Single-class turn: canonical order reduces to registration order.
+        let expected: Vec<_> = (1..total as u64).map(OperationId).collect();
+        assert_eq!(turn, expected);
+        assert_eq!(scheduler.live_tasks(), 0);
+        assert_eq!(scheduler.host_operations_total as usize, total - 1);
+    }
+}
+
+#[test]
+fn scheduler_limit_plus_one_cases_fail_with_typed_outcomes() {
+    // Task table: root + 1,023 spawned fills 1,024 live tasks; the 1,025th
+    // is a typed refusal.
+    let mut scheduler = step0105_scheduler("run-limit-tasks");
+    let root = scheduler.root_task();
+    let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+    for _ in 0..MAX_LIVE_TASKS - 1 {
+        scheduler.spawn_task(scope, root).unwrap();
+    }
+    assert_eq!(scheduler.live_tasks(), MAX_LIVE_TASKS);
+    assert_eq!(
+        scheduler.spawn_task(scope, root),
+        Err(SchedulerFault::TaskTableFull)
+    );
+
+    // Scope children: scope 0 holds the root plus 1,023 spawned tasks.
+    let mut scheduler = step0105_scheduler("run-limit-children");
+    let root = scheduler.root_task();
+    for _ in 1..MAX_SCOPE_CHILDREN {
+        scheduler.spawn_task(ScopeId(0), root).unwrap();
+    }
+    assert_eq!(
+        scheduler.spawn_task(ScopeId(0), root),
+        Err(SchedulerFault::ScopeChildrenExceeded)
+    );
+
+    // Scope depth 65.
+    let mut scheduler = step0105_scheduler("run-limit-depth");
+    let mut scope = ScopeId(0);
+    for _ in 1..MAX_SCOPE_DEPTH {
+        scope = scheduler.open_scope(scope).unwrap();
+    }
+    assert_eq!(
+        scheduler.open_scope(scope),
+        Err(SchedulerFault::ScopeDepthExceeded)
+    );
+
+    // Ready queue: with the queue cap equal to the task cap, every entry is
+    // deduped per task, so the bound is only reachable through a stale entry
+    // left behind by a task that went terminal while still queued: the
+    // replacement task's first enqueue is the typed limit+1, and popping the
+    // stale entry afterwards frees the slot exactly once.
+    let mut scheduler = step0105_scheduler("run-limit-ready");
+    let root = scheduler.root_task();
+    scheduler.make_runnable(root).unwrap();
+    let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+    let mut victim = None;
+    for index in 0..MAX_READY_QUEUE - 1 {
+        let task = scheduler.spawn_task(scope, root).unwrap();
+        scheduler.make_runnable(task).unwrap();
+        if index == 0 {
+            victim = Some(task);
+        }
+    }
+    scheduler
+        .commit_terminal(victim.unwrap(), TerminalKind::Cancelled)
+        .unwrap();
+    let replacement = scheduler.spawn_task(scope, root).unwrap();
+    assert_eq!(
+        scheduler.make_runnable(replacement),
+        Err(SchedulerFault::ReadyQueueFull)
+    );
+    let _ = scheduler.next_ready();
+    scheduler.make_runnable(replacement).unwrap();
+
+    // Completion records: 1,024 delivered, the 1,025th refused.
+    let mut scheduler = step0105_scheduler("run-limit-completions");
+    let root = scheduler.root_task();
+    for _ in 0..MAX_COMPLETION_RECORDS {
+        let operation = scheduler
+            .register_operation(root, ReadinessClass::HostCompletion)
+            .unwrap();
+        scheduler
+            .publish_completion(step0105_record(&scheduler, root, operation, 0))
+            .unwrap();
+    }
+    let overflow = scheduler
+        .register_operation(root, ReadinessClass::HostCompletion)
+        .unwrap();
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, overflow, 0)),
+        Err(SchedulerFault::CompletionQueueFull)
+    );
+
+    // Completion bytes: exactly 16 MiB delivered, one more byte refused.
+    let mut scheduler = step0105_scheduler("run-limit-bytes");
+    let root = scheduler.root_task();
+    let big = scheduler
+        .register_operation(root, ReadinessClass::HostCompletion)
+        .unwrap();
+    scheduler
+        .publish_completion(step0105_record(&scheduler, root, big, MAX_COMPLETION_BYTES))
+        .unwrap();
+    let extra = scheduler
+        .register_operation(root, ReadinessClass::HostCompletion)
+        .unwrap();
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, extra, 1)),
+        Err(SchedulerFault::CompletionBytesExceeded)
+    );
+    // The 16 MiB metadata budget is structurally unreachable with every
+    // count capped at 1,024 (hundreds of KiB worst case), so it has no
+    // limit+1 case; it is enforced against future larger records.
+}
+
+#[test]
+fn scheduler_adversarial_completion_records_fail_closed() {
+    let mut scheduler = step0105_scheduler("run-adversarial");
+    let root = scheduler.root_task();
+    let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+    let child = scheduler.spawn_task(scope, root).unwrap();
+    let operation = scheduler
+        .register_operation(root, ReadinessClass::HostCompletion)
+        .unwrap();
+    // Cross-run and cross-generation records never resolve.
+    let mut wrong_run = step0105_record(&scheduler, root, operation, 0);
+    wrong_run.run_id = "run-other".to_owned();
+    assert_eq!(
+        scheduler.publish_completion(wrong_run),
+        Err(SchedulerFault::CrossRunCompletion)
+    );
+    let mut wrong_generation = step0105_record(&scheduler, root, operation, 0);
+    wrong_generation.generation_id = 2;
+    assert_eq!(
+        scheduler.publish_completion(wrong_generation),
+        Err(SchedulerFault::CrossRunCompletion)
+    );
+    // Unknown operation identity.
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, OperationId(999), 0)),
+        Err(SchedulerFault::UnknownOperation(OperationId(999)))
+    );
+    // A record naming a different task than the registration is stale.
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, child, operation, 0)),
+        Err(SchedulerFault::StaleCompletion(operation))
+    );
+    // First valid delivery lands; a replay is a duplicate.
+    scheduler
+        .publish_completion(step0105_record(&scheduler, root, operation, 0))
+        .unwrap();
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, operation, 0)),
+        Err(SchedulerFault::DuplicateCompletion(operation))
+    );
+    // An abandoned operation classifies late worker records as stale.
+    let abandoned = scheduler
+        .register_operation(root, ReadinessClass::HostCompletion)
+        .unwrap();
+    scheduler.abandon_operation(abandoned).unwrap();
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, abandoned, 0)),
+        Err(SchedulerFault::StaleCompletion(abandoned))
+    );
+    // After teardown nothing resolves into the run, even with exact
+    // identity.
+    scheduler
+        .commit_terminal(child, TerminalKind::Cancelled)
+        .unwrap();
+    scheduler.commit_root(TerminalKind::Succeeded).unwrap();
+    scheduler.teardown().unwrap();
+    assert_eq!(
+        scheduler.publish_completion(step0105_record(&scheduler, root, operation, 0)),
+        Err(SchedulerFault::CrossRunCompletion)
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn repeated_runs_show_no_task_handle_or_rss_growth_across_store_teardown() {
+    // Tasks, scopes, operations and queues are Store-scoped records and drop
+    // with the Store; the observable leak surface is OS handles and RSS.
+    // Each echo run registers and completes stdin/stdout/stderr Host
+    // operations through the ingress before teardown.
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
+            &echo_component(0),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let run_one = |index: u32| {
+        let input = ScriptInput {
+            arguments: vec![index.to_string()],
+            stdin: vec![index as u8; 128],
+        };
+        let outcome = prepared.run(&input, &limits(), &no_cancel()).unwrap();
+        assert!(
+            matches!(outcome, RunOutcome::Output(_)),
+            "run {index}: {outcome:?}"
+        );
+    };
+    run_one(0);
+    let (baseline_handles, baseline_rss) = windows_process_metrics();
+    for index in 1..=100 {
+        run_one(index);
+    }
+    let (final_handles, final_rss) = windows_process_metrics();
+    println!(
+        "SCHEDULER_TEARDOWN_100 baseline_handles={baseline_handles} final_handles={final_handles} baseline_rss={baseline_rss} final_rss={final_rss}"
+    );
+    assert!(
+        final_handles <= baseline_handles + 8,
+        "handle growth: {baseline_handles} -> {final_handles}"
+    );
+    assert!(
+        final_rss <= baseline_rss + 64 * 1024 * 1024,
+        "RSS growth: {baseline_rss} -> {final_rss}"
+    );
+}
+
+const STEP0105_SCRIPT_PRELUDE: &str = "record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+async function shout(word: Text) returns Text:
+  return sico.text.concat(word, \"!\")
+end function
+
+";
+
+fn step0105_guest_source(count: usize) -> String {
+    let mut source = String::from(STEP0105_SCRIPT_PRELUDE);
+    source.push_str(
+        "function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  task group:\n",
+    );
+    for index in 0..count {
+        source.push_str(&format!("    let t{index} = spawn shout(\"w{index}\")\n"));
+    }
+    let list = (0..count)
+        .map(|index| format!("t{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    source.push_str(&format!(
+        "    let all = await collect_tasks([{list}], order: input)\n"
+    ));
+    source.push_str("    return ok(ScriptOutput(stdout: sico.text.encode(sico.text.join(all, \" \")), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\n  end task\nend function\n");
+    source
+}
+
+fn step0105_build_guest(source: &str, tag: usize) -> Vec<u8> {
+    let directory = std::env::temp_dir().join(format!(
+        "sico-step0105-scale-{}-{}",
+        std::process::id(),
+        tag
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let source_path = directory.join("scale.sico");
+    let component_path = directory.join("scale.component.wasm");
+    std::fs::write(&source_path, source).unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = sico_cli::run(
+        [
+            std::ffi::OsString::from("sico"),
+            std::ffi::OsString::from("build"),
+            std::ffi::OsString::from("--profile"),
+            std::ffi::OsString::from("script-v0"),
+            std::ffi::OsString::from("--output"),
+            component_path.as_os_str().to_owned(),
+            source_path.as_os_str().to_owned(),
+        ],
+        &mut std::io::empty(),
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
+    let component = std::fs::read(&component_path).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    component
+}
+
+#[test]
+fn guest_task_workloads_at_scale_run_within_bounds() {
+    // Real guest spawn workloads (sequential-v1 profile, RFC-0036 §5.4):
+    // source-level tasks execute eagerly inside the guest, so the run-level
+    // fuel/memory/time bounds are what constrain them.
+    for count in [1_usize, 2, 16, 256, 1_024] {
+        let component = step0105_build_guest(&step0105_guest_source(count), count);
+        let started = std::time::Instant::now();
+        let outcome = run(&component, &ScriptInput::default());
+        println!(
+            "GUEST_TASK_SCALE tasks={count} wall_ms={}",
+            started.elapsed().as_millis()
+        );
+        let expected = (0..count)
+            .map(|index| format!("w{index}!"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(
+            outcome,
+            RunOutcome::Output(ScriptOutput {
+                stdout: expected.into_bytes(),
+                stderr: Vec::new(),
+                exit_code: 0,
+            })
+        );
+    }
 }

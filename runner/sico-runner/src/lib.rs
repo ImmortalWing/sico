@@ -10,8 +10,10 @@
 #![forbid(unsafe_code)]
 
 mod dap;
+pub mod scheduler;
 
 pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
+use scheduler::{ReadinessClass, RunIdentity, SchedulerCore, TerminalKind};
 
 use std::error::Error;
 use std::fmt;
@@ -19,7 +21,7 @@ use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::num::NonZeroUsize;
 use std::path::{Component as PathComponent, Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
@@ -1007,6 +1009,9 @@ struct RunState {
     http_abandoned: bool,
     cancel: CancelToken,
     io: IoWorkers,
+    /// The run's bounded scheduler core (M11 STEP-0105): root task plus
+    /// identity-checked Host-operation completion ingress.
+    scheduler: SchedulerCore,
 }
 
 /// Bounded worker channels behind the stream host calls (STEP-0088): every
@@ -1214,6 +1219,9 @@ pub struct Runner {
     engine: Engine,
     components: ComponentCache,
     debug_enabled: bool,
+    /// Process-local monotonic counter backing synthetic run identities on
+    /// the unobserved `run` path (M10 callers pass their own identity).
+    run_counter: Arc<AtomicU64>,
 }
 
 type ComponentCache = Arc<std::sync::Mutex<Vec<([u8; 32], Component)>>>;
@@ -1285,6 +1293,7 @@ impl Runner {
             engine: Engine::new(&config)?,
             components: Arc::new(std::sync::Mutex::new(Vec::new())),
             debug_enabled: debug,
+            run_counter: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -1518,6 +1527,10 @@ impl PreparedProgram {
                 http_abandoned: false,
                 cancel: cancel.clone(),
                 io: spawn_io_workers(),
+                scheduler: SchedulerCore::new(RunIdentity {
+                    run_id: run_id.to_owned(),
+                    generation_id,
+                }),
             },
         );
         store.limiter(|state| state);
@@ -1638,7 +1651,15 @@ impl PreparedProgram {
         cancel: &CancelToken,
     ) -> Result<RunOutcome, InputViolation> {
         check_input(input)?;
-        Ok(self.run_unchecked(input, limits, cancel).outcome)
+        let run_id = format!(
+            "run-{:016x}",
+            self.runner.run_counter.fetch_add(1, Ordering::Relaxed)
+        );
+        let identity = RunIdentity {
+            run_id,
+            generation_id: 1,
+        };
+        Ok(self.run_unchecked(input, limits, cancel, identity).outcome)
     }
 
     /// Executes once and emits a strict fault record from typed outcome state
@@ -1657,7 +1678,15 @@ impl PreparedProgram {
         generation_id: u64,
     ) -> Result<ObservedRun, ObservationError> {
         check_input(input)?;
-        let execution = self.run_unchecked(input, limits, cancel);
+        let execution = self.run_unchecked(
+            input,
+            limits,
+            cancel,
+            RunIdentity {
+                run_id: run_id.to_owned(),
+                generation_id,
+            },
+        );
         let fault = runtime_fault(
             &execution.outcome,
             &execution.frames,
@@ -1677,6 +1706,7 @@ impl PreparedProgram {
         input: &ScriptInput,
         limits: &RunnerLimits,
         cancel: &CancelToken,
+        identity: RunIdentity,
     ) -> Execution {
         let arbiter = Arc::new(TerminalArbiter::new());
         let _binding = match cancel.bind(&arbiter) {
@@ -1693,6 +1723,7 @@ impl PreparedProgram {
                 http_abandoned: false,
                 cancel: cancel.clone(),
                 io: spawn_io_workers(),
+                scheduler: SchedulerCore::new(identity),
             },
         );
         store.limiter(|state| state);
@@ -1734,6 +1765,10 @@ impl PreparedProgram {
             }
         });
 
+        let root = store.data().scheduler.root_task();
+        if let Err(fault) = store.data_mut().scheduler.make_runnable(root) {
+            return Execution::without_frames(RunOutcome::Launch(format!("scheduler: {fault}")));
+        }
         let mut execution = match self.linker.instantiate(&mut store, &self.component) {
             Ok(instance) => match instance.get_func(&mut store, "run") {
                 Some(run) => self.invoke(&mut store, &run, input, limits),
@@ -1754,6 +1789,33 @@ impl PreparedProgram {
         let decision = arbiter.commit(execution.outcome);
         execution.outcome = decision.outcome;
         execution.cancellation_source = decision.cancellation_source;
+        // The root task commits its single terminal state from the typed
+        // run outcome, then the scheduler proves teardown discipline before
+        // the Store drops (all tasks and Host operations terminal, scopes
+        // closed in deterministic reverse order).
+        let terminal = match &execution.outcome {
+            RunOutcome::Output(_) => TerminalKind::Succeeded,
+            RunOutcome::Cancelled | RunOutcome::Timeout => TerminalKind::Cancelled,
+            RunOutcome::Domain { .. } => TerminalKind::Failed,
+            RunOutcome::FuelExhausted
+            | RunOutcome::MemoryLimit
+            | RunOutcome::HostProviderFailure { .. }
+            | RunOutcome::Trap(_)
+            | RunOutcome::Launch(_)
+            | RunOutcome::Incompatible(_) => TerminalKind::Failed,
+        };
+        let scheduler_outcome = {
+            let state = store.data_mut();
+            state
+                .scheduler
+                .commit_root(terminal)
+                .and_then(|()| state.scheduler.teardown())
+                .map(|_| ())
+                .map_err(|fault| format!("scheduler: {fault}"))
+        };
+        if let Err(message) = scheduler_outcome {
+            execution.outcome = RunOutcome::Launch(message);
+        }
         done.store(true, Ordering::Relaxed);
         let _ = watchdog.join();
         execution
@@ -2067,12 +2129,38 @@ fn link_http(linker: &mut Linker<RunState>, net: &NetGrants) -> Result<(), wasmt
                 Err(error) => return Ok((Err(error),)),
             };
             let cancel = store.data().cancel.clone();
+            let operation = match store
+                .data_mut()
+                .scheduler
+                .register_root_operation(ReadinessClass::HostCompletion)
+            {
+                Ok(operation) => operation,
+                Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
+            };
             let deadline = Instant::now() + HTTP_TOTAL_TIMEOUT;
             let (sender, receiver) = std::sync::mpsc::sync_channel(1);
             std::thread::spawn(move || {
                 let _ = sender.send(perform_http_request(request, deadline));
             });
             let outcome = wait_http_response(&receiver, &cancel, deadline);
+            let payload = outcome.as_ref().map_or(0, |response| response.body.len());
+            // A timed-out operation cannot be synchronously joined: classify
+            // it as abandoned so a late worker record is stale, not duplicated
+            // (ADR-0010 adversarial trace 3).
+            let completed = store
+                .data_mut()
+                .scheduler
+                .complete_root_operation(operation, payload)
+                .or_else(|fault| {
+                    store
+                        .data_mut()
+                        .scheduler
+                        .abandon_operation(operation)
+                        .map_err(|_| fault)
+                });
+            if let Err(fault) = completed {
+                return Err(wasmtime::Error::msg(format!("scheduler: {fault}")));
+            }
             if matches!(
                 outcome.as_ref().map_err(String::as_str),
                 Err("timeout" | "cancelled")
@@ -2527,8 +2615,27 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             }
             let max = max.min(MAX_STREAM_READ);
             let cancel = store.data().cancel.clone();
+            // Every Host suspension point is a registered scheduler
+            // operation; its completion enters the identity-checked ingress
+            // (M11 STEP-0105).
+            let operation = match store
+                .data_mut()
+                .scheduler
+                .register_root_operation(ReadinessClass::HostCompletion)
+            {
+                Ok(operation) => operation,
+                Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
+            };
             let outcome = send_cancellable(&store.data().io.stdin_request, max, &cancel)
                 .and_then(|()| recv_cancellable(&store.data().io.stdin_response, &cancel));
+            let payload = outcome.as_ref().map_or(0, Vec::len);
+            if let Err(fault) = store
+                .data_mut()
+                .scheduler
+                .complete_root_operation(operation, payload)
+            {
+                return Err(wasmtime::Error::msg(format!("scheduler: {fault}")));
+            }
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
@@ -2551,6 +2658,14 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             }
             top_up_stream_budgets(&mut store);
             let cancel = store.data().cancel.clone();
+            let operation = match store
+                .data_mut()
+                .scheduler
+                .register_root_operation(ReadinessClass::HostCompletion)
+            {
+                Ok(operation) => operation,
+                Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
+            };
             let outcome = send_cancellable(
                 &store.data().io.output_request,
                 OutputJob::Write {
@@ -2560,6 +2675,13 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 &cancel,
             )
             .and_then(|()| recv_cancellable(&store.data().io.output_response, &cancel));
+            if let Err(fault) = store
+                .data_mut()
+                .scheduler
+                .complete_root_operation(operation, 0)
+            {
+                return Err(wasmtime::Error::msg(format!("scheduler: {fault}")));
+            }
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
@@ -2583,6 +2705,14 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             };
             top_up_stream_budgets(&mut store);
             let cancel = store.data().cancel.clone();
+            let operation = match store
+                .data_mut()
+                .scheduler
+                .register_root_operation(ReadinessClass::HostCompletion)
+            {
+                Ok(operation) => operation,
+                Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
+            };
             let outcome = send_cancellable(
                 &store.data().io.output_request,
                 OutputJob::Flush {
@@ -2591,6 +2721,13 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 &cancel,
             )
             .and_then(|()| recv_cancellable(&store.data().io.output_response, &cancel));
+            if let Err(fault) = store
+                .data_mut()
+                .scheduler
+                .complete_root_operation(operation, 0)
+            {
+                return Err(wasmtime::Error::msg(format!("scheduler: {fault}")));
+            }
             if outcome.is_err() {
                 store.data_mut().table.get_mut(&handle)?.terminal = true;
             }
@@ -3231,6 +3368,10 @@ mod tests {
                 http_abandoned: false,
                 cancel: CancelToken::new(),
                 io: spawn_io_workers(),
+                scheduler: SchedulerCore::new(RunIdentity {
+                    run_id: "debug-probe".to_owned(),
+                    generation_id: 1,
+                }),
             },
         );
         let instance = prepared

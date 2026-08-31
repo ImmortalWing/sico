@@ -3,11 +3,11 @@
 > - updated: 2026-08-31
 > - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123)
 > - phase status: in-progress
-> - current step: STEP-0105 single-Store cooperative scheduler core (next; RFC-0036 accepted)
+> - current step: STEP-0106 cancellation, timeout, race and select (next; scheduler core landed)
 > - current support step: 无（M13 STEP-0119 已完成）
-> - last completed active step: STEP-0104 (semantic/IR structured-concurrency contract; E5003/E5103–E5105, faithful task IR, sequential-v1 codegen projection, collect_tasks executed)
+> - last completed active step: STEP-0105 (single-Store cooperative scheduler core; bounded task table/scope tree/queues, identity-checked Host completion ingress, canonical turn order, typed limits, teardown stability)
 > - last completed support step: STEP-0119 (AI generation-quality attribution and re-measured baseline 0.8846→0.9744, subagent-measured)
-> - next step: implement the ADR-0010 single-Store cooperative scheduler per RFC-0036 (STEP-0105), then validator and full regression
+> - next step: implement the downward cancellation tree plus bounded race/select over the STEP-0105 scheduler core (STEP-0106), then validator and full regression
 > - next support step: STEP-0120 AI quality-budget ADR-0011；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入
 
 ## 0. M6 exit state
@@ -16,7 +16,7 @@ STEP-0054–0061 host-side work, 8,192 security properties, Desktop result `42`,
 
 ## 1. Current objective
 
-M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。M10 Runtime observability/debugging 已由 STEP-0102 发出 GO（Windows x64 GNU 实证）：identity-bound debug triplet、typed Runtime source faults、typed signal/client cancellation、task-aware bounded events、机器清单驱动的 minimal DAP 与 data-only editor/AI boundary 全部完成。当前主动目标是 M11 bounded structured-concurrency Runtime：STEP-0103 的 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md) 已接受 single-Store cooperative 设计，下一项为 STEP-0104 semantic/IR contract；M11 完成后 M12 再实现 Secure HTTP Provider/Automation SDK。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows runner 继续保留为外部/后置平台轨，内部里程碑不替代这些 gate。
+M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计。M10 Runtime observability/debugging 已由 STEP-0102 发出 GO（Windows x64 GNU 实证）：identity-bound debug triplet、typed Runtime source faults、typed signal/client cancellation、task-aware bounded events、机器清单驱动的 minimal DAP 与 data-only editor/AI boundary 全部完成。当前主动目标是 M11 bounded structured-concurrency Runtime：STEP-0103 的 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md) 已接受 single-Store cooperative 设计，STEP-0104 完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) semantic/IR contract，STEP-0105 已在 runner 内落地有界 scheduler core；下一项为 STEP-0106 cancellation/timeout/race/select。M11 完成后 M12 再实现 Secure HTTP Provider/Automation SDK。公网部署仍等待真实域名/hosting、生产身份与密钥托管输入；Android、Harmony 与非 Windows runner 继续保留为外部/后置平台轨，内部里程碑不替代这些 gate。
 
 ## 2. Current step
 
@@ -30,7 +30,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
-[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0102`](./steps/STEP-0102-m10-exit-audit.md) 已全部完成：contract、debug triplet、typed source faults、Windows console/client cancellation、bounded task-aware events、exact DAP subset（12/20/6）与 editor/AI data boundary，exit audit 在重跑 M0–M9 aggregate 后发出 GO（[`M10 exit audit`](./reports/m10-exit-audit-v0.md)，Windows x64 GNU）。M11 STEP-0103 设计轨已完成 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md)（accepted-design）；下一项为 STEP-0104 semantic/IR structured-concurrency contract。
+[`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0102`](./steps/STEP-0102-m10-exit-audit.md) 已全部完成：contract、debug triplet、typed source faults、Windows console/client cancellation、bounded task-aware events、exact DAP subset（12/20/6）与 editor/AI data boundary，exit audit 在重跑 M0–M9 aggregate 后发出 GO（[`M10 exit audit`](./reports/m10-exit-audit-v0.md)，Windows x64 GNU）。M11 STEP-0103 设计轨已完成 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md)（accepted-design），STEP-0104 完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) semantic/IR contract，STEP-0105 完成 scheduler core；下一项为 STEP-0106 cancellation, timeout, race and select。
 
 ## 3. Verified repository facts
 
@@ -106,7 +106,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | M10 session isolation | 100 sequential DAP sessions；handles 92 → 92；bounded RSS | measured |
 | M10 exit audit | M0–M9 aggregate green；Windows x64 GNU only；external gates unchanged | verified |
 
-M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。M11 STEP-0104 已完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) 语义/IR 契约：E5003/E5103–E5105 四个新稳定诊断、忠实 task IR lowering（19 lowered / 6 typed-refused / 33 invalid blocked）、sequential-v1 codegen 投影与 `collect_tasks` 执行证据，M9 顺序行为逐字节保持。
+M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。M11 STEP-0104 已完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) 语义/IR 契约：E5003/E5103–E5105 四个新稳定诊断、忠实 task IR lowering（19 lowered / 6 typed-refused / 33 invalid blocked）、sequential-v1 codegen 投影与 `collect_tasks` 执行证据，M9 顺序行为逐字节保持。M11 STEP-0105 已在 `sico-runner` 内落地 ADR-0010 的有界 scheduler core：1,024 live-task 表、64 层 scope 树、1,024 FIFO ready queue、1,024 records / 16 MiB identity-checked Host completion ingress 与 16 MiB metadata 预算；1/2/16/256/1,024-task 合成与真实 guest 工作负载均在默认 run bounds 内执行，全部 limit+1 为稳定 typed faults，stale/duplicate/cross-run 完成记录 fail-closed，101 次重复运行无句柄/RSS 增长（Windows 实测 93→93 handles）。
 
 ## 4. Completed assets
 
@@ -187,4 +187,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 M11 STEP-0104：依据已接受的 ADR-0010 建立 semantic/IR structured-concurrency contract（task scope、await/group/select/race 的静态语义与 IR 表示），随后 STEP-0105 实现 single-Store cooperative scheduler core。实现期间不得改变 M10 冻结的 bounded events、redaction 与 exact DAP claims；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
+下一项执行 M11 STEP-0106：在 STEP-0105 scheduler core 之上实现 downward cancellation tree 与有界 race/select（timeout/deadline、deterministic loser cancellation、deadlock 检测），随后 STEP-0107 bounded channels/streams。实现期间不得改变 M10 冻结的 bounded events、redaction 与 exact DAP claims；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
