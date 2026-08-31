@@ -23,7 +23,7 @@ if (-not $parser.Contains('MAX_PARSE_DEPTH: usize = 256') -or -not $parser.Conta
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-parser -p sico-format --all-targets --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0021 property and limit tests failed' }

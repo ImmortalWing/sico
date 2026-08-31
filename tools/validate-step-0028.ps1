@@ -19,7 +19,7 @@ foreach ($contract in @('sico.semantic-index.v0', 'sico.semantic-query.v0', 'sic
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-index --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0028 index/query tests failed' }

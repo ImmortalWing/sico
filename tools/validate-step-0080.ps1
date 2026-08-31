@@ -3,7 +3,7 @@ param([string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 
 cargo test --offline --locked -p sico-codegen-wasm -p sico-runtime -p sico-cli -p sico-package -p sico-app-cli
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0080 workspace tests failed' }

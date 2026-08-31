@@ -445,7 +445,7 @@ foreach ($case in @($fixtures.cases)) {
 # Real compiler identity evidence: two different sources must create distinct
 # Components, while rebuilding the same source stays byte-identical. This does
 # not claim that STEP-0096 debug-map emission exists.
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) { $cargo = (Get-Command cargo -ErrorAction Stop).Source }
 Invoke-NativeChecked $cargo @('build', '-q', '--offline', '--locked', '-p', 'sico-cli') 'component-build-failed|sico-cli build failed'

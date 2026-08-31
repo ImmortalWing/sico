@@ -18,7 +18,7 @@ if ($golden.Contains("`r") -or -not $golden.EndsWith("`n")) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-format --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0019 formatter tests failed' }

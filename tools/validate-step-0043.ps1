@@ -15,7 +15,7 @@ foreach ($needle in @('fuel=', 'timeout=', 'max-memory-size=', 'max-table-elemen
 }
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
 $previousRuntime = $env:SICO_TEST_WASMTIME
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   $env:SICO_TEST_WASMTIME = & (Join-Path $root 'tools/ensure-wasmtime.ps1')

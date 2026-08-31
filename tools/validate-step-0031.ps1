@@ -17,7 +17,7 @@ foreach ($contract in @('pub fn lower_core', 'CoreLowerError::Semantic', 'Operat
 if ($snapshots.Count -ne 12) { throw "expected 12 core lowering snapshots, found $($snapshots.Count)" }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-ir --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0031 core lowering tests failed' }

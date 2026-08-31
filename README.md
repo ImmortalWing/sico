@@ -19,7 +19,7 @@ sico --version
 
 SDK ZIP 内仍保留 `install-windows.cmd/.ps1`，供自动化、机器级安装和卸载使用。详见[安装与构建](./docs/user-guide/INSTALLATION.md)。
 
-从源码开发时，安装 Git、Rust `1.97.1` 与 PowerShell，然后在仓库根目录执行：
+从源码开发时，安装 Git、Rust `1.98.0` 与 PowerShell，然后在仓库根目录执行：
 
 ```powershell
 cargo build --locked --release -p sico-cli -p sico-app-cli

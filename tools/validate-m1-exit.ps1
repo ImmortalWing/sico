@@ -45,7 +45,7 @@ if ($bCases.Count -ne 58 -or $bMutations.Count -ne 12 -or $parserSnapshots.Count
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath fmt --all -- --check
   if ($LASTEXITCODE -ne 0) { throw 'workspace rustfmt failed' }

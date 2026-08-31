@@ -7,7 +7,7 @@ $root = (Resolve-Path $RepositoryRoot).Path
 $output = Join-Path $root 'target/m5/windows-host'
 $zip = Join-Path $root 'target/m5/sico-desktop-host-windows-x86_64.zip'
 $previous = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath build --offline --locked --release -p sico-desktop-host

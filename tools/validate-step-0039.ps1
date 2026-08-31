@@ -13,7 +13,7 @@ foreach ($needle in @('MAX_PACKAGE_BYTES', 'MAX_COMPONENT_BYTES', 'NonCanonicalM
   if (-not $source.Contains($needle)) { throw "package verifier missing evidence: $needle" }
 }
 $previous = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath clippy --offline --locked -p sico-package --all-targets --all-features -- -D warnings

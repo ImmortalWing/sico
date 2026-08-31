@@ -5,7 +5,7 @@ param(
   [string]$OutputPath
 )
 $ErrorActionPreference='Stop';Set-StrictMode -Version Latest;$root=(Resolve-Path $RepositoryRoot).Path
-$previous=$env:RUSTUP_TOOLCHAIN;$env:RUSTUP_TOOLCHAIN='1.97.1-x86_64-pc-windows-gnu';Push-Location $root
+$previous=$env:RUSTUP_TOOLCHAIN;$env:RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-gnu';Push-Location $root
 try {
   & $CargoPath build --offline --locked --release -p sico-mobile-host-core --example mobile_bridge_probe
   if($LASTEXITCODE-ne 0){throw 'mobile bridge release probe build failed'}

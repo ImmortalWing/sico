@@ -8,7 +8,7 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
 $work = Join-Path $root 'target/m5/performance'
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath build --offline --locked --release -p sico-cli -p sico-app-cli -p sico-desktop-host

@@ -3,7 +3,7 @@ param([string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'

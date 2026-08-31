@@ -26,7 +26,7 @@ if (-not $BinutilsPath) {
     $candidate = Join-Path $root 'target/tooling/msys2-binutils/mingw64/bin'
     if (Test-Path -LiteralPath $candidate -PathType Container) { $BinutilsPath = $candidate }
     if (-not $BinutilsPath) {
-        $candidate = Join-Path $HOME '.rustup/toolchains/1.97.1-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained'
+        $candidate = Join-Path $HOME '.rustup/toolchains/1.98.0-x86_64-pc-windows-gnu/lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained'
         if (Test-Path -LiteralPath $candidate -PathType Container) { $BinutilsPath = $candidate }
     }
 }
@@ -34,7 +34,7 @@ $cargoDirectory = Split-Path -Parent $CargoPath
 if ($BinutilsPath) { $env:Path = "$BinutilsPath;$cargoDirectory;$env:Path" } else { $env:Path = "$cargoDirectory;$env:Path" }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 $artifact = Join-Path $root 'target/step-0034/numeric.component.wasm'
 Push-Location $root
 try {

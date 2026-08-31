@@ -18,7 +18,7 @@ Invoke-NativeChecked $cargo @(
     '--all-targets', '--', '-D', 'warnings'
 ) 'native-runner-clippy-failed|STEP-0097'
 
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Invoke-NativeChecked $cargo @(
     'test', '--offline', '-p', 'sico-observability', '-p', 'sico-codegen-wasm'
 ) 'contract-codegen-regression|STEP-0097'

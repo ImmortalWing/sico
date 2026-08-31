@@ -1158,9 +1158,9 @@ fn decode_base64(value: &str) -> Option<Vec<u8>> {
         return None;
     }
     let mut output = Vec::with_capacity(value.len() / 4 * 3);
-    for chunk in value.as_bytes().chunks_exact(4) {
+    for chunk in value.as_bytes().as_chunks::<4>().0 {
         let padding = usize::from(chunk[2] == b'=') + usize::from(chunk[3] == b'=');
-        if padding > 0 && chunk != &value.as_bytes()[value.len() - 4..] {
+        if padding > 0 && chunk.as_slice() != &value.as_bytes()[value.len() - 4..] {
             return None;
         }
         let sextet = |byte| match byte {

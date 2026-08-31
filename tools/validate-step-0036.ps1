@@ -23,7 +23,7 @@ foreach ($marker in @('Command::new("pack")', 'Command::new("run")', 'run_author
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 $validation = Join-Path $root 'target/m3-step-0036'
 New-Item -ItemType Directory -Force -Path $validation | Out-Null
 $artifacts = @(

@@ -26,7 +26,7 @@ foreach ($step in @('0097', '0088', '0089')) {
     ) "regression-failed|STEP-$step" | Out-Null
 }
 
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Invoke-NativeChecked $cargo @(
     'test', '--offline', '-p', 'sico-observability'
 ) 'cancel-contract-tests-failed|STEP-0098'

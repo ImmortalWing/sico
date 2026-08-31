@@ -14,7 +14,7 @@ foreach ($needle in @('SIGNATURE_DOMAIN', 'verify_strict', 'is_weak', 'TrustPoli
   if (-not $source.Contains($needle)) { throw "signing implementation missing: $needle" }
 }
 $previous = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 Push-Location $root
 try {
   & $CargoPath clippy --offline --locked -p sico-package --all-targets --all-features -- -D warnings

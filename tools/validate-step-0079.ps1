@@ -7,7 +7,7 @@ $root = (Resolve-Path $RepositoryRoot).Path
 # 1. Workspace evidence: WIT-driven layout table, deterministic Program
 #    Components, independent host lift/lower helpers and 10,000 seeded
 #    buffer roundtrips with malformed-memory refusals.
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 cargo test --offline --locked -p sico-codegen-wasm -p sico-runtime
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0079 workspace tests failed' }
 

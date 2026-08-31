@@ -18,7 +18,7 @@ if ($accept -ne 25 -or $semanticReject -ne 33) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-syntax -p sico-parser --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0017 parser tests failed' }

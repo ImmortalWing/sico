@@ -17,7 +17,7 @@ foreach ($contract in @('sico.ir.v0', 'require_semantic_success', 'pub fn verify
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-ir --quiet
   if ($LASTEXITCODE -ne 0) { throw 'STEP-0030 IR/verifier tests failed' }

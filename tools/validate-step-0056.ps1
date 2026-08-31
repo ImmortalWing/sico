@@ -9,7 +9,7 @@ foreach($needle in @('content://','application/vnd.sico.sapp','sico://open','MAX
 foreach($needle in @('openInputStream','readNBytes','SCHEME_CONTENT')){if(-not $kotlin.Contains($needle)){throw "Kotlin intent adapter missing: $needle"}}
 if($null -eq $manifest.manifest.application.activity){throw 'Android manifest activity missing'}
 if($step -notmatch '(?m)^> - status: complete\r?$'){throw 'STEP-0056 is not complete'}
-$previous=$env:RUSTUP_TOOLCHAIN;$env:RUSTUP_TOOLCHAIN='1.97.1-x86_64-pc-windows-gnu';Push-Location $root
+$previous=$env:RUSTUP_TOOLCHAIN;$env:RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-gnu';Push-Location $root
 try{
  & $CargoPath clippy --offline --locked -p sico-mobile-host-core --all-targets -- -D warnings;if($LASTEXITCODE-ne 0){throw 'intent Clippy failed'}
  & $CargoPath test --offline --locked -p sico-mobile-host-core;if($LASTEXITCODE-ne 0){throw 'intent tests failed'}

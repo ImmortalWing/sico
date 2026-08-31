@@ -48,7 +48,7 @@ if ($sourceTests -lt 6 -or $lexerTests -lt 8) {
 }
 
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
-$env:RUSTUP_TOOLCHAIN = '1.97.1-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 try {
   & $CargoPath test --offline --locked -p sico-source -p sico-lexer --quiet
   if ($LASTEXITCODE -ne 0) {

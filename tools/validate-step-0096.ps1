@@ -5,7 +5,7 @@ $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo)) {
     $cargo = (Get-Command cargo -ErrorAction Stop).Source
 }
-$env:RUSTUP_TOOLCHAIN = '1.97.0-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 . (Join-Path $root 'tools\lib\native-command.ps1')
 
 Invoke-NativeChecked $cargo @(
