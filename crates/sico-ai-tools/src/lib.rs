@@ -886,7 +886,7 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root.join("syntax-candidates/b"), &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 54);
+        assert_eq!(paths.len(), 58);
         let mut clean = 0;
         let mut diagnosed = 0;
         for (index, path) in paths.iter().enumerate() {
@@ -908,7 +908,7 @@ mod tests {
                 diagnosed += 1;
             }
         }
-        assert_eq!((clean, diagnosed), (25, 29));
+        assert_eq!((clean, diagnosed), (25, 33));
     }
 
     #[test]

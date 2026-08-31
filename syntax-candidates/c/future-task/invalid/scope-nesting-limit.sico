@@ -1,0 +1,144 @@
+// case: TASK-105
+// syntax: C
+// expect: reject(TASK_SCOPE_LIMIT)
+// semantics: SEM-102
+
+async fn compute() -> Int {
+  return 1
+}
+
+async fn deep() -> Int {
+  task group {
+    task group {
+      task group {
+        task group {
+          task group {
+            task group {
+              task group {
+                task group {
+                  task group {
+                    task group {
+                      task group {
+                        task group {
+                          task group {
+                            task group {
+                              task group {
+                                task group {
+                                  task group {
+                                    task group {
+                                      task group {
+                                        task group {
+                                          task group {
+                                            task group {
+                                              task group {
+                                                task group {
+                                                  task group {
+                                                    task group {
+                                                      task group {
+                                                        task group {
+                                                          task group {
+                                                            task group {
+                                                              task group {
+                                                                task group {
+                                                                  task group {
+                                                                    task group {
+                                                                      task group {
+                                                                        task group {
+                                                                          task group {
+                                                                            task group {
+                                                                              task group {
+                                                                                task group {
+                                                                                  task group {
+                                                                                    task group {
+                                                                                      task group {
+                                                                                        task group {
+                                                                                          task group {
+                                                                                            task group {
+                                                                                              task group {
+                                                                                                task group {
+                                                                                                  task group {
+                                                                                                    task group {
+                                                                                                      task group {
+                                                                                                        task group {
+                                                                                                          task group {
+                                                                                                            task group {
+                                                                                                              task group {
+                                                                                                                task group {
+                                                                                                                  task group {
+                                                                                                                    task group {
+                                                                                                                      task group {
+                                                                                                                        task group {
+                                                                                                                          task group {
+                                                                                                                            task group {
+                                                                                                                              task group {
+                                                                                                                                task group {
+                                                                                                                                  task group {
+                                                                                                                                    let handle = spawn compute()
+                                                                                                                                    let done = await handle
+                                                                                                                                    return done
+                                                                                                                                  }
+                                                                                                                                }
+                                                                                                                              }
+                                                                                                                            }
+                                                                                                                          }
+                                                                                                                        }
+                                                                                                                      }
+                                                                                                                    }
+                                                                                                                  }
+                                                                                                                }
+                                                                                                              }
+                                                                                                            }
+                                                                                                          }
+                                                                                                        }
+                                                                                                      }
+                                                                                                    }
+                                                                                                  }
+                                                                                                }
+                                                                                              }
+                                                                                            }
+                                                                                          }
+                                                                                        }
+                                                                                      }
+                                                                                    }
+                                                                                  }
+                                                                                }
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                      }
+                                                                    }
+                                                                  }
+                                                                }
+                                                              }
+                                                            }
+                                                          }
+                                                        }
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

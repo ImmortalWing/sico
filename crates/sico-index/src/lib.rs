@@ -899,6 +899,35 @@ mod tests {
         assert_eq!(blocked.snapshot.quality.blocked_by, ["E2001"]);
     }
 
+    /// RFC-0036 §7: scope-qualified `AsyncState` facts ride the existing
+    /// compiler fact stream; the index exposes them through the module
+    /// `compiler_facts` facet without any new query authority.
+    #[test]
+    fn task_scope_facts_ride_the_existing_fact_stream() {
+        let root = repository();
+        let inputs = load_inputs(
+            &root,
+            &["syntax-candidates/b/future-task/valid/structured-pair.sico".to_owned()],
+        );
+        let facts = sico_semantics::analyze(&inputs[0].source).unwrap().facts;
+        assert!(
+            facts
+                .iter()
+                .any(|fact| fact.name == "scope-0:first->pending")
+                && facts
+                    .iter()
+                    .any(|fact| fact.name == "scope-0:second->collected"),
+            "{:?}",
+            facts.iter().map(|fact| &fact.name).collect::<Vec<_>>()
+        );
+        let index = build_index("tasks", "0.0.0", &inputs);
+        assert_eq!(index.modules[0].quality.state, "complete");
+        assert_eq!(
+            index.modules[0].facets["compiler_facts"]["value"],
+            json!(facts.len())
+        );
+    }
+
     #[test]
     fn all_five_queries_share_snapshot_and_enforce_budgets() {
         let root = repository();

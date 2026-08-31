@@ -15,6 +15,9 @@
 |---|---|---|
 | [`TASK-101`](./invalid/await-twice.sico) | `FUTURE_CONSUMED` | pending was already awaited |
 | [`TASK-102`](./invalid/task-escapes-scope.sico) | `TASK_ESCAPES_SCOPE` | task cannot leave its task group |
+| [`TASK-103`](./invalid/uncollected-task.sico) | `TASK_NOT_CONSUMED` | handle was not consumed before its task group closed |
+| [`TASK-104`](./invalid/detached-spawn.sico) | `TASK_DETACHED` | spawn requires an open task group |
+| [`TASK-105`](./invalid/scope-nesting-limit.sico) | `TASK_SCOPE_LIMIT` | task scope limit exceeded: nesting |
 
 ## 语义摘要
 

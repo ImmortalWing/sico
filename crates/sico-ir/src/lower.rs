@@ -8,8 +8,8 @@ use sico_source::{SourceFile, TextRange};
 
 use crate::{
     Block, BlockId, ConstructField, EntryError, Function, FunctionId, Instruction, MatchArm,
-    Module, Operation, Parameter, Pattern, SourceRange, Terminator, Type, ValueId, VerifyError,
-    require_semantic_success, verify,
+    Module, Operation, Parameter, Pattern, SourceRange, TaskScope, Terminator, Type, ValueId,
+    VerifyError, require_semantic_success, verify,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -54,6 +54,53 @@ struct FunctionBuilder<'a> {
     parameter_count: u32,
     bindings: BTreeMap<String, (ValueId, Type)>,
     declared_effects: Vec<String>,
+    /// Open task-scope ids, innermost last (RFC-0036 §5.1).
+    scope_stack: Vec<u32>,
+    /// Owning scope of each spawned `Task` value, so `collect_tasks` can
+    /// name the scope its list belongs to.
+    spawn_scopes: BTreeMap<ValueId, u32>,
+}
+
+/// Canonical task-scope declaration plan for one function (RFC-0036 §5.1):
+/// the table itself plus the lines that open and close each scope region.
+#[derive(Default)]
+struct TaskScopePlan {
+    scopes: Vec<TaskScope>,
+    opens: BTreeMap<usize, u32>,
+    closes: BTreeMap<usize, u32>,
+}
+
+impl TaskScopePlan {
+    /// Pairs every `task group` line with its `end task` line; the HIR
+    /// annotates each `End` line with the construct it closes.
+    fn of(declaration: &Declaration) -> Self {
+        let mut plan = Self::default();
+        let mut open = Vec::<u32>::new();
+        for (index, line) in declaration.lines.iter().enumerate() {
+            match line.kind {
+                LineKind::TaskGroup => {
+                    let scope =
+                        u32::try_from(plan.scopes.len()).expect("source limits bound scopes");
+                    let parent = open.last().copied();
+                    plan.scopes.push(TaskScope { scope, parent });
+                    plan.opens.insert(index, scope);
+                    open.push(scope);
+                }
+                LineKind::End
+                    if line
+                        .tokens
+                        .get(1)
+                        .is_some_and(|token| token.kind == TokenKind::Task) =>
+                {
+                    if let Some(scope) = open.pop() {
+                        plan.closes.insert(index, scope);
+                    }
+                }
+                _ => {}
+            }
+        }
+        plan
+    }
 }
 
 /// Lowers the STEP-0031 core subset after the full M2 gate succeeds.
@@ -77,12 +124,18 @@ pub fn lower_core(source: &SourceFile) -> Result<Module, CoreLowerError> {
         lower(source).map_err(|error| CoreLowerError::Frontend(AnalyzeError::Lower(error)))?;
     let definitions = Definitions::from_declarations(&hir.declarations);
     let mut module = Module::new(source.name(), source.len().into());
+    let mut task_scopes = BTreeMap::new();
     for declaration in &hir.declarations {
         if declaration.kind == DeclarationKind::Function {
-            module
-                .functions
-                .push(lower_function(declaration, &definitions)?);
+            let (function, scopes) = lower_function(declaration, &definitions)?;
+            if !scopes.is_empty() {
+                task_scopes.insert(function.id, scopes);
+            }
+            module.functions.push(function);
         }
+    }
+    if !task_scopes.is_empty() {
+        module.task_scopes = Some(task_scopes);
     }
     if module.functions.is_empty() {
         return unsupported(
@@ -154,16 +207,22 @@ impl Definitions {
                     for (_, ty, _) in &mut parameters {
                         *ty = definitions.resolve_type(ty.clone());
                     }
+                    let async_function = header.iter().any(|token| token.kind == TokenKind::Async);
                     let return_type = definitions.resolve_type(return_type);
+                    // RFC-0036 §5.2: an async function's IR signature returns
+                    // `Future[T]`; the body resolves it by returning `T`.
+                    let return_type = if async_function {
+                        Type::Future(Box::new(return_type))
+                    } else {
+                        return_type
+                    };
                     definitions.functions.insert(
                         declaration.name.clone(),
                         Signature {
                             id: FunctionId(next_function),
                             parameters,
                             return_type,
-                            async_function: header
-                                .iter()
-                                .any(|token| token.kind == TokenKind::Async),
+                            async_function,
                         },
                     );
                     next_function += 1;
@@ -218,13 +277,17 @@ impl Definitions {
 fn lower_function(
     declaration: &Declaration,
     definitions: &Definitions,
-) -> Result<Function, CoreLowerError> {
+) -> Result<(Function, Vec<TaskScope>), CoreLowerError> {
     let signature = &definitions.functions[&declaration.name];
-    // Sequential executor (STEP-0087): async functions lower as ordinary
-    // functions; `spawn` is an eager call and `await` an identity copy.
-    // The structured discipline (await-once, no task escaping its scope) is
-    // already enforced by semantic analysis before lowering.
-    let _ = signature.async_function;
+    // Structured concurrency (RFC-0036): `spawn`/`await`/`collect_tasks`
+    // lower to explicit typed operations inside declared task-scope regions;
+    // the affine discipline is enforced by semantic analysis and re-proven
+    // by the independent IR verifier. The sequential profile (STEP-0104
+    // phase E) projects these operations to the exact M9 behavior.
+    let body_return_type = match (&signature.return_type, signature.async_function) {
+        (Type::Future(inner), true) => inner.as_ref().clone(),
+        _ => signature.return_type.clone(),
+    };
     let parameters: Vec<_> = signature
         .parameters
         .iter()
@@ -249,7 +312,10 @@ fn lower_function(
         parameter_count: u32::try_from(parameters.len()).expect("source limits bound parameters"),
         bindings,
         declared_effects: effects.clone(),
+        scope_stack: Vec::new(),
+        spawn_scopes: BTreeMap::new(),
     };
+    let scope_plan = TaskScopePlan::of(declaration);
     let match_index = declaration
         .lines
         .iter()
@@ -259,38 +325,44 @@ fn lower_function(
         .iter()
         .position(|line| line.kind == LineKind::If);
     let blocks = if let Some(index) = if_index {
-        lower_revision_if(declaration, index, &mut builder, &signature.return_type)?
+        lower_revision_if(declaration, index, &mut builder, &body_return_type)?
     } else if let Some(index) = match_index {
-        lower_match(declaration, index, &mut builder, &signature.return_type)?
+        lower_match(declaration, index, &mut builder, &body_return_type)?
     } else {
         vec![lower_straight_line(
             declaration,
             &mut builder,
-            &signature.return_type,
+            &body_return_type,
+            &scope_plan,
         )?]
     };
-    Ok(Function {
-        id: signature.id,
-        name: declaration.name.clone(),
-        parameters,
-        return_type: signature.return_type.clone(),
-        effects,
-        entry: BlockId(0),
-        blocks,
-        range: source_range(declaration.range),
-    })
+    Ok((
+        Function {
+            id: signature.id,
+            name: declaration.name.clone(),
+            parameters,
+            return_type: signature.return_type.clone(),
+            effects,
+            entry: BlockId(0),
+            blocks,
+            range: source_range(declaration.range),
+        },
+        scope_plan.scopes,
+    ))
 }
 
+#[allow(clippy::too_many_lines)]
 fn lower_straight_line(
     declaration: &Declaration,
     builder: &mut FunctionBuilder<'_>,
     return_type: &Type,
+    scope_plan: &TaskScopePlan,
 ) -> Result<Block, CoreLowerError> {
     let mut instructions = Vec::new();
     let mut terminator = None;
     let mut using_resource: Option<ValueId> = None;
     let mut metadata_lines = false;
-    for line in declaration.lines.iter().skip(1) {
+    for (line_index, line) in declaration.lines.iter().enumerate().skip(1) {
         match line.kind {
             LineKind::Let => {
                 let equal = position(&line.tokens, TokenKind::Equal)
@@ -338,13 +410,36 @@ fn lower_straight_line(
                     .iter()
                     .any(|token| token.kind == TokenKind::None);
             }
-            // Sequential executor (STEP-0087): a task group is a
-            // straight-line scope; semantic analysis already enforced
-            // its structure.
-            LineKind::End
-            | LineKind::DeclarationHeader
-            | LineKind::FunctionSignature
-            | LineKind::TaskGroup => {}
+            // A task group opens an explicit scope region (RFC-0036 §5.2);
+            // the region closes at its paired `end task` line, which the HIR
+            // annotates with the `Task` token.
+            LineKind::TaskGroup => {
+                let scope = scope_plan
+                    .opens
+                    .get(&line_index)
+                    .copied()
+                    .expect("task group lines are planned");
+                builder.emit(
+                    Type::Unit,
+                    Operation::TaskScopeOpen { scope },
+                    line.range,
+                    &mut instructions,
+                );
+                builder.scope_stack.push(scope);
+            }
+            LineKind::End => {
+                if let Some(scope) = scope_plan.closes.get(&line_index).copied() {
+                    builder.emit(
+                        Type::Unit,
+                        Operation::TaskScopeClose { scope },
+                        line.range,
+                        &mut instructions,
+                    );
+                    let popped = builder.scope_stack.pop();
+                    debug_assert_eq!(popped, Some(scope));
+                }
+            }
+            LineKind::DeclarationHeader | LineKind::FunctionSignature => {}
             LineKind::If => return unsupported("nested if control flow", line.range),
             LineKind::Using => {
                 let Some(name) = line.tokens.get(1) else {
@@ -621,17 +716,30 @@ impl FunctionBuilder<'_> {
             .first()
             .is_some_and(|token| token.kind == TokenKind::Spawn)
         {
-            // Sequential executor (STEP-0087): spawn is an eager call; the
-            // bound value is the async function's inner result.
-            return self.expression(&tokens[1..], expected, output);
+            // RFC-0036 §5.2: spawn is an eager structured creation inside
+            // the innermost open task scope, producing a `Task[T]` handle.
+            return self.spawn(&tokens[1..], token_range(tokens), output);
         }
         if tokens
             .first()
             .is_some_and(|token| token.kind == TokenKind::Await)
         {
-            // Sequential executor: await is the identity over the eagerly
-            // produced value (completion already happened at spawn).
-            return self.expression(&tokens[1..], expected, output);
+            // RFC-0036 §5.2: await consumes a `Task[T]`/`Future[T]` handle
+            // and yields `T`; awaiting anything else (the `collect_tasks`
+            // result surface) stays the sequential identity.
+            let (value, ty) = self.expression(&tokens[1..], expected, output)?;
+            return match ty {
+                Type::Task(inner) | Type::Future(inner) => {
+                    let awaited = self.emit(
+                        inner.as_ref().clone(),
+                        Operation::Await(value),
+                        token_range(tokens),
+                        output,
+                    );
+                    Ok((awaited, inner.as_ref().clone()))
+                }
+                _ => Ok((value, ty)),
+            };
         }
         if tokens
             .first()
@@ -742,6 +850,147 @@ impl FunctionBuilder<'_> {
     }
 
     #[allow(clippy::too_many_lines)]
+    /// Lowers `spawn f(args)`: `f` must be a known async function (so its IR
+    /// signature returns `Future[T]`), arguments evaluate in RFC-0009 order,
+    /// and the resulting `Task[T]` handle belongs to the innermost open
+    /// task scope (RFC-0036 §3).
+    fn spawn(
+        &mut self,
+        tokens: &[HirToken],
+        range: TextRange,
+        output: &mut Vec<Instruction>,
+    ) -> Result<(ValueId, Type), CoreLowerError> {
+        let Some(open) = top_level_call_open(tokens) else {
+            return unsupported("spawn target", range);
+        };
+        let callee = join_path(&tokens[..open]);
+        let Some(signature) = self.definitions.functions.get(&callee) else {
+            return unsupported(format!("spawn target {callee}"), range);
+        };
+        if !signature.async_function {
+            return unsupported(format!("spawn of non-async function {callee}"), range);
+        }
+        let Type::Future(inner) = &signature.return_type else {
+            return unsupported(format!("spawn target {callee}"), range);
+        };
+        let arguments = split_top_level(&tokens[open + 1..tokens.len() - 1], TokenKind::Comma);
+        if arguments.len() != signature.parameters.len() {
+            return unsupported("spawn arity", range);
+        }
+        let mut values = Vec::new();
+        for (argument, (_, ty, _)) in arguments.iter().zip(&signature.parameters) {
+            values.push(
+                self.expression(argument_value(argument), Some(ty), output)?
+                    .0,
+            );
+        }
+        let Some(&scope) = self.scope_stack.last() else {
+            // Semantic analysis rejects detached spawns with E5104 first.
+            return unsupported("detached spawn", range);
+        };
+        let ty = Type::Task(inner.clone());
+        let value = self.emit(
+            ty.clone(),
+            Operation::Spawn {
+                scope,
+                callee: signature.id,
+                arguments: values,
+            },
+            range,
+            output,
+        );
+        self.spawn_scopes.insert(value, scope);
+        Ok((value, ty))
+    }
+
+    /// Lowers `collect_tasks([handles], order: input)`: the list literal
+    /// becomes a positional `Construct` of `Task[T]` handles and the collect
+    /// consumes it in creation order, yielding `List[T]` (RFC-0036 §4).
+    fn collect_tasks(
+        &mut self,
+        arguments: &[&[HirToken]],
+        expected: Option<&Type>,
+        range: TextRange,
+        output: &mut Vec<Instruction>,
+    ) -> Result<(ValueId, Type), CoreLowerError> {
+        let [tasks_argument, order_argument] = arguments else {
+            return unsupported("collect_tasks arity", range);
+        };
+        let order_ok = named_argument(order_argument) == Some("order")
+            && matches!(
+                argument_value(order_argument),
+                [token] if token.kind == TokenKind::Identifier && token.text == "input"
+            );
+        if !order_ok {
+            return unsupported("collect_tasks order", range);
+        }
+        let list = strip_outer_parens(tasks_argument);
+        if list.len() < 2
+            || list[0].kind != TokenKind::LeftBracket
+            || matching_close(list, 0) != Some(list.len() - 1)
+        {
+            return unsupported("collect_tasks list literal", range);
+        }
+        let elements = split_top_level(&list[1..list.len() - 1], TokenKind::Comma);
+        let mut inner: Option<Type> = None;
+        let mut fields = Vec::with_capacity(elements.len());
+        let mut owner: Option<u32> = None;
+        for (index, element) in elements.iter().enumerate() {
+            let (value, ty) = self.expression(element, None, output)?;
+            let Type::Task(element_inner) = ty else {
+                return unsupported("collect_tasks element", range);
+            };
+            match &inner {
+                None => inner = Some(element_inner.as_ref().clone()),
+                Some(existing) if *existing == *element_inner => {}
+                Some(_) => return unsupported("mixed collect_tasks elements", range),
+            }
+            match (owner, self.spawn_scopes.get(&value).copied()) {
+                (None, Some(scope)) => owner = Some(scope),
+                (Some(existing), Some(scope)) if existing == scope => {}
+                // Handles from different scopes never mix (RFC-0036 §5.3);
+                // an untracked handle means it crossed a scope boundary.
+                _ => return unsupported("collect_tasks scope mismatch", range),
+            }
+            fields.push(ConstructField {
+                name: index.to_string(),
+                value,
+            });
+        }
+        let inner = match (inner, expected) {
+            (Some(inner), _) => inner,
+            // An empty list takes its element type from the expected
+            // `List[T]` result type (RFC-0036 §4: empty collect is legal).
+            (None, Some(Type::List(element))) => element.as_ref().clone(),
+            (None, _) => return unsupported("unconstrained empty collect_tasks", range),
+        };
+        let scope = match owner {
+            Some(scope) => scope,
+            None => match self.scope_stack.last() {
+                Some(&scope) => scope,
+                None => return unsupported("detached collect_tasks", range),
+            },
+        };
+        let tasks = self.emit(
+            Type::List(Box::new(Type::Task(Box::new(inner.clone())))),
+            Operation::Construct {
+                name: String::new(),
+                fields,
+            },
+            range,
+            output,
+        );
+        let ty = Type::List(Box::new(inner));
+        let value = self.emit(
+            ty.clone(),
+            Operation::TaskCollect { scope, tasks },
+            range,
+            output,
+        );
+        Ok((value, ty))
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn call(
         &mut self,
         tokens: &[HirToken],
@@ -751,6 +1000,9 @@ impl FunctionBuilder<'_> {
     ) -> Result<(ValueId, Type), CoreLowerError> {
         let callee = join_path(&tokens[..open]);
         let arguments = split_top_level(&tokens[open + 1..tokens.len() - 1], TokenKind::Comma);
+        if callee == "collect_tasks" {
+            return self.collect_tasks(&arguments, expected, token_range(tokens), output);
+        }
         if matches!(callee.as_str(), "I64.literal" | "U64.literal") {
             let [argument] = arguments.as_slice() else {
                 return unsupported("fixed literal arity", token_range(tokens));

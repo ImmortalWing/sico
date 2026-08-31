@@ -41,7 +41,8 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0033`](./RFC-0033-top-level-script-syntax-decision.md) | accepted | 保留 explicit typed `main`，拒绝 unrestricted top-level statements 与 `script:` block，并以 E1013 fail closed |
 | [`RFC-0034`](./RFC-0034-tooling-execution-plan-v0.md) | accepted | 统一 LSP/AI direct-argv execution plan、1 MiB logs、client cancellation 与 compile-only source-map/debug 边界 |
 | [`RFC-0035`](./RFC-0035-runtime-observability-debug-v0.md) | accepted | 冻结 digest-bound debug identity/map、Runtime fault/event、typed cancellation race 与机器 DAP claimed subset |
+| [`RFC-0036`](./RFC-0036-structured-concurrency-semantic-ir-v0.md) | accepted | 冻结 task scope 静态身份、eager-start spawn、affine 消费规则、E5003/E5103–E5105 与 IR task-scope 表/操作 |
 
-下一可用编号：`RFC-0036`。
+下一可用编号：`RFC-0037`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

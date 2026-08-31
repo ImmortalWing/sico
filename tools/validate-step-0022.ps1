@@ -21,7 +21,7 @@ if ($typeNames.Count -ne 16 -or -not ($typeNames -contains 'Int') -or -not ($typ
 if ($prelude.namespaces.cross_namespace_collision -notmatch 'requires a new case') {
   throw 'undecided namespace collision must remain an explicit RFC gate'
 }
-if ($bCases.Count -ne 54 -or $snapshots.Count -ne 54 -or $mutations.Count -ne 12) {
+if ($bCases.Count -ne 58 -or $snapshots.Count -ne 58 -or $mutations.Count -ne 12) {
   throw "HIR evidence mismatch: cases=$($bCases.Count) snapshots=$($snapshots.Count) mutations=$($mutations.Count)"
 }
 
@@ -34,4 +34,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output 'STEP_0022_OK b_lowered=54 snapshots=54 stable_ids=pass source_maps=pass semantic_tokens=complete mutations_blocked=12 prelude_types=16 fixture_members=3 namespace_collision=undecided-rfc-gated'
+Write-Output 'STEP_0022_OK b_lowered=58 snapshots=58 stable_ids=pass source_maps=pass semantic_tokens=complete mutations_blocked=12 prelude_types=16 fixture_members=3 namespace_collision=undecided-rfc-gated'

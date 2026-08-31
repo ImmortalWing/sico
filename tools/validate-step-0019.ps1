@@ -10,7 +10,7 @@ $bCases = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-candidates/b') -
 $bMutations = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-mutations/b') -File -Filter '*.sico')
 $golden = Get-Content -LiteralPath (Join-Path $root 'tests/formatter/policy.snap') -Raw -Encoding UTF8
 
-if ($bCases.Count -ne 54 -or $bMutations.Count -ne 12) {
+if ($bCases.Count -ne 58 -or $bMutations.Count -ne 12) {
   throw "STEP-0019 corpus mismatch: B=$($bCases.Count) mutations=$($bMutations.Count)"
 }
 if ($golden.Contains("`r") -or -not $golden.EndsWith("`n")) {
@@ -26,4 +26,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output "STEP_0019_OK b_cases=54 ast_stable=54 idempotent=54 mutations_rejected=12 indent=2 line_endings=LF blank_lines=max-1 comments=preserved golden=pass"
+Write-Output "STEP_0019_OK b_cases=58 ast_stable=58 idempotent=58 mutations_rejected=12 indent=2 line_endings=LF blank_lines=max-1 comments=preserved golden=pass"

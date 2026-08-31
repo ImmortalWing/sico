@@ -373,13 +373,22 @@ impl ScriptAbi {
 
     /// Flat local slots for one IR type inside a Script program, or `None`
     /// when the type is outside the accepted Script v0 boundary shapes.
+    ///
+    /// sequential-v1 (RFC-0036 §5.4): `Task[T]`/`Future[T]` are
+    /// representation-identical to the resolved `T`, and a task-collect list
+    /// `List[Task[T]]` is representation-identical to `List[T]`.
     pub(crate) fn flat_ir_types(&self, ty: &sico_ir::Type) -> Option<Vec<Flat>> {
         match ty {
             sico_ir::Type::Bool => Some(vec![Flat::I32]),
             sico_ir::Type::I64 | sico_ir::Type::U64 => Some(vec![Flat::I64]),
             sico_ir::Type::String | sico_ir::Type::Bytes => Some(vec![Flat::I32, Flat::I32]),
-            sico_ir::Type::List(element) if element.as_ref() == &sico_ir::Type::String => {
-                Some(vec![Flat::I32, Flat::I32])
+            sico_ir::Type::Task(inner) | sico_ir::Type::Future(inner) => self.flat_ir_types(inner),
+            sico_ir::Type::List(element) => {
+                let element = match element.as_ref() {
+                    sico_ir::Type::Task(inner) | sico_ir::Type::Future(inner) => inner.as_ref(),
+                    other => other,
+                };
+                (element == &sico_ir::Type::String).then(|| vec![Flat::I32, Flat::I32])
             }
             sico_ir::Type::Named(name) => match name.as_str() {
                 "ScriptInput" => Some(self.input.flat.clone()),

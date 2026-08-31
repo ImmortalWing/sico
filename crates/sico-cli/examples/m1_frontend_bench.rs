@@ -17,7 +17,7 @@ fn main() {
     collect_sico(&root.join("syntax-candidates/b"), &mut paths);
     collect_sico(&root.join("syntax-mutations/b"), &mut paths);
     paths.sort();
-    assert_eq!(paths.len(), 66);
+    assert_eq!(paths.len(), 70);
     let inputs: Vec<_> = paths
         .iter()
         .map(|path| (path.display().to_string(), fs::read(path).unwrap()))
@@ -42,7 +42,7 @@ fn main() {
                 failure += 1;
             }
         }
-        assert_eq!(success, u64::try_from((iteration + 1) * 54).unwrap());
+        assert_eq!(success, u64::try_from((iteration + 1) * 58).unwrap());
         assert_eq!(failure, u64::try_from((iteration + 1) * 12).unwrap());
     }
     let elapsed = started.elapsed();
@@ -53,8 +53,8 @@ fn main() {
         "{}",
         serde_json::to_string(&json!({
             "schema": "sico.m1.frontend-performance.v0",
-            "corpus_files": 66,
-            "canonical_files": 54,
+            "corpus_files": 70,
+            "canonical_files": 58,
             "mutation_files": 12,
             "iterations": iterations,
             "bytes_per_iteration": bytes_per_iteration,

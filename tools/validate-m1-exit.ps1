@@ -40,7 +40,7 @@ $bCases = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-candidates/b') -
 $bMutations = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-mutations/b') -File -Filter '*.sico')
 $parserSnapshots = @(Get-Content -LiteralPath (Join-Path $root 'tests/parser/b-ast-shapes.txt') -Encoding UTF8 | Where-Object { $_.Trim() })
 $diagnosticSnapshots = @(Get-Content -LiteralPath (Join-Path $root 'tests/diagnostics/b-mutations.snap') -Encoding UTF8 | Where-Object { $_.Trim() })
-if ($bCases.Count -ne 54 -or $bMutations.Count -ne 12 -or $parserSnapshots.Count -ne 54 -or $diagnosticSnapshots.Count -ne 12) {
+if ($bCases.Count -ne 58 -or $bMutations.Count -ne 12 -or $parserSnapshots.Count -ne 58 -or $diagnosticSnapshots.Count -ne 12) {
   throw 'M1 corpus/snapshot evidence counts drifted'
 }
 
@@ -57,4 +57,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output 'M1_EXIT_OK steps=7 source=pass lexer=54/54 parser=54/54 recovery=12/12 formatter=54/54 cli=3 property_inputs=8192 depth_limit=256 parser_errors=100 semantic_reject_syntax_success=29 m2_plan=ready next=STEP-0022'
+Write-Output 'M1_EXIT_OK steps=7 source=pass lexer=58/58 parser=58/58 recovery=12/12 formatter=58/58 cli=3 property_inputs=8192 depth_limit=256 parser_errors=100 semantic_reject_syntax_success=33 m2_plan=ready next=STEP-0022'

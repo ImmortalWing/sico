@@ -1660,6 +1660,15 @@ fn inferred_local_layout(
             layout.fields.clone_from(&source.fields);
             layout.variant = source.variant;
         }
+        Operation::TaskScopeOpen { .. } | Operation::TaskScopeClose { .. } => {
+            // Region markers are compile-time structure (RFC-0036 §5.4):
+            // their Unit results occupy no locals.
+        }
+        Operation::Construct { fields, .. } if matches!(&instruction.ty, Type::List(_)) => {
+            // A collect list is a (table, count) pair in the bounded arena,
+            // not a concatenated record (RFC-0036 §4).
+            layout.types = lower_local_types(&function.name, &instruction.ty, script)?;
+        }
         Operation::Construct { fields, .. } => {
             for field in fields {
                 let Some(source) = available.get(&field.value) else {
@@ -2113,7 +2122,11 @@ fn compile_instructions(
                     layout.scalar(&function.name, instruction.result)?,
                 ));
             }
-            Operation::Copy(source) => {
+            // sequential-v1: await is the identity over the eagerly resolved
+            // value; collect is the identity over the creation-order list.
+            Operation::Copy(source)
+            | Operation::Await(source)
+            | Operation::TaskCollect { tasks: source, .. } => {
                 copy_slots(
                     &function.name,
                     body,
@@ -2160,9 +2173,16 @@ fn compile_instructions(
             Operation::LessFixed { left, right } => {
                 emit_fixed_comparison(function, layout, instruction, *left, *right, false, body)?;
             }
+            // sequential-v1 (RFC-0036 §5.4): spawn is the eager call itself;
+            // the `Task[T]` result shares the callee's resolved-value layout.
             Operation::Call {
                 function: target,
                 arguments,
+            }
+            | Operation::Spawn {
+                callee: target,
+                arguments,
+                ..
             } => {
                 if instruction.ty == Type::Int {
                     return Err(unsupported(&function.name, "non-constant Int call result"));
@@ -2209,6 +2229,14 @@ fn compile_instructions(
                         body.instruction(&Instruction::LocalSet(*slot));
                     }
                 }
+            }
+            Operation::TaskScopeOpen { .. } | Operation::TaskScopeClose { .. } => {
+                // Region markers have no runtime cost in sequential-v1
+                // (RFC-0036 §5.4); they exist for the verifier and future
+                // scheduler profiles.
+            }
+            Operation::Construct { fields, .. } if matches!(&instruction.ty, Type::List(_)) => {
+                emit_collect_list(context, body, instruction, fields)?;
             }
             Operation::Construct { fields, .. } => {
                 let mut destination = 0;
@@ -2296,6 +2324,67 @@ fn compile_instructions(
     Ok(())
 }
 
+/// Builds a collect list in the bounded arena: one 8-byte (pointer, length)
+/// cell per element in creation order, result `(table, count)` (RFC-0036 §4).
+fn emit_collect_list(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    fields: &[sico_ir::ConstructField],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "collect list outside the Script profile",
+        ));
+    };
+    let [table, count] = layout.get(&function.name, instruction.result)? else {
+        return Err(unsupported(&function.name, "collect list layout"));
+    };
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(fields.len())
+            .map_err(|_| unsupported(&function.name, "collect list length outside i32"))?,
+    ));
+    body.instruction(&Instruction::LocalSet(*count));
+    if fields.is_empty() {
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::LocalSet(*table));
+        return Ok(());
+    }
+    let bytes = fields
+        .len()
+        .checked_mul(8)
+        .and_then(|bytes| i32::try_from(bytes).ok())
+        .ok_or_else(|| unsupported(&function.name, "collect list byte size outside i32"))?;
+    body.instruction(&Instruction::I32Const(bytes));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(*table));
+    for (index, field) in fields.iter().enumerate() {
+        let [pointer, length] = layout.get(&function.name, field.value)? else {
+            return Err(unsupported(&function.name, "collect list element layout"));
+        };
+        let offset = u64::try_from(index * 8)
+            .map_err(|_| unsupported(&function.name, "collect list offset outside u64"))?;
+        body.instruction(&Instruction::LocalGet(*table));
+        body.instruction(&Instruction::LocalGet(*pointer));
+        body.instruction(&Instruction::I32Store(MemArg {
+            offset,
+            align: 2,
+            memory_index: 0,
+        }));
+        body.instruction(&Instruction::LocalGet(*table));
+        body.instruction(&Instruction::LocalGet(*length));
+        body.instruction(&Instruction::I32Store(MemArg {
+            offset: offset + 4,
+            align: 2,
+            memory_index: 0,
+        }));
+    }
+    Ok(())
+}
+
 fn zero_local(body: &mut Function, slot: u32, ty: ValType) {
     match ty {
         ValType::I32 => body.instruction(&Instruction::I32Const(0)),
@@ -2338,8 +2427,11 @@ fn lower_local_types(
         {
             Ok(vec![ValType::I32, ValType::I64])
         }
-        Type::Task(_) => Err(async_unsupported(function, "Task")),
-        Type::Future(_) => Err(async_unsupported(function, "Future")),
+        // sequential-v1 (RFC-0036 §5.4): inside the Script profile a
+        // Task/Future value is representation-identical to its resolved
+        // value; outside it the RFC-0013 async boundary refusal stands.
+        Type::Task(inner) => lower_async_local(function, inner, script, "Task"),
+        Type::Future(inner) => lower_async_local(function, inner, script, "Future"),
         Type::Stream(_) => Err(async_unsupported(function, "Stream")),
         _ => {
             if let Some(abi) = script
@@ -2355,6 +2447,20 @@ fn lower_local_types(
             }
             Err(unsupported(function, "non-scalar local"))
         }
+    }
+}
+
+/// Projects an internal `Task[T]`/`Future[T]` local to the resolved-value
+/// layout in the Script profile, or keeps the RFC-0013 refusal elsewhere.
+fn lower_async_local(
+    function: &str,
+    inner: &Type,
+    script: Option<&ScriptAbi>,
+    feature: &'static str,
+) -> Result<Vec<ValType>, CodegenError> {
+    match script.and_then(|abi| abi.flat_ir_types(inner)) {
+        Some(flat) => Ok(flat.iter().map(|flat| flat_local_type(*flat)).collect()),
+        None => Err(async_unsupported(function, feature)),
     }
 }
 

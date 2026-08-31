@@ -1,0 +1,15 @@
+// case: TASK-103
+// syntax: C
+// expect: reject(TASK_NOT_CONSUMED)
+// semantics: SEM-102, SEM-103
+
+async fn compute() -> Int {
+  return 1
+}
+
+async fn forgotten() -> Int {
+  task group {
+    let handle = spawn compute()
+    return 0
+  }
+}

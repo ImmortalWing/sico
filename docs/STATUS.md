@@ -1,12 +1,14 @@
 # Sico project status
 
-> - updated: 2026-07-29
-> - phase: M11 structured concurrency started; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred
+> - updated: 2026-08-31
+> - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123)
 > - phase status: in-progress
-> - current step: M11 STEP-0104 semantic/IR structured-concurrency contract (next); STEP-0103 ADR-0010 accepted-design
-> - last completed active step: STEP-0102 (M10 security/performance/platform exit audit, GO)
-> - last completed support step: STEP-0074 (production origin and one-command workflow, local complete)
-> - next step: implement the M11 semantic and IR structured-concurrency contract from accepted ADR-0010; keep task-aware bounded events and exact DAP claims stable
+> - current step: STEP-0105 single-Store cooperative scheduler core (next; RFC-0036 accepted)
+> - current support step: 无（M13 STEP-0119 已完成）
+> - last completed active step: STEP-0104 (semantic/IR structured-concurrency contract; E5003/E5103–E5105, faithful task IR, sequential-v1 codegen projection, collect_tasks executed)
+> - last completed support step: STEP-0119 (AI generation-quality attribution and re-measured baseline 0.8846→0.9744, subagent-measured)
+> - next step: implement the ADR-0010 single-Store cooperative scheduler per RFC-0036 (STEP-0105), then validator and full regression
+> - next support step: STEP-0120 AI quality-budget ADR-0011；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入
 
 ## 0. M6 exit state
 
@@ -42,13 +44,13 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | M9 blocked I/O cancellation | read/pump/write exit 123；127/124/136 ms total incl. 100 ms timer | Windows runtime-verified |
 | M9 persistent watch | one PID generations 1/2/3；exits 0/122/0；warm median 5.994 ms | Windows runtime-verified |
 | M9 REPL bounds | 4 KiB line；256 cells；16 KiB history；7.8 MiB peak RSS | Windows runtime-verified |
-| P0 A0 语义案例 | 54 | verified by semantic case validator |
-| 候选 B 案例 | 54 | verified by semantic case validator |
-| 候选 C 案例 | 54 | verified by semantic case validator |
+| P0 A0 语义案例 | 58 | verified by semantic case validator |
+| 候选 B 案例 | 58 | verified by semantic case validator |
+| 候选 C 案例 | 58 | verified by semantic case validator |
 | 单点语法错误变体 | 36 | verified by mutation validator |
 | 固定 AI 评测任务 | 96 | verified by AI evaluation validator |
-| 稳定诊断 code/key | 37（其中 13 个由 parser 产生） | verified by diagnostic validator |
-| 已映射非法 case | 29 | verified by diagnostic validator |
+| 稳定诊断 code/key | 41（其中 13 个由 parser 产生） | verified by diagnostic validator |
+| 已映射非法 case | 33 | verified by diagnostic validator |
 | Rust `.rs` 文件 | 111 | measured |
 | `Cargo.toml` | 34 | measured |
 | 数值原型单元测试 | 10 passed | verified |
@@ -59,10 +61,10 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | 4096-bit/Decimal ABI roundtrip | 512 bytes + true | verified |
 | 正式编译器 workspace | 12 crates, build/test pass | verified |
 | source/line index | 6 tests passed | verified |
-| lossless lexer | 8 tests; B 54/54 | verified |
-| B happy-path parser | 54/54 + 54 snapshots | verified |
+| lossless lexer | 8 tests; B 58/58 | verified |
+| B happy-path parser | 58/58 + 58 snapshots | verified |
 | parser recovery/E1xxx | 12/12 mutation；E1001–E1012；top-level E1013 | verified |
-| canonical formatter | 54/54 AST stable + idempotent | verified |
+| canonical formatter | 58/58 AST stable + idempotent | verified |
 | `sico` CLI | 6 commands；8 integration tests；`.sapp` build/run/inspect | verified |
 | deterministic frontend properties | 8,192 inputs | verified |
 | parser limits | depth 256；diagnostics 100 | verified |
@@ -73,13 +75,13 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | 实际 `.sico` resource/task/stream check | 6 valid pass；6 invalid exact primary | verified |
 | 实际 `.sico` revision check | 2 valid pass；2 invalid exact primary | verified |
 | compiler-produced Semantic Index | 10 complete B modules；10 honest partial A modules；5 queries | verified |
-| semantic CLI full oracle | 25/25 valid；29/29 exact invalid；text/JSON | verified |
+| semantic CLI full oracle | 25/25 valid；33/33 exact invalid；text/JSON | verified |
 | deterministic semantic properties/limits | 2,048 inputs；diagnostics 100；locals 2,000；depth 200 | verified |
 | M2 performance | median 1242.186 ms / 2.808 MiB/s；no SLA | measured |
 | typed Sico IR v0 | 14 types；19 operations；5 terminators | verified |
 | independent IR verifier | 9 mutation classes；diagnostic cap 100 | verified |
-| deterministic core lowering | 12 valid lowered；13 valid typed-refused；29 invalid blocked | verified |
-| effect/resource/revision lowering | 5 flow cases；cumulative valid 17/25；4 verifier mutations | verified |
+| deterministic core lowering | 12 core valid lowered；7 task/flow cases；19/6 cumulative；33 invalid blocked | verified |
+| effect/resource/revision/task lowering | 7 flow cases；cumulative valid 19/25；task-scope table + 4 ops；verifier task mutations | verified |
 | deterministic Core Wasm backend | 2 byte-identical artifacts；wasmparser + Node engine；42/7/9 | verified |
 | compiler-generated Component | 2 byte-identical artifacts；wasmparser + Wasmtime 46.0.1；42 | verified |
 | WIT Result/record/resource boundary | Ok/Err；512-byte Int；Decimal；owned/borrowed/drop；host output 50 | verified |
@@ -104,7 +106,7 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 | M10 session isolation | 100 sequential DAP sessions；handles 92 → 92；bounded RSS | measured |
 | M10 exit audit | M0–M9 aggregate green；Windows x64 GNU only；external gates unchanged | verified |
 
-M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。
+M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 exact invalid、semantic CLI、compiler index/query 与有界质量基线；[`M2 exit audit`](./reports/m2-exit-audit.md) 已授权进入 M3 STEP-0030。M11 STEP-0104 已完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) 语义/IR 契约：E5003/E5103–E5105 四个新稳定诊断、忠实 task IR lowering（19 lowered / 6 typed-refused / 33 invalid blocked）、sequential-v1 codegen 投影与 `collect_tasks` 执行证据，M9 顺序行为逐字节保持。
 
 ## 4. Completed assets
 
@@ -114,11 +116,11 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - 候选语法与评测方法：[`SYNTAX.md`](../SYNTAX.md)；
 - 10 个代表性程序与问题矩阵：[`examples/`](../examples/README.md)；
 - 候选 A 跨样本语义审计：[`examples/SEMANTICS-AUDIT.md`](../examples/SEMANTICS-AUDIT.md)；
-- 54 个 P0 正反例：[`semantic-cases/`](../semantic-cases/README.md)；
+- 58 个 P0 正反例：[`semantic-cases/`](../semantic-cases/README.md)；
 - A0/B/C 的 162 个一一对应案例与完整静态指标：[`syntax-candidates/`](../syntax-candidates/README.md)；
 - 36 个可复现单点结构错误变体：[`syntax-mutations/`](../syntax-mutations/README.md)；
 - 96 项 AI v1 评测协议与离线执行器：[`ai-eval/`](../ai-eval/README.md)；
-- 36 个稳定诊断（12 个真实 syntax、24 个 M2 设计）、12 个 syntax mutation 与 29 个 semantic case 映射、JSON Schema 和校验器：[`diagnostics/`](../diagnostics/README.md)；
+- 41 个稳定诊断（12 个真实 syntax、29 个 M2/M11 设计）、12 个 syntax mutation 与 33 个 semantic case 映射、JSON Schema 和校验器：[`diagnostics/`](../diagnostics/README.md)；
 - 10 模块 Semantic Index fixture、五类查询 JSON v0 与离线校验器：[`semantic-index/`](../semantic-index/README.md)；
 - `Int`/Decimal Rust 原型、WIT 候选、RFC 和可复现报告：[`prototypes/numeric/`](../prototypes/numeric/README.md)；
 - resource/async Rust 原型、compile-fail、WASI 0.3 WIT、RFC 和报告：[`prototypes/resource-async/`](../prototypes/resource-async/README.md)；
@@ -129,7 +131,7 @@ M0/M1/M2 已完成。STEP-0022–0029 证明完整 B HIR、25/25 valid、29/29 e
 - M0 requirement-by-requirement GO 结论与递延登记：[`M0 exit audit`](./reports/m0-exit-audit.md)；
 - STEP-0015–0021 前端工程计划：[`M1 compiler frontend`](./plans/M1-compiler-frontend.md)；
 - 正式 Rust workspace、lexical/source v0 与 21 个 contract case：[`STEP-0015`](./steps/STEP-0015-compiler-workspace-lexical-source.md)、[`RFC-0006`](./rfc/RFC-0006-lexical-source-contract-v0.md)；
-- strict source/span、line index 与 54-file lossless lexer：[`STEP-0016`](./steps/STEP-0016-source-span-lossless-lexer.md)；
+- strict source/span、line index 与 58-file lossless lexer：[`STEP-0016`](./steps/STEP-0016-source-span-lossless-lexer.md)；
 - B happy-path lossless parser 与 AST shape：[`STEP-0017`](./steps/STEP-0017-b-grammar-lossless-parser.md)；
 - parser recovery、E1001–E1012 与 text/JSON span：[`STEP-0018`](./steps/STEP-0018-parser-recovery-syntax-diagnostics.md)；top-level E1013：[`STEP-0092`](./steps/STEP-0092-top-level-script-syntax-decision.md)；
 - canonical formatter、comment/trivia policy 与 error-tree refusal：[`STEP-0019`](./steps/STEP-0019-canonical-formatter.md)；

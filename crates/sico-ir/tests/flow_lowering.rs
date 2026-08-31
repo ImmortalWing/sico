@@ -12,10 +12,12 @@ const CASES: &[(&str, &str)] = &[
     ("RES-002", "affine-resources/valid/scoped-cleanup.sico"),
     ("REV-001", "revision/valid/versioned-commit.sico"),
     ("REV-002", "revision/valid/stale-load-ignored.sico"),
+    ("TASK-001", "future-task/valid/await-once.sico"),
+    ("TASK-002", "future-task/valid/structured-pair.sico"),
 ];
 
 #[test]
-fn five_flow_cases_lower_to_deterministic_verified_snapshots() {
+fn seven_flow_cases_lower_to_deterministic_verified_snapshots() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut snapshots = Vec::new();
     for (index, (case, relative)) in CASES.iter().enumerate() {
@@ -81,7 +83,7 @@ fn effect_resource_and_revision_mutations_are_rejected() {
 }
 
 #[test]
-fn cumulative_capability_is_eighteen_lowered_and_seven_typed_refused() {
+fn cumulative_capability_is_nineteen_lowered_and_six_typed_refused() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut paths = Vec::new();
     collect_sico(&repository.join("syntax-candidates/b"), &mut paths);
@@ -109,7 +111,142 @@ fn cumulative_capability_is_eighteen_lowered_and_seven_typed_refused() {
         }
     }
     // STEP-0087: await-once now lowers through the sequential executor.
-    assert_eq!((lowered, unsupported), (18, 7));
+    // STEP-0104: structured-pair (collect_tasks) lowers to explicit task IR.
+    assert_eq!((lowered, unsupported), (19, 6));
+}
+
+/// RFC-0036 §5: lowering emits the canonical scope table, LIFO region
+/// markers, scope-qualified spawns and a creation-order collect; the
+/// independent verifier proves the emitted discipline.
+#[test]
+fn structured_pair_lowers_to_explicit_task_scope_ir() {
+    let module = load("future-task/valid/structured-pair.sico");
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let pair = module
+        .functions
+        .iter()
+        .find(|function| function.name == "pair")
+        .expect("pair function");
+    let compute = module
+        .functions
+        .iter()
+        .find(|function| function.name == "compute")
+        .expect("compute function");
+    assert_eq!(
+        compute.return_type,
+        sico_ir::Type::Future(Box::new(sico_ir::Type::Int)),
+        "async callees declare Future[T] in IR"
+    );
+    assert_eq!(
+        module
+            .task_scopes
+            .as_ref()
+            .and_then(|tables| tables.get(&pair.id)),
+        Some(&vec![sico_ir::TaskScope {
+            scope: 0,
+            parent: None,
+        }])
+    );
+    let operations: Vec<_> = pair.blocks[0]
+        .instructions
+        .iter()
+        .map(|instruction| (&instruction.operation, &instruction.ty))
+        .collect();
+    let task_int = sico_ir::Type::Task(Box::new(sico_ir::Type::Int));
+    // Source order: open, spawn, spawn, list construct, collect, close;
+    // spawn arguments (ConstInt) interleave with the Spawn operations.
+    assert!(
+        matches!(
+            operations.first(),
+            Some((Operation::TaskScopeOpen { scope: 0 }, sico_ir::Type::Unit))
+        ),
+        "{operations:?}"
+    );
+    let spawns: Vec<_> = operations
+        .iter()
+        .filter(|(operation, _)| matches!(operation, Operation::Spawn { .. }))
+        .collect();
+    assert_eq!(spawns.len(), 2, "{operations:?}");
+    for (operation, ty) in &spawns {
+        assert!(
+            matches!(operation, Operation::Spawn { scope: 0, callee, .. } if *callee == compute.id)
+                && **ty == task_int,
+            "{operations:?}"
+        );
+    }
+    let construct = operations
+        .iter()
+        .find(|(operation, _)| matches!(operation, Operation::Construct { .. }))
+        .expect("collect list construct");
+    assert!(
+        matches!(
+            construct,
+            (Operation::Construct { name, fields }, sico_ir::Type::List(element))
+                if name.is_empty()
+                    && fields.len() == 2
+                    && element.as_ref() == &task_int
+        ),
+        "{operations:?}"
+    );
+    let collect = operations
+        .iter()
+        .find(|(operation, _)| matches!(operation, Operation::TaskCollect { .. }))
+        .expect("task collect");
+    assert!(
+        matches!(
+            collect,
+            (Operation::TaskCollect { scope: 0, .. }, sico_ir::Type::List(element))
+                if element.as_ref() == &sico_ir::Type::Int
+        ),
+        "{operations:?}"
+    );
+    assert!(
+        matches!(
+            operations.last(),
+            Some((Operation::TaskScopeClose { scope: 0 }, sico_ir::Type::Unit))
+        ),
+        "{operations:?}"
+    );
+}
+
+/// RFC-0036 §5.2: awaiting a plain `Future[T]` emits a real `Await`
+/// operation, and an async function's IR signature returns `Future[T]`.
+#[test]
+fn await_once_emits_typed_await_and_future_signature() {
+    let module = load("future-task/valid/await-once.sico");
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    assert!(
+        module.task_scopes.is_none(),
+        "no task group, no scope table"
+    );
+    let main = module
+        .functions
+        .iter()
+        .find(|function| function.name == "main")
+        .expect("main function");
+    assert_eq!(
+        main.return_type,
+        sico_ir::Type::Future(Box::new(sico_ir::Type::Int))
+    );
+    let instructions = &main.blocks[0].instructions;
+    let call = instructions
+        .iter()
+        .find(|instruction| matches!(instruction.operation, Operation::Call { .. }))
+        .expect("async call");
+    assert_eq!(
+        call.ty,
+        sico_ir::Type::Future(Box::new(sico_ir::Type::Int)),
+        "{instructions:?}"
+    );
+    let awaited = instructions
+        .iter()
+        .find(|instruction| matches!(instruction.operation, Operation::Await(_)))
+        .expect("await operation");
+    assert_eq!(awaited.ty, sico_ir::Type::Int, "{instructions:?}");
+    assert!(
+        matches!(main.blocks[0].terminator, Terminator::Return(Some(value)) if value == awaited.result),
+        "await result feeds the async return (resolved Future[Int])"
+    );
 }
 
 fn load(relative: &str) -> sico_ir::Module {
@@ -189,6 +326,10 @@ fn operation_name(operation: &Operation) -> &'static str {
         Operation::Try(_) => "try",
         Operation::Await(_) => "await",
         Operation::StreamNext(_) => "stream-next",
+        Operation::TaskScopeOpen { .. } => "task-scope-open",
+        Operation::TaskScopeClose { .. } => "task-scope-close",
+        Operation::Spawn { .. } => "spawn",
+        Operation::TaskCollect { .. } => "task-collect",
     }
 }
 

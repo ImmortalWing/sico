@@ -1,9 +1,9 @@
 # Sico audited roadmap
 
-> - updated: 2026-07-29
+> - updated: 2026-08-04
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
 > - current phase: M11
-> - phase context: M10 Runtime observability/debugging complete (GO, Windows x64 GNU); M11 structured-concurrency ADR accepted and implementation unlocked; M12 secure HTTP follows M11 GO; M7 public rollout and M6 mobile remain externally blocked
+> - phase context: M10 Runtime observability/debugging complete (GO, Windows x64 GNU); M11 structured-concurrency ADR accepted and implementation unlocked; M12 secure HTTP follows M11 GO; M13 AI tooling closure approved as a parallel support track (STEP-0119–0123) with live-model evaluation gated on owner-delivered DeepSeek credentials; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
 
@@ -190,7 +190,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M11: Bounded structured-concurrency Runtime
 
-状态：`in-progress / STEP-0103 ADR accepted-design; implementation unlocked by M10 GO`
+状态：`in-progress / STEP-0103 ADR accepted-design; STEP-0104 semantic/IR contract complete (RFC-0036 accepted); next STEP-0105 scheduler core`
 
 主要交付：Store/arena 架构 ADR、单 Store 协作式 bounded scheduler、structured task scope、await/group/select/race、affine resource 跨 task 所有权、统一 cancellation/terminal winner、bounded channel/stream、persistent-runner/DAP task integration，以及 Windows x64 与 Linux x64 native runner 实证。
 
@@ -217,6 +217,16 @@ Entry gate：satisfied by STEP-0014。
 退出证据：真实 HTTPS 正反证书矩阵、IDNA/IPv4/IPv6/DNS rebinding 拒绝语料、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、one-Store/task connection isolation、M0–M11 regression 与 actual-platform matrix。
 
 M10–M12 之所以在此时推进内部基建，是因为 production domain/identity/credentials、third-party pilots、live-model credentials 和 mobile runners 仍是缺失的外部输入，不能靠仓库代码伪造。每个 exit audit 都必须重新检查这些输入；内部 GO 不得替代任何外部 gate。
+
+## M13: AI tooling closure（parallel support track）
+
+状态：`in-progress / STEP-0119 complete (subagent-measured baseline 0.974359); STEP-0120–0123 reserved; live-model evaluation gated on owner-delivered DeepSeek credentials`
+
+主要交付：generation 失败归因与评分器/guide 修正、重测基线、AI 质量数值预算 ADR、agent 框架接入层（MCP）、语义索引 accuracy/latency 与错误频率实测、对照 `AGENT_GOAL.md` §13 的收口审计。
+
+进入条件：无额外进入条件；作为并行支持轨运行，不改变 M11/M12 主线与 STEP 编号预留（沿用 STEP-0074 先例）。仓库所有者于 2026-08-04 批准该轨与 STEP-0119 开工，并承诺提供 DeepSeek API 凭据用于权威 live-model 评测；凭据到位前 subagent 运行只作工程反馈，不产生官方模型分数。
+
+执行计划：[`M13 AI tooling closure`](./plans/M13-ai-tooling-closure.md)，STEP-0119–0123。退出证据与 live-model 插入规则见该计划 §4–§6。
 
 ## Immediate dependency chain
 

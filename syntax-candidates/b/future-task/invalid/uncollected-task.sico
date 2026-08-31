@@ -1,0 +1,15 @@
+// case: TASK-103
+// syntax: B
+// expect: reject(TASK_NOT_CONSUMED)
+// semantics: SEM-102, SEM-103
+
+async function compute() returns Int:
+  return 1
+end function
+
+async function forgotten() returns Int:
+  task group:
+    let handle = spawn compute()
+    return 0
+  end task
+end function

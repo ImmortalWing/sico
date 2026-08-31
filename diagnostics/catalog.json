@@ -248,6 +248,14 @@
       "required_arguments": ["resource"]
     },
     {
+      "code": "E5003",
+      "key": "BORROW_ACROSS_SUSPENSION",
+      "category": "resource",
+      "severity": "error",
+      "message_template": "borrow of {resource} is live across await",
+      "required_arguments": ["resource"]
+    },
+    {
       "code": "E5101",
       "key": "FUTURE_CONSUMED",
       "category": "future",
@@ -262,6 +270,30 @@
       "severity": "error",
       "message_template": "task cannot leave its task group",
       "required_arguments": []
+    },
+    {
+      "code": "E5103",
+      "key": "TASK_NOT_CONSUMED",
+      "category": "task",
+      "severity": "error",
+      "message_template": "{task} was not consumed before its task group closed",
+      "required_arguments": ["task"]
+    },
+    {
+      "code": "E5104",
+      "key": "TASK_DETACHED",
+      "category": "task",
+      "severity": "error",
+      "message_template": "spawn requires an open task group",
+      "required_arguments": []
+    },
+    {
+      "code": "E5105",
+      "key": "TASK_SCOPE_LIMIT",
+      "category": "task",
+      "severity": "error",
+      "message_template": "task scope limit exceeded: {dimension}",
+      "required_arguments": ["dimension"]
     },
     {
       "code": "E5201",

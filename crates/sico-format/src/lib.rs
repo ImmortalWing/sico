@@ -273,7 +273,7 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 54);
+        assert_eq!(paths.len(), 58);
         for (index, path) in paths.iter().enumerate() {
             let original = SourceFile::from_bytes(
                 SourceId::new(u32::try_from(index).unwrap()),

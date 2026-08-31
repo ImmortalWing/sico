@@ -98,8 +98,8 @@ $rows = @()
 foreach ($syntax in $candidateRoots.Keys) {
   $base = Join-Path $root $candidateRoots[$syntax]
   $files = @(Get-ChildItem -LiteralPath $base -Recurse -Filter '*.sico' | Sort-Object FullName)
-  if ($files.Count -ne 54) {
-    throw "expected 54 $syntax files, found $($files.Count)"
+  if ($files.Count -ne 58) {
+    throw "expected 58 $syntax files, found $($files.Count)"
   }
   foreach ($file in $files) {
     $relative = $file.FullName.Substring($base.Length + 1).Replace('\', '/')

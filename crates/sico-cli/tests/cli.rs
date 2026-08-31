@@ -91,7 +91,7 @@ fn top_level_execution_candidates_fail_closed_with_e1013() {
 }
 
 #[test]
-fn check_matches_all_54_semantic_oracles() {
+fn check_matches_all_58_semantic_oracles() {
     let repository = root();
     let map: Value = serde_json::from_str(
         &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
@@ -106,7 +106,7 @@ fn check_matches_all_54_semantic_oracles() {
     let mut sources = Vec::new();
     collect_sico(&repository.join("syntax-candidates/b"), &mut sources);
     sources.sort();
-    assert_eq!(sources.len(), 54);
+    assert_eq!(sources.len(), 58);
     let mut accepted = 0;
     let mut rejected = 0;
     for source in sources {
@@ -134,7 +134,7 @@ fn check_matches_all_54_semantic_oracles() {
         }
         assert_eq!(json["status"]["semantic_checks_performed"], true);
     }
-    assert_eq!((accepted, rejected), (25, 29));
+    assert_eq!((accepted, rejected), (25, 33));
 }
 
 #[test]

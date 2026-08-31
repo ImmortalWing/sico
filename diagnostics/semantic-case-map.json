@@ -171,6 +171,14 @@
       "expected_message": "reader was already closed"
     },
     {
+      "case": "RES-103",
+      "source": "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
+      "code": "E5003",
+      "key": "BORROW_ACROSS_SUSPENSION",
+      "arguments": { "resource": "reader" },
+      "expected_message": "borrow of reader is live across await"
+    },
+    {
       "case": "TASK-101",
       "source": "semantic-cases/future-task/invalid/await-twice.sico",
       "code": "E5101",
@@ -185,6 +193,30 @@
       "key": "TASK_ESCAPES_SCOPE",
       "arguments": {},
       "expected_message": "task cannot leave its task group"
+    },
+    {
+      "case": "TASK-103",
+      "source": "semantic-cases/future-task/invalid/uncollected-task.sico",
+      "code": "E5103",
+      "key": "TASK_NOT_CONSUMED",
+      "arguments": { "task": "handle" },
+      "expected_message": "handle was not consumed before its task group closed"
+    },
+    {
+      "case": "TASK-104",
+      "source": "semantic-cases/future-task/invalid/detached-spawn.sico",
+      "code": "E5104",
+      "key": "TASK_DETACHED",
+      "arguments": {},
+      "expected_message": "spawn requires an open task group"
+    },
+    {
+      "case": "TASK-105",
+      "source": "semantic-cases/future-task/invalid/scope-nesting-limit.sico",
+      "code": "E5105",
+      "key": "TASK_SCOPE_LIMIT",
+      "arguments": { "dimension": "nesting" },
+      "expected_message": "task scope limit exceeded: nesting"
     },
     {
       "case": "STREAM-101",

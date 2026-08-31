@@ -38,7 +38,7 @@ if ($cli.Contains('type checker: unavailable') -or $cli.Contains('"type_checker"
 
 $manifest = Get-Content -LiteralPath (Join-Path $root 'semantic-cases/manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $map = Get-Content -LiteralPath (Join-Path $root 'diagnostics/semantic-case-map.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-if ($manifest.case_count -ne 54 -or $manifest.valid_count -ne 25 -or $manifest.invalid_count -ne 29 -or @($map.cases).Count -ne 29) {
+if ($manifest.case_count -ne 58 -or $manifest.valid_count -ne 25 -or $manifest.invalid_count -ne 33 -or @($map.cases).Count -ne 33) {
   throw 'M2 semantic oracle counts drifted'
 }
 
@@ -65,4 +65,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output 'M2_EXIT_OK steps=8 hir=54 semantic_valid=25 semantic_invalid=29 exact_primary=29 cli=text-json index_modules=10 queries=5 property_inputs=2048 diagnostic_cap=100 perf_median_ms=1242.186 next=STEP-0030'
+Write-Output 'M2_EXIT_OK steps=8 hir=58 semantic_valid=25 semantic_invalid=33 exact_primary=33 cli=text-json index_modules=10 queries=5 property_inputs=2048 diagnostic_cap=100 perf_median_ms=1242.186 next=STEP-0030'

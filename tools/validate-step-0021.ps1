@@ -10,7 +10,7 @@ $performance = Get-Content -LiteralPath (Join-Path $root 'tests/performance/m1-f
 if ($performance.schema -ne 'sico.m1.frontend-performance-runs.v0' -or @($performance.runs).Count -ne 3) {
   throw 'invalid M1 performance evidence envelope'
 }
-if ($performance.corpus.files -ne 66 -or $performance.corpus.canonical -ne 54 -or $performance.corpus.mutations -ne 12) {
+if ($performance.corpus.files -ne 70 -or $performance.corpus.canonical -ne 58 -or $performance.corpus.mutations -ne 12) {
   throw 'performance corpus does not match the M1 parser corpus'
 }
 if ($performance.iterations_per_run -ne 200 -or $performance.sla -ne 'not-established') {
@@ -31,4 +31,4 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output "STEP_0021_OK arbitrary_bytes=4096 valid_utf8=4096 depth_limit=256 parser_errors=100 canonical=54 mutations=12 perf_runs=3 perf_iterations=200 median_ms=$($performance.median.elapsed_ms) median_mib_s=$($performance.median.mib_per_second) sla=not-established"
+Write-Output "STEP_0021_OK arbitrary_bytes=4096 valid_utf8=4096 depth_limit=256 parser_errors=100 canonical=58 mutations=12 perf_runs=3 perf_iterations=200 median_ms=$($performance.median.elapsed_ms) median_mib_s=$($performance.median.mib_per_second) sla=not-established"

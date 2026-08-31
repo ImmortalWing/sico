@@ -667,7 +667,7 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 54);
+        assert_eq!(paths.len(), 58);
         let mut token_count = 0;
         for (id, path) in paths.iter().enumerate() {
             let bytes = fs::read(path).unwrap();

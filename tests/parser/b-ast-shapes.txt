@@ -1,3 +1,4 @@
+affine-resources/invalid/borrow-across-await.sico = Resource:Reader,Function:tick,Function:read_later
 affine-resources/invalid/use-after-close.sico = Enum:ReadError,Resource:Reader,Function:read_after_close
 affine-resources/invalid/use-after-move.sico = Resource:Reader,Function:finish
 affine-resources/valid/close-once.sico = Resource:Reader,Function:finish
@@ -18,7 +19,10 @@ exhaustive-match/valid/all-product-cases.sico = Enum:State,Enum:Event,Function:a
 exhaustive-match/valid/all-variants.sico = Enum:Color,Function:name
 exhaustive-match/valid/ignore-payload.sico = Enum:Notice,Function:is_message
 future-task/invalid/await-twice.sico = Function:compute,Function:twice
+future-task/invalid/detached-spawn.sico = Function:compute,Function:detached
+future-task/invalid/scope-nesting-limit.sico = Function:compute,Function:deep
 future-task/invalid/task-escapes-scope.sico = Function:compute,Function:leak
+future-task/invalid/uncollected-task.sico = Function:compute,Function:forgotten
 future-task/valid/await-once.sico = Function:compute,Function:main
 future-task/valid/structured-pair.sico = Function:compute,Function:pair
 nominal-invariants/invalid/invariant-violation.sico = Record:Range,Function:main

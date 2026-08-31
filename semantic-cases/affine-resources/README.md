@@ -15,6 +15,7 @@
 |---|---|---|
 | [`RES-101`](./invalid/use-after-move.sico) | `RESOURCE_MOVED` | reader was moved to owned |
 | [`RES-102`](./invalid/use-after-close.sico) | `RESOURCE_CLOSED` | reader was already closed |
+| [`RES-103`](./invalid/borrow-across-await.sico) | `BORROW_ACROSS_SUSPENSION` | borrow of reader is live across await |
 
 ## 语义摘要
 

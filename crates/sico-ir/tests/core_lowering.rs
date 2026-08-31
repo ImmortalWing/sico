@@ -201,7 +201,7 @@ fn semantic_error_wins_before_backend_support_classification() {
 }
 
 #[test]
-fn all_twenty_nine_invalid_cases_stop_before_ir_support_dispatch() {
+fn all_thirty_three_invalid_cases_stop_before_ir_support_dispatch() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let map: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(repository.join("diagnostics/semantic-case-map.json")).unwrap(),
@@ -241,7 +241,7 @@ fn all_twenty_nine_invalid_cases_stop_before_ir_support_dispatch() {
         assert_eq!(diagnostics.len(), 1, "{case}");
         assert_eq!(diagnostics[0].code, expected[case.as_str()], "{case}");
     }
-    assert_eq!(rejected, 29);
+    assert_eq!(rejected, 33);
 }
 
 #[test]
@@ -356,6 +356,10 @@ fn shape(module: &sico_ir::Module) -> String {
                             Operation::Try(_) => "try",
                             Operation::Await(_) => "await",
                             Operation::StreamNext(_) => "stream-next",
+                            Operation::TaskScopeOpen { .. } => "task-scope-open",
+                            Operation::TaskScopeClose { .. } => "task-scope-close",
+                            Operation::Spawn { .. } => "spawn",
+                            Operation::TaskCollect { .. } => "task-collect",
                         })
                         .collect::<Vec<_>>()
                         .join(",");

@@ -1,0 +1,20 @@
+// case: RES-103
+// syntax: B
+// expect: reject(BORROW_ACROSS_SUSPENSION)
+// semantics: SEM-090, SEM-092, SEM-100
+
+resource Reader:
+  function read(borrow self) returns Text
+  function close(self) returns Unit
+end resource
+
+async function tick() returns Int:
+  return 1
+end function
+
+async function read_later(reader: Reader) returns Text:
+  let borrowed = borrow reader
+  let pending = tick()
+  let done = await pending
+  return borrowed.read()
+end function

@@ -1,0 +1,13 @@
+// case: TASK-104
+// syntax: B
+// expect: reject(TASK_DETACHED)
+// semantics: SEM-101, SEM-102
+
+async function compute() returns Int:
+  return 1
+end function
+
+async function detached() returns Int:
+  let handle = spawn compute()
+  return await handle
+end function

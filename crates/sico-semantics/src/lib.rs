@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use sico_hir::{HirId, HirToken, Line, LineKind, LowerError, Module, lower};
 use sico_lexer::TokenKind;
@@ -550,6 +553,18 @@ fn analyze_function(
         .iter()
         .map(|parameter| (parameter.name.clone(), parameter.ty.clone()))
         .collect();
+    let spawned: BTreeSet<String> = function
+        .body
+        .iter()
+        .filter(|line| {
+            line.kind == LineKind::Let
+                && line
+                    .tokens
+                    .get(3)
+                    .is_some_and(|token| token.kind == TokenKind::Spawn)
+        })
+        .map(|line| line.tokens[1].text.clone())
+        .collect();
     for (line_index, line) in function.body.iter().enumerate() {
         match line.kind {
             LineKind::Let if line.tokens.len() >= 4 => {
@@ -578,7 +593,9 @@ fn analyze_function(
             }
             LineKind::Return if line.tokens.len() >= 2 => {
                 let value = infer_expression(&line.tokens[1..], &locals, model, diagnostics);
-                if line.depth > 0 && is_task_type(&value.ty) {
+                if is_task_type(&value.ty)
+                    && task_escapes_via_return(&line.tokens[1..], line.depth, &spawned)
+                {
                     push_diagnostic(
                         diagnostics,
                         "E5102",
@@ -801,6 +818,36 @@ enum ResourceStatus {
     Closed,
 }
 
+const MAX_TASK_SCOPE_NESTING: usize = 64;
+const MAX_SPAWNS_PER_SCOPE: usize = 1024;
+const MAX_COLLECT_TASKS: usize = 1024;
+
+#[derive(Clone, Debug)]
+struct FutureState {
+    consumed: bool,
+    scope: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct SpawnState {
+    consumed: bool,
+    binding: TextRange,
+}
+
+#[derive(Clone, Debug)]
+struct TaskScope {
+    id: usize,
+    spawns: BTreeMap<String, SpawnState>,
+    spawn_count: usize,
+}
+
+#[derive(Clone, Debug)]
+struct BorrowState {
+    resource: String,
+    depth: u16,
+}
+
+#[allow(clippy::too_many_lines)]
 fn check_resource_async_stream(
     function: &FunctionDefinition,
     model: &Model,
@@ -832,14 +879,155 @@ fn check_resource_async_stream(
         .filter(|parameter| matches!(&parameter.ty, Type::Generic { name, .. } if name == "Stream"))
         .map(|parameter| parameter.name.clone())
         .collect();
-    let mut futures = BTreeMap::<String, bool>::new();
+    let mut futures = BTreeMap::<String, FutureState>::new();
+    let mut scopes = Vec::<TaskScope>::new();
+    let mut next_scope = 0_usize;
+    let mut spawned = BTreeSet::<String>::new();
+    let mut borrows = BTreeMap::<String, BorrowState>::new();
 
     for line in &function.body {
+        borrows.retain(|_, borrow| borrow.depth <= line.depth);
         track_resource_move(line, &mut resources, facts);
         check_resource_use(line, &mut resources, model, diagnostics, facts);
-        track_future_binding(line, model, &mut futures, facts);
-        check_future_await(line, &mut futures, diagnostics, facts);
+        borrows.retain(|_, borrow| {
+            matches!(
+                resources.get(&borrow.resource),
+                Some((_, ResourceStatus::Available))
+            )
+        });
+        track_borrow_binding(line, &resources, &mut borrows);
+        check_borrow_across_suspension(line, &borrows, diagnostics);
+        if line.kind == LineKind::TaskGroup {
+            let id = next_scope;
+            next_scope += 1;
+            scopes.push(TaskScope {
+                id,
+                spawns: BTreeMap::new(),
+                spawn_count: 0,
+            });
+            if scopes.len() > MAX_TASK_SCOPE_NESTING {
+                push_diagnostic(
+                    diagnostics,
+                    "E5105",
+                    "TASK_SCOPE_LIMIT",
+                    "task scope limit exceeded: nesting".to_owned(),
+                    [("dimension", "nesting")],
+                    line.range,
+                );
+            }
+        }
+        for token in &line.tokens {
+            if token.kind != TokenKind::Spawn {
+                continue;
+            }
+            if let Some(scope) = scopes.last_mut() {
+                scope.spawn_count += 1;
+                if scope.spawn_count > MAX_SPAWNS_PER_SCOPE {
+                    push_diagnostic(
+                        diagnostics,
+                        "E5105",
+                        "TASK_SCOPE_LIMIT",
+                        "task scope limit exceeded: spawns".to_owned(),
+                        [("dimension", "spawns")],
+                        token.range,
+                    );
+                }
+            } else {
+                push_diagnostic(
+                    diagnostics,
+                    "E5104",
+                    "TASK_DETACHED",
+                    "spawn requires an open task group".to_owned(),
+                    [],
+                    token.range,
+                );
+            }
+        }
+        track_future_binding(line, model, &mut scopes, &mut futures, &mut spawned, facts);
+        check_future_await(line, &mut scopes, &mut futures, diagnostics, facts);
+        check_collect_tasks(line, &mut scopes, &mut futures, diagnostics, facts);
+        check_task_argument_escape(line, &spawned, diagnostics);
         check_stream_operation(line, &streams, diagnostics, facts);
+        if line.kind == LineKind::End
+            && line
+                .tokens
+                .get(1)
+                .is_some_and(|token| token.kind == TokenKind::Task)
+            && let Some(scope) = scopes.pop()
+        {
+            close_task_scope(&scope, &mut futures, diagnostics);
+        }
+    }
+}
+
+fn close_task_scope(
+    scope: &TaskScope,
+    futures: &mut BTreeMap<String, FutureState>,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    for (name, spawn) in &scope.spawns {
+        if spawn.consumed {
+            continue;
+        }
+        push_diagnostic(
+            diagnostics,
+            "E5103",
+            "TASK_NOT_CONSUMED",
+            format!("{name} was not consumed before its task group closed"),
+            [("task", name.as_str())],
+            spawn.binding,
+        );
+        futures.remove(name);
+    }
+}
+
+fn track_borrow_binding(
+    line: &Line,
+    resources: &BTreeMap<String, (String, ResourceStatus)>,
+    borrows: &mut BTreeMap<String, BorrowState>,
+) {
+    if line.kind != LineKind::Let
+        || line
+            .tokens
+            .get(3)
+            .is_none_or(|token| token.kind != TokenKind::Borrow)
+    {
+        return;
+    }
+    let Some(source) = line.tokens.get(4) else {
+        return;
+    };
+    if !resources.contains_key(&source.text) {
+        return;
+    }
+    borrows.insert(
+        line.tokens[1].text.clone(),
+        BorrowState {
+            resource: source.text.clone(),
+            depth: line.depth,
+        },
+    );
+}
+
+fn check_borrow_across_suspension(
+    line: &Line,
+    borrows: &BTreeMap<String, BorrowState>,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    for token in &line.tokens {
+        if token.kind != TokenKind::Await {
+            continue;
+        }
+        for borrow in borrows.values() {
+            push_diagnostic(
+                diagnostics,
+                "E5003",
+                "BORROW_ACROSS_SUSPENSION",
+                format!("borrow of {} is live across await", borrow.resource),
+                [("resource", borrow.resource.as_str())],
+                token.range,
+            );
+        }
     }
 }
 
@@ -932,36 +1120,73 @@ fn check_resource_use(
 fn track_future_binding(
     line: &Line,
     model: &Model,
-    futures: &mut BTreeMap<String, bool>,
+    scopes: &mut [TaskScope],
+    futures: &mut BTreeMap<String, FutureState>,
+    spawned: &mut BTreeSet<String>,
     facts: &mut Vec<SemanticFact>,
 ) {
     if line.kind != LineKind::Let || line.tokens.len() < 5 {
         return;
     }
-    let asynchronous = if line.tokens[3].kind == TokenKind::Spawn {
-        true
-    } else {
-        model
+    let spawn = line.tokens[3].kind == TokenKind::Spawn;
+    let asynchronous = spawn
+        || model
             .functions
             .get(&line.tokens[3].text)
-            .is_some_and(|function| function.is_async)
-    };
-    if asynchronous {
-        let name = line.tokens[1].text.clone();
-        futures.insert(name.clone(), false);
-        facts.push(flow_fact(
-            line,
-            1,
-            SemanticFactKind::AsyncState,
-            format!("{name}->pending"),
-            None,
-        ));
+            .is_some_and(|function| function.is_async);
+    if !asynchronous {
+        return;
+    }
+    let name = line.tokens[1].text.clone();
+    let scope = scopes.last().map(|current| current.id);
+    futures.insert(
+        name.clone(),
+        FutureState {
+            consumed: false,
+            scope,
+        },
+    );
+    if spawn {
+        spawned.insert(name.clone());
+        if let Some(current) = scopes.last_mut() {
+            current.spawns.insert(
+                name.clone(),
+                SpawnState {
+                    consumed: false,
+                    binding: line.tokens[1].range,
+                },
+            );
+        }
+    }
+    facts.push(flow_fact(
+        line,
+        1,
+        SemanticFactKind::AsyncState,
+        async_fact_name(scope, &name, "pending"),
+        None,
+    ));
+}
+
+fn async_fact_name(scope: Option<usize>, name: &str, state: &str) -> String {
+    scope.map_or_else(
+        || format!("{name}->{state}"),
+        |id| format!("scope-{id}:{name}->{state}"),
+    )
+}
+
+fn mark_spawn_consumed(scopes: &mut [TaskScope], name: &str) {
+    for scope in scopes.iter_mut().rev() {
+        if let Some(spawn) = scope.spawns.get_mut(name) {
+            spawn.consumed = true;
+            return;
+        }
     }
 }
 
 fn check_future_await(
     line: &Line,
-    futures: &mut BTreeMap<String, bool>,
+    scopes: &mut [TaskScope],
+    futures: &mut BTreeMap<String, FutureState>,
     diagnostics: &mut Vec<SemanticDiagnostic>,
     facts: &mut Vec<SemanticFact>,
 ) {
@@ -970,10 +1195,10 @@ fn check_future_await(
             continue;
         }
         let name = &window[1].text;
-        let Some(consumed) = futures.get_mut(name) else {
+        let Some(state) = futures.get_mut(name) else {
             continue;
         };
-        if *consumed {
+        if state.consumed {
             push_diagnostic(
                 diagnostics,
                 "E5101",
@@ -983,17 +1208,154 @@ fn check_future_await(
                 window[1].range,
             );
         } else {
-            *consumed = true;
+            state.consumed = true;
+            let scope = state.scope;
+            mark_spawn_consumed(scopes, name);
             let slot = u16::from(line.kind == LineKind::Let);
             facts.push(flow_fact(
                 line,
                 slot,
                 SemanticFactKind::AsyncState,
-                format!("{name}->awaited"),
+                async_fact_name(scope, name, "awaited"),
                 None,
             ));
         }
     }
+}
+
+fn check_collect_tasks(
+    line: &Line,
+    scopes: &mut [TaskScope],
+    futures: &mut BTreeMap<String, FutureState>,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+) {
+    let Some(collect) = line
+        .tokens
+        .iter()
+        .position(|token| token.text == "collect_tasks")
+    else {
+        return;
+    };
+    if line
+        .tokens
+        .get(collect + 1)
+        .is_none_or(|token| token.kind != TokenKind::LeftParen)
+    {
+        return;
+    }
+    let Some(right) = matching_close(&line.tokens, collect + 1) else {
+        return;
+    };
+    let arguments = split_arguments(&line.tokens[collect + 2..right]);
+    let Some(tasks) = arguments
+        .first()
+        .and_then(|argument| list_elements(argument.tokens))
+    else {
+        return;
+    };
+    if tasks.len() > MAX_COLLECT_TASKS {
+        push_diagnostic(
+            diagnostics,
+            "E5105",
+            "TASK_SCOPE_LIMIT",
+            "task scope limit exceeded: collect".to_owned(),
+            [("dimension", "collect")],
+            line.range,
+        );
+    }
+    for (index, element) in tasks.iter().enumerate() {
+        let [name] = *element else {
+            continue;
+        };
+        let Some(state) = futures.get_mut(&name.text) else {
+            continue;
+        };
+        if state.consumed {
+            push_diagnostic(
+                diagnostics,
+                "E5101",
+                "FUTURE_CONSUMED",
+                format!("{} was already awaited", name.text),
+                [("future", name.text.as_str())],
+                name.range,
+            );
+            continue;
+        }
+        state.consumed = true;
+        let scope = state.scope;
+        mark_spawn_consumed(scopes, &name.text);
+        let slot = u16::try_from(index + 2).expect("collect list length is bounded");
+        facts.push(flow_fact(
+            line,
+            slot,
+            SemanticFactKind::AsyncState,
+            async_fact_name(scope, &name.text, "collected"),
+            None,
+        ));
+    }
+}
+
+fn list_elements(tokens: &[HirToken]) -> Option<Vec<&[HirToken]>> {
+    if tokens.first()?.kind != TokenKind::LeftBracket {
+        return None;
+    }
+    let close = matching_close(tokens, 0)?;
+    if close != tokens.len() - 1 {
+        return None;
+    }
+    Some(
+        split_top_level(&tokens[1..close], TokenKind::Comma)
+            .into_iter()
+            .filter(|tokens| !tokens.is_empty())
+            .collect(),
+    )
+}
+
+fn check_task_argument_escape(
+    line: &Line,
+    spawned: &BTreeSet<String>,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    if spawned.is_empty() {
+        return;
+    }
+    for (index, token) in line.tokens.iter().enumerate() {
+        if token.kind != TokenKind::LeftParen {
+            continue;
+        }
+        let Some(callee) = index
+            .checked_sub(1)
+            .and_then(|previous| line.tokens.get(previous))
+            .filter(|token| token.kind == TokenKind::Identifier)
+            .map(|token| token.text.as_str())
+        else {
+            continue;
+        };
+        if callee == "collect_tasks" {
+            continue;
+        }
+        let Some(right) = matching_close(&line.tokens, index) else {
+            continue;
+        };
+        for argument in split_arguments(&line.tokens[index + 1..right]) {
+            if argument.tokens.len() == 1 && spawned.contains(&argument.tokens[0].text) {
+                push_diagnostic(
+                    diagnostics,
+                    "E5102",
+                    "TASK_ESCAPES_SCOPE",
+                    "task cannot leave its task group".to_owned(),
+                    [],
+                    line.range,
+                );
+            }
+        }
+    }
+}
+
+fn task_escapes_via_return(tokens: &[HirToken], depth: u16, spawned: &BTreeSet<String>) -> bool {
+    tokens.iter().any(|token| spawned.contains(&token.text))
+        || (depth > 0 && tokens.iter().any(|token| token.kind == TokenKind::Spawn))
 }
 
 fn is_task_type(ty: &Type) -> bool {
@@ -1815,6 +2177,10 @@ fn infer_call(
         return value;
     }
 
+    if callee == "collect_tasks" {
+        return infer_collect_tasks(&arguments, &values, range, locals, model, diagnostics);
+    }
+
     if callee == "Float64.from_int" {
         if let Some(value) = values.first() {
             require_type(&Type::named("Int"), value, diagnostics);
@@ -1881,6 +2247,82 @@ fn infer_call(
         };
     }
     unknown(range)
+}
+
+fn infer_collect_tasks(
+    arguments: &[Argument<'_>],
+    values: &[Value],
+    range: TextRange,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    let list_of = |element: Type| Type::Generic {
+        name: "List".to_owned(),
+        arguments: vec![element],
+    };
+    if arguments.len() != 2 {
+        let found = format!("{} arguments", arguments.len());
+        push_diagnostic(
+            diagnostics,
+            "E2001",
+            "TYPE_MISMATCH",
+            format!("expected 2 arguments, found {found}"),
+            [("expected", "2 arguments"), ("found", found.as_str())],
+            range,
+        );
+        return unknown(range);
+    }
+    // `order` only accepts the prelude TaskOrder literal `input` (RFC-0036 §4).
+    let order = &arguments[1];
+    let is_input = order.name.as_deref() == Some("order")
+        && order.tokens.len() == 1
+        && order.tokens[0].kind == TokenKind::Identifier
+        && order.tokens[0].text == "input";
+    if !is_input {
+        require_type(&Type::named("TaskOrder"), &values[1], diagnostics);
+    }
+    let mut element = Type::Unknown;
+    if let Some(elements) = list_elements(arguments[0].tokens) {
+        for element_tokens in elements {
+            let value = infer_expression(element_tokens, locals, model, diagnostics);
+            let expected = Type::Generic {
+                name: "Task".to_owned(),
+                arguments: vec![element.clone()],
+            };
+            require_type(&expected, &value, diagnostics);
+            if element.is_unknown()
+                && let Type::Generic { name, arguments } = &value.ty
+                && name == "Task"
+                && arguments.len() == 1
+            {
+                element = arguments[0].clone();
+            }
+        }
+    } else {
+        let expected = list_of(Type::Generic {
+            name: "Task".to_owned(),
+            arguments: vec![Type::Unknown],
+        });
+        require_type(&expected, &values[0], diagnostics);
+        if let Type::Generic { name, arguments } = &values[0].ty
+            && name == "List"
+            && arguments.len() == 1
+            && let Type::Generic {
+                name: inner,
+                arguments: inner_arguments,
+            } = &arguments[0]
+            && inner == "Task"
+            && inner_arguments.len() == 1
+        {
+            element = inner_arguments[0].clone();
+        }
+    }
+    Value {
+        ty: list_of(element),
+        range,
+        integer: None,
+    }
 }
 
 fn infer_fixed_width_call(
@@ -2666,7 +3108,7 @@ mod tests {
             })
             .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
             .collect();
-        assert_eq!(expected.len(), 6);
+        assert_eq!(expected.len(), 10);
 
         let mut paths = Vec::new();
         for group in ["affine-resources", "future-task", "stream"] {
@@ -2676,7 +3118,7 @@ mod tests {
             );
         }
         paths.sort();
-        assert_eq!(paths.len(), 12);
+        assert_eq!(paths.len(), 16);
         let mut accepted = 0;
         let mut rejected = 0;
         for (index, path) in paths.iter().enumerate() {
@@ -2722,7 +3164,7 @@ mod tests {
                     .all(|fact| source.span(fact.range).is_some())
             );
         }
-        assert_eq!((accepted, rejected), (6, 6));
+        assert_eq!((accepted, rejected), (6, 10));
     }
 
     #[test]
@@ -2799,7 +3241,7 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 54);
+        assert_eq!(paths.len(), 58);
         for (index, path) in paths.iter().enumerate() {
             let path_text = path.to_string_lossy();
             let source = SourceFile::from_bytes(

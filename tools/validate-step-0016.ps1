@@ -24,8 +24,8 @@ if ($contractCases -ne 21) {
   throw "expected 21 lexical contract cases, found $contractCases"
 }
 $bCases = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-candidates/b') -Recurse -File -Filter '*.sico')
-if ($bCases.Count -ne 54) {
-  throw "expected 54 B cases, found $($bCases.Count)"
+if ($bCases.Count -ne 58) {
+  throw "expected 58 B cases, found $($bCases.Count)"
 }
 
 $sourceText = Get-Content -LiteralPath (Join-Path $root 'crates/sico-source/src/lib.rs') -Raw -Encoding UTF8

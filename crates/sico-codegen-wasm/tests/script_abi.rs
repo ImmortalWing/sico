@@ -139,6 +139,71 @@ fn unsupported_aggregate_shapes_fail_with_typed_refusals() {
     ));
 }
 
+#[test]
+fn script_task_scope_and_collect_programs_are_deterministic_and_valid() {
+    // RFC-0036 §5.4: the sequential-v1 projection compiles explicit task IR
+    // (scope table, Spawn, Await, TaskCollect) to the exact M9 behavior.
+    for (fixture, snapshot_name) in [
+        (
+            "tests/end-to-end/script-task-pair.sico",
+            "script-task-pair-component",
+        ),
+        (
+            "tests/end-to-end/script-task-collect.sico",
+            "script-task-collect-component",
+        ),
+    ] {
+        let module = lower_end_to_end(fixture);
+        assert!(
+            module.task_scopes.is_some(),
+            "{fixture}: task scope table must be present"
+        );
+        assert!(sico_ir::verify(&module).is_empty(), "{fixture}");
+        let bytes = compile_script_program(&module).unwrap();
+        assert_eq!(bytes, compile_script_program(&module).unwrap());
+        validate(&bytes);
+        snapshot(snapshot_name, &bytes);
+    }
+}
+
+#[test]
+fn async_function_export_stays_refused_at_the_component_boundary() {
+    // RFC-0013/RFC-0036 §5.4: Task/Future/Stream types never cross a
+    // Component import/export; an async function's `Future[T]` IR signature
+    // is refused there even though the sequential Script profile runs it.
+    let source = sico_source::SourceFile::from_text(
+        sico_source::SourceId::new(0),
+        "async-boundary.sico",
+        "async function compute(value: I64) returns I64:\n  return value\nend function\n",
+    )
+    .unwrap();
+    let module = sico_ir::lower_core(&source).unwrap();
+    assert!(matches!(
+        sico_codegen_wasm::compile_component(&module),
+        Err(CodegenError::AsyncUnsupported { feature, .. }) if feature == "Future"
+    ));
+}
+
+fn lower_end_to_end(relative: &str) -> Module {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let path = repository.join(relative);
+    let source = sico_source::SourceFile::from_text(
+        sico_source::SourceId::new(0),
+        path.display().to_string(),
+        fs::read_to_string(path).unwrap(),
+    )
+    .unwrap();
+    let mut module = sico_ir::lower_core(&source).unwrap();
+    // Same entry adaptation as the CLI: the source `main` is the Script
+    // entry `run` at the Component boundary.
+    for function in &mut module.functions {
+        if function.name == "main" {
+            "run".clone_into(&mut function.name);
+        }
+    }
+    module
+}
+
 /// `run(input: ScriptInput) -> Result[ScriptOutput, ScriptError]` echoing
 /// stdin to stdout with empty stderr and exit code zero.
 fn echo_module() -> Module {

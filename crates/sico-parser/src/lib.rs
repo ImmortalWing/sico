@@ -916,7 +916,7 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 54);
+        assert_eq!(paths.len(), 58);
         let mut designed_accept = 0;
         let mut designed_reject = 0;
         let mut shapes = Vec::new();
@@ -958,7 +958,7 @@ mod tests {
                 designed_reject += 1;
             }
         }
-        assert_eq!((designed_accept, designed_reject), (25, 29));
+        assert_eq!((designed_accept, designed_reject), (25, 33));
         let snapshot = format!("{}\n", shapes.join("\n"));
         if std::env::var_os("SICO_DUMP_SHAPES").is_some() {
             print!("{snapshot}");

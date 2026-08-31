@@ -58,10 +58,8 @@ end function
 $es = & $sico check $escape 2>&1
 if ($LASTEXITCODE -ne 1 -or ($es -join '') -notmatch 'E5102') { throw "indirect task escape must be E5102/exit 1, got $LASTEXITCODE $($es -join '')" }
 
-# --- collect_tasks is outside the sequential v0: typed refusal, never silent ---
-$collect = Join-Path $work 'collect.sico'
-(Get-Content (Join-Path $root 'tests\end-to-end\script-task-pair.sico') -Raw).Replace('await collect_never(first)', 'await collect_tasks(first)') -replace 'await second', 'await collect_tasks(second)' | Set-Content $collect -NoNewline
-$co = & $sico run $collect 2>&1
-if (($co -join '') -notmatch 'unsupported call target collect_tasks') { throw 'collect_tasks must be a typed refusal' }
+# --- collect_tasks executes under the sequential-v1 projection (RFC-0036 §4/§10) ---
+$collect = & $sico run (Join-Path $root 'tests\end-to-end\script-task-collect.sico') 2>$work\p4e.txt
+if ($LASTEXITCODE -ne 0 -or ($collect -join '') -cne 'alpha! beta!') { throw "task-collect failed: $($collect -join '')" }
 
-Write-Output 'STEP_0087_OK task-pair=sequential cancel-edge=123 E5101/E5102=typed-indirect collect=refused'
+Write-Output 'STEP_0087_OK task-pair=sequential cancel-edge=123 E5101/E5102=typed-indirect collect=executed'
