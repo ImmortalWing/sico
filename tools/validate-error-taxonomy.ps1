@@ -89,8 +89,8 @@ foreach ($case in @($caseMap.cases)) {
     throw "semantic case has no taxonomy class: $($case.case)"
   }
 }
-if ($caseIds.Count -ne 29) {
-  throw "expected 29 semantic invalid cases, found $($caseIds.Count)"
+if ($caseIds.Count -ne 33) {
+  throw "expected 33 semantic invalid cases, found $($caseIds.Count)"
 }
 
 $manifestMutationIds = @($mutations.entries | ForEach-Object { [string]$_.mutation } | Sort-Object -Unique)

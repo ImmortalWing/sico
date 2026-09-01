@@ -190,7 +190,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M11: Bounded structured-concurrency Runtime
 
-状态：`in-progress / STEP-0103–0108 complete; STEP-0109 Linux parity blocked-external-evidence; next STEP-0110 exit audit`
+状态：`STEP-0110 exit audit complete / NO-GO pending Linux x64 native evidence (gates 1-8,10 GO; gate 9 unmet); M12 locked until parity lands`
 
 主要交付：Store/arena 架构 ADR、单 Store 协作式 bounded scheduler、structured task scope、await/group/select/race、affine resource 跨 task 所有权、统一 cancellation/terminal winner、bounded channel/stream、persistent-runner/DAP task integration，以及 Windows x64 与 Linux x64 native runner 实证。
 

@@ -10,108 +10,216 @@
       "failure_signal": "A declaration or scoped construct loses its required typed close, or executable text appears at the declaration-only module root.",
       "compiler_prevention": "Report the expected block kind or declaration-only root rule at the local recovery anchor and retain an error node.",
       "ai_repair_constraint": "Restore only the missing close, or wrap intended execution in an explicit main function; do not move or delete the following definition.",
-      "diagnostic_keys": ["SYNTAX_MISSING_FUNCTION_CLOSE", "SYNTAX_MISSING_RECORD_CLOSE", "SYNTAX_MISSING_ENUM_CLOSE", "SYNTAX_MISSING_CAPABILITY_CLOSE", "SYNTAX_MISSING_RESOURCE_CLOSE", "SYNTAX_MISSING_USING_CLOSE", "SYNTAX_MISSING_TASK_GROUP_CLOSE", "SYNTAX_MISSING_INTERFACE_CLOSE", "SYNTAX_UNEXPECTED_TOP_LEVEL"],
-      "mutation_ids": ["MUT-001", "MUT-003", "MUT-005", "MUT-007", "MUT-008", "MUT-009", "MUT-010", "MUT-011"],
-      "related_issue_ids": ["C04"]
+      "diagnostic_keys": [
+        "SYNTAX_MISSING_FUNCTION_CLOSE",
+        "SYNTAX_MISSING_RECORD_CLOSE",
+        "SYNTAX_MISSING_ENUM_CLOSE",
+        "SYNTAX_MISSING_CAPABILITY_CLOSE",
+        "SYNTAX_MISSING_RESOURCE_CLOSE",
+        "SYNTAX_MISSING_USING_CLOSE",
+        "SYNTAX_MISSING_TASK_GROUP_CLOSE",
+        "SYNTAX_MISSING_INTERFACE_CLOSE",
+        "SYNTAX_UNEXPECTED_TOP_LEVEL"
+      ],
+      "mutation_ids": [
+        "MUT-001",
+        "MUT-003",
+        "MUT-005",
+        "MUT-007",
+        "MUT-008",
+        "MUT-009",
+        "MUT-010",
+        "MUT-011"
+      ],
+      "related_issue_ids": [
+        "C04"
+      ]
     },
     {
       "id": "syntax-delimiter-separator",
       "failure_signal": "A match arm, type argument, call, or parameter list loses one required delimiter.",
       "compiler_prevention": "Name the missing delimiter and recover at the containing construct rather than rewriting the expression.",
       "ai_repair_constraint": "Insert the single missing delimiter without changing names, values, order, or behavior.",
-      "diagnostic_keys": ["SYNTAX_MISSING_MATCH_ARM_SEPARATOR", "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE", "SYNTAX_MISSING_CALL_CLOSE", "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"],
-      "mutation_ids": ["MUT-002", "MUT-004", "MUT-006", "MUT-012"],
-      "related_issue_ids": ["C03", "C04", "T09"]
+      "diagnostic_keys": [
+        "SYNTAX_MISSING_MATCH_ARM_SEPARATOR",
+        "SYNTAX_MISSING_TYPE_ARGUMENT_CLOSE",
+        "SYNTAX_MISSING_CALL_CLOSE",
+        "SYNTAX_MISSING_PARAMETER_LIST_CLOSE"
+      ],
+      "mutation_ids": [
+        "MUT-002",
+        "MUT-004",
+        "MUT-006",
+        "MUT-012"
+      ],
+      "related_issue_ids": [
+        "C03",
+        "C04",
+        "T09"
+      ]
     },
     {
       "id": "type-domain-confusion",
       "failure_signal": "Values with different numeric or nominal identities are mixed or converted implicitly.",
       "compiler_prevention": "Reject before lowering and show expected/found nominal types with an explicit-conversion hint only when semantics permit.",
       "ai_repair_constraint": "Do not add an implicit cast or unwrap the nominal type; repair the source value or use an explicit approved conversion.",
-      "diagnostic_keys": ["TYPE_MISMATCH", "IMPLICIT_NUMERIC_CONVERSION"],
+      "diagnostic_keys": [
+        "TYPE_MISMATCH",
+        "IMPLICIT_NUMERIC_CONVERSION"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["T01", "T02", "T08"]
+      "related_issue_ids": [
+        "T01",
+        "T02",
+        "T08"
+      ]
     },
     {
       "id": "record-contract-shape",
       "failure_signal": "A record construction omits/adds a field or violates a declared invariant.",
       "compiler_prevention": "Check the nominal schema and invariant at construction with the exact field or expression as the primary cause.",
       "ai_repair_constraint": "Preserve the nominal type and business invariant; never silence the error by dropping fields or weakening the contract.",
-      "diagnostic_keys": ["MISSING_FIELD", "UNKNOWN_FIELD", "INVARIANT_VIOLATION"],
+      "diagnostic_keys": [
+        "MISSING_FIELD",
+        "UNKNOWN_FIELD",
+        "INVARIANT_VIOLATION"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["T03", "K01"]
+      "related_issue_ids": [
+        "T03",
+        "K01"
+      ]
     },
     {
       "id": "match-coverage",
       "failure_signal": "A sealed match misses a case, hides future cases behind a wildcard, or contains an unreachable arm.",
       "compiler_prevention": "Compute sealed coverage and name the missing, hidden, or already-covered case.",
       "ai_repair_constraint": "Add or correct explicit arms; do not introduce a wildcard that hides variants.",
-      "diagnostic_keys": ["NON_EXHAUSTIVE_MATCH", "SEALED_MATCH_WILDCARD", "UNREACHABLE_MATCH_ARM"],
+      "diagnostic_keys": [
+        "NON_EXHAUSTIVE_MATCH",
+        "SEALED_MATCH_WILDCARD",
+        "UNREACHABLE_MATCH_ARM"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["C01", "C02", "C03"]
+      "related_issue_ids": [
+        "C01",
+        "C02",
+        "C03"
+      ]
     },
     {
       "id": "result-error-channel",
       "failure_signal": "A Result is ignored, propagated across incompatible error types, or mapped incompletely/catch-all.",
       "compiler_prevention": "Keep success, domain error, cancellation, and trap channels distinct and require total explicit mapping.",
       "ai_repair_constraint": "Handle, return, propagate the same error type, or provide a total variant mapping; do not catch all or erase payloads.",
-      "diagnostic_keys": ["ERROR_TYPE_MISMATCH", "INCOMPLETE_ERROR_MAP", "SEALED_ERROR_WILDCARD", "UNHANDLED_RESULT"],
+      "diagnostic_keys": [
+        "ERROR_TYPE_MISMATCH",
+        "INCOMPLETE_ERROR_MAP",
+        "SEALED_ERROR_WILDCARD",
+        "UNHANDLED_RESULT"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["E01", "E02", "E03"]
+      "related_issue_ids": [
+        "E01",
+        "E02",
+        "E03"
+      ]
     },
     {
       "id": "effect-capability-boundary",
       "failure_signal": "A function performs an effect or uses a capability absent from its declared boundary.",
       "compiler_prevention": "Compare inferred calls with explicit effect/capability sets and reject at the boundary.",
       "ai_repair_constraint": "Add only the actually required declaration or remove the operation; do not grant broader capabilities.",
-      "diagnostic_keys": ["UNDECLARED_CAPABILITY", "UNDECLARED_EFFECT"],
+      "diagnostic_keys": [
+        "UNDECLARED_CAPABILITY",
+        "UNDECLARED_EFFECT"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["FX01", "FX02", "FX03"]
+      "related_issue_ids": [
+        "FX01",
+        "FX02",
+        "FX03"
+      ]
     },
     {
       "id": "resource-lifecycle",
       "failure_signal": "An affine resource is used after move or after close.",
       "compiler_prevention": "Track ownership state and point to the move/close that consumed the resource.",
       "ai_repair_constraint": "Reorder ownership or borrow within its valid scope; never clone a resource handle or remove cleanup.",
-      "diagnostic_keys": ["RESOURCE_MOVED", "RESOURCE_CLOSED"],
+      "diagnostic_keys": [
+        "RESOURCE_MOVED",
+        "RESOURCE_CLOSED",
+        "BORROW_ACROSS_SUSPENSION"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["R01", "R02"]
+      "related_issue_ids": [
+        "R01",
+        "R02"
+      ]
     },
     {
       "id": "async-structured-lifetime",
       "failure_signal": "A Future is consumed twice or a Task escapes its lexical task group.",
       "compiler_prevention": "Treat Future/Task handles as affine and validate parent scope ownership.",
       "ai_repair_constraint": "Await once and keep child tasks inside the group; do not detach or duplicate handles.",
-      "diagnostic_keys": ["FUTURE_CONSUMED", "TASK_ESCAPES_SCOPE"],
+      "diagnostic_keys": [
+        "FUTURE_CONSUMED",
+        "TASK_ESCAPES_SCOPE",
+        "TASK_NOT_CONSUMED",
+        "TASK_DETACHED",
+        "TASK_SCOPE_LIMIT"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["A02", "A03", "A04"]
+      "related_issue_ids": [
+        "A02",
+        "A03",
+        "A04"
+      ]
     },
     {
       "id": "stream-bounds-await",
       "failure_signal": "A Stream is collected without an explicit bound or an async stream operation is used without await.",
       "compiler_prevention": "Require a finite collection limit and preserve the Future result type until awaited.",
       "ai_repair_constraint": "Add a justified explicit bound or await; do not convert the stream to an unbounded list.",
-      "diagnostic_keys": ["UNBOUNDED_STREAM_COLLECT", "ASYNC_VALUE_REQUIRES_AWAIT"],
+      "diagnostic_keys": [
+        "UNBOUNDED_STREAM_COLLECT",
+        "ASYNC_VALUE_REQUIRES_AWAIT"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["A02", "A06"]
+      "related_issue_ids": [
+        "A02",
+        "A06"
+      ]
     },
     {
       "id": "component-failure-version-boundary",
       "failure_signal": "Package version metadata enters a type or a Component trap channel is collapsed into a domain Result.",
       "compiler_prevention": "Keep WIT/package versioning and ComponentCall outcomes separate from language generics and domain errors.",
       "ai_repair_constraint": "Move version constraints to package metadata and handle trap/limit separately; do not relabel them as domain variants.",
-      "diagnostic_keys": ["COMPONENT_VERSION_IN_TYPE", "COMPONENT_FAILURE_COLLAPSE"],
+      "diagnostic_keys": [
+        "COMPONENT_VERSION_IN_TYPE",
+        "COMPONENT_FAILURE_COLLAPSE"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["P01", "P02", "P05"]
+      "related_issue_ids": [
+        "P01",
+        "P02",
+        "P05"
+      ]
     },
     {
       "id": "revision-stale-update",
       "failure_signal": "A write omits the expected revision or applies a stale load without comparing revisions.",
       "compiler_prevention": "Require revision in commit contracts and make stale-result comparison part of the checked flow.",
       "ai_repair_constraint": "Thread and compare the actual revision; never bypass optimistic concurrency with a default or latest value.",
-      "diagnostic_keys": ["MISSING_REVISION", "UNCHECKED_STALE_RESULT"],
+      "diagnostic_keys": [
+        "MISSING_REVISION",
+        "UNCHECKED_STALE_RESULT"
+      ],
       "mutation_ids": [],
-      "related_issue_ids": ["X02"]
+      "related_issue_ids": [
+        "X02"
+      ]
     }
   ]
 }

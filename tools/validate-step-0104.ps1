@@ -24,6 +24,8 @@ Invoke-NativeChecked $cargo @(
 if (-not $?) { throw 'validate-diagnostics failed' }
 & (Join-Path $root 'tools\validate-semantic-cases.ps1') -RepositoryRoot $root
 if (-not $?) { throw 'validate-semantic-cases failed' }
+& (Join-Path $root 'tools\validate-error-taxonomy.ps1') -RepositoryRoot $root
+if (-not $?) { throw 'validate-error-taxonomy failed (catalog/taxonomy coverage drift)' }
 
 Invoke-NativeChecked $cargo @('build', '-q', '--offline', '--locked', '-p', 'sico-cli') 'sico build failed'
 $sico = Join-Path $root 'target\debug\sico.exe'

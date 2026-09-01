@@ -1,9 +1,9 @@
 # STEP-0110: M11 security, performance and platform exit audit
 
-> - status: in-progress
+> - status: complete / NO-GO pending Linux
 > - phase: M11
 > - started: 2026-09-01
-> - completed: -
+> - completed: 2026-09-01
 > - owners: autonomous-agent
 
 ## 1. Objective
@@ -46,10 +46,23 @@ Aggregate audit of M11 (STEP-0103–0109) against the exit gate in the M11 plan 
 - Race/select source spellings remain refused pending an independent RFC (RFC-0036 §9).
 - M12 stays locked: the plan requires M11 GO before M12 begins, so Secure HTTP Provider work does not start until the Linux parity evidence lands.
 
+## 5.1 Audit findings fixed during this step
+
+1. **Latent STEP-0104 gap**: the AI error-taxonomy coverage check (`validate-error-taxonomy.ps1`) was not in any post-0104 validator chain, so the four new M11 diagnostics (E5003/E5103–E5105) drifted out of the taxonomy and the hardcoded case count (29→33) went stale. Fixed: taxonomy classes `async-structured-lifetime` (+TASK_NOT_CONSUMED/TASK_DETACHED/TASK_SCOPE_LIMIT) and `resource-lifecycle` (+BORROW_ACROSS_SUSPENSION) now cover all 41 catalog codes; the count check tracks the current map; and `validate-step-0104.ps1` now runs the taxonomy oracle so future diagnostic additions cannot drift silently.
+2. **Stale toolchain aliases**: seven M10-era validators pinned `RUSTUP_TOOLCHAIN=stable` (resolving to 1.97.0 after the 1.98 migration); re-pinned during STEP-0108 and exercised green here.
+
 ## 6. Validation
 
-- `tools/validate-step-0110.ps1` (aggregate): fmt, clippy, workspace tests, the STEP-0108 gate chain (transitively 0107/0106/0105/0104/0091/0100/0090/0087), evidence-marker checks across `target/evidence/step-0105..0108/`.
-- Results: recorded below at completion.
+Executed 2026-09-01 on Windows x64 GNU, Rust 1.98.0, Wasmtime 47.0.2 — `tools/validate-step-0110.ps1` clean full run:
+
+- `cargo fmt --all --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace` green.
+- M0–M10 regression: `validate-step-0102.ps1` green (0094 M0–M9 aggregate + 0095–0101 + DAP claim counts 12/20/6).
+- M11 chain: `validate-step-0108.ps1` green (transitively 0107/0106/0105/0104/0091/0100/0090/0087).
+- Evidence markers verified on disk: `SCHEDULER_TEARDOWN_100` (0105), `CHAIN_CANCEL_1024` (0106), `CHANNEL_RELAY_1GIB` (0107), `GRANT_MATRIX_100` (0108).
+- Audit-document consistency checks green; platform honestly recorded as windows-x64-gnu only.
+- Final line: `STEP_0110_OK m0-m10=green m11=0103-0108-green evidence=present platform=windows-x64-only gate9=unmet decision=NO-GO-pending-linux`.
+
+One flake note for the record: an earlier audit attempt died inside STEP-0089 with the release runner test binary producing zero output — diagnosed as two overlapping validator processes (an earlier diagnosis run of mine had not fully terminated and was rebuilding the same target directory). The clean rerun above passed with no concurrent processes; no code change was needed.
 
 ## 7. Audit links
 

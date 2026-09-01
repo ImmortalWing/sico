@@ -1,6 +1,6 @@
 # M11 plan: Bounded structured-concurrency Runtime
 
-> - status: STEP-0103 ADR-0010 accepted-design; STEP-0104 semantic/IR contract complete; STEP-0105 scheduler core complete (2026-08-31); STEP-0106 cancellation/race/select complete (2026-09-01); STEP-0107 bounded channels complete (2026-09-01); STEP-0108 persistent/watch/REPL/DAP complete (2026-09-01); STEP-0109 blocked-external-evidence (no Linux host); STEP-0110 next
+> - status: STEP-0103 ADR-0010 accepted-design; STEP-0104 semantic/IR contract complete; STEP-0105 scheduler core complete (2026-08-31); STEP-0106 cancellation/race/select complete (2026-09-01); STEP-0107 bounded channels complete (2026-09-01); STEP-0108 persistent/watch/REPL/DAP complete (2026-09-01); STEP-0109 blocked-external-evidence (no Linux host); STEP-0110 exit audit complete (2026-09-01): NO-GO pending Linux parity, gates 1-8/10 GO
 > - created: 2026-07-19
 > - phase: M11
 > - reserved steps: STEP-0103–0110
