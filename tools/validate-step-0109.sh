@@ -23,7 +23,9 @@ cd "$ROOT"
 
 echo "== fmt/clippy =="
 cargo fmt --all --check || exit 1
-cargo clippy --workspace --all-targets --offline --locked -- -D warnings || exit 1
+# The parity corpus is the runner: the desktop-host crate is a
+# Windows-verified track and not part of the M11 platform claim.
+cargo clippy --offline --locked --manifest-path runner/sico-runner/Cargo.toml --all-targets -- -D warnings || exit 1
 
 echo "== scheduler unit corpus =="
 cargo test --offline --locked --manifest-path runner/sico-runner/Cargo.toml --lib scheduler || exit 1

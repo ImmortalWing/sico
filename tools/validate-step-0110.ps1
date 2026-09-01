@@ -57,8 +57,9 @@ Require-Text 'docs\steps\STEP-0105-scheduler-core.md' 'status: complete'
 Require-Text 'docs\steps\STEP-0106-cancellation-race-select.md' 'status: complete'
 Require-Text 'docs\steps\STEP-0107-bounded-channels-streams.md' 'status: complete'
 Require-Text 'docs\steps\STEP-0108-persistent-watch-repl-dap-task-integration.md' 'status: complete'
-Require-Text 'docs\steps\STEP-0109-cross-platform-runner-parity.md' 'blocked-external-evidence'
-Require-Text 'docs\steps\STEP-0110-m11-exit-audit.md' 'NO-GO'
+Require-Text 'docs\steps\STEP-0109-cross-platform-runner-parity.md' 'status: complete'
+Require-Text 'target\evidence\step-0109\linux\environment.txt' 'microsoft-standard-WSL2'
+Require-Text 'docs\steps\STEP-0110-m11-exit-audit.md' 'status: complete / GO'
 
 # --- platform honesty: this audit is Windows-only evidence ---
 $rustc = Join-Path $env:USERPROFILE '.cargo\bin\rustc.exe'
@@ -67,4 +68,4 @@ if ($rustcInfo -notmatch '(?m)^host: x86_64-pc-windows-gnu$') {
     throw 'unsupported-platform-claim|expected actual windows-x64-gnu execution'
 }
 
-Write-Output 'STEP_0110_OK m0-m10=green m11=0103-0108-green evidence=present platform=windows-x64-only gate9=unmet decision=NO-GO-pending-linux next=linux-parity-then-M12'
+Write-Output 'STEP_0110_OK m0-m10=green m11=0103-0109-green evidence=present platform=windows-x64+linux-x64 gates=10/10 decision=GO next=M12'

@@ -1,6 +1,6 @@
 # STEP-0110: M11 security, performance and platform exit audit
 
-> - status: complete / NO-GO pending Linux
+> - status: complete / GO
 > - phase: M11
 > - started: 2026-09-01
 > - completed: 2026-09-01
@@ -22,12 +22,12 @@ Aggregate audit of M11 (STEP-0103–0109) against the exit gate in the M11 plan 
 | 6 | Cumulative limits resist limit+1 and stress | GO | STEP-0105 typed limit+1 corpus (tasks/scopes/queues/bytes); STEP-0106 select 257-operand refusal; STEP-0107 channel caps |
 | 7 | M10 task-aware events/DAP bounded, identity-matched, authority-neutral | GO | Events carry task-0/scope-0 (STEP-0108 exactness check); DAP suite green through the STEP-0108 debug teardown change; AI surface data-only contract test |
 | 8 | Cancellation joins or abandons Host work under bounded policy, no stale publication | GO | STEP-0106 abandon discipline + adversarial ingress; STEP-0107 channel failure-close; http abandon fallback (STEP-0105) |
-| 9 | Windows x64 AND Linux x64 native runners pass the same corpus | **UNMET** | STEP-0109 blocked-external-evidence: no Linux host/WSL in this environment (2026-09-01); parity corpus prepared (`tools/validate-step-0109.sh`) |
+| 9 | Windows x64 AND Linux x64 native runners pass the same corpus | **GO** | STEP-0109 complete (2026-09-02): full parity corpus green on WSL2 Ubuntu 24.04 (kernel 6.18.33.2, glibc 2.39, rustc 1.98.0), evidence archived at `target/evidence/step-0109/linux/` |
 | 10 | Complete M0–M10 regression green; external-input recheck recorded | GO | Aggregate validator chain (0087/0090/0091/0100/0102 gates rerun green); recheck in §4 |
 
 ## 3. Verdict
 
-**M11: NO-GO (platform evidence missing)** — gate 9 is unmet and the plan states "Absence of a Linux x64 native runner makes M11 NO-GO; Windows-only success is insufficient." All other nine gates are GO with reproducible Windows x64 evidence. This mirrors the M6 precedent: an honest NO-GO on an external environment input, with the parity corpus ready to execute (`tools/validate-step-0109.sh`) the moment a native Linux x64 host exists.
+**M11: GO** — all ten gates are met with reproducible evidence: gates 1–8 and 10 on the Windows x64 GNU + aggregate regression runs, gate 9 on the 2026-09-02 native Linux x64 (WSL2) parity run. The earlier 2026-09-01 audit had correctly recorded NO-GO pending Linux; the parity evidence landed and the aggregate was rerun clean.
 
 ## 4. External-input recheck (2026-09-01)
 
@@ -38,13 +38,13 @@ Aggregate audit of M11 (STEP-0103–0109) against the exit gate in the M11 plan 
 | Third-party pilots | still absent — unchanged |
 | Live-model credentials (DeepSeek, M13 §5) | still absent — owner-promised, pending delivery |
 | Mobile runners (Android/Harmony) | still absent — unchanged |
-| **Linux x64 native runner** | **absent — now the binding M11 gate** (WSL2 install needs admin + reboot) |
+| ~~Linux x64 native runner~~ | **delivered 2026-09-02**: WSL2 Ubuntu 24.04 native parity run green (STEP-0109) |
 
 ## 5. Residual risks
 
 - Scheduler/channel/select semantics are proven at the core level only; guest-visible suspension remains sequential-v1 until a future profile RFC.
 - Race/select source spellings remain refused pending an independent RFC (RFC-0036 §9).
-- M12 stays locked: the plan requires M11 GO before M12 begins, so Secure HTTP Provider work does not start until the Linux parity evidence lands.
+- M12 is unlocked by this GO; Secure HTTP Provider work may begin per the M12 plan.
 
 ## 5.1 Audit findings fixed during this step
 

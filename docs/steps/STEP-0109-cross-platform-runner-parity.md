@@ -1,23 +1,18 @@
 # STEP-0109: cross-platform native runner parity
 
-> - status: blocked-external-evidence
+> - status: complete
 > - phase: M11
 > - started: 2026-09-01
-> - completed: -
+> - completed: 2026-09-02
 > - owners: autonomous-agent
 
 ## 1. Objective
 
 Run the same scheduler, cancellation, stream, Store-isolation and DAP corpus on Windows x64 and Linux x64 native runners, with reproducible environment records per claimed platform.
 
-## 2. Environment finding (2026-09-01)
+## 2. Environment finding (2026-09-01, resolved 2026-09-02)
 
-The only available execution host is Windows 11 x64 (10.0.26200). Checked on 2026-09-01:
-
-- `wsl --status` / `wsl -l -v`: WSL is **not installed** ("未安装用于 Linux 的 Windows 子系统"); installing it requires administrator rights and a machine reboot — an external environment input the agent will not fabricate or force;
-- no other Linux x64 host, VM, or CI runner is registered to this repository.
-
-Per the M11 plan §12 and ADR-0010: cross-compilation, schema fixtures and protocol fixtures never count as native runner evidence, so no Linux claim is made. **M11 cannot be GO until this step's corpus runs on a native Linux x64 host** (WSL2 with a real Linux kernel qualifies as native Linux userspace execution; cross-mingw binaries do not).
+~~The only available execution host is Windows 11 x64.~~ On 2026-09-01 WSL was absent; on 2026-09-02 the owner authorized and completed a WSL2 install (Ubuntu 24.04 LTS rootfs imported via `wsl --import`, mirrored networking enabled so the Windows-side proxy is reachable as 127.0.0.1). The parity corpus ran on **Linux Sun-note 6.18.33.2-microsoft-standard-WSL2 x86_64, rustc 1.98.0, glibc 2.39** — a real Linux kernel/userspace, which satisfies the native-evidence rule (the run was compiled and executed inside the Linux environment; no cross-compiled artifact was executed).
 
 ## 3. Prepared assets (ready to execute when a Linux x64 host exists)
 
@@ -35,16 +30,22 @@ Identical to the Windows corpus, with platform-typed differences allowed only in
 
 ## 5. Status rule
 
-This step stays `blocked-external-evidence` until a native Linux x64 execution log exists in the repository evidence trail. STEP-0110 must record M11 gate 9 (platform parity) as unmet while this step is blocked.
+This step is complete: the native Linux x64 execution log exists at `target/evidence/step-0109/linux/` (archived from the WSL2 run) and STEP-0110 records gate 9 as met.
 
 ## 6. Changes
 
-- `tools/validate-step-0109.sh` (new, unexecuted — pending Linux host): the parity script described in §3/§4.
-- `runner/sico-runner/tests/runner.rs`: `process_metrics` helper gained a `cfg(target_os = "linux")` counterpart reading `/proc/self`; the three `#[cfg(windows)]` leak-matrix tests from STEP-0105/0108 are now `#[cfg(any(windows, target_os = "linux"))]` so the same evidence runs on both platforms.
+- `tools/validate-step-0109.sh` (new): the parity script — runner-scoped clippy (the desktop-host crate is a Windows-track artifact and not part of the M11 platform claim), scheduler unit corpus, release runner suite with evidence markers, environment record.
+- `runner/sico-runner/tests/runner.rs`: `windows_process_metrics` became `process_metrics` with a `/proc`-based Linux variant (fd count + VmRSS); the five leak/scale matrix tests are now `cfg(any(windows, target_os = "linux"))` so the same evidence runs on both platforms.
 
 ## 7. Validation
 
-Windows-side (2026-09-01): the `cfg`-widened tests pass (37/37 runner integration, single-threaded). Cross compile-check (`cargo check --target x86_64-unknown-linux-gnu`) is not available either: wasmtime's C shims need a cross C toolchain (`x86_64-linux-gnu-gcc`) that this environment lacks — supporting evidence deferred to the native host, per the rule that cross-compilation never substitutes for native execution. Linux-side: blocked (§2).
+Executed 2026-09-02 on Linux (WSL2 Ubuntu 24.04, kernel 6.18.33.2-microsoft-standard-WSL2, x86_64, glibc 2.39, rustc 1.98.0):
+
+- `tools/validate-step-0109.sh` green end-to-end: `STEP_0109_OK platform=linux-x64 corpus=parity`. Scheduler unit suite green; release runner integration suite **35/35** green (the two `#[cfg(windows)]` console-control fixtures stay Windows-only by design).
+- Linux metric highlights (evidence log `target/evidence/step-0109/linux/runner-tests.txt`): synthetic 1,024-task lifecycle 4.3 ms; 1,024-chain cancellation 6.6 ms; real guest 1,024 spawns 117 ms; 1 GiB channel relay metadata constant (368 B) and RSS byte-flat; GRANT_MATRIX_100 / SCHEDULER_TEARDOWN_100 / DAP_TERMINATE_20 all fd-flat (5→5) and RSS-flat.
+- Environment record: `target/evidence/step-0109/linux/environment.txt`.
+- Windows-side (2026-09-01): the `cfg`-widened tests passed (37/37 runner integration, single-threaded). Cross compile-check was unavailable (no cross C toolchain for wasmtime's shims) and is moot now that native execution exists.
+- One-off observation, not reproduced: during the first parity attempt the final runner test (`trap_fuel_memory_and_malformed_guests_fail_closed_and_host_survives`) spun without completing after ~25 min of suite wall time; instrumented isolation passed in 0.09 s and two subsequent full-suite runs passed in ~4 s. Recorded as a load-related one-off; the corpus has since run clean twice on Linux.
 
 ## 10. Audit links
 
