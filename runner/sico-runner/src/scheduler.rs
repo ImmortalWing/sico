@@ -33,6 +33,12 @@ pub const MAX_METADATA_BYTES: usize = 16 << 20;
 pub const MAX_SCOPE_CHILDREN: usize = 1_024;
 /// Operands of one select/race resolution.
 pub const MAX_SELECT_OPERANDS: usize = 256;
+/// Channels per run.
+pub const MAX_CHANNELS: usize = 1_024;
+/// Buffered items per channel (ADR-0010 hard limits).
+pub const MAX_CHANNEL_ITEMS: usize = 1_024;
+/// Per-channel byte budget ceiling.
+pub const MAX_CHANNEL_BYTES: usize = 16 << 20;
 
 /// Accounted sizes for the metadata budget. With every count capped at
 /// 1,024 the budget is structurally unreachable (hundreds of KiB at most);
@@ -41,6 +47,7 @@ const TASK_RECORD_BYTES: usize = 128;
 const SCOPE_RECORD_BYTES: usize = 96;
 const READY_ENTRY_BYTES: usize = 16;
 const OPERATION_RECORD_BYTES: usize = 96;
+const CHANNEL_RECORD_BYTES: usize = 128;
 
 /// Run-local task identity; monotonically increasing within one run.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -53,6 +60,43 @@ pub struct ScopeId(pub u32);
 /// Run-local Host-operation registration identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OperationId(pub u64);
+
+/// Run-local channel identity; monotonically increasing within one run.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ChannelId(pub u32);
+
+/// How a channel was closed (M11 STEP-0107): a clean owner close drains
+/// buffered items before answering `closed`; a failure close (owner
+/// cancelled or failed) propagates immediately to every waiter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CloseKind {
+    Closed,
+    Failed,
+}
+
+/// Result of a channel send (backpressure is suspension, never spinning).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SendOutcome {
+    /// Handed directly to a waiting receiver.
+    Delivered,
+    /// Accepted into the bounded buffer.
+    Buffered,
+    /// Buffer full (or rendezvous without a receiver): the producer is
+    /// suspended in the FIFO send-waiter queue until a slot frees.
+    Blocked,
+}
+
+/// Result of a channel receive.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecvOutcome {
+    /// One buffered or handed-off item: `(sender, payload bytes)`.
+    Item { sender: TaskId, bytes: usize },
+    /// Empty open channel: the consumer is suspended in the FIFO
+    /// recv-waiter queue until a send or close arrives.
+    Blocked,
+    /// The channel is closed and drained (or failure-closed).
+    Closed(CloseKind),
+}
 
 /// Task lifecycle (ADR-0010 §6.1):
 /// `created → runnable ↔ suspended → completing → succeeded | failed | cancelled`.
@@ -146,6 +190,16 @@ pub enum SchedulerFault {
     NoSelectOperands,
     NoReadyOperand,
     Deadlock(Vec<TaskId>),
+    ChannelTableFull,
+    ChannelItemsExceeded(usize),
+    ChannelBytesExceeded,
+    UnknownChannel(ChannelId),
+    ChannelClosed(ChannelId),
+    NotChannelOwner {
+        channel: ChannelId,
+        task: TaskId,
+    },
+    ChannelWaitConflict(TaskId),
 }
 
 impl fmt::Display for SchedulerFault {
@@ -219,6 +273,21 @@ impl fmt::Display for SchedulerFault {
                 "deadlock: {} suspended tasks with no runnable work or pending host operations",
                 tasks.len()
             ),
+            Self::ChannelTableFull => formatter.write_str("channel table full (1024 channels)"),
+            Self::ChannelItemsExceeded(count) => {
+                write!(formatter, "channel item capacity exceeded (1024): {count}")
+            }
+            Self::ChannelBytesExceeded => formatter.write_str("channel byte budget exceeded"),
+            Self::UnknownChannel(channel) => write!(formatter, "unknown channel {}", channel.0),
+            Self::ChannelClosed(channel) => write!(formatter, "channel {} is closed", channel.0),
+            Self::NotChannelOwner { channel, task } => write!(
+                formatter,
+                "task {} does not own channel {}",
+                task.0, channel.0
+            ),
+            Self::ChannelWaitConflict(task) => {
+                write!(formatter, "task {} is already waiting on a channel", task.0)
+            }
         }
     }
 }
@@ -247,6 +316,21 @@ struct OperationRecord {
     terminal: bool,
 }
 
+/// One bounded channel (M11 STEP-0107): items carry `(sender, payload
+/// bytes)` — payload contents stay in task memory until a suspension
+/// profile exists; this table is the accounting/synchronization engine.
+#[derive(Debug)]
+struct Channel {
+    owner: TaskId,
+    item_capacity: usize,
+    byte_budget: usize,
+    items: VecDeque<(TaskId, usize)>,
+    bytes: usize,
+    closed: Option<CloseKind>,
+    send_waiters: VecDeque<(TaskId, usize)>,
+    recv_waiters: VecDeque<TaskId>,
+}
+
 /// One run's deterministic identity scope.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RunIdentity {
@@ -265,6 +349,8 @@ pub struct SchedulerCore {
     operations: BTreeMap<OperationId, OperationRecord>,
     completions: Vec<CompletionRecord>,
     delivered: BTreeSet<OperationId>,
+    channels: BTreeMap<ChannelId, Channel>,
+    next_channel: u32,
     completion_bytes: usize,
     registration_order: u64,
     operation_order: BTreeMap<OperationId, u64>,
@@ -290,6 +376,8 @@ impl SchedulerCore {
             operations: BTreeMap::new(),
             completions: Vec::new(),
             delivered: BTreeSet::new(),
+            channels: BTreeMap::new(),
+            next_channel: 0,
             completion_bytes: 0,
             registration_order: 0,
             operation_order: BTreeMap::new(),
@@ -793,6 +881,258 @@ impl SchedulerCore {
         Err(SchedulerFault::Deadlock(blocked))
     }
 
+    /// Opens a bounded channel owned by a live task (M11 STEP-0107).
+    /// `item_capacity` 0 is a rendezvous channel; `byte_budget` bounds
+    /// buffered payload bytes. Channel records charge the metadata budget.
+    pub fn open_channel(
+        &mut self,
+        owner: TaskId,
+        item_capacity: usize,
+        byte_budget: usize,
+    ) -> Result<ChannelId, SchedulerFault> {
+        self.require_live_task(owner)?;
+        if item_capacity > MAX_CHANNEL_ITEMS {
+            return Err(SchedulerFault::ChannelItemsExceeded(item_capacity));
+        }
+        if byte_budget > MAX_CHANNEL_BYTES {
+            return Err(SchedulerFault::ChannelBytesExceeded);
+        }
+        if self.channels.len() >= MAX_CHANNELS {
+            return Err(SchedulerFault::ChannelTableFull);
+        }
+        self.charge_metadata(CHANNEL_RECORD_BYTES)?;
+        let channel = ChannelId(self.next_channel);
+        self.next_channel += 1;
+        self.channels.insert(
+            channel,
+            Channel {
+                owner,
+                item_capacity,
+                byte_budget,
+                items: VecDeque::new(),
+                bytes: 0,
+                closed: None,
+                send_waiters: VecDeque::new(),
+                recv_waiters: VecDeque::new(),
+            },
+        );
+        Ok(channel)
+    }
+
+    /// Sends one item carrying `bytes` of payload accounting. A waiting
+    /// receiver gets a direct handoff; otherwise the item buffers within
+    /// the item/byte budgets; otherwise the producer suspends in the FIFO
+    /// send-waiter queue (backpressure, never spinning).
+    pub fn send(
+        &mut self,
+        task: TaskId,
+        channel: ChannelId,
+        bytes: usize,
+    ) -> Result<SendOutcome, SchedulerFault> {
+        self.require_live_task(task)?;
+        {
+            let record = self
+                .channels
+                .get(&channel)
+                .ok_or(SchedulerFault::UnknownChannel(channel))?;
+            if record.closed.is_some() {
+                return Err(SchedulerFault::ChannelClosed(channel));
+            }
+            if bytes > record.byte_budget {
+                return Err(SchedulerFault::ChannelBytesExceeded);
+            }
+        }
+        if let Some(consumer) = self
+            .channels
+            .get_mut(&channel)
+            .expect("channel checked")
+            .recv_waiters
+            .pop_front()
+        {
+            self.make_runnable(consumer)?;
+            return Ok(SendOutcome::Delivered);
+        }
+        {
+            let record = self.channels.get_mut(&channel).expect("channel checked");
+            if record.items.len() < record.item_capacity
+                && record.bytes + bytes <= record.byte_budget
+            {
+                record.items.push_back((task, bytes));
+                record.bytes += bytes;
+                return Ok(SendOutcome::Buffered);
+            }
+        }
+        self.check_wait_conflict(task)?;
+        self.suspend(task)?;
+        self.channels
+            .get_mut(&channel)
+            .expect("channel checked")
+            .send_waiters
+            .push_back((task, bytes));
+        Ok(SendOutcome::Blocked)
+    }
+
+    /// Receives one item: buffered FIFO first (promoting the oldest
+    /// blocked producer into the freed slot), then a rendezvous handoff
+    /// from a blocked sender, then `closed` once drained; otherwise the
+    /// consumer suspends in the FIFO recv-waiter queue.
+    pub fn recv(
+        &mut self,
+        task: TaskId,
+        channel: ChannelId,
+    ) -> Result<RecvOutcome, SchedulerFault> {
+        self.require_live_task(task)?;
+        if !self.channels.contains_key(&channel) {
+            return Err(SchedulerFault::UnknownChannel(channel));
+        }
+        let buffered = self
+            .channels
+            .get_mut(&channel)
+            .expect("channel checked")
+            .items
+            .pop_front();
+        if let Some((sender, bytes)) = buffered {
+            self.channels
+                .get_mut(&channel)
+                .expect("channel checked")
+                .bytes -= bytes;
+            self.promote_senders(channel);
+            return Ok(RecvOutcome::Item { sender, bytes });
+        }
+        let handoff = self
+            .channels
+            .get_mut(&channel)
+            .expect("channel checked")
+            .send_waiters
+            .pop_front();
+        if let Some((sender, bytes)) = handoff {
+            self.make_runnable(sender)?;
+            return Ok(RecvOutcome::Item { sender, bytes });
+        }
+        if let Some(kind) = self.channels.get(&channel).expect("channel checked").closed {
+            return Ok(RecvOutcome::Closed(kind));
+        }
+        self.check_wait_conflict(task)?;
+        self.suspend(task)?;
+        self.channels
+            .get_mut(&channel)
+            .expect("channel checked")
+            .recv_waiters
+            .push_back(task);
+        Ok(RecvOutcome::Blocked)
+    }
+
+    /// Owner-only close. Buffered items keep draining; current waiters wake
+    /// immediately (receivers observe `closed` once drained, senders get a
+    /// typed refusal); double close is a typed fault.
+    pub fn close_channel(
+        &mut self,
+        task: TaskId,
+        channel: ChannelId,
+        kind: CloseKind,
+    ) -> Result<(), SchedulerFault> {
+        {
+            let record = self
+                .channels
+                .get(&channel)
+                .ok_or(SchedulerFault::UnknownChannel(channel))?;
+            if record.owner != task {
+                return Err(SchedulerFault::NotChannelOwner { channel, task });
+            }
+            if record.closed.is_some() {
+                return Err(SchedulerFault::ChannelClosed(channel));
+            }
+        }
+        let record = self.channels.get_mut(&channel).expect("channel checked");
+        record.closed = Some(kind);
+        let send_waiters: Vec<_> = record
+            .send_waiters
+            .drain(..)
+            .map(|(task, _)| task)
+            .collect();
+        let recv_waiters: Vec<_> = record.recv_waiters.drain(..).collect();
+        for waiter in send_waiters.into_iter().chain(recv_waiters) {
+            if self.task_state(waiter) == Some(TaskState::Suspended) {
+                self.make_runnable(waiter)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Transfers channel ownership (affine move); the old owner's later
+    /// close is a typed `NotChannelOwner` failure.
+    pub fn move_channel(
+        &mut self,
+        task: TaskId,
+        channel: ChannelId,
+        new_owner: TaskId,
+    ) -> Result<(), SchedulerFault> {
+        self.require_live_task(new_owner)?;
+        let record = self
+            .channels
+            .get_mut(&channel)
+            .ok_or(SchedulerFault::UnknownChannel(channel))?;
+        if record.owner != task {
+            return Err(SchedulerFault::NotChannelOwner { channel, task });
+        }
+        record.owner = new_owner;
+        Ok(())
+    }
+
+    /// Promotes blocked senders into freed buffer slots, oldest first.
+    fn promote_senders(&mut self, channel: ChannelId) {
+        let mut wake = Vec::new();
+        {
+            let record = self.channels.get_mut(&channel).expect("channel checked");
+            while let Some(&(sender, bytes)) = record.send_waiters.front() {
+                if record.items.len() >= record.item_capacity
+                    || record.bytes + bytes > record.byte_budget
+                {
+                    break;
+                }
+                record.send_waiters.pop_front();
+                record.items.push_back((sender, bytes));
+                record.bytes += bytes;
+                wake.push(sender);
+            }
+        }
+        for sender in wake {
+            if self.task_state(sender) == Some(TaskState::Suspended) {
+                self.make_runnable(sender).expect("waiter was suspended");
+            }
+        }
+    }
+
+    /// A task may wait on at most one channel at a time.
+    fn check_wait_conflict(&self, task: TaskId) -> Result<(), SchedulerFault> {
+        let waiting = self.channels.values().any(|record| {
+            record.recv_waiters.contains(&task)
+                || record
+                    .send_waiters
+                    .iter()
+                    .any(|(waiter, _)| *waiter == task)
+        });
+        if waiting {
+            return Err(SchedulerFault::ChannelWaitConflict(task));
+        }
+        Ok(())
+    }
+
+    fn require_live_task(&self, task: TaskId) -> Result<(), SchedulerFault> {
+        let record = self
+            .tasks
+            .get(&task)
+            .ok_or(SchedulerFault::UnknownTask(task))?;
+        if record.state.is_terminal() {
+            return Err(SchedulerFault::IllegalTransition {
+                task,
+                from: record.state,
+                to: TaskState::Runnable,
+            });
+        }
+        Ok(())
+    }
+
     /// Commits the root task's single terminal state from the run outcome.
     pub fn commit_root(&mut self, kind: TerminalKind) -> Result<(), SchedulerFault> {
         let root = self.root_task();
@@ -817,6 +1157,22 @@ impl SchedulerCore {
             return Err(SchedulerFault::HostOperationNotTerminal(*operation));
         }
         self.completions.clear();
+        // Idempotent cleanup path (ADR-0010): any channel still open at
+        // teardown closes in reverse registration order; every task is
+        // already terminal, so no waiter can exist to wake.
+        let mut open_channels: Vec<_> = self
+            .channels
+            .iter()
+            .filter(|(_, channel)| channel.closed.is_none())
+            .map(|(id, _)| *id)
+            .collect();
+        open_channels.sort_by_key(|id| Reverse(id.0));
+        for id in open_channels {
+            let channel = self.channels.get_mut(&id).expect("channel listed");
+            channel.closed = Some(CloseKind::Closed);
+            channel.send_waiters.clear();
+            channel.recv_waiters.clear();
+        }
         let mut order: Vec<_> = self
             .scopes
             .iter()
@@ -874,6 +1230,34 @@ impl SchedulerCore {
             for operation in self.operations.values_mut() {
                 if operation.task == member && !operation.terminal {
                     operation.terminal = true;
+                }
+            }
+            // A cancelled task leaves every channel wait queue, and the
+            // channels it owns failure-close so their consumers can never
+            // hang on a dead producer (ADR-0010 reverse-order cleanup).
+            for channel in self.channels.values_mut() {
+                channel.send_waiters.retain(|(waiter, _)| *waiter != member);
+                channel.recv_waiters.retain(|waiter| *waiter != member);
+            }
+            let owned: Vec<_> = self
+                .channels
+                .iter()
+                .filter(|(_, channel)| channel.owner == member && channel.closed.is_none())
+                .map(|(id, _)| *id)
+                .collect();
+            for channel in owned {
+                let record = self.channels.get_mut(&channel).expect("channel listed");
+                record.closed = Some(CloseKind::Failed);
+                let send_waiters: Vec<_> = record
+                    .send_waiters
+                    .drain(..)
+                    .map(|(task, _)| task)
+                    .collect();
+                let recv_waiters: Vec<_> = record.recv_waiters.drain(..).collect();
+                for waiter in send_waiters.into_iter().chain(recv_waiters) {
+                    if self.task_state(waiter) == Some(TaskState::Suspended) {
+                        self.make_runnable(waiter).expect("waiter was suspended");
+                    }
                 }
             }
         }
@@ -1430,5 +1814,373 @@ mod tests {
             "1,024-chain cancellation took {elapsed:?}"
         );
         println!("CHAIN_CANCEL_1024 wall_us={}", elapsed.as_micros());
+    }
+
+    // ---- STEP-0107: bounded channels, streams and backpressure ----
+
+    /// Spawns a task and drives it to the running point (runnable, popped).
+    fn running_task(scheduler: &mut SchedulerCore, parent: TaskId) -> TaskId {
+        let task = scheduler.spawn_task(ScopeId(0), parent).unwrap();
+        scheduler.make_runnable(task).unwrap();
+        assert_eq!(scheduler.next_ready(), Some(task));
+        task
+    }
+
+    /// Root runnable with the run started.
+    fn channel_scheduler() -> (SchedulerCore, TaskId) {
+        let mut scheduler = scheduler();
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        assert_eq!(scheduler.next_ready(), Some(root));
+        (scheduler, root)
+    }
+
+    #[test]
+    fn channel_capacity_zero_is_a_rendezvous() {
+        let (mut scheduler, root) = channel_scheduler();
+        let producer = running_task(&mut scheduler, root);
+        let consumer = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 0, 1_024).unwrap();
+
+        // Sender first: blocks until a receiver arrives.
+        assert_eq!(
+            scheduler.send(producer, channel, 16),
+            Ok(SendOutcome::Blocked)
+        );
+        assert_eq!(scheduler.task_state(producer), Some(TaskState::Suspended));
+        // Nothing spins: the blocked producer is not in the ready queue.
+        assert_eq!(scheduler.next_ready(), None);
+        assert_eq!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Item {
+                sender: producer,
+                bytes: 16
+            })
+        );
+        assert_eq!(scheduler.task_state(producer), Some(TaskState::Runnable));
+
+        // Receiver first: blocks until a sender arrives. The woken
+        // producer is still queued from the handoff; pop it first.
+        assert_eq!(scheduler.next_ready(), Some(producer));
+        assert_eq!(scheduler.recv(consumer, channel), Ok(RecvOutcome::Blocked));
+        assert_eq!(scheduler.next_ready(), None);
+        assert_eq!(
+            scheduler.send(producer, channel, 8),
+            Ok(SendOutcome::Delivered)
+        );
+        assert_eq!(scheduler.task_state(consumer), Some(TaskState::Runnable));
+    }
+
+    #[test]
+    fn channel_capacity_one_buffers_then_blocks() {
+        let (mut scheduler, root) = channel_scheduler();
+        let producer = running_task(&mut scheduler, root);
+        let consumer = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 1, 1_024).unwrap();
+
+        assert_eq!(
+            scheduler.send(producer, channel, 4),
+            Ok(SendOutcome::Buffered)
+        );
+        assert_eq!(
+            scheduler.send(producer, channel, 4),
+            Ok(SendOutcome::Blocked)
+        );
+        // A recv frees the slot and promotes the blocked producer FIFO.
+        assert!(matches!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Item { .. })
+        ));
+        assert_eq!(scheduler.task_state(producer), Some(TaskState::Runnable));
+        assert!(matches!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Item { .. })
+        ));
+    }
+
+    #[test]
+    fn channel_limits_are_typed_and_backpressure_blocks() {
+        let (mut scheduler, root) = channel_scheduler();
+        assert_eq!(
+            scheduler.open_channel(root, MAX_CHANNEL_ITEMS + 1, 1_024),
+            Err(SchedulerFault::ChannelItemsExceeded(MAX_CHANNEL_ITEMS + 1))
+        );
+        assert_eq!(
+            scheduler.open_channel(root, 1, MAX_CHANNEL_BYTES + 1),
+            Err(SchedulerFault::ChannelBytesExceeded)
+        );
+        // Fill a max-capacity channel: the max+1th send blocks (typed
+        // backpressure), it does not error and does not grow the queue.
+        let channel = scheduler
+            .open_channel(root, MAX_CHANNEL_ITEMS, MAX_CHANNEL_BYTES)
+            .unwrap();
+        for _ in 0..MAX_CHANNEL_ITEMS {
+            assert_eq!(scheduler.send(root, channel, 1), Ok(SendOutcome::Buffered));
+        }
+        let extra = running_task(&mut scheduler, root);
+        assert_eq!(scheduler.send(extra, channel, 1), Ok(SendOutcome::Blocked));
+        // Byte budget: a single item larger than the budget is a typed
+        // fault; an item that merely overflows the remaining budget blocks.
+        let tight = scheduler.open_channel(root, 8, 100).unwrap();
+        assert_eq!(
+            scheduler.send(root, tight, 101),
+            Err(SchedulerFault::ChannelBytesExceeded)
+        );
+        assert_eq!(scheduler.send(root, tight, 60), Ok(SendOutcome::Buffered));
+        let second = running_task(&mut scheduler, root);
+        assert_eq!(scheduler.send(second, tight, 50), Ok(SendOutcome::Blocked));
+        // Channel table cap.
+        let mut last = None;
+        for _ in scheduler.channels.len()..MAX_CHANNELS {
+            last = Some(scheduler.open_channel(root, 0, 0).unwrap());
+        }
+        assert!(last.is_some());
+        assert_eq!(
+            scheduler.open_channel(root, 0, 0),
+            Err(SchedulerFault::ChannelTableFull)
+        );
+    }
+
+    #[test]
+    fn slow_consumer_gets_fifo_fairness_without_spinning() {
+        let (mut scheduler, root) = channel_scheduler();
+        let consumer = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 2, 1_024).unwrap();
+        let producers: Vec<_> = (0..4).map(|_| running_task(&mut scheduler, root)).collect();
+        assert_eq!(
+            scheduler.send(producers[0], channel, 1),
+            Ok(SendOutcome::Buffered)
+        );
+        assert_eq!(
+            scheduler.send(producers[1], channel, 1),
+            Ok(SendOutcome::Buffered)
+        );
+        assert_eq!(
+            scheduler.send(producers[2], channel, 1),
+            Ok(SendOutcome::Blocked)
+        );
+        assert_eq!(
+            scheduler.send(producers[3], channel, 1),
+            Ok(SendOutcome::Blocked)
+        );
+        // The ready queue holds nothing: backpressure parks producers.
+        assert_eq!(scheduler.next_ready(), None);
+        // Slow consumer drains one at a time; producers wake in arrival
+        // order and items keep creation order.
+        for round in 0..4 {
+            let outcome = scheduler.recv(consumer, channel).unwrap();
+            assert_eq!(
+                outcome,
+                RecvOutcome::Item {
+                    sender: producers[round],
+                    bytes: 1
+                }
+            );
+            if round < 2 {
+                let woken = producers[round + 2];
+                assert_eq!(scheduler.task_state(woken), Some(TaskState::Runnable));
+                assert_eq!(scheduler.next_ready(), Some(woken));
+            }
+        }
+    }
+
+    #[test]
+    fn early_close_drains_then_reports_closed_and_refuses_sends() {
+        let (mut scheduler, root) = channel_scheduler();
+        let producer = running_task(&mut scheduler, root);
+        let consumer = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 4, 1_024).unwrap();
+        scheduler.send(producer, channel, 1).unwrap();
+        scheduler.send(producer, channel, 2).unwrap();
+        scheduler
+            .close_channel(root, channel, CloseKind::Closed)
+            .unwrap();
+        assert_eq!(
+            scheduler.send(producer, channel, 3),
+            Err(SchedulerFault::ChannelClosed(channel))
+        );
+        assert!(matches!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Item { bytes: 1, .. })
+        ));
+        assert!(matches!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Item { bytes: 2, .. })
+        ));
+        assert_eq!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Closed(CloseKind::Closed))
+        );
+        // Double close and non-owner close are typed faults.
+        assert_eq!(
+            scheduler.close_channel(root, channel, CloseKind::Closed),
+            Err(SchedulerFault::ChannelClosed(channel))
+        );
+        assert_eq!(
+            scheduler.close_channel(producer, channel, CloseKind::Closed),
+            Err(SchedulerFault::NotChannelOwner {
+                channel,
+                task: producer
+            })
+        );
+    }
+
+    #[test]
+    fn close_wakes_waiters_with_the_close_kind() {
+        let (mut scheduler, root) = channel_scheduler();
+        // A blocked receiver on an empty rendezvous channel wakes at close
+        // and observes `closed`.
+        let consumer = running_task(&mut scheduler, root);
+        let rendezvous = scheduler.open_channel(root, 0, 1_024).unwrap();
+        assert_eq!(
+            scheduler.recv(consumer, rendezvous),
+            Ok(RecvOutcome::Blocked)
+        );
+        scheduler
+            .close_channel(root, rendezvous, CloseKind::Closed)
+            .unwrap();
+        assert_eq!(scheduler.task_state(consumer), Some(TaskState::Runnable));
+        assert_eq!(scheduler.next_ready(), Some(consumer));
+        assert_eq!(
+            scheduler.recv(consumer, rendezvous),
+            Ok(RecvOutcome::Closed(CloseKind::Closed))
+        );
+        // A blocked sender on a full channel wakes at close and its retry
+        // is a typed refusal.
+        let producer = running_task(&mut scheduler, root);
+        let full = scheduler.open_channel(root, 1, 1_024).unwrap();
+        assert_eq!(scheduler.send(root, full, 1), Ok(SendOutcome::Buffered));
+        assert_eq!(scheduler.send(producer, full, 1), Ok(SendOutcome::Blocked));
+        scheduler
+            .close_channel(root, full, CloseKind::Closed)
+            .unwrap();
+        assert_eq!(scheduler.task_state(producer), Some(TaskState::Runnable));
+        assert_eq!(scheduler.next_ready(), Some(producer));
+        assert_eq!(
+            scheduler.send(producer, full, 1),
+            Err(SchedulerFault::ChannelClosed(full))
+        );
+    }
+
+    #[test]
+    fn producer_failure_propagates_to_consumers() {
+        let (mut scheduler, root) = channel_scheduler();
+        let producer = running_task(&mut scheduler, root);
+        let consumer = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(producer, 4, 1_024).unwrap();
+        assert_eq!(scheduler.recv(consumer, channel), Ok(RecvOutcome::Blocked));
+        // Cancelling the owner failure-closes its channels and wakes the
+        // consumer instead of letting it hang.
+        scheduler.cancel_task(producer).unwrap();
+        assert_eq!(scheduler.task_state(consumer), Some(TaskState::Runnable));
+        assert_eq!(
+            scheduler.recv(consumer, channel),
+            Ok(RecvOutcome::Closed(CloseKind::Failed))
+        );
+    }
+
+    #[test]
+    fn cancellation_removes_waiters_without_waking_them() {
+        let (mut scheduler, root) = channel_scheduler();
+        let consumer = running_task(&mut scheduler, root);
+        let waiter = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 0, 1_024).unwrap();
+        assert_eq!(scheduler.recv(waiter, channel), Ok(RecvOutcome::Blocked));
+        scheduler.cancel_task(waiter).unwrap();
+        // The cancelled waiter is gone from the queue: a send now blocks
+        // (no receiver), and closing does not try to wake a terminal task.
+        let producer = running_task(&mut scheduler, root);
+        assert_eq!(
+            scheduler.send(producer, channel, 1),
+            Ok(SendOutcome::Blocked)
+        );
+        scheduler
+            .close_channel(root, channel, CloseKind::Closed)
+            .unwrap();
+        assert_eq!(scheduler.task_state(waiter), Some(TaskState::Cancelled));
+        assert_eq!(scheduler.task_state(consumer), Some(TaskState::Runnable));
+    }
+
+    #[test]
+    fn move_channel_transfers_ownership_affinely() {
+        let (mut scheduler, root) = channel_scheduler();
+        let new_owner = running_task(&mut scheduler, root);
+        let channel = scheduler.open_channel(root, 1, 1_024).unwrap();
+        scheduler.move_channel(root, channel, new_owner).unwrap();
+        assert_eq!(
+            scheduler.close_channel(root, channel, CloseKind::Closed),
+            Err(SchedulerFault::NotChannelOwner {
+                channel,
+                task: root
+            })
+        );
+        scheduler
+            .close_channel(new_owner, channel, CloseKind::Closed)
+            .unwrap();
+        // Unknown channels are typed everywhere.
+        assert_eq!(
+            scheduler.send(root, ChannelId(999), 1),
+            Err(SchedulerFault::UnknownChannel(ChannelId(999)))
+        );
+        assert_eq!(
+            scheduler.recv(root, ChannelId(999)),
+            Err(SchedulerFault::UnknownChannel(ChannelId(999)))
+        );
+    }
+
+    #[test]
+    fn channel_wait_conflict_and_terminal_refusals_are_typed() {
+        let (mut scheduler, root) = channel_scheduler();
+        let task = running_task(&mut scheduler, root);
+        let first = scheduler.open_channel(root, 0, 1_024).unwrap();
+        let second = scheduler.open_channel(root, 0, 1_024).unwrap();
+        assert_eq!(scheduler.recv(task, first), Ok(RecvOutcome::Blocked));
+        assert_eq!(
+            scheduler.recv(task, second),
+            Err(SchedulerFault::ChannelWaitConflict(task))
+        );
+        // Terminal tasks cannot send, recv or open channels.
+        scheduler
+            .commit_terminal(root, TerminalKind::Succeeded)
+            .unwrap();
+        assert!(matches!(
+            scheduler.send(root, first, 1),
+            Err(SchedulerFault::IllegalTransition { .. })
+        ));
+        assert!(matches!(
+            scheduler.recv(root, first),
+            Err(SchedulerFault::IllegalTransition { .. })
+        ));
+        assert!(matches!(
+            scheduler.open_channel(root, 1, 1),
+            Err(SchedulerFault::IllegalTransition { .. })
+        ));
+    }
+
+    #[test]
+    fn channel_deadlock_is_provable() {
+        let (mut scheduler, root) = channel_scheduler();
+        let first = running_task(&mut scheduler, root);
+        let second = running_task(&mut scheduler, root);
+        let channel_a = scheduler.open_channel(first, 0, 1_024).unwrap();
+        let channel_b = scheduler.open_channel(second, 0, 1_024).unwrap();
+        // Both producers block on empty rendezvous channels; the root
+        // suspends; nothing can ever wake anyone.
+        assert_eq!(
+            scheduler.send(first, channel_a, 1),
+            Ok(SendOutcome::Blocked)
+        );
+        assert_eq!(
+            scheduler.send(second, channel_b, 1),
+            Ok(SendOutcome::Blocked)
+        );
+        scheduler.suspend(root).unwrap();
+        let Err(SchedulerFault::Deadlock(blocked)) = scheduler.detect_deadlock() else {
+            panic!("expected channel deadlock");
+        };
+        assert_eq!(blocked, vec![root, first, second]);
+        // Cancelling the subtree resolves it.
+        scheduler.cancel_task(root).unwrap();
+        assert_eq!(scheduler.detect_deadlock(), Ok(()));
     }
 }

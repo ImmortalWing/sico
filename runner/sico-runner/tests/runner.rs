@@ -5,8 +5,8 @@ use sico_ir::{
 use sico_observability::{canonical_json, parse_runtime_fault};
 use sico_runner::scheduler::{
     CompletionRecord, MAX_COMPLETION_BYTES, MAX_COMPLETION_RECORDS, MAX_LIVE_TASKS,
-    MAX_READY_QUEUE, MAX_SCOPE_CHILDREN, MAX_SCOPE_DEPTH, OperationId, ReadinessClass, RunIdentity,
-    SchedulerCore, SchedulerFault, ScopeId, TaskId, TerminalKind,
+    MAX_READY_QUEUE, MAX_SCOPE_CHILDREN, MAX_SCOPE_DEPTH, OperationId, ReadinessClass, RecvOutcome,
+    RunIdentity, SchedulerCore, SchedulerFault, ScopeId, SendOutcome, TaskId, TerminalKind,
 };
 use sico_runner::{
     CancelToken, FsGrants, ObservedRun, RunOutcome, Runner, RunnerLimits, ScriptInput, ScriptOutput,
@@ -2491,4 +2491,69 @@ fn cancelled_guest_run_drives_the_scheduler_tree_to_teardown() {
         )
         .unwrap();
     assert!(matches!(again.outcome, RunOutcome::FuelExhausted));
+}
+
+// ---- STEP-0107: bounded channels, streams and backpressure ----
+
+#[cfg(windows)]
+#[test]
+fn channel_relay_keeps_rss_independent_of_stream_size() {
+    // Relay 1 GiB of payload accounting through a 4-item / 4 MiB channel.
+    // The v1 channel core stores `(sender, bytes)` records only — payload
+    // contents stay in task memory, modeled here by one reusable 1 MiB
+    // buffer — so scheduler metadata and process RSS must stay flat no
+    // matter how much total volume flows through.
+    let mut scheduler = step0105_scheduler("run-step0107-relay");
+    let root = scheduler.root_task();
+    scheduler.make_runnable(root).unwrap();
+    let _ = scheduler.next_ready();
+    let channel = scheduler.open_channel(root, 4, 4 << 20).unwrap();
+    let payload = vec![0xAB_u8; 1 << 20];
+    let metadata_before = scheduler.metadata_bytes();
+    let (handles_before, rss_before) = windows_process_metrics();
+    let started = std::time::Instant::now();
+    let mut relayed = 0_u64;
+    for round in 0..256_u32 {
+        // Fill to capacity, then drain completely: the slow-consumer
+        // pattern that must never grow state.
+        for _ in 0..4 {
+            assert_eq!(
+                scheduler.send(root, channel, payload.len()),
+                Ok(SendOutcome::Buffered),
+                "round {round}"
+            );
+        }
+        for _ in 0..4 {
+            let outcome = scheduler.recv(root, channel).unwrap();
+            assert_eq!(
+                outcome,
+                RecvOutcome::Item {
+                    sender: root,
+                    bytes: payload.len()
+                },
+                "round {round}"
+            );
+            relayed += payload.len() as u64;
+        }
+    }
+    let elapsed = started.elapsed();
+    let (handles_after, rss_after) = windows_process_metrics();
+    assert_eq!(scheduler.metadata_bytes(), metadata_before);
+    assert_eq!(relayed, 1 << 30);
+    println!(
+        "CHANNEL_RELAY_1GIB wall_ms={} metadata={} handles={}->{} rss={}->{}",
+        elapsed.as_millis(),
+        metadata_before,
+        handles_before,
+        handles_after,
+        rss_before,
+        rss_after
+    );
+    assert!(
+        rss_after <= rss_before + 16 * 1024 * 1024,
+        "RSS grew with stream size: {rss_before} -> {rss_after}"
+    );
+    // Teardown closes the still-open channel idempotently.
+    scheduler.commit_root(TerminalKind::Succeeded).unwrap();
+    scheduler.teardown().unwrap();
 }
