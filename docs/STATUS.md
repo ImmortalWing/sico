@@ -1,7 +1,7 @@
 # Sico project status
 
 > - updated: 2026-09-01
-> - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123); 所有者已于 2026-09-01 确认产品目标（前端 JS 级能力含网页控件、后端 Python 级能力、AI 友好），Web 平台与 UI 控件作为 M14 排入路线图（planned）
+> - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123); 所有者已于 2026-09-01 确认产品目标（前端 JS 级能力含网页控件、后端覆盖日常开发所需能力、AI 友好；后端走分层精选路径不仿照 Python），Web 平台与 UI 控件作为 M14 排入路线图（planned）
 > - phase status: in-progress
 > - current step: STEP-0108 persistent runner, watch, REPL and DAP task integration (next; channels landed)
 > - current support step: 无（M13 STEP-0119 已完成）
