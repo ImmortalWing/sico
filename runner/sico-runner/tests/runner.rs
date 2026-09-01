@@ -1276,18 +1276,29 @@ fn runner_cli_observes_real_windows_console_control() {
 
     let script = r#"
 import os, signal, subprocess, sys, time
-p = subprocess.Popen(
-    [sys.argv[1], sys.argv[2]],
-    stdin=subprocess.PIPE,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-)
-time.sleep(0.15)
-os.kill(p.pid, signal.CTRL_BREAK_EVENT)
-stdout, stderr = p.communicate(timeout=10)
-if p.returncode != 123 or b'\"class\":\"cancelled\"' not in stderr:
+# STATUS_CONTROL_C_EXIT with empty stderr means the CTRL_BREAK arrived
+# before the child installed its console handler: a fixture-side startup
+# race, not a runner failure. Only that exact signature may retry; every
+# other mismatch is a real failure.
+for attempt in range(6):
+    p = subprocess.Popen(
+        [sys.argv[1], sys.argv[2]],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+    time.sleep(0.3)
+    os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+    stdout, stderr = p.communicate(timeout=10)
+    if p.returncode == 123 and b'\"class\":\"cancelled\"' in stderr:
+        break
+    if p.returncode == 3221225786 and not stderr:
+        continue
     sys.stderr.buffer.write(stderr)
+    raise SystemExit(1)
+else:
+    sys.stderr.buffer.write(b'console-control fixture never observed a handler-installed run')
     raise SystemExit(1)
 "#;
     let output = std::process::Command::new("python")
@@ -1322,18 +1333,27 @@ fn runner_watch_observes_console_control_while_idle() {
     std::fs::write(&component, echo_component(0)).unwrap();
     let script = r#"
 import os, signal, subprocess, sys, time
-p = subprocess.Popen(
-    [sys.argv[1], '--watch', sys.argv[2]],
-    stdin=subprocess.DEVNULL,
-    stdout=subprocess.PIPE,
-    stderr=subprocess.PIPE,
-    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-)
-time.sleep(0.2)
-os.kill(p.pid, signal.CTRL_BREAK_EVENT)
-stdout, stderr = p.communicate(timeout=10)
-if p.returncode != 123 or b'\"schema\":\"sico.runner.watch.v0\"' not in stderr:
+# Same fixture-side race as the CLI fixture: retry only on the exact
+# STATUS_CONTROL_C_EXIT-before-handler-install signature.
+for attempt in range(6):
+    p = subprocess.Popen(
+        [sys.argv[1], '--watch', sys.argv[2]],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    )
+    time.sleep(0.3)
+    os.kill(p.pid, signal.CTRL_BREAK_EVENT)
+    stdout, stderr = p.communicate(timeout=10)
+    if p.returncode == 123 and b'\"schema\":\"sico.runner.watch.v0\"' in stderr:
+        break
+    if p.returncode == 3221225786 and not stderr:
+        continue
     sys.stderr.buffer.write(stderr)
+    raise SystemExit(1)
+else:
+    sys.stderr.buffer.write(b'watch console-control fixture never observed a handler-installed run')
     raise SystemExit(1)
 "#;
     let output = std::process::Command::new("python")
@@ -2348,4 +2368,127 @@ fn guest_task_workloads_at_scale_run_within_bounds() {
             })
         );
     }
+}
+
+// ---- STEP-0106: cancellation, timeout, race and select (M11) ----
+
+#[test]
+fn scheduler_cancellation_tree_scales_and_select_stays_canonical() {
+    // Nested cancellation of a full 1,024-task chain: one reverse-ordered
+    // commit pass, zero live tasks afterwards, teardown still exact.
+    let mut scheduler = step0105_scheduler("run-step0106-chain");
+    let root = scheduler.root_task();
+    scheduler.make_runnable(root).unwrap();
+    let _ = scheduler.next_ready();
+    let mut parent = root;
+    for _ in 1..MAX_LIVE_TASKS {
+        parent = scheduler.spawn_task(ScopeId(0), parent).unwrap();
+    }
+    let started = std::time::Instant::now();
+    let cancelled = scheduler.cancel_task(root).unwrap();
+    println!(
+        "CHAIN_CANCEL_1024 wall_us={}",
+        started.elapsed().as_micros()
+    );
+    assert_eq!(cancelled.len(), MAX_LIVE_TASKS);
+    assert_eq!(cancelled.last(), Some(&root));
+    assert_eq!(scheduler.live_tasks(), 0);
+    assert_eq!(scheduler.teardown().unwrap(), vec![ScopeId(0)]);
+
+    // Collection ordering under repeated adversarial scheduling: shuffle
+    // the publish order each round; the winner is always the canonical
+    // first (registration order within the class), never the earliest
+    // arrival.
+    for round in 0..16_u32 {
+        let mut scheduler = step0105_scheduler(&format!("run-step0106-select-{round}"));
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        let _ = scheduler.next_ready();
+        let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+        let mut operands = Vec::new();
+        let mut operations = Vec::new();
+        for _ in 0..8 {
+            let task = scheduler.spawn_task(scope, root).unwrap();
+            let operation = scheduler
+                .register_operation(task, ReadinessClass::HostCompletion)
+                .unwrap();
+            operands.push(task);
+            operations.push(operation);
+        }
+        // Deterministic shuffle driven by the round number.
+        let mut order: Vec<usize> = (0..8).collect();
+        for index in 0..8 {
+            let swap = ((round as usize) * 31 + index * 17 + 5) % 8;
+            order.swap(index, swap);
+        }
+        for index in order {
+            scheduler
+                .publish_completion(step0105_record(
+                    &scheduler,
+                    operands[index],
+                    operations[index],
+                    0,
+                ))
+                .unwrap();
+        }
+        let outcome = scheduler.select(&operands).unwrap();
+        assert_eq!(outcome.winner, operands[0], "round {round}");
+        assert_eq!(outcome.losers.len(), 7, "round {round}");
+        for loser in &outcome.losers {
+            assert_eq!(
+                scheduler.task_state(*loser),
+                Some(sico_runner::scheduler::TaskState::Cancelled),
+                "round {round}"
+            );
+        }
+    }
+}
+
+#[test]
+fn cancelled_guest_run_drives_the_scheduler_tree_to_teardown() {
+    // Runner-level integration: a blocked guest cancelled via the M10
+    // token path now resolves its scheduler root through the downward
+    // tree and still tears the Store down cleanly (exit 123).
+    let token = CancelToken::new();
+    let token_thread = token.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let _ = token_thread.request(sico_runner::CancellationSource::Signal);
+    });
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
+            &spin_component(),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let patient = RunnerLimits {
+        fuel: u64::MAX,
+        timeout: std::time::Duration::from_secs(60),
+        ..limits()
+    };
+    let observed = prepared
+        .run_observed(
+            &ScriptInput::default(),
+            &patient,
+            &token,
+            "run-tree-cancel",
+            1,
+        )
+        .unwrap();
+    assert_eq!(observed.outcome, RunOutcome::Cancelled);
+    assert_eq!(observed.outcome.exit_code(), 123);
+    // A second run on the same prepared program proves teardown left no
+    // scheduler state behind.
+    let again = prepared
+        .run_observed(
+            &ScriptInput::default(),
+            &limits(),
+            &no_cancel(),
+            "run-tree-after",
+            2,
+        )
+        .unwrap();
+    assert!(matches!(again.outcome, RunOutcome::FuelExhausted));
 }

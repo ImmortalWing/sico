@@ -190,7 +190,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M11: Bounded structured-concurrency Runtime
 
-状态：`in-progress / STEP-0103 ADR accepted-design; STEP-0104 semantic/IR contract complete (RFC-0036 accepted); STEP-0105 scheduler core complete; next STEP-0106 cancellation/timeout/race/select`
+状态：`in-progress / STEP-0103 ADR accepted-design; STEP-0104 semantic/IR contract complete (RFC-0036 accepted); STEP-0105 scheduler core complete; STEP-0106 cancellation/race/select complete; next STEP-0107 bounded channels/streams`
 
 主要交付：Store/arena 架构 ADR、单 Store 协作式 bounded scheduler、structured task scope、await/group/select/race、affine resource 跨 task 所有权、统一 cancellation/terminal winner、bounded channel/stream、persistent-runner/DAP task integration，以及 Windows x64 与 Linux x64 native runner 实证。
 

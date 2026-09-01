@@ -1806,12 +1806,24 @@ impl PreparedProgram {
         };
         let scheduler_outcome = {
             let state = store.data_mut();
-            state
-                .scheduler
-                .commit_root(terminal)
+            // Cancellation (including timeout) drives the same downward
+            // tree any descendant task will take (M11 STEP-0106); other
+            // outcomes commit the root's single terminal state directly.
+            let committed = match terminal {
+                TerminalKind::Cancelled => state.scheduler.cancel_root().map(|_| ()),
+                kind => state.scheduler.commit_root(kind),
+            };
+            committed
                 .and_then(|()| state.scheduler.teardown())
                 .map(|_| ())
-                .map_err(|fault| format!("scheduler: {fault}"))
+                .map_err(|fault| {
+                    // A teardown failure with a provable absorbing state is
+                    // reported as the typed deadlock outcome, not a hang.
+                    match state.scheduler.detect_deadlock() {
+                        Err(deadlock) => format!("scheduler: {deadlock}"),
+                        Ok(()) => format!("scheduler: {fault}"),
+                    }
+                })
         };
         if let Err(message) = scheduler_outcome {
             execution.outcome = RunOutcome::Launch(message);

@@ -31,6 +31,8 @@ pub const MAX_COMPLETION_BYTES: usize = 16 << 20;
 pub const MAX_METADATA_BYTES: usize = 16 << 20;
 /// Children of one task group.
 pub const MAX_SCOPE_CHILDREN: usize = 1_024;
+/// Operands of one select/race resolution.
+pub const MAX_SELECT_OPERANDS: usize = 256;
 
 /// Accounted sizes for the metadata budget. With every count capped at
 /// 1,024 the budget is structurally unreachable (hundreds of KiB at most);
@@ -103,6 +105,17 @@ pub struct CompletionRecord {
     pub payload_bytes: usize,
 }
 
+/// The single result of one select/race resolution (M11 STEP-0106): the
+/// canonical-first ready operand, its consumed completion record when the
+/// readiness came from the ingress, and the deterministically cancelled
+/// losers in the order they were committed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectOutcome {
+    pub winner: TaskId,
+    pub record: Option<CompletionRecord>,
+    pub losers: Vec<TaskId>,
+}
+
 /// Stable typed scheduler outcomes; no limit is ever silently clamped and
 /// no path panics on adversarial input.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,6 +142,10 @@ pub enum SchedulerFault {
     DuplicateCompletion(OperationId),
     HostOperationNotTerminal(OperationId),
     PayloadOutsideBudget,
+    SelectOperandsExceeded(usize),
+    NoSelectOperands,
+    NoReadyOperand,
+    Deadlock(Vec<TaskId>),
 }
 
 impl fmt::Display for SchedulerFault {
@@ -188,6 +205,20 @@ impl fmt::Display for SchedulerFault {
             Self::PayloadOutsideBudget => {
                 formatter.write_str("completion payload outside the per-record budget")
             }
+            Self::SelectOperandsExceeded(count) => {
+                write!(formatter, "select/race operands exceeded (256): {count}")
+            }
+            Self::NoSelectOperands => {
+                formatter.write_str("select/race requires at least one operand")
+            }
+            Self::NoReadyOperand => {
+                formatter.write_str("select/race has no ready operand this turn")
+            }
+            Self::Deadlock(tasks) => write!(
+                formatter,
+                "deadlock: {} suspended tasks with no runnable work or pending host operations",
+                tasks.len()
+            ),
         }
     }
 }
@@ -634,6 +665,134 @@ impl SchedulerCore {
         Ok(())
     }
 
+    /// Cancels a task and every descendant in deterministic reverse
+    /// ownership order (deepest scope, then highest task id), committing
+    /// each non-terminal member's single `cancelled` state and abandoning
+    /// its pending Host operations so a late worker record is stale.
+    /// Cancellation is idempotent on already-terminal members and never
+    /// travels upward (ADR-0010 §6.3). Returns the tasks this call
+    /// actually committed, in commit order.
+    pub fn cancel_task(&mut self, task: TaskId) -> Result<Vec<TaskId>, SchedulerFault> {
+        if !self.tasks.contains_key(&task) {
+            return Err(SchedulerFault::UnknownTask(task));
+        }
+        let mut members = vec![task];
+        let mut index = 0;
+        while index < members.len() {
+            let current = members[index];
+            for (child, record) in &self.tasks {
+                if record.parent == Some(current) && !members.contains(child) {
+                    members.push(*child);
+                }
+            }
+            index += 1;
+        }
+        Ok(self.cancel_members(members))
+    }
+
+    /// Cancels every task in a scope subtree (the scope itself stays open
+    /// until the usual close/teardown discipline).
+    pub fn cancel_scope(&mut self, scope: ScopeId) -> Result<Vec<TaskId>, SchedulerFault> {
+        if !self.scopes.contains_key(&scope) {
+            return Err(SchedulerFault::UnknownScope(scope));
+        }
+        let mut scopes = vec![scope];
+        let mut index = 0;
+        while index < scopes.len() {
+            let current = scopes[index];
+            for (child, record) in &self.scopes {
+                if record.parent == Some(current) && !scopes.contains(child) {
+                    scopes.push(*child);
+                }
+            }
+            index += 1;
+        }
+        let members: Vec<_> = self
+            .tasks
+            .iter()
+            .filter(|(_, record)| scopes.contains(&record.scope))
+            .map(|(task, _)| *task)
+            .collect();
+        Ok(self.cancel_members(members))
+    }
+
+    /// Cancels the root task (and therefore the whole tree); the run-level
+    /// cancellation path shares the same entry as any descendant.
+    pub fn cancel_root(&mut self) -> Result<Vec<TaskId>, SchedulerFault> {
+        self.cancel_task(self.root_task())
+    }
+
+    /// Resolves one select/race over task operands (ADR-0010 §6.3): the
+    /// winner is the canonical-first ready operand — cancelled operands
+    /// first, then completion-ready operands by registration order, ties
+    /// broken by task id, never wall-clock. Every other non-terminal
+    /// operand is cancelled through the tree and its pending Host
+    /// operations abandoned, so a loser cannot emit a second terminal
+    /// state or retain Host work. The winner's queued completion record,
+    /// when present, is consumed.
+    pub fn select(&mut self, operands: &[TaskId]) -> Result<SelectOutcome, SchedulerFault> {
+        if operands.is_empty() {
+            return Err(SchedulerFault::NoSelectOperands);
+        }
+        if operands.len() > MAX_SELECT_OPERANDS {
+            return Err(SchedulerFault::SelectOperandsExceeded(operands.len()));
+        }
+        let mut unique = operands.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        for task in &unique {
+            if !self.tasks.contains_key(task) {
+                return Err(SchedulerFault::UnknownTask(*task));
+            }
+        }
+        let winner = unique
+            .iter()
+            .filter_map(|task| self.select_ready_key(task).map(|key| (key, *task)))
+            .min_by_key(|(key, _)| *key)
+            .map(|(_, task)| task)
+            .ok_or(SchedulerFault::NoReadyOperand)?;
+        let record = self
+            .completions
+            .iter()
+            .position(|record| record.task == winner)
+            .map(|position| self.completions.remove(position));
+        let losers: Vec<_> = unique
+            .iter()
+            .copied()
+            .filter(|task| *task != winner)
+            .collect();
+        let losers = self.cancel_members(losers);
+        Ok(SelectOutcome {
+            winner,
+            record,
+            losers,
+        })
+    }
+
+    /// Proves the absorbing state: no runnable task, no pending Host
+    /// operation, yet at least one task is suspended forever. Returns the
+    /// blocked tasks as a typed fault instead of hanging.
+    pub fn detect_deadlock(&self) -> Result<(), SchedulerFault> {
+        let blocked: Vec<_> = self
+            .tasks
+            .iter()
+            .filter(|(_, record)| record.state == TaskState::Suspended)
+            .map(|(task, _)| *task)
+            .collect();
+        if blocked.is_empty() {
+            return Ok(());
+        }
+        let any_runnable = self
+            .tasks
+            .values()
+            .any(|record| record.state == TaskState::Runnable);
+        let any_pending_operation = self.operations.values().any(|record| !record.terminal);
+        if any_runnable || any_pending_operation {
+            return Ok(());
+        }
+        Err(SchedulerFault::Deadlock(blocked))
+    }
+
     /// Commits the root task's single terminal state from the run outcome.
     pub fn commit_root(&mut self, kind: TerminalKind) -> Result<(), SchedulerFault> {
         let root = self.root_task();
@@ -689,6 +848,77 @@ impl SchedulerCore {
             current = self.scopes.get(&id).and_then(|record| record.parent);
         }
         false
+    }
+
+    /// Commits `cancelled` to every non-terminal member in deterministic
+    /// reverse ownership order (deepest scope, then highest task id) and
+    /// abandons each member's pending Host operations. Terminal members
+    /// keep their committed state — one terminal per task, always.
+    fn cancel_members(&mut self, mut members: Vec<TaskId>) -> Vec<TaskId> {
+        members.sort_by_key(|task| {
+            let depth = self
+                .tasks
+                .get(task)
+                .and_then(|record| self.scopes.get(&record.scope))
+                .map_or(0, |scope| scope.depth);
+            (Reverse(depth), Reverse(task.0))
+        });
+        let mut cancelled = Vec::new();
+        for member in members {
+            if let Some(record) = self.tasks.get_mut(&member)
+                && !record.state.is_terminal()
+            {
+                record.state = TaskState::Cancelled;
+                cancelled.push(member);
+            }
+            for operation in self.operations.values_mut() {
+                if operation.task == member && !operation.terminal {
+                    operation.terminal = true;
+                }
+            }
+        }
+        cancelled
+    }
+
+    /// Canonical readiness key of a select operand, when ready: cancelled
+    /// tasks sort before everything (ADR-0010 §6.3 class order), then
+    /// operands with a queued completion by their operation's
+    /// registration-time class and order, then other terminal tasks; ties
+    /// break on task id.
+    fn select_ready_key(&self, task: &TaskId) -> Option<(ReadinessClass, u64, TaskId)> {
+        let record = self.tasks.get(task)?;
+        let earliest_operation_order = || {
+            self.operations
+                .iter()
+                .filter(|(_, operation)| operation.task == *task)
+                .filter_map(|(operation, _)| self.operation_order.get(operation).copied())
+                .min()
+                .unwrap_or(u64::MAX)
+        };
+        if record.state == TaskState::Cancelled {
+            return Some((
+                ReadinessClass::Cancellation,
+                earliest_operation_order(),
+                *task,
+            ));
+        }
+        if let Some(completion) = self
+            .completions
+            .iter()
+            .find(|completion| completion.task == *task)
+        {
+            let operation = self.operations.get(&completion.operation)?;
+            let order = self
+                .operation_order
+                .get(&completion.operation)
+                .copied()
+                .unwrap_or(u64::MAX);
+            return Some((operation.class, order, *task));
+        }
+        if record.state.is_terminal() {
+            return Some((ReadinessClass::HostCompletion, u64::MAX, *task));
+        }
+        None
     }
 
     fn transition(
@@ -940,5 +1170,265 @@ mod tests {
         let scheduler = scheduler();
         let baseline = scheduler.metadata_bytes();
         assert_eq!(baseline, SCOPE_RECORD_BYTES + TASK_RECORD_BYTES);
+    }
+
+    // ---- STEP-0106: cancellation tree, select/race, deadlock ----
+
+    /// Builds a root → a → {b, c} tree with one pending operation on each
+    /// of b and c, all inside one child scope.
+    fn tree_fixture() -> (
+        SchedulerCore,
+        TaskId,
+        TaskId,
+        TaskId,
+        OperationId,
+        OperationId,
+    ) {
+        let mut scheduler = scheduler();
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        let _ = scheduler.next_ready();
+        let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+        let a = scheduler.spawn_task(scope, root).unwrap();
+        let b = scheduler.spawn_task(scope, a).unwrap();
+        let c = scheduler.spawn_task(scope, a).unwrap();
+        let op_b = scheduler
+            .register_operation(b, ReadinessClass::HostCompletion)
+            .unwrap();
+        let op_c = scheduler
+            .register_operation(c, ReadinessClass::Timer)
+            .unwrap();
+        (scheduler, a, b, c, op_b, op_c)
+    }
+
+    #[test]
+    fn cancel_task_propagates_down_in_reverse_order_and_abandons_host_work() {
+        let (mut scheduler, a, b, c, op_b, op_c) = tree_fixture();
+        let cancelled = scheduler.cancel_task(a).unwrap();
+        // Reverse ownership order: same depth, highest id first.
+        assert_eq!(cancelled, vec![c, b, a]);
+        for task in [a, b, c] {
+            assert_eq!(scheduler.task_state(task), Some(TaskState::Cancelled));
+        }
+        // Pending Host work is abandoned: late worker records are stale.
+        assert_eq!(
+            scheduler.publish_completion(record(&scheduler, b, op_b)),
+            Err(SchedulerFault::StaleCompletion(op_b))
+        );
+        assert_eq!(
+            scheduler.publish_completion(record(&scheduler, c, op_c)),
+            Err(SchedulerFault::StaleCompletion(op_c))
+        );
+        // The parent is untouched: cancellation never travels upward.
+        assert_eq!(
+            scheduler.task_state(scheduler.root_task()),
+            Some(TaskState::Runnable)
+        );
+        // Losers cannot emit a second terminal state.
+        assert!(matches!(
+            scheduler.commit_terminal(b, TerminalKind::Succeeded),
+            Err(SchedulerFault::IllegalTransition { .. })
+        ));
+        // Cancellation is idempotent on already-terminal subtrees.
+        assert_eq!(scheduler.cancel_task(a).unwrap(), Vec::<TaskId>::new());
+        assert_eq!(
+            scheduler.cancel_task(TaskId(999)),
+            Err(SchedulerFault::UnknownTask(TaskId(999)))
+        );
+    }
+
+    #[test]
+    fn cancel_scope_covers_the_whole_subtree() {
+        let (mut scheduler, a, b, c, _, _) = tree_fixture();
+        let cancelled = scheduler.cancel_scope(ScopeId(1)).unwrap();
+        assert_eq!(cancelled, vec![c, b, a]);
+        assert_eq!(
+            scheduler.cancel_scope(ScopeId(999)),
+            Err(SchedulerFault::UnknownScope(ScopeId(999)))
+        );
+    }
+
+    #[test]
+    fn completion_vs_cancel_and_timeout_vs_cancel_have_one_result() {
+        // Completion vs cancel, same turn: the cancelled operand is
+        // observed first even though the host completion was delivered.
+        let (mut scheduler, _a, b, c, op_b, _) = tree_fixture();
+        scheduler
+            .publish_completion(record(&scheduler, b, op_b))
+            .unwrap();
+        scheduler.cancel_task(c).unwrap();
+        let outcome = scheduler.select(&[b, c]).unwrap();
+        assert_eq!(outcome.winner, c);
+        assert_eq!(outcome.record, None);
+        assert_eq!(outcome.losers, vec![b]);
+        // The loser is cancelled with its Host work abandoned; its record,
+        // delivered before the cancellation, still drains exactly once.
+        assert_eq!(scheduler.task_state(b), Some(TaskState::Cancelled));
+        assert_eq!(
+            scheduler.publish_completion(record(&scheduler, b, op_b)),
+            Err(SchedulerFault::DuplicateCompletion(op_b))
+        );
+
+        // Timeout vs cancel, same turn: Cancellation < Timer in the
+        // canonical class order, so the cancelled operand wins.
+        let (mut scheduler, _a, b, c, _, op_c) = tree_fixture();
+        scheduler
+            .publish_completion(record(&scheduler, c, op_c))
+            .unwrap();
+        scheduler.cancel_task(b).unwrap();
+        let outcome = scheduler.select(&[b, c]).unwrap();
+        assert_eq!(outcome.winner, b);
+        assert_eq!(outcome.losers, vec![c]);
+        assert_eq!(scheduler.task_state(c), Some(TaskState::Cancelled));
+    }
+
+    #[test]
+    fn simultaneous_ready_uses_registration_order_then_task_id() {
+        let mut scheduler = scheduler();
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        let _ = scheduler.next_ready();
+        let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+        let mut operands = Vec::new();
+        let mut operations = Vec::new();
+        for _ in 0..4 {
+            let task = scheduler.spawn_task(scope, root).unwrap();
+            let operation = scheduler
+                .register_operation(task, ReadinessClass::HostCompletion)
+                .unwrap();
+            operands.push(task);
+            operations.push(operation);
+        }
+        // Publish out of order: registration order, not publish order, wins.
+        for index in [3, 1, 2, 0] {
+            scheduler
+                .publish_completion(record(&scheduler, operands[index], operations[index]))
+                .unwrap();
+        }
+        let outcome = scheduler.select(&operands).unwrap();
+        assert_eq!(outcome.winner, operands[0]);
+        assert_eq!(
+            outcome.record.as_ref().map(|record| record.operation),
+            Some(operations[0])
+        );
+        // Losers commit in reverse ownership order (same depth, highest
+        // id first).
+        let expected_losers: Vec<_> = operands[1..].iter().rev().copied().collect();
+        assert_eq!(outcome.losers, expected_losers);
+        // The consumed winner record is gone; the losers' queued records
+        // still drain in canonical registration order.
+        let drained: Vec<_> = scheduler
+            .drain_turn()
+            .iter()
+            .map(|record| record.operation)
+            .collect();
+        assert_eq!(drained, operations[1..].to_vec());
+    }
+
+    #[test]
+    fn parent_vs_child_failure_keeps_one_terminal_each() {
+        let (mut scheduler, a, b, c, _, _) = tree_fixture();
+        // Child fails first; parent cancellation afterwards must not
+        // rewrite the child's committed failure.
+        scheduler.commit_terminal(b, TerminalKind::Failed).unwrap();
+        let cancelled = scheduler.cancel_task(a).unwrap();
+        assert_eq!(cancelled, vec![c, a]);
+        assert_eq!(scheduler.task_state(b), Some(TaskState::Failed));
+        // Child failure alone cannot widen upward either.
+        assert_eq!(
+            scheduler.task_state(scheduler.root_task()),
+            Some(TaskState::Runnable)
+        );
+    }
+
+    #[test]
+    fn select_operand_bounds_are_typed() {
+        let mut scheduler = scheduler();
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        let _ = scheduler.next_ready();
+        let scope = scheduler.open_scope(ScopeId(0)).unwrap();
+        let mut operands = Vec::new();
+        for _ in 0..MAX_SELECT_OPERANDS {
+            operands.push(scheduler.spawn_task(scope, root).unwrap());
+        }
+        // Nothing ready: typed would-block, not a hang.
+        assert_eq!(
+            scheduler.select(&operands),
+            Err(SchedulerFault::NoReadyOperand)
+        );
+        scheduler
+            .commit_terminal(operands[10], TerminalKind::Succeeded)
+            .unwrap();
+        assert_eq!(scheduler.select(&operands).unwrap().winner, operands[10]);
+        // 257 operands and the empty select are typed refusals.
+        let mut too_many = operands.clone();
+        too_many.push(scheduler.spawn_task(scope, root).unwrap());
+        assert_eq!(
+            scheduler.select(&too_many),
+            Err(SchedulerFault::SelectOperandsExceeded(257))
+        );
+        assert_eq!(scheduler.select(&[]), Err(SchedulerFault::NoSelectOperands));
+        assert_eq!(
+            scheduler.select(&[TaskId(999)]),
+            Err(SchedulerFault::UnknownTask(TaskId(999)))
+        );
+    }
+
+    #[test]
+    fn deadlock_is_provable_and_typed() {
+        let (mut scheduler, a, b, c, _, _) = tree_fixture();
+        let root = scheduler.root_task();
+        for task in [a, b, c] {
+            scheduler.make_runnable(task).unwrap();
+            let _ = scheduler.next_ready();
+            scheduler.suspend(task).unwrap();
+        }
+        // Pending Host operations can still wake the tasks: no deadlock.
+        // The root task is still runnable after its pop, which also
+        // disproves deadlock.
+        assert_eq!(scheduler.detect_deadlock(), Ok(()));
+        scheduler.suspend(root).unwrap();
+        // Abandon every operation: the suspension can never resolve.
+        let operations: Vec<_> = (1..=2).map(OperationId).collect();
+        for operation in operations {
+            scheduler.abandon_operation(operation).unwrap();
+        }
+        let Err(SchedulerFault::Deadlock(blocked)) = scheduler.detect_deadlock() else {
+            panic!("expected deadlock");
+        };
+        assert_eq!(blocked, vec![root, a, b, c]);
+        // Cancelling the blocked tasks resolves the absorbing state.
+        scheduler.cancel_task(a).unwrap();
+        scheduler.cancel_task(root).unwrap();
+        assert_eq!(scheduler.detect_deadlock(), Ok(()));
+    }
+
+    #[test]
+    fn nested_cancellation_of_a_full_task_chain_stays_within_bounds() {
+        let mut scheduler = scheduler();
+        let root = scheduler.root_task();
+        scheduler.make_runnable(root).unwrap();
+        let _ = scheduler.next_ready();
+        // A 1,024-deep task parent chain in one scope (parent chains are
+        // not scope nesting; the scope cap admits root + 1,023 children).
+        let mut parent = root;
+        for _ in 1..MAX_LIVE_TASKS {
+            parent = scheduler.spawn_task(ScopeId(0), parent).unwrap();
+        }
+        let started = std::time::Instant::now();
+        let cancelled = scheduler.cancel_task(root).unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(cancelled.len(), MAX_LIVE_TASKS);
+        assert_eq!(scheduler.live_tasks(), 0);
+        // Deepest scope ties break on highest id first: the chain head
+        // (root) commits last.
+        assert_eq!(cancelled.last(), Some(&root));
+        assert_eq!(scheduler.teardown().unwrap(), vec![ScopeId(0)]);
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "1,024-chain cancellation took {elapsed:?}"
+        );
+        println!("CHAIN_CANCEL_1024 wall_us={}", elapsed.as_micros());
     }
 }
