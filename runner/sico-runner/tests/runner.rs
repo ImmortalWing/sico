@@ -804,7 +804,7 @@ fn dap_source_identity_and_breakpoint_modes_fail_closed_with_typed_codes() {
     assert_eq!(invalid_line[0]["body"]["code"], "invalid-source-line");
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn dap_hundred_sequential_sessions_have_bounded_rss_handles_and_no_poisoning() {
     let artifact = trap_debug_artifact();
@@ -850,11 +850,11 @@ fn dap_hundred_sequential_sessions_have_bounded_rss_handles_and_no_poisoning() {
         ));
     };
     run_one(1);
-    let (baseline_handles, baseline_rss) = windows_process_metrics();
+    let (baseline_handles, baseline_rss) = process_metrics();
     for generation_id in 2..=101 {
         run_one(generation_id);
     }
-    let (final_handles, final_rss) = windows_process_metrics();
+    let (final_handles, final_rss) = process_metrics();
     println!(
         "DAP_REPEAT_100 baseline_handles={baseline_handles} final_handles={final_handles} baseline_rss={baseline_rss} final_rss={final_rss}"
     );
@@ -974,7 +974,7 @@ fn dap_debug_build_overhead_is_measured_against_same_ir() {
 }
 
 #[cfg(windows)]
-fn windows_process_metrics() -> (u64, u64) {
+fn process_metrics() -> (u64, u64) {
     let script = format!(
         "$p=Get-Process -Id {}; Write-Output \"$($p.HandleCount),$($p.WorkingSet64)\"",
         std::process::id()
@@ -987,6 +987,20 @@ fn windows_process_metrics() -> (u64, u64) {
     let text = String::from_utf8(output.stdout).unwrap();
     let (handles, rss) = text.trim().split_once(',').unwrap();
     (handles.parse().unwrap(), rss.parse().unwrap())
+}
+
+/// Linux counterpart (STEP-0109): open fd count plus VmRSS from /proc.
+#[cfg(target_os = "linux")]
+fn process_metrics() -> (u64, u64) {
+    let fds = std::fs::read_dir("/proc/self/fd").unwrap().count() as u64;
+    let status = std::fs::read_to_string("/proc/self/status").unwrap();
+    let rss_kb: u64 = status
+        .lines()
+        .find(|line| line.starts_with("VmRSS:"))
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse().ok())
+        .unwrap();
+    (fds, rss_kb * 1024)
 }
 
 fn split_dap_frames(mut bytes: &[u8]) -> Vec<serde_json::Value> {
@@ -2217,7 +2231,7 @@ fn scheduler_adversarial_completion_records_fail_closed() {
     );
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn repeated_runs_show_no_task_handle_or_rss_growth_across_store_teardown() {
     // Tasks, scopes, operations and queues are Store-scoped records and drop
@@ -2244,11 +2258,11 @@ fn repeated_runs_show_no_task_handle_or_rss_growth_across_store_teardown() {
         );
     };
     run_one(0);
-    let (baseline_handles, baseline_rss) = windows_process_metrics();
+    let (baseline_handles, baseline_rss) = process_metrics();
     for index in 1..=100 {
         run_one(index);
     }
-    let (final_handles, final_rss) = windows_process_metrics();
+    let (final_handles, final_rss) = process_metrics();
     println!(
         "SCHEDULER_TEARDOWN_100 baseline_handles={baseline_handles} final_handles={final_handles} baseline_rss={baseline_rss} final_rss={final_rss}"
     );
@@ -2495,7 +2509,7 @@ fn cancelled_guest_run_drives_the_scheduler_tree_to_teardown() {
 
 // ---- STEP-0107: bounded channels, streams and backpressure ----
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn channel_relay_keeps_rss_independent_of_stream_size() {
     // Relay 1 GiB of payload accounting through a 4-item / 4 MiB channel.
@@ -2510,7 +2524,7 @@ fn channel_relay_keeps_rss_independent_of_stream_size() {
     let channel = scheduler.open_channel(root, 4, 4 << 20).unwrap();
     let payload = vec![0xAB_u8; 1 << 20];
     let metadata_before = scheduler.metadata_bytes();
-    let (handles_before, rss_before) = windows_process_metrics();
+    let (handles_before, rss_before) = process_metrics();
     let started = std::time::Instant::now();
     let mut relayed = 0_u64;
     for round in 0..256_u32 {
@@ -2537,7 +2551,7 @@ fn channel_relay_keeps_rss_independent_of_stream_size() {
         }
     }
     let elapsed = started.elapsed();
-    let (handles_after, rss_after) = windows_process_metrics();
+    let (handles_after, rss_after) = process_metrics();
     assert_eq!(scheduler.metadata_bytes(), metadata_before);
     assert_eq!(relayed, 1 << 30);
     println!(
@@ -2597,7 +2611,7 @@ fn successive_generations_teardown_cleanly_before_the_next_store() {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
     // 100 generations alternating between granted and denied fs authority:
@@ -2645,7 +2659,7 @@ fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
         !matches!(&denied_outcome, RunOutcome::Output(output) if output.exit_code == 0),
         "denied run must not succeed: {denied_outcome:?}"
     );
-    let (handles_before, rss_before) = windows_process_metrics();
+    let (handles_before, rss_before) = process_metrics();
     for index in 2..100_u32 {
         let outcome = if index % 2 == 0 {
             run_one(index, &granted)
@@ -2659,7 +2673,7 @@ fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
         };
         assert_eq!(&outcome, expected, "generation {index}");
     }
-    let (handles_after, rss_after) = windows_process_metrics();
+    let (handles_after, rss_after) = process_metrics();
     println!(
         "GRANT_MATRIX_100 handles={handles_before}->{handles_after} rss={rss_before}->{rss_after}"
     );
@@ -2674,7 +2688,7 @@ fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 #[test]
 fn debug_pause_terminate_leaves_no_stranded_tasks_or_workers() {
     // Twenty pause→terminate→finish cycles: every session's worker joins,
@@ -2725,11 +2739,11 @@ fn debug_pause_terminate_leaves_no_stranded_tasks_or_workers() {
         );
     };
     cycle(1);
-    let (handles_before, rss_before) = windows_process_metrics();
+    let (handles_before, rss_before) = process_metrics();
     for generation_id in 2..=20_u64 {
         cycle(generation_id);
     }
-    let (handles_after, rss_after) = windows_process_metrics();
+    let (handles_after, rss_after) = process_metrics();
     println!(
         "DAP_TERMINATE_20 handles={handles_before}->{handles_after} rss={rss_before}->{rss_after}"
     );

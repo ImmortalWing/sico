@@ -29,7 +29,7 @@ Per the M11 plan §12 and ADR-0010: cross-compilation, schema fixtures and proto
 Identical to the Windows corpus, with platform-typed differences allowed only in signal mechanics:
 
 1. scheduler unit suite (state machine, cancellation tree, select matrices, channels, deadlock);
-2. runner integration suite minus Windows-only fixtures (`#[cfg(windows)]` console-control tests stay Windows; their Linux counterpart is the SIGINT/SIGTERM path in the same tests behind `cfg(unix)`);
+2. runner integration suite minus Windows-only fixtures (`#[cfg(windows)]` console-control tests stay Windows; the runner's signal path is a Windows console-handler implementation today, so a Linux SIGINT/SIGTERM cancellation fixture is part of what this step must add and verify when the host exists — platform differences land as typed, bounded behavior, not silence);
 3. scale evidence: 1/2/16/256/1,024-task workloads, 1,024-chain cancellation, 1 GiB channel relay with flat RSS;
 4. 100-generation changing-grants matrix and 20 pause/terminate DAP cycles with flat fd/handle counts.
 
@@ -44,7 +44,7 @@ This step stays `blocked-external-evidence` until a native Linux x64 execution l
 
 ## 7. Validation
 
-Windows-side: the `cfg`-widened tests still pass (STEP-0108 validator rerun). Linux-side: blocked (§2).
+Windows-side (2026-09-01): the `cfg`-widened tests pass (37/37 runner integration, single-threaded). Cross compile-check (`cargo check --target x86_64-unknown-linux-gnu`) is not available either: wasmtime's C shims need a cross C toolchain (`x86_64-linux-gnu-gcc`) that this environment lacks — supporting evidence deferred to the native host, per the rule that cross-compilation never substitutes for native execution. Linux-side: blocked (§2).
 
 ## 10. Audit links
 
