@@ -2,12 +2,12 @@
 
 > - updated: 2026-09-01
 > - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123); 所有者已于 2026-09-01 确认产品目标（前端 JS 级能力含网页控件、后端覆盖日常开发所需能力、AI 友好；后端走分层精选路径不仿照 Python），Web 平台与 UI 控件作为 M14 排入路线图（planned）
-> - phase status: M11 audited NO-GO pending Linux x64 native evidence (gates 1-8/10 GO); mainline blocked on external input
-> - current step: 无内部主线（M11 STEP-0103–0110 全部完成；M12 按 M11 计划锁定至 Linux parity 补齐）
+> - phase status: M11 complete (GO 2026-09-02, gates 10/10, Windows x64 + Linux x64 native); M12 next
+> - current step: STEP-0111 secure HTTP provider (M12 start; M11 GO)
 > - current support step: 无（M13 STEP-0119/0120 已完成）
-> - last completed active step: STEP-0110 (M11 exit audit; NO-GO pending Linux native runner, gates 1-8/10 GO)
+> - last completed active step: STEP-0110 (M11 exit audit: GO, 10/10 gates, Windows x64 + Linux x64 native evidence)
 > - last completed support step: STEP-0120 (ADR-0011 AI quality budgets: floor non-regression tiers + target completion gate deferred to live-model evidence)
-> - next step: 外部输入——Linux x64 原生主机（WSL2 即可）执行 tools/validate-step-0109.sh；补齐后重跑 STEP-0110 审计方可解锁 M12
+> - next step: M12 STEP-0111（Secure HTTP Provider contract; 复用 M11 scheduler）
 > - next support step: STEP-0121 agent-framework integration layer (MCP)；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入
 
 ## 0. M6 exit state

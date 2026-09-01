@@ -60,7 +60,8 @@ Executed 2026-09-01 on Windows x64 GNU, Rust 1.98.0, Wasmtime 47.0.2 — `tools/
 - M11 chain: `validate-step-0108.ps1` green (transitively 0107/0106/0105/0104/0091/0100/0090/0087).
 - Evidence markers verified on disk: `SCHEDULER_TEARDOWN_100` (0105), `CHAIN_CANCEL_1024` (0106), `CHANNEL_RELAY_1GIB` (0107), `GRANT_MATRIX_100` (0108).
 - Audit-document consistency checks green; platform honestly recorded as windows-x64-gnu only.
-- Final line: `STEP_0110_OK m0-m10=green m11=0103-0108-green evidence=present platform=windows-x64-only gate9=unmet decision=NO-GO-pending-linux`.
+- 2026-09-01 run (Linux evidence missing): `STEP_0110_OK m0-m10=green m11=0103-0108-green evidence=present platform=windows-x64-only gate9=unmet decision=NO-GO-pending-linux` — correct at the time.
+- 2026-09-02 final run (STEP-0109 Linux parity evidence landed): `STEP_0110_OK m0-m10=green m11=0103-0109-green evidence=present platform=windows-x64+linux-x64 gates=10/10 decision=GO next=M12`.
 
 One flake note for the record: an earlier audit attempt died inside STEP-0089 with the release runner test binary producing zero output — diagnosed as two overlapping validator processes (an earlier diagnosis run of mine had not fully terminated and was rebuilding the same target directory). The clean rerun above passed with no concurrent processes; no code change was needed.
 
