@@ -2557,3 +2557,188 @@ fn channel_relay_keeps_rss_independent_of_stream_size() {
     scheduler.commit_root(TerminalKind::Succeeded).unwrap();
     scheduler.teardown().unwrap();
 }
+
+// ---- STEP-0108: persistent runner, watch, REPL and DAP task integration ----
+
+#[test]
+fn successive_generations_teardown_cleanly_before_the_next_store() {
+    // Library-level watch-generation model: N generations of one prepared
+    // program. A failed teardown would turn the outcome into Launch, so
+    // identical successful outputs across generations prove each
+    // generation's scheduler/Store settled before the next one published.
+    let runner = runner();
+    let prepared = runner
+        .prepare_program_with_net(
+            &echo_component(0),
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    for generation in 1..=8_u64 {
+        let observed = prepared
+            .run_observed(
+                &ScriptInput::default(),
+                &limits(),
+                &no_cancel(),
+                &format!("watch-gen-{generation}"),
+                generation,
+            )
+            .unwrap();
+        assert_eq!(
+            observed.outcome,
+            RunOutcome::Output(ScriptOutput {
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                exit_code: 0,
+            }),
+            "generation {generation}"
+        );
+        assert_eq!(observed.cancellation_source, None);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
+    // 100 generations alternating between granted and denied fs authority:
+    // outcomes must be deterministic per grant parity (no authority leaks
+    // across generations), with flat handles and RSS.
+    let directory = std::env::temp_dir().join(format!(
+        "sico-step0108-grants-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(directory.join("input.txt"), "alpha beta gamma").unwrap();
+    let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/end-to-end/script-file-transform.sico");
+    let component =
+        step0105_build_guest(&std::fs::read_to_string(&source_path).unwrap(), 0);
+    let runner = runner();
+    // The runner's contract: grant roots are canonicalized by the caller.
+    let canonical_root = directory.canonicalize().unwrap();
+    let granted = FsGrants {
+        read_roots: vec![canonical_root.clone()],
+        write_roots: vec![canonical_root],
+    };
+    let run_one = |index: u32, grants: &FsGrants| {
+        let prepared = runner
+            .prepare_program_with_net(&component, grants, &sico_runner::NetGrants::default())
+            .unwrap();
+        prepared
+            .run_observed(
+                &ScriptInput::default(),
+                &limits(),
+                &no_cancel(),
+                &format!("grant-gen-{index}"),
+                u64::from(index),
+            )
+            .unwrap()
+            .outcome
+    };
+    let granted_outcome = run_one(0, &granted);
+    assert!(
+        matches!(&granted_outcome, RunOutcome::Output(output) if output.exit_code == 0),
+        "granted run: {granted_outcome:?}"
+    );
+    let denied_outcome = run_one(1, &FsGrants::default());
+    assert!(
+        !matches!(&denied_outcome, RunOutcome::Output(output) if output.exit_code == 0),
+        "denied run must not succeed: {denied_outcome:?}"
+    );
+    let (handles_before, rss_before) = windows_process_metrics();
+    for index in 2..100_u32 {
+        let outcome = if index % 2 == 0 {
+            run_one(index, &granted)
+        } else {
+            run_one(index, &FsGrants::default())
+        };
+        let expected = if index % 2 == 0 {
+            &granted_outcome
+        } else {
+            &denied_outcome
+        };
+        assert_eq!(&outcome, expected, "generation {index}");
+    }
+    let (handles_after, rss_after) = windows_process_metrics();
+    println!(
+        "GRANT_MATRIX_100 handles={handles_before}->{handles_after} rss={rss_before}->{rss_after}"
+    );
+    assert!(
+        handles_after <= handles_before + 8,
+        "handle growth: {handles_before} -> {handles_after}"
+    );
+    assert!(
+        rss_after <= rss_before + 64 * 1024 * 1024,
+        "RSS growth: {rss_before} -> {rss_after}"
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(windows)]
+#[test]
+fn debug_pause_terminate_leaves_no_stranded_tasks_or_workers() {
+    // Twenty pause→terminate→finish cycles: every session's worker joins,
+    // the scheduler inside the debug Store now tears down (STEP-0108), and
+    // handles stay flat.
+    let artifact = spin_debug_artifact();
+    let runner = Runner::new_debug().unwrap();
+    let prepared = runner
+        .prepare_program_with_debug(
+            &artifact.component,
+            &artifact.debug_map,
+            &artifact.identity,
+            &FsGrants::default(),
+            &sico_runner::NetGrants::default(),
+        )
+        .unwrap();
+    let debug_limits = RunnerLimits {
+        fuel: u64::MAX,
+        timeout: std::time::Duration::from_secs(10),
+        ..limits()
+    };
+    let cycle = |generation_id: u64| {
+        let session = prepared
+            .start_debug(
+                &ScriptInput::default(),
+                &debug_limits,
+                &no_cancel(),
+                &[],
+                &format!("dap-strand-{generation_id}"),
+                generation_id,
+            )
+            .unwrap();
+        session.request_pause();
+        assert_eq!(
+            session
+                .wait_for_stop(std::time::Duration::from_secs(2))
+                .unwrap()
+                .reason,
+            "pause"
+        );
+        session.terminate();
+        assert_eq!(
+            session
+                .finish(std::time::Duration::from_secs(2))
+                .unwrap()
+                .outcome,
+            RunOutcome::Cancelled
+        );
+    };
+    cycle(1);
+    let (handles_before, rss_before) = windows_process_metrics();
+    for generation_id in 2..=20_u64 {
+        cycle(generation_id);
+    }
+    let (handles_after, rss_after) = windows_process_metrics();
+    println!(
+        "DAP_TERMINATE_20 handles={handles_before}->{handles_after} rss={rss_before}->{rss_after}"
+    );
+    assert!(
+        handles_after <= handles_before + 8,
+        "handle growth: {handles_before} -> {handles_after}"
+    );
+    assert!(
+        rss_after <= rss_before + 64 * 1024 * 1024,
+        "RSS growth: {rss_before} -> {rss_after}"
+    );
+}

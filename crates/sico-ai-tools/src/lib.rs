@@ -1107,3 +1107,44 @@ mod tests {
         assert_eq!(rejected, 512);
     }
 }
+
+#[cfg(test)]
+mod step0108_tests {
+    use super::*;
+
+    #[test]
+    fn tooling_cannot_spawn_or_control_tasks() {
+        // STEP-0108: the sico.ai-tool.v0 surface is exactly the four frozen
+        // data operations; any task/scheduler control verb is a typed
+        // refusal, keeping AI/tooling a bounded data consumer.
+        for operation in [
+            "spawn_task",
+            "cancel_task",
+            "terminate_task",
+            "scheduler_control",
+            "select",
+        ] {
+            let mut raw = json!({
+                "schema": REQUEST_SCHEMA,
+                "protocol_version": 0,
+                "request_id": "test-request",
+                "operation": operation,
+                "budget": {
+                    "max_files": 16,
+                    "max_input_bytes": 4096,
+                    "max_symbols": 256,
+                    "max_diagnostics": 100,
+                    "max_response_bytes": 4096
+                },
+            });
+            raw["input"] = json!({});
+            let response = execute_value(raw);
+            assert_eq!(response["ok"], json!(false), "{operation}");
+            assert_eq!(
+                response["error"]["code"],
+                json!("invalid_request"),
+                "{operation}"
+            );
+        }
+    }
+}

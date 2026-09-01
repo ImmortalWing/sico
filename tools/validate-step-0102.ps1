@@ -43,7 +43,7 @@ if ($supportedRequests -ne 12 -or $refusedRequests -ne 20 -or $supportedEvents -
 
 $rustc = Join-Path $env:USERPROFILE '.cargo\bin\rustc.exe'
 if (-not (Test-Path -LiteralPath $rustc)) { $rustc = (Get-Command rustc -ErrorAction Stop).Source }
-$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 $rustcInfo = (Invoke-NativeChecked $rustc @('-vV') 'rustc-host-query-failed' 2>&1) -join "`n"
 if ($rustcInfo -notmatch '(?m)^host: x86_64-pc-windows-gnu$') {
     throw 'unsupported-platform-claim|expected actual windows-x64-gnu execution'

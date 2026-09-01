@@ -377,3 +377,27 @@ mod tests {
         assert_eq!(input, b"2\n");
     }
 }
+
+#[cfg(test)]
+mod step0108_tests {
+    use super::*;
+
+    #[test]
+    fn cells_cannot_create_tasks_resources_or_stores() {
+        // STEP-0108: REPL cells are compile-time constant Int expressions;
+        // anything that would need a task, channel, stream, fs resource or
+        // Store is refused before execution, so cells structurally cannot
+        // retain resources into a later generation.
+        let mut session = ReplSession::default();
+        for source in [
+            "spawn shout(\"x\")",
+            "task group:",
+            "sico.fs.read(\"input.txt\")",
+            "sico.channel.open()",
+            "main(1)",
+        ] {
+            assert!(session.submit(source).is_err(), "{source} must be refused");
+        }
+        assert_eq!(session.submit("1 + 2").unwrap().value, 3);
+    }
+}

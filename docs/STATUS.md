@@ -3,11 +3,11 @@
 > - updated: 2026-09-01
 > - phase: M11 structured concurrency in progress; M10 Runtime observability/debugging complete (GO); M7 public deployment and M6/mobile deferred; M13 AI tooling closure track planned as parallel support work (STEP-0119–0123); 所有者已于 2026-09-01 确认产品目标（前端 JS 级能力含网页控件、后端覆盖日常开发所需能力、AI 友好；后端走分层精选路径不仿照 Python），Web 平台与 UI 控件作为 M14 排入路线图（planned）
 > - phase status: in-progress
-> - current step: STEP-0108 persistent runner, watch, REPL and DAP task integration (next; channels landed)
+> - current step: STEP-0110 M11 exit audit (next; STEP-0109 Linux parity blocked-external-evidence)
 > - current support step: 无（M13 STEP-0119 已完成）
-> - last completed active step: STEP-0107 (task-aware bounded channels: 0..=1,024 items + explicit byte budgets, rendezvous, FIFO backpressure by suspension, affine close/move, cancellation failure-propagation, 1 GiB relay with flat RSS)
+> - last completed active step: STEP-0108 (persistent/watch/REPL/DAP task integration; uniform debug teardown, generation isolation, 100 changing-grant runs leak-free, AI surface data-only)
 > - last completed support step: STEP-0119 (AI generation-quality attribution and re-measured baseline 0.8846→0.9744, subagent-measured)
-> - next step: generation-isolated scheduler lifecycle in persistent processes plus watch/REPL/DAP task integration (STEP-0108), then validator and full regression
+> - next step: M11 exit audit (STEP-0110); Linux x64 native runner remains the binding external input for M11 GO
 > - next support step: STEP-0120 AI quality-budget ADR-0011；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入
 
 ## 0. M6 exit state

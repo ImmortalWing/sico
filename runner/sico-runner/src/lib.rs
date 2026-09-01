@@ -1623,6 +1623,12 @@ impl PreparedProgram {
             execution.cancellation_source = decision
                 .cancellation_source
                 .or_else(|| cancel_for_result.requested_source());
+            // Same teardown discipline as the plain run path (STEP-0108):
+            // the debug session cannot strand tasks or operations.
+            let terminal = scheduler_terminal(&execution.outcome);
+            if let Err(message) = settle_scheduler(store.data_mut(), terminal) {
+                execution.outcome = RunOutcome::Launch(message);
+            }
             done.store(true, Ordering::Relaxed);
             let _ = watchdog.join();
             drop(binding);
@@ -1793,38 +1799,8 @@ impl PreparedProgram {
         // run outcome, then the scheduler proves teardown discipline before
         // the Store drops (all tasks and Host operations terminal, scopes
         // closed in deterministic reverse order).
-        let terminal = match &execution.outcome {
-            RunOutcome::Output(_) => TerminalKind::Succeeded,
-            RunOutcome::Cancelled | RunOutcome::Timeout => TerminalKind::Cancelled,
-            RunOutcome::Domain { .. } => TerminalKind::Failed,
-            RunOutcome::FuelExhausted
-            | RunOutcome::MemoryLimit
-            | RunOutcome::HostProviderFailure { .. }
-            | RunOutcome::Trap(_)
-            | RunOutcome::Launch(_)
-            | RunOutcome::Incompatible(_) => TerminalKind::Failed,
-        };
-        let scheduler_outcome = {
-            let state = store.data_mut();
-            // Cancellation (including timeout) drives the same downward
-            // tree any descendant task will take (M11 STEP-0106); other
-            // outcomes commit the root's single terminal state directly.
-            let committed = match terminal {
-                TerminalKind::Cancelled => state.scheduler.cancel_root().map(|_| ()),
-                kind => state.scheduler.commit_root(kind),
-            };
-            committed
-                .and_then(|()| state.scheduler.teardown())
-                .map(|_| ())
-                .map_err(|fault| {
-                    // A teardown failure with a provable absorbing state is
-                    // reported as the typed deadlock outcome, not a hang.
-                    match state.scheduler.detect_deadlock() {
-                        Err(deadlock) => format!("scheduler: {deadlock}"),
-                        Ok(()) => format!("scheduler: {fault}"),
-                    }
-                })
-        };
+        let terminal = scheduler_terminal(&execution.outcome);
+        let scheduler_outcome = settle_scheduler(store.data_mut(), terminal);
         if let Err(message) = scheduler_outcome {
             execution.outcome = RunOutcome::Launch(message);
         }
@@ -1862,8 +1838,41 @@ impl PreparedProgram {
     }
 }
 
-fn embedded_guest_core_base(component: &[u8]) -> Option<u64> {
-    Parser::new(0)
+/// Maps the arbitrated run outcome to the root task's terminal kind
+/// (M11 STEP-0105); shared by the plain and debug run paths.
+fn scheduler_terminal(outcome: &RunOutcome) -> TerminalKind {
+    match outcome {
+        RunOutcome::Output(_) => TerminalKind::Succeeded,
+        RunOutcome::Cancelled | RunOutcome::Timeout => TerminalKind::Cancelled,
+        RunOutcome::Domain { .. } => TerminalKind::Failed,
+        RunOutcome::FuelExhausted
+        | RunOutcome::MemoryLimit
+        | RunOutcome::HostProviderFailure { .. }
+        | RunOutcome::Trap(_)
+        | RunOutcome::Launch(_)
+        | RunOutcome::Incompatible(_) => TerminalKind::Failed,
+    }
+}
+
+/// Commits the root task's terminal state (cancellation drives the same
+/// downward tree any descendant takes, STEP-0106) and proves teardown
+/// discipline before the Store drops. A teardown failure with a provable
+/// absorbing state reports the typed deadlock, not a hang.
+fn settle_scheduler(state: &mut RunState, terminal: TerminalKind) -> Result<(), String> {
+    let committed = match terminal {
+        TerminalKind::Cancelled => state.scheduler.cancel_root().map(|_| ()),
+        kind => state.scheduler.commit_root(kind),
+    };
+    committed
+        .and_then(|()| state.scheduler.teardown())
+        .map(|_| ())
+        .map_err(|fault| match state.scheduler.detect_deadlock() {
+            Err(deadlock) => format!("scheduler: {deadlock}"),
+            Ok(()) => format!("scheduler: {fault}"),
+        })
+}
+
+fn embedded_guest_core_base(component: &[u8]) -> Option<u64> {    Parser::new(0)
         .parse_all(component)
         .filter_map(|payload| match payload.ok()? {
             Payload::ModuleSection {

@@ -6,7 +6,7 @@ if (-not (Test-Path -LiteralPath $cargo)) {
     $cargo = (Get-Command cargo -ErrorAction Stop).Source
 }
 $env:CARGO_REGISTRIES_CRATES_IO_PROTOCOL = 'sparse'
-$env:RUSTUP_TOOLCHAIN = 'stable-x86_64-pc-windows-gnu'
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 . (Join-Path $root 'tools\lib\native-command.ps1')
 
 Push-Location $root

@@ -30,7 +30,7 @@ foreach ($needle in 'include_str!("../app-v1.sico")','include_str!("../app-v2.si
 }
 if ($step -notmatch '(?m)^> - status: complete-local / blocked-external-evidence\r?$' -or $audit -notmatch '(?m)^> - M7/product exit: NO-GO\r?$') { throw 'STEP-0069 audit disposition drifted' }
 
-$toolchain = Join-Path $env:USERPROFILE '.rustup\toolchains\stable-x86_64-pc-windows-gnu\bin'
+$toolchain = Join-Path $env:USERPROFILE '.rustup\toolchains\1.98.0-x86_64-pc-windows-gnu\bin'
 $cargo = Join-Path $toolchain 'cargo.exe'
 if (-not (Test-Path -LiteralPath $cargo -PathType Leaf)) { throw "stable cargo missing: $cargo" }
 $env:RUSTC = Join-Path $toolchain 'rustc.exe'
