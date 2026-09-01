@@ -1,6 +1,6 @@
 # M13 plan: AI tooling closure
 
-> - status: in-progress (STEP-0119 complete 2026-08-04)
+> - status: in-progress (STEP-0119 complete 2026-08-04; STEP-0120 ADR-0011 complete 2026-09-01)
 > - created: 2026-08-04
 > - phase: M13 (parallel support track; M11/M12 mainline unchanged)
 > - reserved steps: STEP-0119–0123

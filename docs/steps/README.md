@@ -125,5 +125,6 @@
 | [STEP-0109](./STEP-0109-cross-platform-runner-parity.md) | blocked-external-evidence | M11 | Linux x64 原生 runner 缺失（无 WSL/主机）；parity corpus 与 `validate-step-0109.sh` 已就绪待执行 |
 | [STEP-0110](./STEP-0110-m11-exit-audit.md) | complete / NO-GO pending Linux | M11 | M0–M10 聚合回归 + M11 链全绿；gate 9（Linux 原生实证）未满足，按规则判 NO-GO；M12 保持锁定 |
 | [STEP-0119](./STEP-0119-ai-generation-quality-baseline.md) | complete | M13 | generation 失败归因、prompt/guide canonical 修正、fixture 修复与重测基线 0.8846→0.9744 |
+| [STEP-0120](./STEP-0120-ai-quality-budget-adr.md) | complete | M13 | ADR-0011 AI 质量预算：floor 非回归层（≤ 实测基线）与 target 完成门（proof 待 live-model，blocked-external-evidence） |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；M11 STEP-0103 ADR（accepted-design）、STEP-0104 semantic/IR contract、STEP-0105 scheduler core、STEP-0106 cancellation/race/select、STEP-0107 bounded channels 与 STEP-0108 persistent/watch/REPL/DAP 集成均已完成；STEP-0109 Linux 原生实证因环境缺失 blocked-external-evidence；STEP-0110 出口审计完成，判定 NO-GO（仅缺 Linux 原生证据，其余九项 gate 全 GO），M12 锁定至 Linux parity 补齐。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，STEP-0119 已完成，权威 live-model 评测等待所有者提供 DeepSeek 凭据。
