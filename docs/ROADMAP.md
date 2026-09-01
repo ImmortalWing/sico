@@ -228,6 +228,16 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M13 AI tooling closure`](./plans/M13-ai-tooling-closure.md)，STEP-0119–0123。退出证据与 live-model 插入规则见该计划 §4–§6。
 
+## M14: Web platform and UI controls（planned, direction confirmed）
+
+状态：`planned / direction confirmed 2026-09-01; no step numbers reserved yet`
+
+所有者确认的产品目标（[`DIRECTION.md`](../DIRECTION.md) §3.1）：Sico 前端要覆盖 JavaScript 的大部分能力（含网页控件与页面级 UI），后端覆盖 Python 的大部分能力，并始终便于 AI 使用。本里程碑承载该目标的前端一半，对应 DIRECTION §8.3 阶段 6/7 的落地。
+
+预期内容（进入前必须各自完成 RFC/ADR）：Web 宿主形态决策（浏览器直跑 Component vs webview 控件复用 M5 Host 边界）、UI 控件/事件/渲染 contract、DOM/网络/存储/事件的标准宿主接口、网页控件的恶意输入拒绝语料。后端 Python 级能力由标准库广度轨承载（独立 milestone，进入条件同样按证据决定）。
+
+进入条件（全部满足才可开工，与 DIRECTION §8.3 的阶段门一致）：M11 GO 与 M12 GO；M13 收口审计给出 AI 工作流 GO/blocked 结论；原生生态侧已有可验证的真实应用与包生态基线。在此之前，任何 Web/UI 工作只许以文档提案形式存在。
+
 ## Immediate dependency chain
 
 ```text
