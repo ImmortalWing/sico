@@ -6,6 +6,8 @@
 //! certificate checks or widens grants; policy functions return typed
 //! errors for every refusal.
 
+pub mod authority;
+
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
