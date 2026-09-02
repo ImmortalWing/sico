@@ -8,6 +8,7 @@
 
 pub mod authority;
 pub mod framing;
+pub mod redirect;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
