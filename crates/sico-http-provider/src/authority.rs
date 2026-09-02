@@ -118,11 +118,16 @@ impl core::fmt::Display for AuthorityError {
 
 impl std::error::Error for AuthorityError {}
 
-/// Canonicalizes `url` (scheme://host[:port][/path…]) into an
+/// Canonicalizes `url` (`<scheme://host[:port][/path]>`) into an
 /// [`Endpoint`]. The host part must already be a canonical DNS (LDH,
 /// punycode is just ASCII) or a canonical IP literal — the contract is
 /// that grants and URLs share this exact parser, so non-canonical
 /// spellings are refused rather than silently mapped.
+///
+/// # Errors
+///
+/// Returns [`AuthorityError`] for every non-canonical or oversized form;
+/// see the variant list for the stable refusal classes.
 pub fn canonicalize_url(url: &str) -> Result<Endpoint, AuthorityError> {
     if url.len() > 8 * 1024 {
         return Err(AuthorityError::Oversize);
@@ -150,6 +155,10 @@ pub fn canonicalize_url(url: &str) -> Result<Endpoint, AuthorityError> {
 }
 
 /// Canonicalizes a bare `host[:port]` authority under `scheme`.
+///
+/// # Errors
+///
+/// Same [`AuthorityError`] classes as [`canonicalize_url`].
 pub fn canonicalize_authority(
     scheme: &Scheme,
     authority: &str,
@@ -218,7 +227,7 @@ fn canonical_ipv6(text: &str) -> Result<String, AuthorityError> {
         return Err(AuthorityError::ZoneId);
     }
     let address: Ipv6Addr = text.parse().map_err(|_| AuthorityError::AmbiguousForm)?;
-    if let Some(_) = address.to_ipv4_mapped() {
+    if address.to_ipv4_mapped().is_some() {
         return Err(AuthorityError::Ipv4MappedIpv6);
     }
     Ok(address.to_string())
@@ -338,6 +347,11 @@ fn classify_v4(v4: Ipv4Addr) -> AddressClass {
 /// private/special ranges; the development `+private` schemes accept
 /// them. Called per connection attempt, per redirect target and per pool
 /// reuse — never cached across uses (DNS rebinding defense).
+///
+/// # Errors
+///
+/// [`AddressError::PrivateNetworkDenied`] when the scheme does not allow
+/// the address class.
 pub fn address_allowed_for_scheme(scheme: Scheme, address: IpAddr) -> Result<(), AddressError> {
     match (scheme, classify(address)) {
         (Scheme::Http | Scheme::Https, AddressClass::Public) => Ok(()),
