@@ -1,0 +1,16 @@
+[package]
+name = "sico-http-provider"
+description = "Secure HTTP Host provider: rustls transport, endpoint authority, DNS policy, streaming, secrets (M12)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
+rcgen = "0.13"
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -31,8 +31,9 @@
       "sico-package"
     ],
     "runtime": [
-      "sico-runtime",
-      "sico-app-cli"
+      "sico-app-cli",
+      "sico-http-provider",
+      "sico-runtime"
     ],
     "host": [
       "sico-host-core",
