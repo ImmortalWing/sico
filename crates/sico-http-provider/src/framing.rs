@@ -176,7 +176,9 @@ impl ChunkedReader {
         if self.seen_final_zero {
             return Err(FramingError::BadTrailer);
         }
-        let take = (self.remaining_chunk as usize).min(input.len());
+        let take = usize::try_from(self.remaining_chunk)
+            .unwrap_or(usize::MAX)
+            .min(input.len());
         if budget_consumed + take as u64 > budget {
             return Err(FramingError::BudgetExceeded);
         }
