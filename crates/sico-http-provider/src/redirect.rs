@@ -66,11 +66,11 @@ pub fn decide_hop(
     }
     let same_origin = origin == &target;
     let method: &'static str = match status {
-        301 | 302 | 303 => "GET",
+        301..=303 => "GET",
         _ => "POST",
     };
     let replay = match status {
-        301 | 302 | 303 => false,
+        301..=303 => false,
         // 307/308 replay only same-origin (cross-origin reauthorization
         // happens before replay; the caller must hold that grant).
         _ => true,
