@@ -353,15 +353,12 @@ fn classify_v4(v4: Ipv4Addr) -> AddressClass {
 /// [`AddressError::PrivateNetworkDenied`] when the scheme does not allow
 /// the address class.
 pub fn address_allowed_for_scheme(scheme: Scheme, address: IpAddr) -> Result<(), AddressError> {
-    match (scheme, classify(address)) {
+    let class = classify(address);
+    match (scheme, class) {
         (Scheme::Http | Scheme::Https, AddressClass::Public) => Ok(()),
-        (
-            Scheme::HttpPrivate | Scheme::HttpsPrivate,
-            AddressClass::Public
-            | AddressClass::Private
-            | AddressClass::Loopback
-            | AddressClass::LinkLocal,
-        ) => Ok(()),
+        (Scheme::HttpPrivate | Scheme::HttpsPrivate, _) if class != AddressClass::Unspecified => {
+            Ok(())
+        }
         _ => Err(AddressError::PrivateNetworkDenied),
     }
 }
