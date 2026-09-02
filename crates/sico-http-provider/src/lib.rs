@@ -9,6 +9,8 @@
 pub mod authority;
 pub mod framing;
 pub mod redirect;
+pub mod secrets;
+pub mod engine;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};

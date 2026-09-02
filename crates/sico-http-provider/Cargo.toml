@@ -11,6 +11,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-pemfile = "2"
 rcgen = "0.13"
 serde_json.workspace = true
+sha2.workspace = true
 
 [lints]
 workspace = true
