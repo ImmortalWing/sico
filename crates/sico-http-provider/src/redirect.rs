@@ -31,6 +31,7 @@ pub enum RedirectDecision {
 
 /// Decides one hop. `origin` is the current endpoint, `status` the
 /// response code, `location` the raw Location header value.
+#[must_use]
 pub fn decide_hop(
     origin: &Endpoint,
     origin_url: &str,
@@ -39,7 +40,7 @@ pub fn decide_hop(
     hop: usize,
     allow_redirects: bool,
 ) -> RedirectDecision {
-    if !matches!(status, 301 | 302 | 303 | 307 | 308) {
+    if !(301..=303).contains(&status) && !(307..=308).contains(&status) {
         return RedirectDecision::Stop;
     }
     if !allow_redirects {
