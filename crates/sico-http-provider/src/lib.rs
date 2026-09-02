@@ -7,6 +7,7 @@
 //! errors for every refusal.
 
 pub mod authority;
+pub mod framing;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
