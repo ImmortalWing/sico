@@ -580,6 +580,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sico-mcp-server"
+version = "0.0.2-dev"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sico-ai-tools",
+]
+
+[[package]]
 name = "sico-mobile-host-core"
 version = "0.0.2-dev"
 dependencies = [

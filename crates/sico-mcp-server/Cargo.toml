@@ -1,0 +1,19 @@
+[package]
+name = "sico-mcp-server"
+description = "Model Context Protocol stdio server exposing the frozen sico.ai-tool.v0 operations"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sico-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sico-ai-tools = { path = "../sico-ai-tools" }
+
+[lints]
+workspace = true

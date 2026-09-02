@@ -126,5 +126,6 @@
 | [STEP-0110](./STEP-0110-m11-exit-audit.md) | complete / GO | M11 | M0–M10 聚合回归 + M11 链全绿；Windows x64 + Linux x64 双平台实证；10/10 gates GO；M12 解锁 |
 | [STEP-0119](./STEP-0119-ai-generation-quality-baseline.md) | complete | M13 | generation 失败归因、prompt/guide canonical 修正、fixture 修复与重测基线 0.8846→0.9744 |
 | [STEP-0120](./STEP-0120-ai-quality-budget-adr.md) | complete | M13 | ADR-0011 AI 质量预算：floor 非回归层（≤ 实测基线）与 target 完成门（proof 待 live-model，blocked-external-evidence） |
+| [STEP-0121](./STEP-0121-mcp-agent-integration.md) | complete | M13 | MCP stdio 接入层（sico-mcp-server，第 26 包）：四工具 JSON Schema 注册、budget 服务端持有不扩权、512 变异穿透 MCP fail-closed、真实会话 inspect→validate_fix roundtrip |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；M11 STEP-0103 ADR（accepted-design）、STEP-0104 semantic/IR contract、STEP-0105 scheduler core、STEP-0106 cancellation/race/select、STEP-0107 bounded channels 与 STEP-0108 persistent/watch/REPL/DAP 集成均已完成；STEP-0109 完成 Linux x64 原生实证（WSL2 Ubuntu 24.04），STEP-0110 出口审计 10/10 gates 判 GO。M11 完成；下一项为 M12 STEP-0111（Secure HTTP Provider）。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，STEP-0119 已完成，权威 live-model 评测等待所有者提供 DeepSeek 凭据。

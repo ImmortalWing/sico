@@ -1,29 +1,150 @@
 {
   "schema": "sico.ai-tool.cases.v0",
   "cases": [
-    { "id": "AIT-001", "area": "metadata", "expect": "exact schema and protocol version" },
-    { "id": "AIT-002", "area": "metadata", "expect": "bounded non-control request identity" },
-    { "id": "AIT-003", "area": "limits", "expect": "one MiB request and workspace limit" },
-    { "id": "AIT-004", "area": "limits", "expect": "sixteen file limit" },
-    { "id": "AIT-005", "area": "limits", "expect": "256 symbol and 100 diagnostic limits" },
-    { "id": "AIT-006", "area": "limits", "expect": "response budget truncates before refusal" },
-    { "id": "AIT-007", "area": "inspect", "expect": "compiler snapshot identity is returned" },
-    { "id": "AIT-008", "area": "inspect", "expect": "source digest is returned without source echo" },
-    { "id": "AIT-009", "area": "inspect", "expect": "parser diagnostic code and key are stable" },
-    { "id": "AIT-010", "area": "inspect", "expect": "semantic diagnostics come from the compiler" },
-    { "id": "AIT-011", "area": "inspect", "expect": "symbols come from Semantic Index" },
-    { "id": "AIT-012", "area": "inspect", "expect": "duplicate file URIs fail closed" },
-    { "id": "AIT-013", "area": "fix", "expect": "original SHA-256 prevents stale fixes" },
-    { "id": "AIT-014", "area": "fix", "expect": "expected diagnostic multiset must match exactly" },
-    { "id": "AIT-015", "area": "fix", "expect": "candidate must parse and pass semantic analysis" },
-    { "id": "AIT-016", "area": "fix", "expect": "candidate canonical form is compiler-produced" },
-    { "id": "AIT-017", "area": "fix", "expect": "one contiguous edit is returned" },
-    { "id": "AIT-018", "area": "fix", "expect": "changed bytes are capped at 256" },
-    { "id": "AIT-019", "area": "fix", "expect": "unrelated wide rewrites are rejected" },
-    { "id": "AIT-020", "area": "fix", "expect": "no filesystem write is performed" },
-    { "id": "AIT-021", "area": "evaluation", "expect": "all 54 B sources are compiler-inspected" },
-    { "id": "AIT-022", "area": "evaluation", "expect": "all twelve B repair oracles validate" },
-    { "id": "AIT-023", "area": "evaluation", "expect": "existing 96-task v1 harness remains deterministic" },
-    { "id": "AIT-024", "area": "evaluation", "expect": "no live-model score without credentials and cost authorization" }
+    {
+      "id": "AIT-001",
+      "area": "metadata",
+      "expect": "exact schema and protocol version"
+    },
+    {
+      "id": "AIT-002",
+      "area": "metadata",
+      "expect": "bounded non-control request identity"
+    },
+    {
+      "id": "AIT-003",
+      "area": "limits",
+      "expect": "one MiB request and workspace limit"
+    },
+    {
+      "id": "AIT-004",
+      "area": "limits",
+      "expect": "sixteen file limit"
+    },
+    {
+      "id": "AIT-005",
+      "area": "limits",
+      "expect": "256 symbol and 100 diagnostic limits"
+    },
+    {
+      "id": "AIT-006",
+      "area": "limits",
+      "expect": "response budget truncates before refusal"
+    },
+    {
+      "id": "AIT-007",
+      "area": "inspect",
+      "expect": "compiler snapshot identity is returned"
+    },
+    {
+      "id": "AIT-008",
+      "area": "inspect",
+      "expect": "source digest is returned without source echo"
+    },
+    {
+      "id": "AIT-009",
+      "area": "inspect",
+      "expect": "parser diagnostic code and key are stable"
+    },
+    {
+      "id": "AIT-010",
+      "area": "inspect",
+      "expect": "semantic diagnostics come from the compiler"
+    },
+    {
+      "id": "AIT-011",
+      "area": "inspect",
+      "expect": "symbols come from Semantic Index"
+    },
+    {
+      "id": "AIT-012",
+      "area": "inspect",
+      "expect": "duplicate file URIs fail closed"
+    },
+    {
+      "id": "AIT-013",
+      "area": "fix",
+      "expect": "original SHA-256 prevents stale fixes"
+    },
+    {
+      "id": "AIT-014",
+      "area": "fix",
+      "expect": "expected diagnostic multiset must match exactly"
+    },
+    {
+      "id": "AIT-015",
+      "area": "fix",
+      "expect": "candidate must parse and pass semantic analysis"
+    },
+    {
+      "id": "AIT-016",
+      "area": "fix",
+      "expect": "candidate canonical form is compiler-produced"
+    },
+    {
+      "id": "AIT-017",
+      "area": "fix",
+      "expect": "one contiguous edit is returned"
+    },
+    {
+      "id": "AIT-018",
+      "area": "fix",
+      "expect": "changed bytes are capped at 256"
+    },
+    {
+      "id": "AIT-019",
+      "area": "fix",
+      "expect": "unrelated wide rewrites are rejected"
+    },
+    {
+      "id": "AIT-020",
+      "area": "fix",
+      "expect": "no filesystem write is performed"
+    },
+    {
+      "id": "AIT-021",
+      "area": "evaluation",
+      "expect": "all 54 B sources are compiler-inspected"
+    },
+    {
+      "id": "AIT-022",
+      "area": "evaluation",
+      "expect": "all twelve B repair oracles validate"
+    },
+    {
+      "id": "AIT-023",
+      "area": "evaluation",
+      "expect": "existing 96-task v1 harness remains deterministic"
+    },
+    {
+      "id": "AIT-024",
+      "area": "evaluation",
+      "expect": "no live-model score without credentials and cost authorization"
+    },
+    {
+      "id": "AIT-025",
+      "area": "evaluation",
+      "expect": "MCP stdio transport maps tools/call 1:1 onto sico.ai-tool.v0 with server-owned budget"
+    },
+    {
+      "id": "AIT-026",
+      "area": "evaluation",
+      "expect": "MCP transport never widens budget or schema; client controls input and operation only"
+    },
+    {
+      "id": "AIT-027",
+      "area": "evaluation",
+      "expect": "512-mutation corpus fails closed through the MCP transport"
+    },
+    {
+      "id": "AIT-028",
+      "area": "evaluation",
+      "expect": "real MCP stdio session performs initialize, tools/list, inspect and validate_fix roundtrips"
+    },
+    {
+      "id": "AIT-029",
+      "area": "evaluation",
+      "expect": "MCP envelope embeds the exact sico.ai-tool.response.v0 JSON without reinterpretation"
+    }
   ]
 }

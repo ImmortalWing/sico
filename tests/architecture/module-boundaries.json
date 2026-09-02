@@ -21,9 +21,10 @@
       "sico-observability"
     ],
     "tooling": [
+      "sico-ai-tools",
       "sico-cli",
       "sico-language-server",
-      "sico-ai-tools",
+      "sico-mcp-server",
       "sico-tooling-protocol"
     ],
     "application": [
@@ -47,14 +48,41 @@
     ]
   },
   "allowed_normal_dependencies": {
-    "language": ["language"],
-    "compiler": ["language", "compiler", "observability"],
-    "observability": ["observability"],
-    "tooling": ["language", "compiler", "observability", "tooling"],
-    "application": ["application"],
-    "runtime": ["application", "observability", "runtime"],
-    "host": ["application", "observability", "runtime", "host"],
-    "ecosystem": ["application", "ecosystem"],
+    "language": [
+      "language"
+    ],
+    "compiler": [
+      "language",
+      "compiler",
+      "observability"
+    ],
+    "observability": [
+      "observability"
+    ],
+    "tooling": [
+      "language",
+      "compiler",
+      "observability",
+      "tooling"
+    ],
+    "application": [
+      "application"
+    ],
+    "runtime": [
+      "application",
+      "observability",
+      "runtime"
+    ],
+    "host": [
+      "application",
+      "observability",
+      "runtime",
+      "host"
+    ],
+    "ecosystem": [
+      "application",
+      "ecosystem"
+    ],
     "integration": [
       "language",
       "compiler",
@@ -90,8 +118,23 @@
     }
   ],
   "command_ownership": {
-    "sico": ["check", "format", "outline", "build-component"],
-    "sico-app": ["pack-sapp", "inspect-sapp", "run-sapp", "dev-source-orchestration"],
-    "sico-desktop-host": ["install", "open", "uninstall", "platform-association"]
+    "sico": [
+      "check",
+      "format",
+      "outline",
+      "build-component"
+    ],
+    "sico-app": [
+      "pack-sapp",
+      "inspect-sapp",
+      "run-sapp",
+      "dev-source-orchestration"
+    ],
+    "sico-desktop-host": [
+      "install",
+      "open",
+      "uninstall",
+      "platform-association"
+    ]
   }
 }

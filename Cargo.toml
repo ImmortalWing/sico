@@ -3,6 +3,7 @@ members = [
     "crates/sico-app-cli",
     "crates/sico-cli",
     "crates/sico-ai-tools",
+    "crates/sico-mcp-server",
     "crates/sico-codegen-wasm",
     "crates/sico-diagnostics",
     "crates/sico-desktop-host",
