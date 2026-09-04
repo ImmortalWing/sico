@@ -1,0 +1,62 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function invalid(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: message))
+end function
+
+function accept_pieces(document: Text) returns Result[ScriptOutput, ScriptError]:
+  match sico.json.has(document, "pieces"):
+    case true:
+      return ok(ScriptOutput(stdout: sico.text.encode("board input accepted; solver backend is not available in Sico yet"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case false:
+      return invalid("missing pieces field")
+  end match
+end function
+
+function accept_board(document: Text) returns Result[ScriptOutput, ScriptError]:
+  match sico.json.has(document, "board"):
+    case true:
+      return accept_pieces(document)
+    case false:
+      return invalid("missing board field")
+  end match
+end function
+
+function decode(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match sico.json.is_valid(sico.bytes.utf8_decode(input.stdin)):
+    case true:
+      return accept_board(sico.bytes.utf8_decode(input.stdin))
+    case false:
+      return invalid("stdin is not valid JSON")
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match sico.bytes.is_utf8(input.stdin):
+    case true:
+      return decode(input)
+    case false:
+      return invalid("stdin is not valid UTF-8")
+  end match
+end function

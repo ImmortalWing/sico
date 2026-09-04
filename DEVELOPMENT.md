@@ -1,7 +1,7 @@
 # Sico 开发与架构文档
 
 > 状态：开发草案
-> 更新日期：2026-07-15
+> 更新日期：2026-09-04
 > 上位文档：[DIRECTION.md](./DIRECTION.md)
 
 本文档说明 Sico 应如何从语言设计进入可验证的工程实现。它描述编译器、WebAssembly Component 后端、应用包、运行时、Host、安全模型、测试方法和阶段目标。
@@ -1248,6 +1248,56 @@ sico-app run      通过显式 trust gate 在 Runtime 中运行 .sapp
 非目标：general sockets/listeners、ambient env/home/cloud credentials、browser cookies、unrestricted proxy、provider-local scheduler、public deployment 和 mobile Runtime completion。
 
 M10–M12 是在 production domain/identity/credentials、third-party pilots、live-model credentials 与 mobile runners 尚未到位时关闭已知内部架构债。每个阶段出口必须重新检查这些外部输入；内部基建证据不得冒充 external product/platform gate。
+
+### M13：AI Tooling Closure（并行支持轨）
+
+交付：真实生成失败归因、AI 质量预算、MCP/agent 接入、semantic-index accuracy/latency 与错误频率测量，以及对 AI 生成、修复和理解工作流的收口审计。该轨不改变语言或 Runtime 主线的进入门槛，缺少真实模型凭据时必须保持 evidence label。
+
+### M14：Application-ready Language Baseline
+
+交付：
+
+- machine-readable check/build/run 支持矩阵与稳定 backend refusal；
+- 通用循环/迭代、受限递归、动态集合遍历、固定宽数值与位运算；
+- 模块、versioned package 和 compiler-facing WIT/Component binding；
+- 应用测试入口及 LSP/DAP/index/AI tooling 同步；
+- 俄罗斯方块离线求解器、流式数据应用和 capability-backed 状态机三类真实验收程序。
+
+进入条件：M12 完整 GO，M13 发出收口结论，M0–M13 regression 可重跑。
+
+退出条件：application profile 不存在未声明的 check/build/run gap；普通业务算法无需 native escape hatch；代表性程序在真实 Component Runtime 上通过确定性、限额、性能和 AI 回归。
+
+非目标：DOM、桌面截图/输入、OpenCV、GPU 或模型推理。
+
+### M15：Web Platform and UI Controls
+
+交付：Web Host 形态 ADR、compiler-facing UI binding、控件/布局/事件/生命周期/可访问性合同，以及 DOM/network/storage authority 和真实浏览器证据。复用 M12 endpoint policy、M14 WIT/package binding 与 M5 typed UI boundary，不引入 JavaScript 语言语义。
+
+进入条件：M14 GO，且原生生态存在可验证的真实应用/包消费基线。退出条件：同一业务组件在声明支持的 Web/native Host 保持核心行为，恶意页面输入和权限变更 fail closed。
+
+### M16：Native Automation Host
+
+交付：scoped window/surface identity、窗口级 capture、分离的 pointer/touch/keyboard grants、preview/commit token、observation revision、execute-one/verify/stop 循环、审计事件与紧急停止。
+
+进入条件：M14 GO；先行 threat model、capability/WIT RFC 与平台 ADR 被接受。M15 与 M16 可在共享 Host 合同冻结后并行。
+
+退出条件：Windows 真实窗口完成 observe→plan→preview→execute-one→verify 闭环；surface drift、stale revision、重复提交、取消和权限撤销全部 fail closed。其他平台只有真实 native runner 才能宣称。
+
+非目标：全桌面监控、隐藏按键、认证/CAPTCHA/安全提示或反作弊绕过、任意进程/命令执行。
+
+### M17：Vision and Model Package Ecosystem
+
+交付：Image/Pixel/Region 数据合同、确定性基础 CV 包、可选原生加速 provider、模型/权重 identity/provenance、CPU/GPU/内存/时间预算及参考实现/加速实现一致性语料。
+
+进入条件：M14 GO，M16 至少完成只读 capture prototype，M7 package/trust/update 可承载版本化实现和模型资产。退出条件：传统算法路径不依赖模型即可完成固定语料；provider/模型故障和恶意资产保持隔离；消费者不修改 compiler/Runtime。
+
+### M18：Representative AI Applications and External Pilots
+
+交付：API agent、流式数据工具、Web/UI 应用、原生视觉自动化和独立 package/Component 消费者。俄罗斯方块案例按 M14 纯 Sico 求解器 → M16 capture/input → M17 vision → M18 长期、安全、独立复现的顺序验收。
+
+进入条件：M14 GO，且每个 pilot 所需的平台里程碑已 GO。退出条件：应用不修改 compiler/Runtime/Host core 即可开发、测试、打包、授权、运行和更新；内部 fixture、洁净室 consumer、外部 pilot 和 production evidence 严格分级。
+
+M14–M18 的详细门槛见 [`docs/plans/`](docs/plans/README.md)。规划阶段不预占 STEP 编号；每个里程碑的第一项实现工作必须先冻结 RFC/ADR、威胁模型和可复现退出语料。
 
 ## 20. 性能与质量指标
 

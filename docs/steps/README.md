@@ -124,8 +124,17 @@
 | [STEP-0108](./STEP-0108-persistent-watch-repl-dap-task-integration.md) | complete | M11 | debug worker 统一 teardown、watch 世代隔离、REPL 纯常量无 Store、100 次变权限运行零泄漏、DAP terminate 无滞留、AI 工具面 data-only |
 | [STEP-0109](./STEP-0109-cross-platform-runner-parity.md) | complete | M11 | Linux x64 原生 parity（WSL2 Ubuntu 24.04）：scheduler/runner 全套语料绿、fd/RSS 平稳、证据归档 |
 | [STEP-0110](./STEP-0110-m11-exit-audit.md) | complete / GO | M11 | M0–M10 聚合回归 + M11 链全绿；Windows x64 + Linux x64 双平台实证；10/10 gates GO；M12 解锁 |
+| [STEP-0111](./STEP-0111-secure-http-rfc.md) | complete-contract | M12 | 冻结 secure HTTP provider authority/transport contract |
+| [STEP-0112](./STEP-0112-tls-transport.md) | complete | M12 | 成熟 TLS stack、证书与 hostname 验证 |
+| [STEP-0113](./STEP-0113-endpoint-authority-dns.md) | complete | M12 | endpoint authority、DNS pinning 与地址策略 |
+| [STEP-0114](./STEP-0114-streaming-bodies.md) | complete | M12 | strict framing、bounded streaming 与 backpressure |
+| [STEP-0115](./STEP-0115-redirect-policy.md) | complete | M12 | redirect reauthorization 与跨 origin secret stripping |
+| [STEP-0116](./STEP-0116-secret-provider-redaction.md) | complete | M12 | Host-owned secret provider 与全链路 redaction |
+| [STEP-0117](./STEP-0117-connection-lifecycle-sdk.md) | complete-core | M12 | per-Store HTTP engine 与 connection lifecycle SDK core |
+| [STEP-0118](./STEP-0118-m12-exit-audit.md) | complete / GO-core | M12 | secure HTTP core audit；guest runner integration 与 Linux provider parity 待完成 |
 | [STEP-0119](./STEP-0119-ai-generation-quality-baseline.md) | complete | M13 | generation 失败归因、prompt/guide canonical 修正、fixture 修复与重测基线 0.8846→0.9744 |
 | [STEP-0120](./STEP-0120-ai-quality-budget-adr.md) | complete | M13 | ADR-0011 AI 质量预算：floor 非回归层（≤ 实测基线）与 target 完成门（proof 待 live-model，blocked-external-evidence） |
 | [STEP-0121](./STEP-0121-mcp-agent-integration.md) | complete | M13 | MCP stdio 接入层（sico-mcp-server，第 26 包）：四工具 JSON Schema 注册、budget 服务端持有不扩权、512 变异穿透 MCP fail-closed、真实会话 inspect→validate_fix roundtrip |
+| [STEP-0124](./STEP-0124-application-platform-roadmap.md) | complete-planning | M14–M18 roadmap | 冻结 application-ready language → Web/UI 与 Native Automation → vision/model → application pilots 路线，不预留实现 STEP |
 
-STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9 并由 exit audit 发出 GO。STEP-0095–0102 完成 M10 并由 exit audit 发出 GO；M11 STEP-0103 ADR（accepted-design）、STEP-0104 semantic/IR contract、STEP-0105 scheduler core、STEP-0106 cancellation/race/select、STEP-0107 bounded channels 与 STEP-0108 persistent/watch/REPL/DAP 集成均已完成；STEP-0109 完成 Linux x64 原生实证（WSL2 Ubuntu 24.04），STEP-0110 出口审计 10/10 gates 判 GO。M11 完成；下一项为 M12 STEP-0111（Secure HTTP Provider）。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，STEP-0119 已完成，权威 live-model 评测等待所有者提供 DeepSeek 凭据。
+STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core，完整 guest runner integration 与 Linux provider parity 仍待关闭。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，权威 live-model 评测仍等待所有者提供 DeepSeek 凭据。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。

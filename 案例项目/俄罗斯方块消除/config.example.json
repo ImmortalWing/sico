@@ -1,0 +1,35 @@
+{
+  "vision": {
+    "rows": 8,
+    "cols": 8,
+    "board_rect": [0.026, 0.259, 0.948, 0.440],
+    "tray_rects": [
+      [0.055, 0.735, 0.245, 0.075],
+      [0.315, 0.735, 0.365, 0.075],
+      [0.700, 0.735, 0.245, 0.075]
+    ],
+    "cell_inner_ratio": 0.58,
+    "occupied_delta": 35.0,
+    "target_min_pixels": 45,
+    "piece_cell_ratio": 0.073,
+    "piece_size_tolerance": 0.40
+  },
+  "solver": {
+    "candidate_limit": 48,
+    "max_nodes": 500000,
+    "future_samples": 0,
+    "future_batches": 2,
+    "random_seed": 20260904
+  },
+  "control": {
+    "window_title": "微信",
+    "drag_duration_ms": 450,
+    "release_offset": [0, 0],
+    "settle_seconds": 0.8,
+    "stable_threshold": 2.0,
+    "stable_attempts": 8,
+    "adb_path": "adb",
+    "adb_serial": null
+  }
+}
+

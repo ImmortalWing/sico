@@ -1,9 +1,9 @@
 # Sico audited roadmap
 
-> - updated: 2026-08-04
+> - updated: 2026-09-04
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M11
-> - phase context: M10 Runtime observability/debugging complete (GO, Windows x64 GNU); M11 structured-concurrency ADR accepted and implementation unlocked; M12 secure HTTP follows M11 GO; M13 AI tooling closure approved as a parallel support track (STEP-0119–0123) with live-model evaluation gated on owner-delivered DeepSeek credentials; M7 public rollout and M6 mobile remain externally blocked
+> - current phase: M12 GO-core; full provider/runner integration pending
+> - phase context: M10/M11 complete; M12 retains secure HTTP/API automation scope; M13 AI tooling closure is a parallel support track; owner-approved future sequence is M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages and M18 representative applications/pilots; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
 
@@ -228,15 +228,83 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M13 AI tooling closure`](./plans/M13-ai-tooling-closure.md)，STEP-0119–0123。退出证据与 live-model 插入规则见该计划 §4–§6。
 
-## M14: Web platform and UI controls（planned, direction confirmed）
+## M14: Application-ready language baseline（planned）
 
-状态：`planned / direction confirmed 2026-09-01; no step numbers reserved yet`
+状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
 
-所有者确认的产品目标（[`DIRECTION.md`](../DIRECTION.md) §3.1）：Sico 前端要覆盖 JavaScript 的大部分能力（含网页控件与页面级 UI），后端覆盖日常开发所需能力，并始终便于 AI 使用；后端走 sico 自己的分层精选路径（小而可证的核心 stdlib + versioned package 生态），不仿照 Python 的模块清单。本里程碑承载该目标的前端一半，对应 DIRECTION §8.3 阶段 6/7 的落地。
+目标不是宣称语言“永久完成”，而是关闭已接受源码语义与可执行后端之间妨碍真实应用的缺口。主要交付：check/build/run 支持矩阵与拒绝合同、通用循环/迭代和受 Runtime 限额约束的递归、动态集合与记录遍历、固定宽数值/位运算、模块与 versioned package 使用、compiler-facing WIT/Component binding、应用测试入口，以及代表性算法/数据/状态机程序。
 
-预期内容（进入前必须各自完成 RFC/ADR）：Web 宿主形态决策（浏览器直跑 Component vs webview 控件复用 M5 Host 边界）、UI 控件/事件/渲染 contract、DOM/网络/存储/事件的标准宿主接口、网页控件的恶意输入拒绝语料。后端能力由分层精选轨承载（核心 stdlib 保持小而可证，扩展能力走 versioned package 生态；独立 milestone，进入条件按证据决定，不以任何既有语言的模块清单为对标）。
+进入条件：M12 完整 GO；M13 收口审计给出 AI 工作流 GO/blocked 结论；M0–M13 regression 保持可重跑。M6/M7 的外部平台、身份和公网输入不阻塞本里程碑，但其证据等级不得被 M14 内部工作提升。
 
-进入条件（全部满足才可开工，与 DIRECTION §8.3 的阶段门一致）：M11 GO 与 M12 GO；M13 收口审计给出 AI 工作流 GO/blocked 结论；原生生态侧已有可验证的真实应用与包生态基线。在此之前，任何 Web/UI 工作只许以文档提案形式存在。
+退出条件：已登记的 application-baseline 语义不存在未声明的“check 通过但 build/run 拒绝”；至少一个非玩具搜索算法（俄罗斯方块离线求解器）、一个流式数据应用和一个 capability-backed 状态机主要逻辑完全由 Sico 实现；模块/包/WIT 边界、资源限额、确定性、性能和 AI 生成/修复回归全部通过。语言未来仍可演进，但后续应用层不再需要原生逃生舱承载普通业务算法。
+
+执行计划：[`M14 application-ready language baseline`](./plans/M14-application-ready-language.md)。本里程碑只完成语言、编译器、Runtime 与通用 SDK 基线，不实现 DOM、桌面截图、输入注入、OpenCV 或模型推理。
+
+## M15: Web platform and UI controls（planned, direction confirmed）
+
+状态：`planned / renumbered from former M14 on 2026-09-04; no step numbers reserved yet`
+
+承载 [`DIRECTION.md`](../DIRECTION.md) §3.1 的前端目标与 §8.3 阶段 6/7。主要交付：Web 宿主形态 ADR（浏览器直跑 Component 与受控 webview 的证据化选择）、compiler-facing UI/WIT binding、控件/布局/事件/渲染/可访问性合同，以及 DOM、网络、存储和生命周期的标准宿主接口。M12 的 HTTP authority 与 M14 的 package/WIT 绑定必须复用，不建立浏览器专用语言语义。
+
+进入条件：M14 GO；M13 AI 工作流结论已纳入工具链；原生生态已有可验证的真实应用与包消费基线。进入前只允许 contract/prototype，不得宣称浏览器或页面级 UI 支持。
+
+退出条件：同一 Sico 业务组件在声明支持的 Web Host 与原生 Host 保持核心行为；网页控件、事件、状态、权限、可访问性和恶意输入语料通过真实浏览器/Host 验证；平台声明只来自实际 runner。
+
+执行计划：[`M15 Web platform and UI controls`](./plans/M15-web-ui-platform.md)。
+
+## M16: Native Automation Host（planned）
+
+状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+
+为 AI 的观察—规划—执行—校验循环提供独立、显式授权的原生宿主能力。主要交付：scoped window/surface identity、窗口级截图、pointer/touch 输入、可选键盘输入、preview/commit 分离、操作后状态验证、速率/时间/区域限制、审计事件和紧急停止。capture authority 与 input authority 必须分离；默认不授予全桌面、后台键盘、剪贴板、凭据或任意进程控制。
+
+进入条件：M14 GO；先行 threat model、capability/WIT RFC 与平台 ADR 被接受；M10–M12 的身份、事件、取消、redaction 和 Host-operation accounting 可直接复用。M15 与 M16 可在共享 Host/capability 合同冻结后并行，互不作为虚假平台证据。
+
+退出条件：observe → plan → preview → execute-one → verify/stop 在 Windows 真实窗口上闭环；错误识别、窗口漂移、重复画面、超时、取消和权限变化均 fail closed；macOS/Linux/Android 只有各自真实 native evidence 才能加入支持矩阵。
+
+执行计划：[`M16 Native Automation Host`](./plans/M16-native-automation-host.md)。本里程碑不提供通用 CV/ML 算法，也不包含验证码、认证绕过、反作弊规避或隐藏式用户监控。
+
+## M17: Vision and model package ecosystem（planned）
+
+状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+
+把图像/视觉/推理作为 versioned package 与受限 provider 生态，而不是膨胀核心语言或隐式授予硬件权限。主要交付：稳定 Image/Pixel/Region 数据合同，颜色/缩放/模板/轮廓/网格等确定性基础包，可选原生加速 provider，模型/权重 digest 与 provenance，CPU/GPU/内存/时间预算，以及可重现的精度、回退和跨平台证据。
+
+进入条件：M14 GO；M16 至少完成只读 capture prototype 与图像所有权/大小上限；M7 package/trust/update 边界可承载版本化二进制和模型资产。模型推理不作为传统算法路径的默认依赖。
+
+退出条件：基础 CV 在无模型时完成固定语料；加速路径与参考实现结果在声明容差内一致；模型加载、推理、取消、资源耗尽、恶意权重和 provider 崩溃均隔离；包消费者无需修改 compiler/Runtime。
+
+执行计划：[`M17 Vision and model package ecosystem`](./plans/M17-vision-ml-ecosystem.md)。
+
+## M18: Representative AI applications and external pilots（planned）
+
+状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+
+以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。俄罗斯方块消除案例是原生视觉自动化基准：离线求解器必须先在 M14 完全由 Sico 执行，再依次接入 M16 capture/input 与 M17 vision，最后验证 dry-run、单步提交、画面校验和安全停止。
+
+进入条件：M14 GO；每个 pilot 所依赖的平台里程碑已经 GO；外部发布、账号、设备或服务只在所有者提供明确 authority 后进入。内部洁净室应用不能冒充第三方采用。
+
+退出条件：代表性应用无需修改 compiler/Runtime/Host 核心即可开发、测试、打包、授权、运行和更新；长时间运行、错误注入、性能、安全、AI 生成/修复和独立复现证据完整；每项产品/平台声明均能追溯到真实 runner 或外部参与者。
+
+执行计划：[`M18 representative AI applications and external pilots`](./plans/M18-ai-application-pilots.md)。
+
+### M14–M18 dependency shape
+
+```text
+M12 full GO + M13 closure
+          |
+          v
+M14 application-ready language
+       /                 \
+      v                   v
+M15 Web/UI        M16 Native Automation
+                           |
+                           v
+                 M17 Vision/Model packages
+       \                   /
+        v                 v
+          M18 applications/pilots
+```
 
 ## Immediate dependency chain
 

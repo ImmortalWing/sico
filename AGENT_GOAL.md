@@ -413,6 +413,32 @@ AI 实验必须记录：
 
 退出条件：外部开发者无需修改编译器或 Runtime 即可开发、检查、构建、发布、安装、运行和调试 Sico 应用。
 
+#### M8–M13：脚本、Runtime 与 AI 工具强化
+
+依次完成 Script Profile、流式/异步/交互脚本、可观测性与调试、有界结构化并发、安全 HTTP Provider/API Automation SDK，以及并行的 AI tooling closure。每一阶段的精确进入条件、STEP 和证据以 `docs/ROADMAP.md` 与 `docs/plans/` 为准；HTTP/API 自动化不得被解释为屏幕、窗口或输入自动化。
+
+#### M14：应用就绪语言基线
+
+关闭已接受源码语义与 build/run 后端之间妨碍真实应用的缺口，补齐通用算法、动态集合、模块/包、WIT binding 与应用测试能力，并用纯 Sico 离线求解器、流式数据应用和 capability-backed 状态机验收。
+
+退出条件：application profile 没有未声明的 check/build/run gap，普通业务逻辑不依赖 native escape hatch，代表性程序通过真实 Component Runtime、限额、性能和 AI 回归。
+
+#### M15：Web 平台与 UI 控件
+
+在 M14 GO 后完成 Web Host 形态、compiler-facing UI binding、控件/事件/DOM/network/storage/accessibility 合同和真实浏览器证据。不得把 webview 原型或 JavaScript glue 冒充浏览器一等支持。
+
+#### M16：Native Automation Host
+
+在 M14 GO 和先行安全合同完成后，提供 scoped window capture、独立 input grant、preview/commit、observation revision、execute-one/verify/stop、审计和紧急停止。默认禁止全桌面监控、隐藏按键、任意进程控制及认证/安全/反作弊绕过。
+
+#### M17：视觉与模型包生态
+
+通过 versioned package/Component/provider 提供图像合同、确定性 CV、可选原生加速与显式预算的模型推理。模型不进入核心语法，也不成为传统算法的隐式依赖。
+
+#### M18：代表性 AI 应用与外部试点
+
+使用 API agent、流式工具、Web/UI、原生视觉自动化和独立消费者检验公开接口。俄罗斯方块案例依次作为 M14 纯 Sico 求解器、M16 capture/input、M17 vision 和 M18 安全长期运行的验收基准。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
+
 ### 9. 当前建议执行顺序
 
 每次根据仓库真实状态调整，但默认从当前 M0 缺口开始：
