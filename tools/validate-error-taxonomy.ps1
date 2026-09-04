@@ -25,8 +25,16 @@ $issuesText = Get-Content -LiteralPath (Join-Path $root 'examples/ISSUES.md') -R
 if ($taxonomy.schema -ne 'sico.ai-error-taxonomy.v0' -or $taxonomy.status -ne 'designed-corpus-taxonomy') {
   throw 'invalid taxonomy header'
 }
-if ($taxonomy.observed_ai_frequency -ne 'not-measured' -or $taxonomy.ranking_allowed -ne $false) {
-  throw 'taxonomy must not claim measured AI frequency or ranking'
+if ($taxonomy.ranking_allowed -ne $false) {
+  throw 'taxonomy must not claim ranking'
+}
+$freq = $taxonomy.observed_ai_frequency
+$measured = ($freq -is [pscustomobject]) -and $freq.source -and $freq.total_attempts -gt 0
+if (-not ($measured -or $freq -eq 'not-measured')) {
+  throw 'observed_ai_frequency must be not-measured or a measured block with provenance'
+}
+if ($measured -and -not $freq.dominant_failure) {
+  throw 'measured frequency block must name the dominant failure'
 }
 
 $classes = @($taxonomy.classes)

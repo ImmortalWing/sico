@@ -249,8 +249,14 @@ mod tests {
             decide_framing(&[], Some("chunked"), DEFAULT_BODY_BUDGET),
             Ok(BodyFraming::Chunked)
         );
-        assert_eq!(decide_framing(&[], None, DEFAULT_BODY_BUDGET), Ok(BodyFraming::UntilClose));
-        assert_eq!(decide_framing(&["0"], None, DEFAULT_BODY_BUDGET), Ok(BodyFraming::Length(0)));
+        assert_eq!(
+            decide_framing(&[], None, DEFAULT_BODY_BUDGET),
+            Ok(BodyFraming::UntilClose)
+        );
+        assert_eq!(
+            decide_framing(&["0"], None, DEFAULT_BODY_BUDGET),
+            Ok(BodyFraming::Length(0))
+        );
     }
 
     #[test]
@@ -276,7 +282,11 @@ mod tests {
             Err(FramingError::ConflictingLength)
         );
         assert_eq!(
-            decide_framing(&[&format!("{}", DEFAULT_BODY_BUDGET + 1)], None, DEFAULT_BODY_BUDGET),
+            decide_framing(
+                &[&format!("{}", DEFAULT_BODY_BUDGET + 1)],
+                None,
+                DEFAULT_BODY_BUDGET
+            ),
             Err(FramingError::BudgetExceeded)
         );
     }
@@ -298,20 +308,33 @@ mod tests {
     #[test]
     fn chunk_reader_refuses_ambiguity_and_overflow() {
         let mut reader = ChunkedReader::new();
-        assert_eq!(reader.chunk_size_line("0x4"), Err(FramingError::BadChunkSize));
-        assert_eq!(reader.chunk_size_line("0010"), Err(FramingError::BadChunkSize));
+        assert_eq!(
+            reader.chunk_size_line("0x4"),
+            Err(FramingError::BadChunkSize)
+        );
+        assert_eq!(
+            reader.chunk_size_line("0010"),
+            Err(FramingError::BadChunkSize)
+        );
         assert_eq!(
             reader.chunk_size_line(&format!("{}", MAX_CHUNK_BYTES + 1)),
             Err(FramingError::BadChunkSize)
         );
         // Extensions refused (strict v1).
-        assert_eq!(reader.chunk_size_line("4;ext=1"), Err(FramingError::BadChunkSize));
+        assert_eq!(
+            reader.chunk_size_line("4;ext=1"),
+            Err(FramingError::BadChunkSize)
+        );
 
         let mut reader = ChunkedReader::new();
         reader.chunk_size_line("10").unwrap();
         // Budget consumed nearly full: the chunk must overflow the gate.
         assert_eq!(
-            reader.chunk_data(b"0123456789abcdef", DEFAULT_BODY_BUDGET, DEFAULT_BODY_BUDGET),
+            reader.chunk_data(
+                b"0123456789abcdef",
+                DEFAULT_BODY_BUDGET,
+                DEFAULT_BODY_BUDGET
+            ),
             Err(FramingError::BudgetExceeded)
         );
         // Within budget it is accepted and advances the chunk.
@@ -319,18 +342,32 @@ mod tests {
         // Data after final-zero is trailer abuse.
         let mut reader = ChunkedReader::new();
         reader.chunk_size_line("0").unwrap();
-        assert_eq!(reader.chunk_data(b"z", 0, DEFAULT_BODY_BUDGET), Err(FramingError::BadTrailer));
+        assert_eq!(
+            reader.chunk_data(b"z", 0, DEFAULT_BODY_BUDGET),
+            Err(FramingError::BadTrailer)
+        );
         assert_eq!(reader.chunk_size_line("4"), Err(FramingError::BadTrailer));
     }
 
     #[test]
     fn trailer_section_bounded() {
         assert_eq!(validate_trailer(&[]), Ok(()));
-        let many: Vec<String> = (0..=MAX_TRAILER_LINES).map(|i| format!("x-{i}: v")).collect();
+        let many: Vec<String> = (0..=MAX_TRAILER_LINES)
+            .map(|i| format!("x-{i}: v"))
+            .collect();
         let refs: Vec<&str> = many.iter().map(String::as_str).collect();
         assert_eq!(validate_trailer(&refs), Err(FramingError::BadTrailer));
-        assert_eq!(validate_trailer(&["folded: yes\n more"]), Err(FramingError::BadTrailer));
-        assert_eq!(validate_trailer(&["no-colon"]), Err(FramingError::BadTrailer));
-        assert_eq!(validate_trailer(&[" space-name: v"]), Err(FramingError::BadTrailer));
+        assert_eq!(
+            validate_trailer(&["folded: yes\n more"]),
+            Err(FramingError::BadTrailer)
+        );
+        assert_eq!(
+            validate_trailer(&["no-colon"]),
+            Err(FramingError::BadTrailer)
+        );
+        assert_eq!(
+            validate_trailer(&[" space-name: v"]),
+            Err(FramingError::BadTrailer)
+        );
     }
 }

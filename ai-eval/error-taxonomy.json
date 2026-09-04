@@ -1,7 +1,18 @@
 {
   "schema": "sico.ai-error-taxonomy.v0",
   "status": "designed-corpus-taxonomy",
-  "observed_ai_frequency": "not-measured",
+  "observed_ai_frequency": {
+    "source": "subagent-run-v2-2026-08-04 (STEP-0119, 96x30, deterministic; engineering feedback only)",
+    "failed_attempts": 180,
+    "total_attempts": 2880,
+    "failed_tasks_by_candidate": {
+      "A0": 10,
+      "B": 8,
+      "C": 7
+    },
+    "dominant_failure": "canonical-source-mismatch",
+    "note": "refreshed by the authorized live-model run when delivered"
+  },
   "ranking_allowed": false,
   "evidence_note": "Classes cover designed syntax and semantic failure corpora. They do not measure how often any model produces an error.",
   "classes": [

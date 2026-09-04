@@ -10,10 +10,10 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use rustls::pki_types::{pem::PemObject, CertificateDer, ServerName};
+use rustls::pki_types::{CertificateDer, ServerName, pem::PemObject};
 
-use crate::authority::{address_allowed_for_scheme, canonicalize_url, Endpoint};
-use crate::framing::{decide_framing, BodyFraming, FramingError, MAX_CHUNK_BYTES};
+use crate::authority::{Endpoint, address_allowed_for_scheme, canonicalize_url};
+use crate::framing::{BodyFraming, FramingError, MAX_CHUNK_BYTES, decide_framing};
 use crate::secrets::SecretStore;
 
 /// Engine caps (RFC-0037 §7): ≤16 in-flight, ≤32 pooled, ≤8 per
@@ -120,6 +120,7 @@ impl HttpEngine {
             .unwrap_or_else(HttpOutcome::Failed)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn execute_inner(
         &mut self,
         head: &RequestHead,
@@ -199,7 +200,9 @@ impl HttpEngine {
                 &endpoint,
                 &current_url,
                 status,
-                header_value(&headers, "location").unwrap_or_default().as_str(),
+                header_value(&headers, "location")
+                    .unwrap_or_default()
+                    .as_str(),
                 hop,
                 head.follow_redirects,
             );
@@ -216,14 +219,17 @@ impl HttpEngine {
                     self.end_request();
                     return Ok(HttpOutcome::Failed(format!("redirect: {reason}")));
                 }
-                crate::redirect::RedirectDecision::Follow { location, method, replay } => {
+                crate::redirect::RedirectDecision::Follow {
+                    location,
+                    method,
+                    replay,
+                } => {
                     // Cross-origin: strip protected headers before
                     // following (structural rule, value-independent).
                     let next_endpoint =
                         canonicalize_url(&location).map_err(|e| format!("authority: {e}"))?;
                     if next_endpoint != endpoint {
-                        current_headers =
-                            strip_protected(&current_headers);
+                        current_headers = strip_protected(&current_headers);
                     }
                     current_url = location;
                     method.clone_into(&mut current_method);
@@ -355,7 +361,10 @@ fn exchange_over_stream<S: Read + Write>(
     } else {
         format!("{}:{}", endpoint.host, endpoint.port)
     };
-    let mut request = format!("{} {path} HTTP/1.1\r\nhost: {host_header}\r\nconnection: close\r\n", wire.method);
+    let mut request = format!(
+        "{} {path} HTTP/1.1\r\nhost: {host_header}\r\nconnection: close\r\n",
+        wire.method
+    );
     for (name, value) in wire.headers {
         request.push_str(name);
         request.push_str(": ");
@@ -382,7 +391,9 @@ fn exchange_over_stream<S: Read + Write>(
     let mut head_buffer = Vec::new();
     let mut byte = [0_u8; 1];
     loop {
-        let read = stream.read(&mut byte).map_err(|e| format!("io: read: {e}"))?;
+        let read = stream
+            .read(&mut byte)
+            .map_err(|e| format!("io: read: {e}"))?;
         if read == 0 {
             return Err("protocol: connection closed before response head".to_owned());
         }
@@ -433,7 +444,11 @@ fn exchange_over_stream<S: Read + Write>(
     match framing {
         BodyFraming::Empty => {}
         BodyFraming::Length(length) => {
-            const READ_CHUNK: usize = if MAX_CHUNK_BYTES < 16 * 1024 { MAX_CHUNK_BYTES } else { 16 * 1024 };
+            const READ_CHUNK: usize = if MAX_CHUNK_BYTES < 16 * 1024 {
+                MAX_CHUNK_BYTES
+            } else {
+                16 * 1024
+            };
             let mut remaining_bytes = length;
             let mut chunk = [0_u8; READ_CHUNK];
             while remaining_bytes > 0 {
@@ -503,9 +518,15 @@ mod tests {
         secrets.authorize(SecretBinding {
             name: "token".to_owned(),
             endpoint: "https+private|localhost|443".to_owned(),
-            policy: InjectionPolicy::Header { name: "x-api-key".to_owned() },
+            policy: InjectionPolicy::Header {
+                name: "x-api-key".to_owned(),
+            },
         });
-        HttpEngine::new(ca_pem.to_vec(), Arc::new(secrets), crate::framing::DEFAULT_BODY_BUDGET)
+        HttpEngine::new(
+            ca_pem.to_vec(),
+            Arc::new(secrets),
+            crate::framing::DEFAULT_BODY_BUDGET,
+        )
     }
 
     #[test]
@@ -556,7 +577,9 @@ mod tests {
         );
         match outcome {
             HttpOutcome::Failed(message) => assert!(message.contains("permission"), "{message}"),
-            other @ HttpOutcome::Response { .. } => panic!("expected permission failure: {other:?}"),
+            other @ HttpOutcome::Response { .. } => {
+                panic!("expected permission failure: {other:?}")
+            }
         }
         let _ = server.finish();
     }
@@ -575,7 +598,11 @@ mod tests {
                 deadline: Duration::from_secs(5),
             },
             b"",
-            &[Endpoint { scheme: Scheme::Http, host: "127.0.0.1".to_owned(), port: 1 }],
+            &[Endpoint {
+                scheme: Scheme::Http,
+                host: "127.0.0.1".to_owned(),
+                port: 1,
+            }],
         );
         match outcome {
             HttpOutcome::Failed(message) => assert!(message.contains("dns:"), "{message}"),

@@ -124,7 +124,10 @@ impl SecretStore {
             }
             InjectionPolicy::AuthorizationBasic { username } => {
                 let raw = format!("{username}:{value}");
-                ("authorization".to_owned(), format!("Basic {}", b64(raw.as_bytes())))
+                (
+                    "authorization".to_owned(),
+                    format!("Basic {}", b64(raw.as_bytes())),
+                )
             }
             InjectionPolicy::Header { name } => (name.to_ascii_lowercase(), (*value).clone()),
         };
@@ -154,12 +157,24 @@ fn b64(data: &[u8]) -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = u32::from_be_bytes([0, b[0], b[1], b[2]]);
         out.push(TABLE[(n >> 18) as usize & 63] as char);
         out.push(TABLE[(n >> 12) as usize & 63] as char);
-        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[(n >> 6) as usize & 63] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[n as usize & 63] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -223,7 +238,11 @@ mod tests {
     fn authorized_injection_returns_only_the_header() {
         let store = store();
         let (name, value) = store
-            .resolve("github-token", "https|api.example.com|443", &InjectionPolicy::AuthorizationBearer)
+            .resolve(
+                "github-token",
+                "https|api.example.com|443",
+                &InjectionPolicy::AuthorizationBearer,
+            )
             .unwrap();
         assert_eq!(name, "authorization");
         assert_eq!(value, format!("Bearer {CANARY}"));
@@ -234,17 +253,31 @@ mod tests {
         let store = store();
         // Wrong endpoint.
         assert_eq!(
-            store.resolve("github-token", "https|other.example.com|443", &InjectionPolicy::AuthorizationBearer),
+            store.resolve(
+                "github-token",
+                "https|other.example.com|443",
+                &InjectionPolicy::AuthorizationBearer
+            ),
             Err(SecretError::WrongEndpoint)
         );
         // Wrong policy.
         assert_eq!(
-            store.resolve("github-token", "https|api.example.com|443", &InjectionPolicy::Header { name: "x-api-key".to_owned() }),
+            store.resolve(
+                "github-token",
+                "https|api.example.com|443",
+                &InjectionPolicy::Header {
+                    name: "x-api-key".to_owned()
+                }
+            ),
             Err(SecretError::WrongPolicy)
         );
         // Unknown secret.
         assert_eq!(
-            store.resolve("nope", "https|api.example.com|443", &InjectionPolicy::AuthorizationBearer),
+            store.resolve(
+                "nope",
+                "https|api.example.com|443",
+                &InjectionPolicy::AuthorizationBearer
+            ),
             Err(SecretError::UnknownSecret)
         );
         // Missing value (authorized name, no value inserted).
@@ -255,7 +288,11 @@ mod tests {
             policy: InjectionPolicy::AuthorizationBearer,
         });
         assert_eq!(
-            fresh_store.resolve("empty", "https|api.example.com|443", &InjectionPolicy::AuthorizationBearer),
+            fresh_store.resolve(
+                "empty",
+                "https|api.example.com|443",
+                &InjectionPolicy::AuthorizationBearer
+            ),
             Err(SecretError::MissingValue)
         );
     }
@@ -298,20 +335,36 @@ mod tests {
         store.authorize(SecretBinding {
             name: "git-basic".to_owned(),
             endpoint: "https|git.example.com|443".to_owned(),
-            policy: InjectionPolicy::AuthorizationBasic { username: "octocat".to_owned() },
+            policy: InjectionPolicy::AuthorizationBasic {
+                username: "octocat".to_owned(),
+            },
         });
         store.insert("api-key", "k-123");
         store.authorize(SecretBinding {
             name: "api-key".to_owned(),
             endpoint: "https|api.example.com|443".to_owned(),
-            policy: InjectionPolicy::Header { name: "X-API-Key".to_owned() },
+            policy: InjectionPolicy::Header {
+                name: "X-API-Key".to_owned(),
+            },
         });
         let (_, value) = store
-            .resolve("git-basic", "https|git.example.com|443", &InjectionPolicy::AuthorizationBasic { username: "octocat".to_owned() })
+            .resolve(
+                "git-basic",
+                "https|git.example.com|443",
+                &InjectionPolicy::AuthorizationBasic {
+                    username: "octocat".to_owned(),
+                },
+            )
             .unwrap();
         assert!(value.starts_with("Basic "));
         let (name, value) = store
-            .resolve("api-key", "https|api.example.com|443", &InjectionPolicy::Header { name: "x-api-key".to_owned() })
+            .resolve(
+                "api-key",
+                "https|api.example.com|443",
+                &InjectionPolicy::Header {
+                    name: "x-api-key".to_owned(),
+                },
+            )
             .unwrap();
         assert_eq!(name, "x-api-key");
         assert_eq!(value, "k-123");
