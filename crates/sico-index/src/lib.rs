@@ -19,9 +19,9 @@ pub struct IndexInput {
     pub source: SourceFile,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SemanticIndex {
-    pub schema: &'static str,
+    pub schema: String,
     pub protocol_version: u8,
     pub producer: Producer,
     pub snapshot: Snapshot,
@@ -31,27 +31,27 @@ pub struct SemanticIndex {
     pub relations: Vec<Relation>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Producer {
-    pub name: &'static str,
-    pub version: &'static str,
-    pub mode: &'static str,
+    pub name: String,
+    pub version: String,
+    pub mode: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Snapshot {
     pub id: String,
     pub quality: Quality,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Package {
     pub id: String,
     pub name: String,
     pub version: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ModuleEntry {
     pub id: String,
     pub name: String,
@@ -60,30 +60,30 @@ pub struct ModuleEntry {
     pub facets: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Symbol {
     pub id: String,
     pub module_id: String,
     pub kind: String,
     pub name: String,
-    pub visibility: &'static str,
+    pub visibility: String,
     pub source: SourceRange,
     pub quality: Quality,
     pub facets: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Relation {
-    pub kind: &'static str,
+    pub kind: String,
     pub from: String,
     pub to: String,
-    pub basis: &'static str,
+    pub basis: String,
     pub evidence: Vec<Evidence>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Quality {
-    pub state: &'static str,
+    pub state: String,
     pub reasons: Vec<String>,
     pub blocked_by: Vec<String>,
 }
@@ -91,7 +91,7 @@ pub struct Quality {
 impl Quality {
     fn complete() -> Self {
         Self {
-            state: "complete",
+            state: "complete".to_owned(),
             reasons: Vec::new(),
             blocked_by: Vec::new(),
         }
@@ -99,35 +99,35 @@ impl Quality {
 
     fn partial(reasons: Vec<String>, blocked_by: Vec<String>) -> Self {
         Self {
-            state: "partial",
+            state: "partial".to_owned(),
             reasons,
             blocked_by,
         }
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SourceRange {
     pub file: String,
     pub range: CoordinateRange,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CoordinateRange {
     pub start: Position,
     pub end: Position,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Position {
     pub byte: u32,
     pub line: u32,
     pub column: u32,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Evidence {
-    pub kind: &'static str,
+    pub kind: String,
     #[serde(rename = "ref")]
     pub reference: String,
 }
@@ -212,7 +212,7 @@ pub fn build_index(package_name: &str, version: &str, inputs: &[IndexInput]) -> 
     let known: BTreeSet<_> = symbols.iter().map(|symbol| symbol.id.as_str()).collect();
     relations.retain(|relation| known.contains(relation.to.as_str()));
     relations.sort_by(|left, right| {
-        (&left.from, &left.to, left.kind).cmp(&(&right.from, &right.to, right.kind))
+        (&left.from, &left.to, &left.kind).cmp(&(&right.from, &right.to, &right.kind))
     });
     relations.dedup_by(|left, right| {
         left.from == right.from && left.to == right.to && left.kind == right.kind
@@ -236,12 +236,12 @@ pub fn build_index(package_name: &str, version: &str, inputs: &[IndexInput]) -> 
     };
     let snapshot_id = snapshot_id(package_name, version, inputs);
     SemanticIndex {
-        schema: INDEX_SCHEMA,
+        schema: INDEX_SCHEMA.to_owned(),
         protocol_version: 0,
         producer: Producer {
-            name: "sico-index",
-            version: env!("CARGO_PKG_VERSION"),
-            mode: "compiler",
+            name: "sico-index".to_owned(),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            mode: "compiler".to_owned(),
         },
         snapshot: Snapshot {
             id: snapshot_id,
@@ -329,18 +329,18 @@ fn index_module(package_identity: &str, input: &IndexInput) -> IndexedModule {
             module_id: module_id.clone(),
             kind: kind.to_owned(),
             name,
-            visibility: visibility(&input.source, fact.range),
+            visibility: visibility(&input.source, fact.range).to_owned(),
             source: source_range(&input.source, &input.file, range),
             quality: quality.clone(),
             facets: symbol_facets,
         });
         relations.push(Relation {
-            kind: "contains",
+            kind: "contains".to_owned(),
             from: module_id.clone(),
             to: id,
-            basis: "verified",
+            basis: "verified".to_owned(),
             evidence: vec![Evidence {
-                kind: "analysis",
+                kind: "analysis".to_owned(),
                 reference: "compiler:sico-semantics".to_owned(),
             }],
         });
