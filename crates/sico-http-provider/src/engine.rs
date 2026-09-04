@@ -15,6 +15,9 @@ use rustls::pki_types::{CertificateDer, ServerName, pem::PemObject};
 use crate::authority::{Endpoint, address_allowed_for_scheme, canonicalize_url};
 use crate::framing::{BodyFraming, FramingError, MAX_CHUNK_BYTES, decide_framing};
 use crate::secrets::SecretStore;
+use crate::streaming::{
+    BodyReader, ConnectionPool, ResponseHead, SharedPool, Transport, is_idempotent,
+};
 
 /// Engine caps (RFC-0037 §7): ≤16 in-flight, ≤32 pooled, ≤8 per
 /// endpoint, one engine = one Store.
@@ -64,8 +67,10 @@ pub type ResponseParts = (u16, Vec<(String, String)>, Vec<u8>);
 pub struct HttpEngine {
     trust_roots_pem: Vec<u8>,
     secrets: Arc<SecretStore>,
-    in_flight: usize,
-    pooled: usize,
+    /// Shared so response bodies and upload pipes can release their slot at
+    /// their own terminal state (body EOF / finish / drop), not just here.
+    in_flight: Arc<std::sync::atomic::AtomicUsize>,
+    pool: SharedPool,
     body_budget: u64,
 }
 
@@ -78,10 +83,17 @@ impl HttpEngine {
         Self {
             trust_roots_pem,
             secrets,
-            in_flight: 0,
-            pooled: 0,
+            in_flight: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            pool: Arc::new(std::sync::Mutex::new(ConnectionPool::default())),
             body_budget,
         }
+    }
+
+    /// The Store-scoped connection pool handle (pooling never crosses a
+    /// Store or watch generation because the pool dies with the engine).
+    #[must_use]
+    pub fn pool(&self) -> SharedPool {
+        Arc::clone(&self.pool)
     }
 
     /// In-flight cap check (RFC-0037 §7).
@@ -91,16 +103,44 @@ impl HttpEngine {
     /// Typed cap message when the engine already holds
     /// [`MAX_IN_FLIGHT`] requests.
     pub fn begin_request(&mut self) -> Result<(), String> {
-        if self.in_flight >= MAX_IN_FLIGHT {
-            return Err("in-flight request cap reached (16)".to_owned());
+        loop {
+            let current = self.in_flight.load(std::sync::atomic::Ordering::SeqCst);
+            if current >= MAX_IN_FLIGHT {
+                return Err("in-flight request cap reached (16)".to_owned());
+            }
+            if self
+                .in_flight
+                .compare_exchange(
+                    current,
+                    current + 1,
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                )
+                .is_ok()
+            {
+                return Ok(());
+            }
         }
-        self.in_flight += 1;
-        Ok(())
     }
 
     pub fn end_request(&mut self) {
-        self.in_flight = self.in_flight.saturating_sub(1);
-        self.pooled = self.pooled.min(MAX_POOLED_CONNECTIONS);
+        self.in_flight
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |current| Some(current.saturating_sub(1)),
+            )
+            .ok(());
+    }
+
+    /// Releases one in-flight slot from an owned streaming participant
+    /// (response body or upload pipe) at its terminal state.
+    fn release_in_flight(counter: &std::sync::atomic::AtomicUsize) {
+        counter.fetch_update(
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+            |current| Some(current.saturating_sub(1)),
+        ).ok(());
     }
 
     /// Executes one bounded request through the full policy stack:

@@ -3,13 +3,13 @@
 > - updated: 2026-09-04
 > - phase: M12 Secure HTTP Provider is GO-core with full integration pending; M13 AI tooling closure runs as a parallel support track; M7 public deployment and M6/mobile remain deferred
 > - phase status: M11 complete (GO 2026-09-02, gates 10/10, Windows x64 + Linux x64 native); M12 must reach full GO before M14 implementation
-> - current step: STEP-0111 secure HTTP provider (M12 start; M11 GO)
+> - current step: 无内部主线（M12 STEP-0111–0118 完成，GO-core；M13 STEP-0119–0123 完成，GO；下一主线为 M14 应用就绪语言基线，按 STEP-0124 重排后路线图）
 > - current support step: 无（M13 STEP-0119/0120/0121 已完成）
-> - last completed active step: STEP-0110 (M11 exit audit: GO, 10/10 gates, Windows x64 + Linux x64 native evidence)
-> - last completed support step: STEP-0121 (MCP stdio agent-framework layer: 26th package sico-mcp-server, four frozen tools with JSON Schema, 512-mutation corpus fail-closed through MCP, real session roundtrip)
+> - last completed active step: STEP-0118 (M12 exit audit: GO-core; RFC-0037 + provider 五层 authority/TLS/framing/redirect/secrets+engine 全部冻结并测试，33/33 provider tests)
+> - last completed support step: STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence)
 > - next step: finish the two residual M12 integration deliverables recorded by STEP-0118; future M14–M18 implementation STEP numbers are intentionally unreserved
 > - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots
-> - next support step: STEP-0122 measurement completion (semantic-index accuracy/latency + observed error frequencies)；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入
+> - next support step: 无（M13 已收口）；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入以刷新 ADR-0011 target 判定
 
 ## 0. M6 exit state
 

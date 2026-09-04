@@ -135,6 +135,16 @@
 | [STEP-0119](./STEP-0119-ai-generation-quality-baseline.md) | complete | M13 | generation 失败归因、prompt/guide canonical 修正、fixture 修复与重测基线 0.8846→0.9744 |
 | [STEP-0120](./STEP-0120-ai-quality-budget-adr.md) | complete | M13 | ADR-0011 AI 质量预算：floor 非回归层（≤ 实测基线）与 target 完成门（proof 待 live-model，blocked-external-evidence） |
 | [STEP-0121](./STEP-0121-mcp-agent-integration.md) | complete | M13 | MCP stdio 接入层（sico-mcp-server，第 26 包）：四工具 JSON Schema 注册、budget 服务端持有不扩权、512 变异穿透 MCP fail-closed、真实会话 inspect→validate_fix roundtrip |
+| [STEP-0111](./STEP-0111-secure-http-rfc.md) | complete | M12 | RFC-0037 accepted：http@0.2.0 身份、endpoint authority、rustls 选型（含本机 roundtrip 证据）、redirect 矩阵、secret 模型、全部 bounds |
+| [STEP-0112](./STEP-0112-tls-transport.md) | complete | M12 | sico-http-provider（第 27 包）：确定性 rcgen CA + rustls 服务器/验证客户端；valid-accept + wrong-host/untrusted-issuer/malformed-PEM 拒绝；无 danger 路径 |
+| [STEP-0113](./STEP-0113-endpoint-authority-dns.md) | complete | M12 | 严格 authority 规范化（IPv4 文本欺骗/IPv4-mapped/zone/大小写/percent 全拒绝）、IDNA 只认 canonical ASCII、per-use 地址门（+private 开发 scheme） |
+| [STEP-0114](./STEP-0114-streaming-bodies.md) | complete | M12 | 严格传输分帧：重复/混合/非规范 Content-Length 拒绝、chunked 读取器（扩展拒绝、64KiB 上限、预算门）、trailer 界限；request-smuggling 语料绿 |
+| [STEP-0115](./STEP-0115-redirect-policy.md) | complete | M12 | opt-in ≤5 跳 redirect 引擎：冻结状态码矩阵、同 URL 环检测、HTTPS 降级拒绝、跨源结构性剥除 authorization/secret 头 |
+| [STEP-0116](./STEP-0116-secret-provider-redaction.md) | complete | M12 | Host 侧 opaque secret 注册表：name+endpoint+policy 精确三元的 typed 拒绝、header-only 注入（bearer/basic/header）、确定性指纹 redaction（canary 证明） |
+| [STEP-0117](./STEP-0117-connection-lifecycle-sdk.md) | complete-core | M12 | per-Store HttpEngine：authority→pinning→地址门→grant 检查→TLS/明文交换→redirect 链全组合；16 in-flight typed cap；每次请求单一终态；full roundtrip 测试含服务端 secret 注入 |
+| [STEP-0118](./STEP-0118-m12-exit-audit.md) | complete / GO-core | M12 | 10 项 exit gate：1-6/8 GO-core（合同+五层全部冻结并测试）；7 partial（pooling/retry 在 runner 集成）；自动 NO-GO 清零 |
+| [STEP-0122](./STEP-0122-measurement-completion.md) | complete | M13 | 语义索引 accuracy/latency 基准（median 776µs/p95 1927µs，8/8 fixture，可复现）+ taxonomy measured frequency（180/2880，含 provenance） |
+| [STEP-0123](./STEP-0123-ai-tooling-closure-audit.md) | complete / M13 GO | M13 | §13 收口审计：a/b/c GO，d blocked-external-evidence（ADR-0011 target 待 live-model）；validate-step-0123 机械校验全部声明 |
 | [STEP-0124](./STEP-0124-application-platform-roadmap.md) | complete-planning | M14–M18 roadmap | 冻结 application-ready language → Web/UI 与 Native Automation → vision/model → application pilots 路线，不预留实现 STEP |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core，完整 guest runner integration 与 Linux provider parity 仍待关闭。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨，权威 live-model 评测仍等待所有者提供 DeepSeek 凭据。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。
