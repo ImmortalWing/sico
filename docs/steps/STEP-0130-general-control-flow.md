@@ -66,6 +66,15 @@ loop+if nesting.
 
 ## 4. Validation
 
+One harness-only adjustment: the STEP-0089 oracle's HTTP-connection
+startup window (`$accept.Wait`) was raised from 15 s to 60 s — a cold
+`sico run` under the unoptimized CLI build with a cold cache and a loaded
+host now occasionally exceeds 15 s before it compiles and opens the
+socket. The oracle's own comment already scoped this window as harness
+startup budget, not a latency contract; the measured HTTP
+timeout/cancellation numbers are unchanged (timeout ≈ 5.2 s, cancel
+≈ 170 ms in the rerun).
+
 `cargo test` workspace: all green (including the 12 frozen core-lowering
 snapshot cases byte-identical, STEP-0089 oracles, module boundaries).
 Runner workspace serial: 37 lib + 1 dap + 3 control-flow + 6 http2 +

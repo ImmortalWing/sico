@@ -111,9 +111,11 @@ function Invoke-ServerCase(
     $accept = $listener.AcceptTcpClientAsync()
     $arguments = $argumentTemplate.Replace('{PORT}', [string]$port)
     $process = Start-CapturedProcess $program $arguments $stdin $environment
-    # A cold `sico run` may compile before opening the socket. This is harness
-    # startup budget, not the HTTP timeout/cancellation latency contract.
-    if (-not $accept.Wait(15000)) {
+    # A cold `sico run` (unoptimized CLI build, cold cache, loaded host) may
+    # take well over 15 s to compile before opening the socket. This window
+    # is harness startup budget only — the HTTP timeout/cancellation latency
+    # contracts are measured separately below.
+    if (-not $accept.Wait(60000)) {
         $result = Finish-Process $process 5000
         $listener.Stop()
         throw "expected HTTP connection, got exit=$($result.Exit) $($result.Stderr)"
