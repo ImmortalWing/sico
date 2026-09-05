@@ -1,7 +1,7 @@
 //! `sico-runner`: in-process runner for `sico:script/program@0.1.0` Program
 //! Components with the RFC-0029 exit mapping.
 //!
-//! Usage: `sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... PROGRAM.component.wasm [-- ARGS...]`
+//! Usage: `sico-runner [--json] [--fs-read-root PATH]... [--fs-write-root PATH]... [--allow-net HOST:PORT]... [--allow-endpoint scheme://HOST[:PORT]]... [--http-trust-roots FILE]... [--secret-file FILE] PROGRAM.component.wasm [-- ARGS...]`
 //!
 //! Guest stdin is the process stdin (bounded, 8 MiB). Guest stdout goes to
 //! process stdout; everything else is a machine-readable JSON diagnostic on
@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use sico_runner::{
-    CancelToken, CancellationSource, FsGrants, NetGrants, ObservationError, ObservedRun,
-    RunOutcome, Runner, RunnerLimits, ScriptInput, apply_cancel_request,
+    CancelToken, CancellationSource, FsGrants, HttpPolicy, NetGrants, ObservationError,
+    ObservedRun, RunOutcome, Runner, RunnerLimits, ScriptInput, apply_cancel_request,
     register_console_cancellation,
 };
 
@@ -41,6 +41,8 @@ fn run() -> i32 {
     let mut passthrough = false;
     let mut grants = FsGrants::default();
     let mut net = NetGrants::default();
+    let mut trust_root_paths: Vec<PathBuf> = Vec::new();
+    let mut secret_file_path: Option<PathBuf> = None;
     let mut cancel_after_ms = None;
     let mut fuel = None;
     let mut watch = false;
@@ -113,6 +115,23 @@ fn run() -> i32 {
             if let Err(error) = net.grant(&endpoint) {
                 return diagnostic(json, "cli", &format!("invalid --allow-net: {error}"));
             }
+        } else if argument == "--allow-endpoint" {
+            let Some(endpoint) = args.next() else {
+                return diagnostic(json, "cli", "missing endpoint after --allow-endpoint");
+            };
+            if let Err(error) = net.grant_secure(&endpoint) {
+                return diagnostic(json, "cli", &format!("invalid --allow-endpoint: {error}"));
+            }
+        } else if argument == "--http-trust-roots" {
+            let Some(path) = args.next() else {
+                return diagnostic(json, "cli", "missing path after --http-trust-roots");
+            };
+            trust_root_paths.push(PathBuf::from(path));
+        } else if argument == "--secret-file" {
+            let Some(path) = args.next() else {
+                return diagnostic(json, "cli", "missing path after --secret-file");
+            };
+            secret_file_path = Some(PathBuf::from(path));
         } else if argument == "--fs-read-root" || argument == "--fs-write-root" {
             let read = argument == "--fs-read-root";
             let Some(path) = args.next() else {
@@ -268,17 +287,28 @@ fn run() -> i32 {
             }
         };
     }
-    let outcome =
-        match runner.run_program_with_net(&component, &input, &limits, &cancel, &grants, &net) {
-            Ok(outcome) => outcome,
-            Err(violation) => {
-                return diagnostic(
-                    json,
-                    "resource-limit.input",
-                    &format!("input bound violated: {violation:?}"),
-                );
-            }
-        };
+    let http_policy = match build_http_policy(&trust_root_paths, secret_file_path.as_deref()) {
+        Ok(policy) => policy,
+        Err(error) => return diagnostic(json, "cli", &error),
+    };
+    let outcome = match runner.run_program_with_policy(
+        &component,
+        &input,
+        &limits,
+        &cancel,
+        &grants,
+        &net,
+        &http_policy,
+    ) {
+        Ok(outcome) => outcome,
+        Err(violation) => {
+            return diagnostic(
+                json,
+                "resource-limit.input",
+                &format!("input bound violated: {violation:?}"),
+            );
+        }
+    };
     report(json, &outcome)
 }
 
@@ -619,4 +649,57 @@ fn diagnostic(json: bool, class: &str, message: &str) -> i32 {
         })
     );
     EXIT_TOOL_ERROR
+}
+
+const MAX_TRUST_ROOTS_BYTES: u64 = 1024 * 1024;
+const MAX_SECRET_FILE_BYTES: u64 = 64 * 1024;
+
+/// Builds the HTTP 0.2.0 policy from Host-provided inputs: pinned PEM trust
+/// roots and an opaque secret registry (values enter via a file, never
+/// argv, and never reach the guest).
+fn build_http_policy(
+    trust_roots: &[PathBuf],
+    secret_file: Option<&Path>,
+) -> Result<HttpPolicy, String> {
+    let mut pem = Vec::new();
+    for path in trust_roots {
+        let bytes = std::fs::read(path)
+            .map_err(|error| format!("--http-trust-roots {}: {error}", path.display()))?;
+        if pem.len() as u64 + bytes.len() as u64 > MAX_TRUST_ROOTS_BYTES {
+            return Err("--http-trust-roots bundle exceeds 1 MiB".to_owned());
+        }
+        pem.extend_from_slice(&bytes);
+    }
+    let mut policy = HttpPolicy::with_trust_roots(pem);
+    if let Some(path) = secret_file {
+        let bytes = std::fs::read(path)
+            .map_err(|error| format!("--secret-file {}: {error}", path.display()))?;
+        if bytes.len() as u64 > MAX_SECRET_FILE_BYTES {
+            return Err("--secret-file exceeds 64 KiB".to_owned());
+        }
+        #[derive(serde::Deserialize)]
+        struct SecretEntry {
+            name: String,
+            value: String,
+            /// Binding identity: `scheme|host|port` (for example
+            /// `https+private|localhost|8443`).
+            endpoint: String,
+            /// Header the Host injects (bearer/basic/header policy follows
+            /// the provider's frozen header-only model).
+            header: String,
+        }
+        let entries: Vec<SecretEntry> =
+            serde_json::from_slice(&bytes).map_err(|error| format!("--secret-file: {error}"))?;
+        let mut store = sico_http_provider::secrets::SecretStore::new();
+        for entry in entries {
+            store.insert(&entry.name, &entry.value);
+            store.authorize(sico_http_provider::secrets::SecretBinding {
+                name: entry.name,
+                endpoint: entry.endpoint,
+                policy: sico_http_provider::secrets::InjectionPolicy::Header { name: entry.header },
+            });
+        }
+        policy = policy.with_secrets(std::sync::Arc::new(store));
+    }
+    Ok(policy)
 }

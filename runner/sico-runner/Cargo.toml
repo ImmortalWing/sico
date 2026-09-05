@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 ctrlc = "=3.5.2"
 sico-codegen-wasm = { path = "../../crates/sico-codegen-wasm" }
+sico-http-provider = { path = "../../crates/sico-http-provider" }
 sico-observability = { path = "../../crates/sico-observability" }
 sico-tooling-protocol = { path = "../../crates/sico-tooling-protocol" }
 serde = { version = "=1.0.228", features = ["derive"] }

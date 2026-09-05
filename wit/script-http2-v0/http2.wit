@@ -1,0 +1,93 @@
+// Draft WIT realization of RFC-0037 §1 (M12 STEP-0125): the versioned
+// `sico:script/http@0.2.0` interface, guest-visible through the runner.
+// The buffered `0.1.0` surface stays the bounded compatibility profile;
+// every `0.1.0` request is expressible as a `0.2.0` one-shot `request`.
+// The compiler frontend does not yet emit these imports (M14 baseline);
+// runner-level evidence uses directly encoded Program Components.
+//
+// Guest-visible errors are typed only: the Host never leaks URL, header,
+// secret or diagnostic text across this boundary.
+package sico:script@0.2.0;
+
+interface http {
+  /// RFC-0037 §1 structured error taxonomy (declaration order is the wire
+  /// discriminant order). `limit` covers bytes/headers/time/in-flight;
+  /// `cancel` is the runner-owned cancellation token firing.
+  enum http-error {
+    permission,
+    authority,
+    tls,
+    dns,
+    limit,
+    cancel,
+    protocol,
+    io,
+  }
+
+  record header {
+    name: string,
+    value: string,
+  }
+
+  record response-head {
+    status: s64,
+    headers: list<header>,
+  }
+
+  /// Buffered response (the 0.1.0 compatibility shape plus headers).
+  record response {
+    status: s64,
+    headers: list<header>,
+    body: list<u8>,
+  }
+
+  /// Per-request options. Policy is explicit, never ambient:
+  /// `follow-redirects` defaults off (M9 behavior), `retry-idempotent`
+  /// allows one extra connect for idempotent empty-body requests that fail
+  /// before any response byte, and `timeout-ms: 0` selects the Host default
+  /// (values are clamped to a 300 s Host ceiling).
+  record options {
+    headers: list<header>,
+    follow-redirects: bool,
+    retry-idempotent: bool,
+    timeout-ms: u64,
+  }
+
+  /// Affine response body: at most `max` bytes per `read` (Host clamps to
+  /// 64 KiB); the empty ok list is EOF; the first error is terminal.
+  /// Buffered and streaming consumption of one body never mix.
+  resource response-body {
+    read: func(max: u64) -> result<list<u8>, http-error>;
+  }
+
+  /// Affine chunked upload writer: at most 64 KiB per `write`; backpressure
+  /// blocks, never drops. Dropping the handle aborts the exchange.
+  resource request-body {
+    write: func(bytes: list<u8>) -> result<_, http-error>;
+  }
+
+  /// Buffered one-shot over the secure engine (TLS, endpoint authority,
+  /// DNS pinning, opt-in redirects, Host-injected secrets). At most
+  /// 64 MiB response body by default (Host budget).
+  request: func(method: string, url: string, options: options, body: list<u8>)
+    -> result<response, http-error>;
+
+  /// Streaming response: the head first, then the affine body reader.
+  request-streaming: func(method: string, url: string, options: options, body: list<u8>)
+    -> result<streaming-response, http-error>;
+
+  /// Streaming upload: open the affine writer, write bounded chunks, then
+  /// `finish` consumes it and yields the response head plus the affine
+  /// response reader.
+  open-upload: func(method: string, url: string, options: options)
+    -> result<request-body, http-error>;
+
+  /// Consume the upload writer; exactly one terminal outcome.
+  finish: func(body: own<request-body>)
+    -> result<streaming-response, http-error>;
+
+  record streaming-response {
+    head: response-head,
+    body: own<response-body>,
+  }
+}

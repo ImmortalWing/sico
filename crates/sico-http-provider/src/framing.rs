@@ -191,6 +191,13 @@ impl ChunkedReader {
         self.remaining_chunk > 0
     }
 
+    /// Payload bytes of the current chunk that have not been consumed yet
+    /// (0 unless [`Self::expecting_data`]).
+    #[must_use]
+    pub fn pending_chunk_bytes(&self) -> u64 {
+        self.remaining_chunk
+    }
+
     #[must_use]
     pub fn finished(&self) -> bool {
         self.finished

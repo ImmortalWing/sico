@@ -11,6 +11,7 @@ pub mod engine;
 pub mod framing;
 pub mod redirect;
 pub mod secrets;
+pub mod streaming;
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};

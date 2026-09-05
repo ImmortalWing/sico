@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 mod dap;
+pub mod http2;
 pub mod scheduler;
 
 pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
@@ -66,6 +67,18 @@ pub struct FsGrants {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct NetGrants {
     pub endpoints: Vec<(String, u16)>,
+    /// Scheme-aware grants backing `sico:script/http@0.2.0` (RFC-0037):
+    /// `https://`, `http://` and `https+private://` spellings, canonicalized
+    /// once through the provider's strict authority parser.
+    pub secure_endpoints: Vec<SecureEndpoint>,
+}
+
+/// One scheme-aware endpoint grant identity (RFC-0037 §2).
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct SecureEndpoint {
+    pub scheme: String,
+    pub host: String,
+    pub port: u16,
 }
 
 impl NetGrants {
@@ -83,10 +96,110 @@ impl NetGrants {
         Ok(())
     }
 
+    /// Adds one scheme-aware `scheme://host[:port]` grant (RFC-0037).
+    /// Canonicalization happens exactly once; ambiguous or non-canonical
+    /// authorities are refused before any grant exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded diagnostic without resolving or opening a socket.
+    pub fn grant_secure(&mut self, endpoint: &str) -> Result<(), String> {
+        use sico_http_provider::authority::{Endpoint as ProviderEndpoint, Scheme};
+        let canonical: ProviderEndpoint = sico_http_provider::authority::canonicalize_url(endpoint)
+            .map_err(|error| format!("authority: {error}"))?;
+        let scheme_text = match canonical.scheme {
+            Scheme::Http => "http",
+            Scheme::HttpPrivate => "http+private",
+            Scheme::Https => "https",
+            Scheme::HttpsPrivate => "https+private",
+        };
+        let secure = SecureEndpoint {
+            scheme: scheme_text.to_owned(),
+            host: canonical.host,
+            port: canonical.port,
+        };
+        if !self.secure_endpoints.contains(&secure) {
+            self.secure_endpoints.push(secure.clone());
+            self.secure_endpoints.sort();
+        }
+        Ok(())
+    }
+
     fn allows(&self, host: &str, port: u16) -> bool {
         self.endpoints
             .iter()
             .any(|(allowed_host, allowed_port)| allowed_host == host && *allowed_port == port)
+    }
+
+    /// Builds the exact provider endpoint set this Store may contact for
+    /// `http@0.2.0`: the 0.1.0 `host:port` grants map to plain `http`
+    /// endpoints (0.1.0 grants remain valid), plus every scheme-aware
+    /// grant. Empty means default-deny.
+    pub(crate) fn http2_endpoint_set(&self) -> Vec<sico_http_provider::authority::Endpoint> {
+        use sico_http_provider::authority::{Endpoint as ProviderEndpoint, Scheme};
+        let mut set: Vec<ProviderEndpoint> = self
+            .endpoints
+            .iter()
+            .map(|(host, port)| ProviderEndpoint {
+                scheme: Scheme::Http,
+                host: host.clone(),
+                port: *port,
+            })
+            .collect();
+        for secure in &self.secure_endpoints {
+            let Some(scheme) = Scheme::parse(&secure.scheme) else {
+                continue;
+            };
+            set.push(ProviderEndpoint {
+                scheme,
+                host: secure.host.clone(),
+                port: secure.port,
+            });
+        }
+        set
+    }
+}
+
+/// Host-side HTTP policy frozen into one prepared runner generation
+/// (RFC-0037 §3/§6): the explicit trust-root set and the Host-owned secret
+/// registry. Secret values never enter guest-visible memory.
+#[derive(Clone, Default)]
+pub struct HttpPolicy {
+    /// PEM trust roots for the pinned-roots trust mode. Empty means every
+    /// TLS handshake fails closed (no insecure fallback exists).
+    pub trust_roots_pem: Vec<u8>,
+    /// Host-owned opaque secrets; `None` means an empty registry.
+    pub secrets: Option<std::sync::Arc<sico_http_provider::secrets::SecretStore>>,
+}
+
+impl HttpPolicy {
+    /// Builds a policy trusting exactly `trust_roots_pem`.
+    #[must_use]
+    pub fn with_trust_roots(trust_roots_pem: Vec<u8>) -> Self {
+        Self {
+            trust_roots_pem,
+            secrets: None,
+        }
+    }
+
+    /// Attaches a Host-owned secret registry.
+    #[must_use]
+    pub fn with_secrets(
+        mut self,
+        secrets: std::sync::Arc<sico_http_provider::secrets::SecretStore>,
+    ) -> Self {
+        self.secrets = Some(secrets);
+        self
+    }
+}
+
+impl std::fmt::Debug for HttpPolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("HttpPolicy")
+            .field("trust_roots_bytes", &self.trust_roots_pem.len())
+            .field("secrets_registered", &self.secrets.as_ref().is_some())
+            .finish()
     }
 }
 
@@ -1012,6 +1125,9 @@ struct RunState {
     /// The run's bounded scheduler core (M11 STEP-0105): root task plus
     /// identity-checked Host-operation completion ingress.
     scheduler: SchedulerCore,
+    /// Per-Store `http@0.2.0` state (RFC-0037): engine, pool and
+    /// abandonment flag; dies with the Store.
+    http2: crate::http2::Http2State,
 }
 
 /// Bounded worker channels behind the stream host calls (STEP-0088): every
@@ -1086,8 +1202,8 @@ fn spawn_io_workers() -> IoWorkers {
 
 /// Waits for one worker response, returning `Cancelled` as soon as the
 /// run's token fires instead of blocking behind the OS call.
-fn recv_cancellable<T>(
-    receiver: &std::sync::mpsc::Receiver<Result<T, ()>>,
+pub(crate) fn recv_cancellable<T, E>(
+    receiver: &std::sync::mpsc::Receiver<Result<T, E>>,
     cancel: &CancelToken,
 ) -> Result<T, HostStreamError> {
     loop {
@@ -1096,7 +1212,7 @@ fn recv_cancellable<T>(
         }
         match receiver.try_recv() {
             Ok(Ok(value)) => return Ok(value),
-            Ok(Err(())) => return Err(HostStreamError::Io),
+            Ok(Err(_)) => return Err(HostStreamError::Io),
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 std::thread::sleep(Duration::from_millis(2));
             }
@@ -1110,7 +1226,7 @@ fn recv_cancellable<T>(
 /// Enqueues one bounded worker job without allowing a full depth-1 queue to
 /// hide cancellation. `SyncSender::send` can itself block before the response
 /// wait begins, so callers must use this polling form for every stream job.
-fn send_cancellable<T>(
+pub(crate) fn send_cancellable<T>(
     sender: &std::sync::mpsc::SyncSender<T>,
     mut value: T,
     cancel: &CancelToken,
@@ -1136,7 +1252,7 @@ fn send_cancellable<T>(
 #[derive(Clone, Copy, Debug, wasmtime::component::ComponentType, wasmtime::component::Lower)]
 #[component(enum)]
 #[repr(u8)]
-enum HostStreamError {
+pub(crate) enum HostStreamError {
     #[component(name = "io")]
     Io,
     #[component(name = "cancelled")]
@@ -1236,6 +1352,9 @@ pub struct PreparedProgram {
     streams_component: bool,
     debug_map: Option<Arc<DebugMap>>,
     debug_core_base: Option<u64>,
+    /// HTTP 0.2.0 policy frozen into this generation (RFC-0037 §3/§6);
+    /// callers must prepare a new generation to change trust or secrets.
+    http_policy: HttpPolicy,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1341,7 +1460,35 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<RunOutcome, InputViolation> {
-        match self.prepare_program_with_net(component, fs, net) {
+        self.run_program_with_policy(
+            component,
+            input,
+            limits,
+            cancel,
+            fs,
+            net,
+            &HttpPolicy::default(),
+        )
+    }
+
+    /// Runs with explicit filesystem/network grants and the HTTP 0.2.0
+    /// policy (trust roots + Host secrets).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] without any guest execution.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_program_with_policy(
+        &self,
+        component: &[u8],
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+        fs: &FsGrants,
+        net: &NetGrants,
+        policy: &HttpPolicy,
+    ) -> Result<RunOutcome, InputViolation> {
+        match self.prepare_program_with_policy(component, fs, net, policy) {
             Ok(prepared) => prepared.run(input, limits, cancel),
             Err(outcome) => Ok(outcome),
         }
@@ -1356,7 +1503,46 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<PreparedProgram, RunOutcome> {
-        self.prepare_program_inner(component, fs, net, None)
+        self.prepare_program_inner(component, fs, net, None, &HttpPolicy::default())
+    }
+
+    /// Compiles and links a Program with an explicit HTTP 0.2.0 policy
+    /// (pinned trust roots, Host secret registry).
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`RunOutcome::Launch`]/`Incompatible` failure.
+    pub fn prepare_program_with_policy(
+        &self,
+        component: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        policy: &HttpPolicy,
+    ) -> Result<PreparedProgram, RunOutcome> {
+        self.prepare_program_inner(component, fs, net, None, policy)
+    }
+
+    /// Compiles and links a debuggable Program with an explicit HTTP 0.2.0
+    /// policy; the Component, map and identity must pass the full digest
+    /// chain first.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`RunOutcome::Launch`]/`Incompatible` failure.
+    pub fn prepare_program_with_debug_policy(
+        &self,
+        component: &[u8],
+        debug_map: &[u8],
+        debug_identity: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        policy: &HttpPolicy,
+    ) -> Result<PreparedProgram, RunOutcome> {
+        let (map, _) = verify_debug_artifacts(component, debug_map, debug_identity)
+            .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
+        let core_base = embedded_guest_core_base(component)
+            .ok_or_else(|| RunOutcome::Incompatible("debug guest core is missing".into()))?;
+        self.prepare_program_inner(component, fs, net, Some((Arc::new(map), core_base)), policy)
     }
 
     /// Compiles and links a Program only after the Component, map and identity
@@ -1369,11 +1555,14 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<PreparedProgram, RunOutcome> {
-        let (map, _) = verify_debug_artifacts(component, debug_map, debug_identity)
-            .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
-        let core_base = embedded_guest_core_base(component)
-            .ok_or_else(|| RunOutcome::Incompatible("debug guest core is missing".into()))?;
-        self.prepare_program_inner(component, fs, net, Some((Arc::new(map), core_base)))
+        self.prepare_program_with_debug_policy(
+            component,
+            debug_map,
+            debug_identity,
+            fs,
+            net,
+            &HttpPolicy::default(),
+        )
     }
 
     fn prepare_program_inner(
@@ -1382,6 +1571,7 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
         debug: Option<(Arc<DebugMap>, u64)>,
+        policy: &HttpPolicy,
     ) -> Result<PreparedProgram, RunOutcome> {
         let component = match self.compile_cached(component) {
             Ok(component) => component,
@@ -1405,6 +1595,11 @@ impl Runner {
                 "http host setup failed: {error}"
             )));
         }
+        if let Err(error) = crate::http2::link_http2(&mut linker, net) {
+            return Err(RunOutcome::Launch(format!(
+                "http@0.2.0 host setup failed: {error}"
+            )));
+        }
         Ok(PreparedProgram {
             runner: self.clone(),
             component,
@@ -1412,6 +1607,7 @@ impl Runner {
             streams_component,
             debug_map: debug.as_ref().map(|(map, _)| map.clone()),
             debug_core_base: debug.map(|(_, base)| base),
+            http_policy: policy.clone(),
         })
     }
 
@@ -1531,6 +1727,7 @@ impl PreparedProgram {
                     run_id: run_id.to_owned(),
                     generation_id,
                 }),
+                http2: crate::http2::Http2State::new(&self.http_policy),
             },
         );
         store.limiter(|state| state);
@@ -1730,6 +1927,7 @@ impl PreparedProgram {
                 cancel: cancel.clone(),
                 io: spawn_io_workers(),
                 scheduler: SchedulerCore::new(identity),
+                http2: crate::http2::Http2State::new(&self.http_policy),
             },
         );
         store.limiter(|state| state);
@@ -1872,7 +2070,8 @@ fn settle_scheduler(state: &mut RunState, terminal: TerminalKind) -> Result<(), 
         })
 }
 
-fn embedded_guest_core_base(component: &[u8]) -> Option<u64> {    Parser::new(0)
+fn embedded_guest_core_base(component: &[u8]) -> Option<u64> {
+    Parser::new(0)
         .parse_all(component)
         .filter_map(|payload| match payload.ok()? {
             Payload::ModuleSection {
@@ -3389,6 +3588,7 @@ mod tests {
                 http_abandoned: false,
                 cancel: CancelToken::new(),
                 io: spawn_io_workers(),
+                http2: crate::http2::Http2State::new(&HttpPolicy::default()),
                 scheduler: SchedulerCore::new(RunIdentity {
                     run_id: "debug-probe".to_owned(),
                     generation_id: 1,

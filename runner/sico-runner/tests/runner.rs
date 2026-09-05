@@ -2617,16 +2617,13 @@ fn hundred_runs_with_changing_grants_show_no_leak_or_authority_drift() {
     // 100 generations alternating between granted and denied fs authority:
     // outcomes must be deterministic per grant parity (no authority leaks
     // across generations), with flat handles and RSS.
-    let directory = std::env::temp_dir().join(format!(
-        "sico-step0108-grants-{}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("sico-step0108-grants-{}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     std::fs::write(directory.join("input.txt"), "alpha beta gamma").unwrap();
     let source_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/end-to-end/script-file-transform.sico");
-    let component =
-        step0105_build_guest(&std::fs::read_to_string(&source_path).unwrap(), 0);
+    let component = step0105_build_guest(&std::fs::read_to_string(&source_path).unwrap(), 0);
     let runner = runner();
     // The runner's contract: grant roots are canonicalized by the caller.
     let canonical_root = directory.canonicalize().unwrap();

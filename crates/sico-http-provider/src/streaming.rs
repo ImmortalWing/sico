@@ -10,9 +10,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 
-use crate::framing::{BodyFraming, ChunkedReader, FramingError, MAX_CHUNK_BYTES, MAX_TRAILER_LINES, decide_framing};
+use crate::framing::{
+    BodyFraming, ChunkedReader, FramingError, MAX_CHUNK_BYTES, MAX_TRAILER_LINES, decide_framing,
+};
 
 /// Response head: status plus the raw header pairs as received.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +98,7 @@ impl Transport {
     #[must_use]
     pub fn drained(&self) -> bool {
         match self {
-            Self::Plain(stream) => stream.peek(&mut [0_u8; 1]).is_ok_and(usize::is_zero),
+            Self::Plain(stream) => stream.peek(&mut [0_u8; 1]).is_ok_and(|read| read == 0),
             Self::Tls(_) => false,
         }
     }
@@ -109,13 +111,15 @@ impl Transport {
 ///
 /// # Errors
 ///
-/// `protocol` on malformed heads, `io`/`timeout` on transport failures,
-/// `limit` past the 64 KiB head bound.
-pub fn read_head<S: Read>(stream: &mut S, deadline: Instant) -> Result<ResponseHead, String> {
+/// `protocol` on malformed heads, `io` on transport failures, `limit` past
+/// the 64 KiB head bound. Socket timeouts are the caller's responsibility.
+pub fn read_head<S: Read>(stream: &mut S) -> Result<ResponseHead, String> {
     let mut buffer = Vec::new();
     let mut byte = [0_u8; 1];
     loop {
-        let read = stream.read(&mut byte).map_err(crate::engine::classify_io)?;
+        let read = stream
+            .read(&mut byte)
+            .map_err(|error| crate::engine::classify_io(&error))?;
         if read == 0 {
             return Err("protocol: connection closed before response head".to_owned());
         }
@@ -196,7 +200,6 @@ pub struct BodyReader {
     framing: BodyFraming,
     remaining: u64,
     chunked: ChunkedReader,
-    line: Vec<u8>,
     consumed: u64,
     budget: u64,
     deadline: Instant,
@@ -217,7 +220,6 @@ impl BodyReader {
             framing,
             remaining,
             chunked: ChunkedReader::new(),
-            line: Vec::new(),
             consumed: 0,
             budget,
             deadline,
@@ -257,7 +259,7 @@ impl BodyReader {
         }
         let take = max.min(MAX_CHUNK_BYTES);
         let outcome = match self.framing {
-            BodyFraming::Empty => Ok(None),
+            BodyFraming::Empty => Ok(Vec::new()),
             BodyFraming::Length(_) => self.read_length(take),
             BodyFraming::Chunked => self.read_chunked(take),
             BodyFraming::UntilClose => self.read_until_close(take),
@@ -283,11 +285,12 @@ impl BodyReader {
             .unwrap_or(usize::MAX)
             .min(take);
         let mut buffer = vec![0_u8; want];
+        let left = self.deadline_left()?;
         let transport = self.transport()?;
-        transport.set_timeout(self.deadline_left()?)?;
+        transport.set_timeout(left)?;
         let read = transport
             .read(&mut buffer)
-            .map_err(crate::engine::classify_io)?;
+            .map_err(|error| crate::engine::classify_io(&error))?;
         if read == 0 {
             return Err("protocol: connection closed inside body".to_owned());
         }
@@ -302,11 +305,12 @@ impl BodyReader {
 
     fn read_until_close(&mut self, take: usize) -> Result<Vec<u8>, String> {
         let mut buffer = vec![0_u8; take];
+        let left = self.deadline_left()?;
         let transport = self.transport()?;
-        transport.set_timeout(self.deadline_left()?)?;
+        transport.set_timeout(left)?;
         let read = transport
             .read(&mut buffer)
-            .map_err(crate::engine::classify_io)?;
+            .map_err(|error| crate::engine::classify_io(&error))?;
         if read == 0 {
             return Ok(Vec::new());
         }
@@ -325,12 +329,19 @@ impl BodyReader {
                 return Ok(Vec::new());
             }
             if self.chunked.expecting_data() {
-                let mut buffer = vec![0_u8; take];
+                // Read at most the pending chunk bytes: the strict chunked
+                // reader is incremental, and bytes beyond the current chunk
+                // belong to the next size line.
+                let want = usize::try_from(self.chunked.pending_chunk_bytes())
+                    .unwrap_or(usize::MAX)
+                    .min(take);
+                let mut buffer = vec![0_u8; want];
+                let left = self.deadline_left()?;
                 let transport = self.transport()?;
-                transport.set_timeout(self.deadline_left()?)?;
+                transport.set_timeout(left)?;
                 let read = transport
                     .read(&mut buffer)
-                    .map_err(crate::engine::classify_io)?;
+                    .map_err(|error| crate::engine::classify_io(&error))?;
                 if read == 0 {
                     return Err("protocol: connection closed inside chunk".to_owned());
                 }
@@ -343,6 +354,13 @@ impl BodyReader {
                     })?;
                 self.consumed += payload as u64;
                 buffer.truncate(payload);
+                if self.chunked.pending_chunk_bytes() == 0 {
+                    // The chunk-terminating CRLF belongs to this chunk's
+                    // framing; consume and verify it before the next size
+                    // line.
+                    const CHUNK_CRLF: &[u8] = b"\r\n";
+                    self.read_exact_framing(CHUNK_CRLF)?;
+                }
                 if payload > 0 {
                     return Ok(buffer);
                 }
@@ -372,31 +390,52 @@ impl BodyReader {
         }
     }
 
+    /// Reads and verifies one exact framing byte sequence (chunk CRLF).
+    fn read_exact_framing(&mut self, expected: &[u8]) -> Result<(), String> {
+        let left = self.deadline_left()?;
+        let transport = self.transport()?;
+        transport.set_timeout(left)?;
+        let mut buffer = [0_u8; 2];
+        let mut filled = 0;
+        while filled < expected.len() {
+            let read = transport
+                .read(&mut buffer[filled..])
+                .map_err(|error| crate::engine::classify_io(&error))?;
+            if read == 0 {
+                return Err("protocol: connection closed inside framing".to_owned());
+            }
+            filled += read;
+        }
+        if &buffer[..filled] != expected {
+            return Err("protocol: chunk terminator missing".to_owned());
+        }
+        Ok(())
+    }
+
     /// Reads one CRLF-terminated line byte-wise, bounded by `limit`.
     fn read_line(&mut self, limit: usize) -> Result<String, String> {
-        self.line.clear();
+        let left = self.deadline_left()?;
         let transport = self.transport()?;
-        transport.set_timeout(self.deadline_left()?)?;
+        transport.set_timeout(left)?;
+        let mut line = Vec::new();
         loop {
             let mut byte = [0_u8; 1];
             let read = transport
                 .read(&mut byte)
-                .map_err(crate::engine::classify_io)?;
+                .map_err(|error| crate::engine::classify_io(&error))?;
             if read == 0 {
                 return Err("protocol: connection closed inside framing".to_owned());
             }
             if byte[0] == b'\n' {
-                if self.line.last() == Some(&b'\r') {
-                    self.line.pop();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
                 }
-                let text = std::str::from_utf8(&self.line)
-                    .map_err(|_| "protocol: framing line is not UTF-8".to_owned())?
-                    .to_owned();
-                self.line.clear();
-                return Ok(text);
+                return std::str::from_utf8(&line)
+                    .map_err(|_| "protocol: framing line is not UTF-8".to_owned())
+                    .map(str::to_owned);
             }
-            self.line.push(byte[0]);
-            if self.line.len() > limit {
+            line.push(byte[0]);
+            if line.len() > limit {
                 return Err("protocol: framing line exceeds bound".to_owned());
             }
         }
@@ -514,29 +553,17 @@ pub type SharedPool = Arc<Mutex<ConnectionPool>>;
 #[derive(Clone, Debug)]
 pub enum ResponsePlan {
     /// Content-Length framed body.
-    Length {
-        status: u16,
-        body: Vec<u8>,
-    },
+    Length { status: u16, body: Vec<u8> },
     /// Chunked framed body served as the given payload chunks.
-    Chunked {
-        status: u16,
-        chunks: Vec<Vec<u8>>,
-    },
+    Chunked { status: u16, chunks: Vec<Vec<u8>> },
     /// No framing headers; the connection closes after the body.
-    UntilClose {
-        status: u16,
-        body: Vec<u8>,
-    },
+    UntilClose { status: u16, body: Vec<u8> },
     /// Accept + TLS handshake, then close without any response bytes
     /// (transport-failure retry fixture).
     CloseBeforeResponse,
     /// Send the head, hang past the client deadline, then close (cancellation
     /// and deadline fixtures).
-    StallAfterHead {
-        status: u16,
-        stall_ms: u64,
-    },
+    StallAfterHead { status: u16, stall_ms: u64 },
     /// Wait `delay_ms` before each body chunk so the client can cancel
     /// mid-body; served with chunked framing.
     SlowBody {
@@ -573,6 +600,7 @@ pub struct HttpFixtureServer {
     connections: Arc<AtomicUsize>,
     requests: Arc<AtomicUsize>,
     observed: Arc<Mutex<Vec<ObservedRequest>>>,
+    stop: Arc<std::sync::atomic::AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -587,8 +615,7 @@ impl HttpFixtureServer {
         let fixture = crate::deterministic_ca("localhost");
         let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("ephemeral bind");
         let port = listener.local_addr().expect("local addr").port();
-        let leaf_cert =
-            CertificateDer::from_pem_slice(&fixture.leaf_pem).expect("leaf PEM parses");
+        let leaf_cert = CertificateDer::from_pem_slice(&fixture.leaf_pem).expect("leaf PEM parses");
         let leaf_key =
             PrivateKeyDer::from_pem_slice(&fixture.leaf_key_pem).expect("leaf key PEM parses");
         let config = Arc::new(
@@ -604,14 +631,35 @@ impl HttpFixtureServer {
         let worker_requests = Arc::clone(&requests);
         let worker_observed = Arc::clone(&observed);
         let plans = Mutex::new(plans);
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let worker_stop = Arc::clone(&stop);
         let worker = std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(stream) = stream else { break };
-                worker_connections.fetch_add(1, Ordering::SeqCst);
-                if serve_connection(stream, &config, &plans, &worker_requests, &worker_observed)
-                    .is_err()
-                {
+            listener
+                .set_nonblocking(true)
+                .expect("fixture listener nonblocking");
+            loop {
+                if worker_stop.load(Ordering::SeqCst) {
                     break;
+                }
+                match listener.accept() {
+                    Ok((stream, _)) => {
+                        worker_connections.fetch_add(1, Ordering::SeqCst);
+                        if serve_connection(
+                            stream,
+                            &config,
+                            &plans,
+                            &worker_requests,
+                            &worker_observed,
+                        )
+                        .is_err()
+                        {
+                            break;
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -621,6 +669,7 @@ impl HttpFixtureServer {
             connections,
             requests,
             observed,
+            stop,
             worker: Some(worker),
         }
     }
@@ -647,7 +696,12 @@ impl HttpFixtureServer {
     }
 
     /// Stops accepting and joins the server thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the server thread panicked, which only a fixture bug does.
     pub fn stop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
         if let Some(worker) = self.worker.take() {
             worker.join().expect("fixture server thread");
         }
@@ -661,14 +715,17 @@ impl Drop for HttpFixtureServer {
 }
 
 fn serve_connection(
-    stream: TcpStream,
+    mut stream: TcpStream,
     config: &Arc<rustls::ServerConfig>,
     plans: &Mutex<Vec<ResponsePlan>>,
     requests: &Arc<AtomicUsize>,
     observed: &Arc<Mutex<Vec<ObservedRequest>>>,
 ) -> Result<(), String> {
+    // Windows sockets inherit the listener's non-blocking state; the
+    // request/response loop below needs blocking reads.
     stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
+        .set_nonblocking(false)
+        .and_then(|()| stream.set_read_timeout(Some(Duration::from_secs(30))))
         .map_err(|error| error.to_string())?;
     let mut conn =
         rustls::ServerConnection::new(Arc::clone(config)).map_err(|error| error.to_string())?;
@@ -819,7 +876,7 @@ fn write_response<S: Write>(stream: &mut S, plan: &ResponsePlan) -> Result<(), S
                 .write_all(head.as_bytes())
                 .and_then(|()| stream.flush())
                 .map_err(|error| error.to_string())?;
-            for piece in body.chunks(chunk.max(1)) {
+            for piece in body.chunks((*chunk).max(1)) {
                 std::thread::sleep(Duration::from_millis(*delay_ms));
                 write_all(stream, &chunk_frame(piece))?;
             }
@@ -852,8 +909,8 @@ mod tests {
 
     #[test]
     fn head_parser_preserves_status_and_headers() {
-        let head = parse_response_head(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nx-a: b\r\n\r\n")
-            .unwrap();
+        let head =
+            parse_response_head(b"HTTP/1.1 200 OK\r\ncontent-length: 5\r\nx-a: b\r\n\r\n").unwrap();
         assert_eq!(head.status, 200);
         assert_eq!(head.header("content-length"), Some("5"));
         assert!(!head.connection_close());
@@ -868,7 +925,7 @@ mod tests {
 
     #[test]
     fn length_body_reader_serves_exact_bytes_then_eof() {
-        let (client, server) = pair();
+        let (client, mut server) = pair();
         server.set_nonblocking(true).unwrap();
         let mut reader = BodyReader::new(
             Transport::Plain(client),
@@ -888,7 +945,7 @@ mod tests {
 
     #[test]
     fn chunked_body_reader_decodes_incrementally() {
-        let (client, server) = pair();
+        let (client, mut server) = pair();
         server.set_nonblocking(true).unwrap();
         let mut reader = BodyReader::new(
             Transport::Plain(client),
@@ -897,7 +954,9 @@ mod tests {
             Instant::now() + Duration::from_secs(5),
         );
         server.set_nonblocking(false).unwrap();
-        server.write_all(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n").unwrap();
+        server
+            .write_all(b"3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n")
+            .unwrap();
         assert_eq!(reader.read(64).unwrap().unwrap(), b"abc");
         assert_eq!(reader.read(64).unwrap().unwrap(), b"de");
         assert!(reader.read(64).unwrap().is_none());
@@ -905,7 +964,7 @@ mod tests {
 
     #[test]
     fn chunked_reader_refuses_bad_size() {
-        let (client, server) = pair();
+        let (client, mut server) = pair();
         server.set_nonblocking(true).unwrap();
         let mut reader = BodyReader::new(
             Transport::Plain(client),
