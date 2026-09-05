@@ -77,6 +77,7 @@ fn program_fixture() -> Vec<u8> {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),

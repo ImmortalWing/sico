@@ -60,8 +60,8 @@ fn twelve_core_cases_lower_deterministically_and_remaining_valid_cases_refuse() 
                 );
                 snapshots.push(format!("{case}={}", shape(&module)));
             }
-            Err(CoreLowerError::Unsupported { .. }) => {
-                panic!("unexpected refusal for {case}");
+            Err(CoreLowerError::Unsupported { feature, range }) => {
+                panic!("unexpected refusal for {case}: {feature} at {range:?}");
             }
             Err(error) => panic!("{case}: {error:?}"),
         }
@@ -337,6 +337,8 @@ fn shape(module: &sico_ir::Module) -> String {
                             Operation::ConstString(_) => "const-string",
                             Operation::ConstBytes(_) => "const-bytes",
                             Operation::Copy(_) => "copy",
+                            Operation::ReadLocal { .. } => "read-local",
+                            Operation::WriteLocal { .. } => "write-local",
                             Operation::AddInt { .. } => "add-int",
                             Operation::CheckedAdd { .. } => "checked-add",
                             Operation::CheckedSub { .. } => "checked-sub",

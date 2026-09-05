@@ -1,0 +1,53 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let index = I64.literal(0)
+  let hits = I64.literal(0)
+  while I64.less_than(index, I64.literal(10)):
+    match I64.checked_add(index, I64.literal(1)):
+      case ok(next_index):
+        set index = next_index
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+    if I64.equal(index, I64.literal(3)):
+      continue
+    end if
+    if I64.equal(index, I64.literal(5)):
+      break
+    end if
+    match I64.checked_add(hits, I64.literal(1)):
+      case ok(next_hits):
+        set hits = next_hits
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end while
+  match I64.equal(hits, I64.literal(3)):
+    case true:
+      return ok(ScriptOutput(stdout: sico.text.encode("control-flow-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "wrong count"))
+  end match
+end function

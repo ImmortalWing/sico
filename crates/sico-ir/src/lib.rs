@@ -16,6 +16,7 @@ pub const SCHEMA: &str = "sico.ir.v0";
 pub const MAX_IR_DIAGNOSTICS: usize = 100;
 pub const MAX_FUNCTIONS: usize = 10_000;
 pub const MAX_BLOCKS_PER_FUNCTION: usize = 100_000;
+pub const MAX_LOCALS_PER_FUNCTION: usize = 256;
 pub const MAX_INSTRUCTIONS_PER_FUNCTION: usize = 1_000_000;
 pub const MAX_TASK_SCOPE_DEPTH: usize = 64;
 pub const MAX_TASK_SPAWNS_PER_SCOPE: usize = 1024;
@@ -106,8 +107,21 @@ pub struct Function {
     pub parameters: Vec<Parameter>,
     pub return_type: Type,
     pub effects: Vec<String>,
+    /// Mutable local cells (M14 STEP-0130): names reassigned via `set` or
+    /// across loop iterations. Empty for every pre-STEP-0130 function.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub locals: Vec<Local>,
     pub entry: BlockId,
     pub blocks: Vec<Block>,
+    pub range: SourceRange,
+}
+
+/// One mutable local cell. Reads emit [`Operation::ReadLocal`], writes
+/// [`Operation::WriteLocal`]; ids ascend from 0 in first-assignment order.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Local {
+    pub name: String,
+    pub ty: Type,
     pub range: SourceRange,
 }
 
@@ -219,6 +233,13 @@ pub enum Operation {
     Try(ValueId),
     Await(ValueId),
     StreamNext(ValueId),
+    ReadLocal {
+        local: u32,
+    },
+    WriteLocal {
+        local: u32,
+        value: ValueId,
+    },
     TaskScopeOpen {
         scope: u32,
     },
@@ -246,14 +267,16 @@ impl Operation {
             | Self::ConstString(_)
             | Self::ConstBytes(_)
             | Self::TaskScopeOpen { .. }
-            | Self::TaskScopeClose { .. } => Vec::new(),
+            | Self::TaskScopeClose { .. }
+            | Self::ReadLocal { .. } => Vec::new(),
             Self::Copy(value)
             | Self::ResourceMove(value)
             | Self::ResourceBorrow(value)
             | Self::ResourceDrop(value)
             | Self::Try(value)
             | Self::Await(value)
-            | Self::StreamNext(value) => vec![*value],
+            | Self::StreamNext(value)
+            | Self::WriteLocal { value, .. } => vec![*value],
             Self::AddInt { left, right }
             | Self::CheckedAdd { left, right }
             | Self::CheckedSub { left, right }
@@ -452,8 +475,18 @@ impl<'a> Verifier<'a> {
                 .map(|block| block.instructions.len())
                 .sum::<usize>()
                 > MAX_INSTRUCTIONS_PER_FUNCTION
+            || function.locals.len() > MAX_LOCALS_PER_FUNCTION
         {
             self.error(&root, VerifyErrorKind::Limit);
+        }
+        for (index, local) in function.locals.iter().enumerate() {
+            self.range(&format!("{root}.local[{index}].range"), local.range);
+            if local.name.is_empty() {
+                self.error(
+                    format!("{root}.local[{index}].name"),
+                    VerifyErrorKind::Limit,
+                );
+            }
         }
         if function.effects.windows(2).any(|pair| pair[0] >= pair[1]) {
             self.error(
@@ -539,6 +572,7 @@ impl<'a> Verifier<'a> {
                     instruction,
                     &available,
                     &function.effects,
+                    &function.locals,
                 );
                 available.insert(instruction.result, instruction.ty.clone());
             }
@@ -560,12 +594,14 @@ impl<'a> Verifier<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn verify_operation(
         &mut self,
         path: &str,
         instruction: &Instruction,
         available: &BTreeMap<ValueId, Type>,
         effects: &[String],
+        locals: &[Local],
     ) {
         for operand in instruction.operation.operands() {
             if !available.contains_key(&operand) {
@@ -652,6 +688,26 @@ impl<'a> Verifier<'a> {
                 if !matches!(available.get(resource), Some(Type::BorrowedResource(_))) {
                     self.error(path, VerifyErrorKind::TypeMismatch);
                 }
+            }
+            Operation::ReadLocal { local } => {
+                let Some(decl) = locals.get(*local as usize) else {
+                    self.error(path, VerifyErrorKind::UndefinedValue);
+                    return;
+                };
+                if instruction.ty != decl.ty {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                }
+            }
+            Operation::WriteLocal { local, value } => {
+                let Some(decl) = locals.get(*local as usize) else {
+                    self.error(path, VerifyErrorKind::UndefinedValue);
+                    return;
+                };
+                if instruction.ty != Type::Unit {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                    return;
+                }
+                self.expect_type(path, available.get(value), &decl.ty);
             }
             Operation::RevisionCheck { value, expected } => {
                 match (available.get(value), available.get(expected)) {

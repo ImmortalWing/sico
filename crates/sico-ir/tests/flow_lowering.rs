@@ -324,6 +324,8 @@ fn operation_name(operation: &Operation) -> &'static str {
         Operation::ResourceDrop(_) => "resource-drop",
         Operation::RevisionCheck { .. } => "revision-check",
         Operation::Try(_) => "try",
+        Operation::ReadLocal { .. } => "read-local",
+        Operation::WriteLocal { .. } => "write-local",
         Operation::Await(_) => "await",
         Operation::StreamNext(_) => "stream-next",
         Operation::TaskScopeOpen { .. } => "task-scope-open",

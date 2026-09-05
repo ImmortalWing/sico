@@ -1359,9 +1359,11 @@ fn compile_function(
 ) -> Result<CompiledFunction, CodegenError> {
     let plan = LocalLayout::plan(function, script)?;
     let layout = plan.layout;
+    let cell_slots = plan.cell_slots;
     let dispatcher = plan.dispatcher;
     let scratch = plan.scratch;
-    let mut body = Function::new(plan.locals);
+    let locals = plan.locals;
+    let mut body = Function::new(locals);
     body.instruction(&Instruction::I32Const(
         i32::try_from(function.entry.0)
             .map_err(|_| unsupported(&function.name, "block id outside i32"))?,
@@ -1373,6 +1375,7 @@ fn compile_function(
         function,
         layout: &layout,
         abi,
+        cell_slots: &cell_slots,
         dispatcher,
         function_indices,
         variant_tags,
@@ -1472,6 +1475,9 @@ type ScriptData = (BTreeMap<Vec<u8>, u32>, Vec<u8>);
 struct LocalPlan {
     locals: WasmLocals,
     layout: LocalLayout,
+    /// Wasm slots per IR local cell (M14 STEP-0130); empty when the
+    /// function declares no cells so existing layouts stay byte-stable.
+    cell_slots: Vec<Vec<u32>>,
     dispatcher: u32,
     scratch: Option<(u32, u32)>,
 }
@@ -1574,6 +1580,19 @@ impl LocalLayout {
             }
             values.insert(instruction.result, value_layout);
         }
+        let mut cell_slots = Vec::new();
+        for local in &function.locals {
+            let types = lower_local_types(&function.name, &local.ty, script.map(|emit| &emit.abi))?;
+            let mut slots = Vec::new();
+            for ty in &types {
+                slots.push(next);
+                next = next
+                    .checked_add(1)
+                    .ok_or_else(|| unsupported(&function.name, "too many Wasm locals"))?;
+                locals.push((1, *ty));
+            }
+            cell_slots.push(slots);
+        }
         let dispatcher = next;
         locals.push((1, ValType::I32));
         next = next
@@ -1589,6 +1608,7 @@ impl LocalLayout {
         Ok(LocalPlan {
             locals,
             layout: Self { values },
+            cell_slots,
             dispatcher,
             scratch,
         })
@@ -1660,9 +1680,19 @@ fn inferred_local_layout(
             layout.fields.clone_from(&source.fields);
             layout.variant = source.variant;
         }
-        Operation::TaskScopeOpen { .. } | Operation::TaskScopeClose { .. } => {
-            // Region markers are compile-time structure (RFC-0036 §5.4):
-            // their Unit results occupy no locals.
+        Operation::TaskScopeOpen { .. }
+        | Operation::TaskScopeClose { .. }
+        | Operation::WriteLocal { .. } => {
+            // Region markers are compile-time structure (RFC-0036 §5.4) and
+            // cell writes are Unit: no result slots.
+        }
+        Operation::ReadLocal { local } => {
+            let Some(decl) = function.locals.get(*local as usize) else {
+                return Err(unsupported(&function.name, "missing local cell"));
+            };
+            layout.types = lower_local_types(&function.name, &decl.ty, script)?;
+            apply_result_fields(&mut layout, script, &decl.ty);
+            layout.variant = matches!(&decl.ty, Type::Result { .. } | Type::Option(_));
         }
         Operation::Construct { fields, .. } if matches!(&instruction.ty, Type::List(_)) => {
             // A collect list is a (table, count) pair in the bounded arena,
@@ -1691,6 +1721,7 @@ fn inferred_local_layout(
                     "project layout after verification",
                 ));
             };
+
             let Some(indices) = base.fields.get(field) else {
                 return Err(unsupported(
                     &function.name,
@@ -1774,6 +1805,7 @@ fn inferred_local_layout(
                 .insert(name.clone(), (shift..shift + payload_types.len()).collect());
         }
         _ => {
+            layout.variant = matches!(&instruction.ty, Type::Result { .. } | Type::Option(_));
             layout.types = lower_local_types(&function.name, &instruction.ty, script)?;
             // Result-typed values carry both payloads' field maps with
             // shifted slot indices: ok fields after the tag, error fields
@@ -1820,6 +1852,46 @@ fn record_fields<'a>(abi: &'a ScriptAbi, ty: &Type) -> Option<&'a canonical::Rec
     match ty {
         Type::Named(name) => abi.record(name),
         _ => None,
+    }
+}
+
+/// Adds the synthetic `ok`/`error` field maps (plus record payload fields)
+/// to a Result-typed value layout (M14 STEP-0130 local-cell reads).
+fn apply_result_fields(layout: &mut ValueLayout, script: Option<&ScriptAbi>, ty: &Type) {
+    if let (Some(abi), Type::Result { ok, error }) = (script, ty)
+        && let Some(ok_flat) = abi.flat_ir_types(ok)
+    {
+        layout
+            .fields
+            .insert("ok".to_owned(), (1..=ok_flat.len()).collect());
+        // The error payload may be unflattenable (for example
+        // `NumericError`, whose layout is the fixed [I32, I64] tag form);
+        // its fields are then simply absent, and `case error(_)` still
+        // matches by tag.
+        if let Some(error_flat) = abi.flat_ir_types(error) {
+            layout.fields.insert(
+                "error".to_owned(),
+                (1 + ok_flat.len()..1 + ok_flat.len() + error_flat.len()).collect(),
+            );
+            if let Some(error_record) = record_fields(abi, error) {
+                let offset = 1 + ok_flat.len();
+                for field in &error_record.fields {
+                    layout.fields.insert(
+                        ir_field_name(&field.name),
+                        (offset + field.slot_start..offset + field.slot_start + field.slot_len)
+                            .collect(),
+                    );
+                }
+            }
+        }
+        if let Some(ok_record) = record_fields(abi, ok) {
+            for field in &ok_record.fields {
+                layout.fields.insert(
+                    ir_field_name(&field.name),
+                    (1 + field.slot_start..1 + field.slot_start + field.slot_len).collect(),
+                );
+            }
+        }
     }
 }
 
@@ -2029,6 +2101,7 @@ struct CompileContext<'a> {
     function: &'a IrFunction,
     layout: &'a LocalLayout,
     abi: CoreAbi,
+    cell_slots: &'a [Vec<u32>],
     dispatcher: u32,
     function_indices: &'a BTreeMap<FunctionId, u32>,
     variant_tags: &'a VariantTags,
@@ -2228,6 +2301,32 @@ fn compile_instructions(
                     for slot in result.iter().rev() {
                         body.instruction(&Instruction::LocalSet(*slot));
                     }
+                }
+            }
+            Operation::ReadLocal { local } => {
+                let Some(slots) = context.cell_slots.get(*local as usize) else {
+                    return Err(unsupported(&function.name, "missing local cell"));
+                };
+                let result = layout.get(&function.name, instruction.result)?;
+                if slots.len() != result.len() {
+                    return Err(unsupported(&function.name, "local cell layout"));
+                }
+                for (cell, result) in slots.iter().zip(result) {
+                    body.instruction(&Instruction::LocalGet(*cell));
+                    body.instruction(&Instruction::LocalSet(*result));
+                }
+            }
+            Operation::WriteLocal { local, value } => {
+                let Some(slots) = context.cell_slots.get(*local as usize) else {
+                    return Err(unsupported(&function.name, "missing local cell"));
+                };
+                let source = layout.get(&function.name, *value)?;
+                if slots.len() != source.len() {
+                    return Err(unsupported(&function.name, "local cell layout"));
+                }
+                for (cell, source) in slots.iter().zip(source) {
+                    body.instruction(&Instruction::LocalGet(*source));
+                    body.instruction(&Instruction::LocalSet(*cell));
                 }
             }
             Operation::TaskScopeOpen { .. } | Operation::TaskScopeClose { .. } => {

@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use sico_hir::{Declaration, HirToken, LineKind, lower};
+use sico_hir::{Declaration, HirToken, Line, LineKind, lower};
 use sico_lexer::TokenKind;
 use sico_parser::DeclarationKind;
 use sico_semantics::{AnalyzeError, SemanticDiagnostic};
 use sico_source::{SourceFile, TextRange};
 
 use crate::{
-    Block, BlockId, ConstructField, EntryError, Function, FunctionId, Instruction, MatchArm,
+    Block, BlockId, ConstructField, EntryError, Function, FunctionId, Instruction, Local, MatchArm,
     Module, Operation, Parameter, Pattern, SourceRange, TaskScope, Terminator, Type, ValueId,
     VerifyError, require_semantic_success, verify,
 };
@@ -59,6 +59,10 @@ struct FunctionBuilder<'a> {
     /// Owning scope of each spawned `Task` value, so `collect_tasks` can
     /// name the scope its list belongs to.
     spawn_scopes: BTreeMap<ValueId, u32>,
+    /// Mutable local cells (M14 STEP-0130): name -> (local id, type).
+    cells: BTreeMap<String, (u32, Type)>,
+    /// Cell declarations in allocation order (becomes `Function.locals`).
+    locals: Vec<Local>,
 }
 
 /// Canonical task-scope declaration plan for one function (RFC-0036 §5.1):
@@ -314,6 +318,8 @@ fn lower_function(
         declared_effects: effects.clone(),
         scope_stack: Vec::new(),
         spawn_scopes: BTreeMap::new(),
+        cells: BTreeMap::new(),
+        locals: Vec::new(),
     };
     let scope_plan = TaskScopePlan::of(declaration);
     let match_index = declaration
@@ -324,10 +330,26 @@ fn lower_function(
         .lines
         .iter()
         .position(|line| line.kind == LineKind::If);
+    let has_general_control = declaration.lines.iter().skip(1).any(|line| {
+        matches!(
+            line.kind,
+            LineKind::While | LineKind::Break | LineKind::Continue | LineKind::Set | LineKind::Else
+        )
+    });
     let blocks = if let Some(index) = if_index {
-        lower_revision_if(declaration, index, &mut builder, &body_return_type)?
+        if is_revision_if_shape(declaration, index) {
+            lower_revision_if(declaration, index, &mut builder, &body_return_type)?
+        } else {
+            lower_general(declaration, &mut builder, &body_return_type, &scope_plan)?
+        }
     } else if let Some(index) = match_index {
-        lower_match(declaration, index, &mut builder, &body_return_type)?
+        if is_strict_match_shape(declaration, index) {
+            lower_match(declaration, index, &mut builder, &body_return_type)?
+        } else {
+            lower_general(declaration, &mut builder, &body_return_type, &scope_plan)?
+        }
+    } else if has_general_control {
+        lower_general(declaration, &mut builder, &body_return_type, &scope_plan)?
     } else {
         vec![lower_straight_line(
             declaration,
@@ -343,12 +365,773 @@ fn lower_function(
             parameters,
             return_type: signature.return_type.clone(),
             effects,
+            locals: std::mem::take(&mut builder.locals),
             entry: BlockId(0),
             blocks,
             range: source_range(declaration.range),
         },
         scope_plan.scopes,
     ))
+}
+
+/// True when the function matches the frozen revision-guard shape exactly
+/// (metadata/expressions prefix, one top-level `==` if, single-return
+/// branches), keeping it on the specialized `RevisionCheck` path.
+fn is_revision_if_shape(declaration: &Declaration, if_index: usize) -> bool {
+    if declaration.lines[1..if_index].iter().any(|line| {
+        !matches!(
+            line.kind,
+            LineKind::Effects | LineKind::Capabilities | LineKind::Expression
+        )
+    }) {
+        return false;
+    }
+    let if_line = &declaration.lines[if_index];
+    let condition_tokens = &if_line.tokens[1..if_line.tokens.len().saturating_sub(1)];
+    if top_level_position(condition_tokens, TokenKind::EqualEqual).is_none() {
+        return false;
+    }
+    let Some(then_line) = declaration.lines.get(if_index + 1) else {
+        return false;
+    };
+    if then_line.kind != LineKind::Return {
+        return false;
+    }
+    let Some(end_index) = declaration
+        .lines
+        .iter()
+        .enumerate()
+        .skip(if_index + 2)
+        .find_map(|(index, line)| (line.kind == LineKind::End).then_some(index))
+    else {
+        return false;
+    };
+    declaration
+        .lines
+        .get(end_index + 1)
+        .is_some_and(|line| line.kind == LineKind::Return)
+}
+
+/// True when the function matches the frozen all-return match shape
+/// (metadata prefix, every arm exactly one `return` line) so lowering stays
+/// on the byte-stable specialized path.
+fn is_strict_match_shape(declaration: &Declaration, match_index: usize) -> bool {
+    if declaration.lines[1..match_index]
+        .iter()
+        .any(|line| !matches!(line.kind, LineKind::Effects | LineKind::Capabilities))
+    {
+        return false;
+    }
+    let depth = declaration.lines[match_index].depth;
+    let mut cursor = match_index + 1;
+    let mut saw_arm = false;
+    while cursor < declaration.lines.len() {
+        let line = &declaration.lines[cursor];
+        if line.kind == LineKind::End && line.depth == depth {
+            return saw_arm;
+        }
+        if !(line.kind == LineKind::MatchArm && line.depth == depth + 1) {
+            return false;
+        }
+        saw_arm = true;
+        match declaration.lines.get(cursor + 1) {
+            Some(body) if body.kind == LineKind::Return && body.depth > depth => {
+                cursor += 1;
+            }
+            _ => return false,
+        }
+        cursor += 1;
+    }
+    false
+}
+
+/// One in-flight CFG block; the id equals the index in the materialized
+/// `Vec<Block>`. Sealed exactly once.
+struct PendingBlock {
+    instructions: Vec<Instruction>,
+    terminator: Option<Terminator>,
+    range: TextRange,
+    /// Creation index (pre-renumbering), for reference remapping.
+    creation: usize,
+    /// When the block first became the lowering target; `ValueId`s are
+    /// assigned in this order, so materialization must follow it.
+    became_current: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+struct LoopFrame {
+    header: usize,
+    after: usize,
+}
+
+struct RegionClose {
+    else_index: Option<usize>,
+    end_index: usize,
+}
+
+/// Finds the close of an `if`/`while` region opened at `depth`: the first
+/// same-depth `else` (when allowed) and the same-depth `end`.
+fn find_region_close(
+    lines: &[Line],
+    start: usize,
+    end: usize,
+    depth: u16,
+    allow_else: bool,
+    error_range: TextRange,
+) -> Result<RegionClose, CoreLowerError> {
+    let mut else_index = None;
+    for (index, line) in lines.iter().enumerate().take(end).skip(start) {
+        match line.kind {
+            // `else` sits at the body level, one below the `if` itself; a
+            // nested if's own `else` is deeper and cannot match here.
+            LineKind::Else if allow_else && else_index.is_none() && line.depth == depth + 1 => {
+                else_index = Some(index);
+            }
+            LineKind::End if line.depth == depth => {
+                return Ok(RegionClose {
+                    else_index,
+                    end_index: index,
+                });
+            }
+            _ => {}
+        }
+    }
+    Err(unsupported_error("unterminated region", error_range))
+}
+
+/// General structured lowering (M14 STEP-0130): arbitrary nesting of
+/// `if`/`else`, `while` loops with `break`/`continue`, fall-through match
+/// arms, and `set` reassignment through IR local cells. Bindings introduced
+/// inside a region are dropped when the region closes; cells persist.
+struct GeneralLowering<'a, 'b> {
+    builder: &'a mut FunctionBuilder<'b>,
+    blocks: Vec<PendingBlock>,
+    current: Option<usize>,
+    loop_stack: Vec<LoopFrame>,
+    return_type: &'a Type,
+    scope_plan: &'a TaskScopePlan,
+    cell_names: BTreeSet<String>,
+    metadata: bool,
+    using_resource: Option<ValueId>,
+    nested: usize,
+    next_creation: usize,
+    emission_seq: u32,
+}
+
+impl GeneralLowering<'_, '_> {
+    fn new_block(&mut self, range: TextRange) -> usize {
+        let creation = self.next_creation;
+        self.next_creation += 1;
+        self.blocks.push(PendingBlock {
+            instructions: Vec::new(),
+            terminator: None,
+            range,
+            creation,
+            became_current: None,
+        });
+        self.blocks.len() - 1
+    }
+
+    fn seal_current(&mut self, terminator: Terminator) {
+        if let Some(index) = self.current.take() {
+            self.blocks[index].terminator = Some(terminator);
+        }
+    }
+
+    fn set_current(&mut self, index: usize) {
+        let seq = self.emission_seq;
+        if self.blocks[index].became_current.is_none() {
+            self.blocks[index].became_current = Some(seq);
+            self.emission_seq += 1;
+        }
+        self.current = Some(index);
+    }
+
+    fn ensure_current(&mut self, range: TextRange) {
+        if self.current.is_none() {
+            let id = self.new_block(range);
+            self.set_current(id);
+        }
+    }
+
+    /// Lowers `lines[start..end]` (absolute indices) into the open block.
+    #[allow(clippy::too_many_lines)]
+    fn run(&mut self, lines: &[Line], start: usize, end: usize) -> Result<(), CoreLowerError> {
+        let mut index = start;
+        while index < end {
+            let line = &lines[index];
+            match line.kind {
+                LineKind::Let => {
+                    self.ensure_current(line.range);
+                    let equal = position(&line.tokens, TokenKind::Equal)
+                        .ok_or_else(|| unsupported_error("let without value", line.range))?;
+                    let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+                    let (value, ty) = self.builder.expression(
+                        &line.tokens[equal + 1..],
+                        None,
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    )?;
+                    if self.cell_names.contains(name) {
+                        if self.builder.cells.contains_key(name) {
+                            return unsupported("cell redeclared", line.range);
+                        }
+                        let local = u32::try_from(self.builder.locals.len())
+                            .map_err(|_| unsupported_error("local limit", line.range))?;
+                        self.builder.locals.push(Local {
+                            name: name.to_owned(),
+                            ty: ty.clone(),
+                            range: source_range(line.tokens[1].range),
+                        });
+                        self.builder
+                            .cells
+                            .insert(name.to_owned(), (local, ty.clone()));
+                        self.builder.emit(
+                            Type::Unit,
+                            Operation::WriteLocal { local, value },
+                            line.range,
+                            &mut self.blocks[self.current.expect("current")].instructions,
+                        );
+                    } else {
+                        self.builder.bindings.insert(name.to_owned(), (value, ty));
+                    }
+                }
+                LineKind::Set => {
+                    self.ensure_current(line.range);
+                    let equal = position(&line.tokens, TokenKind::Equal)
+                        .ok_or_else(|| unsupported_error("set without value", line.range))?;
+                    let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+                    let Some((local, ty)) = self.builder.cells.get(name).cloned() else {
+                        return unsupported("set without prior let", line.range);
+                    };
+                    let (value, value_ty) = self.builder.expression(
+                        &line.tokens[equal + 1..],
+                        Some(&ty),
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    )?;
+                    if value_ty != ty {
+                        return unsupported("set type mismatch", line.range);
+                    }
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal { local, value },
+                        line.range,
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    );
+                }
+                LineKind::Return => {
+                    self.ensure_current(line.range);
+                    self.metadata = false;
+                    let current = self.current.expect("current");
+                    let mut instructions = std::mem::take(&mut self.blocks[current].instructions);
+                    let terminator = if *self.return_type == Type::Unit
+                        && (line.tokens.len() == 1
+                            || line.tokens.get(1).is_some_and(|token| token.text == "Unit"))
+                    {
+                        if let Some(resource) = self.using_resource.take() {
+                            self.builder.emit(
+                                Type::Unit,
+                                Operation::ResourceDrop(resource),
+                                line.range,
+                                &mut instructions,
+                            );
+                        }
+                        Terminator::Return(None)
+                    } else {
+                        let (value, _) = self.builder.expression(
+                            &line.tokens[1..],
+                            Some(self.return_type),
+                            &mut instructions,
+                        )?;
+                        if let Some(resource) = self.using_resource.take() {
+                            self.builder.emit(
+                                Type::Unit,
+                                Operation::ResourceDrop(resource),
+                                line.range,
+                                &mut instructions,
+                            );
+                        }
+                        Terminator::Return(Some(value))
+                    };
+                    self.blocks[current].instructions = instructions;
+                    self.seal_current(terminator);
+                }
+                LineKind::Expression => {
+                    if self.metadata {
+                        index += 1;
+                        continue;
+                    }
+                    self.ensure_current(line.range);
+                    let (_, ty) = self.builder.expression(
+                        &line.tokens,
+                        None,
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    )?;
+                    if ty != Type::Unit {
+                        return unsupported("non-Unit expression statement", line.range);
+                    }
+                }
+                LineKind::Effects | LineKind::Capabilities => {
+                    self.metadata = !line
+                        .tokens
+                        .iter()
+                        .any(|token| token.kind == TokenKind::None);
+                }
+                LineKind::TaskGroup => {
+                    self.ensure_current(line.range);
+                    let scope = self
+                        .scope_plan
+                        .opens
+                        .get(&index)
+                        .copied()
+                        .expect("task group lines are planned");
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::TaskScopeOpen { scope },
+                        line.range,
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    );
+                    self.builder.scope_stack.push(scope);
+                }
+                LineKind::End => {
+                    if let Some(scope) = self.scope_plan.closes.get(&index).copied() {
+                        self.ensure_current(line.range);
+                        self.builder.emit(
+                            Type::Unit,
+                            Operation::TaskScopeClose { scope },
+                            line.range,
+                            &mut self.blocks[self.current.expect("current")].instructions,
+                        );
+                        let popped = self.builder.scope_stack.pop();
+                        debug_assert_eq!(popped, Some(scope));
+                    }
+                    // Non-task `end` lines (`end function`, leftovers) are
+                    // structural markers; the region walkers consume their
+                    // own and the rest is ignored, as in the linear paths.
+                }
+                LineKind::Using => {
+                    if self.nested > 0 {
+                        return unsupported("using inside control flow", line.range);
+                    }
+                    self.ensure_current(line.range);
+                    let Some(name) = line.tokens.get(1) else {
+                        return unsupported("using scope", line.range);
+                    };
+                    let Some((value, Type::OwnedResource(_))) =
+                        self.builder.bindings.get(&name.text)
+                    else {
+                        return unsupported("using non-resource", line.range);
+                    };
+                    self.using_resource = Some(*value);
+                }
+                LineKind::While => {
+                    let depth = line.depth;
+                    let condition_tokens =
+                        strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
+                    let header = self.new_block(line.range);
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(header).expect("block bound"),
+                    )));
+                    self.set_current(header);
+                    let (condition, condition_ty) = self.builder.expression(
+                        condition_tokens,
+                        None,
+                        &mut self.blocks[header].instructions,
+                    )?;
+                    if condition_ty != Type::Bool {
+                        return unsupported("non-Bool loop condition", line.range);
+                    }
+                    let body_entry = self.new_block(line.range);
+                    let after = self.new_block(line.range);
+                    self.blocks[header].terminator = Some(Terminator::Branch {
+                        condition,
+                        then_block: BlockId(u32::try_from(body_entry).expect("block bound")),
+                        else_block: BlockId(u32::try_from(after).expect("block bound")),
+                    });
+                    self.set_current(body_entry);
+                    self.loop_stack.push(LoopFrame { header, after });
+                    self.nested += 1;
+                    let close = find_region_close(lines, index + 1, end, depth, false, line.range)?;
+                    let snapshot = self.builder.bindings.clone();
+                    self.run(lines, index + 1, close.end_index)?;
+                    self.builder.bindings = snapshot;
+                    self.nested -= 1;
+                    self.loop_stack.pop();
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(header).expect("block bound"),
+                    )));
+                    self.set_current(after);
+                    index = close.end_index;
+                }
+                LineKind::If => {
+                    let depth = line.depth;
+                    let condition_tokens =
+                        strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
+                    if top_level_position(condition_tokens, TokenKind::EqualEqual).is_some() {
+                        return unsupported("infix equality condition", line.range);
+                    }
+                    self.ensure_current(line.range);
+                    let (condition, condition_ty) = self.builder.expression(
+                        condition_tokens,
+                        None,
+                        &mut self.blocks[self.current.expect("current")].instructions,
+                    )?;
+                    if condition_ty != Type::Bool {
+                        return unsupported("non-Bool if condition", line.range);
+                    }
+                    let then_block = self.new_block(line.range);
+                    let else_block = self.new_block(line.range);
+                    let join = self.new_block(line.range);
+                    self.seal_current(Terminator::Branch {
+                        condition,
+                        then_block: BlockId(u32::try_from(then_block).expect("block bound")),
+                        else_block: BlockId(u32::try_from(else_block).expect("block bound")),
+                    });
+                    let close = find_region_close(lines, index + 1, end, depth, true, line.range)?;
+                    self.nested += 1;
+                    let snapshot = self.builder.bindings.clone();
+                    self.set_current(then_block);
+                    self.run(
+                        lines,
+                        index + 1,
+                        close.else_index.unwrap_or(close.end_index),
+                    )?;
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(join).expect("block bound"),
+                    )));
+                    if let Some(else_index) = close.else_index {
+                        let arm_snapshot = self.builder.bindings.clone();
+                        self.set_current(else_block);
+                        self.run(lines, else_index + 1, close.end_index)?;
+                        self.builder.bindings = arm_snapshot;
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(join).expect("block bound"),
+                        )));
+                    } else {
+                        self.blocks[else_block].terminator = Some(Terminator::Jump(BlockId(
+                            u32::try_from(join).expect("block bound"),
+                        )));
+                    }
+                    self.builder.bindings = snapshot;
+                    self.nested -= 1;
+                    self.set_current(join);
+                    index = close.end_index;
+                }
+                LineKind::Match => {
+                    let depth = line.depth;
+                    let subject_tokens =
+                        strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
+                    self.ensure_current(line.range);
+                    let expression_parts = split_top_level(subject_tokens, TokenKind::Comma);
+                    let mut values = Vec::new();
+                    let mut value_types = Vec::new();
+                    for expression in expression_parts {
+                        let (value, ty) = self.builder.expression(
+                            expression,
+                            None,
+                            &mut self.blocks[self.current.expect("current")].instructions,
+                        )?;
+                        values.push(value);
+                        value_types.push(ty);
+                    }
+                    // Scan arm regions first: (arm line index, body end).
+                    // Arms sit one level below the match (indentation
+                    // blocks); the `end match` closes at the match depth.
+                    let mut arm_ranges = Vec::new();
+                    let mut cursor = index + 1;
+                    while cursor < end {
+                        let arm_line = &lines[cursor];
+                        if arm_line.depth == depth && arm_line.kind == LineKind::End {
+                            break;
+                        }
+                        if !(arm_line.depth == depth + 1 && arm_line.kind == LineKind::MatchArm) {
+                            return unsupported("match arm body", arm_line.range);
+                        }
+                        let mut body_end = cursor + 1;
+                        while body_end < end {
+                            let body_line = &lines[body_end];
+                            if body_line.depth == depth && body_line.kind == LineKind::End {
+                                break;
+                            }
+                            if body_line.depth == depth + 1 && body_line.kind == LineKind::MatchArm
+                            {
+                                break;
+                            }
+                            if body_line.depth <= depth {
+                                return unsupported("match arm body", body_line.range);
+                            }
+                            body_end += 1;
+                        }
+                        arm_ranges.push((cursor, body_end));
+                        cursor = body_end;
+                    }
+                    if arm_ranges.is_empty() {
+                        return unsupported("empty match", line.range);
+                    }
+                    let match_entry = self.current.expect("current");
+                    // Payload-binding arms read the subject inside their own
+                    // block; IR values are block-scoped, so a non-parameter
+                    // subject spills into a compiler-generated cell first.
+                    let needs_spill = arm_ranges.iter().any(|(arm_index, _)| {
+                        let arm_line = &lines[*arm_index];
+                        strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1])
+                            .iter()
+                            .any(|token| {
+                                matches!(token.kind, TokenKind::OkKeyword | TokenKind::ErrorKeyword)
+                            })
+                    }) && values
+                        .first()
+                        .is_some_and(|value| value.0 >= self.builder.parameter_count);
+                    let spill_cell = if needs_spill {
+                        let Some(subject_type) = value_types.first().cloned() else {
+                            return unsupported("match payload binding", lines[index].range);
+                        };
+                        let name = format!("#match{}", self.builder.locals.len());
+                        let local = u32::try_from(self.builder.locals.len())
+                            .map_err(|_| unsupported_error("local limit", lines[index].range))?;
+                        self.builder.locals.push(Local {
+                            name,
+                            ty: subject_type.clone(),
+                            range: source_range(lines[index].range),
+                        });
+                        let value = values.first().copied().expect("match subject");
+                        self.builder.emit(
+                            Type::Unit,
+                            Operation::WriteLocal { local, value },
+                            lines[index].range,
+                            &mut self.blocks[match_entry].instructions,
+                        );
+                        Some(local)
+                    } else {
+                        None
+                    };
+                    let join = self.new_block(lines[index].range);
+                    let mut arms = Vec::new();
+                    for (arm_index, body_end) in arm_ranges {
+                        let arm_line = &lines[arm_index];
+                        let pattern_tokens =
+                            strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1]);
+                        let patterns: Vec<_> = split_top_level(pattern_tokens, TokenKind::Comma)
+                            .into_iter()
+                            .map(parse_pattern)
+                            .collect();
+                        let mut payload_binding = None;
+                        let mut payload_variant = String::new();
+                        for pattern in &patterns {
+                            let single_result_binding = match pattern {
+                                Pattern::Variant { name, payload }
+                                    if matches!(name.as_str(), "ok" | "error") =>
+                                {
+                                    payload_variant.clone_from(name);
+                                    match payload.as_slice() {
+                                        [Pattern::Binding(name)] => Some(name.clone()),
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            };
+                            match single_result_binding {
+                                Some(binding)
+                                    if patterns.len() == 1 && payload_binding.is_none() =>
+                                {
+                                    payload_binding = Some(binding);
+                                }
+                                _ if pattern_binds(pattern) => {
+                                    return unsupported("match payload binding", arm_line.range);
+                                }
+                                _ => {}
+                            }
+                        }
+                        let arm_block = self.new_block(arm_line.range);
+                        arms.push(MatchArm {
+                            patterns,
+                            target: BlockId(u32::try_from(arm_block).expect("block bound")),
+                            range: source_range(arm_line.range),
+                        });
+                        self.set_current(arm_block);
+                        let arm_snapshot = self.builder.bindings.clone();
+                        if let Some(binding) = payload_binding {
+                            let Some(Type::Result { ok, error }) = value_types.first() else {
+                                return unsupported(
+                                    "match payload binding on non-Result",
+                                    arm_line.range,
+                                );
+                            };
+                            let base = if let Some(local) = spill_cell {
+                                let Some(subject_type) = value_types.first().cloned() else {
+                                    return unsupported("match payload binding", arm_line.range);
+                                };
+                                self.builder.emit(
+                                    subject_type,
+                                    Operation::ReadLocal { local },
+                                    arm_line.range,
+                                    &mut self.blocks[arm_block].instructions,
+                                )
+                            } else {
+                                let Some(base) = values.first().copied() else {
+                                    return unsupported("match payload binding", arm_line.range);
+                                };
+                                if base.0 >= self.builder.parameter_count {
+                                    return unsupported("match payload binding", arm_line.range);
+                                }
+                                base
+                            };
+                            let payload_type = if payload_variant == "ok" {
+                                (**ok).clone()
+                            } else {
+                                (**error).clone()
+                            };
+                            let payload = self.builder.emit(
+                                payload_type.clone(),
+                                Operation::Project {
+                                    base,
+                                    field: payload_variant,
+                                },
+                                arm_line.range,
+                                &mut self.blocks[arm_block].instructions,
+                            );
+                            self.builder
+                                .bindings
+                                .insert(binding, (payload, payload_type));
+                        }
+                        self.nested += 1;
+                        self.run(lines, arm_index + 1, body_end)?;
+                        self.nested -= 1;
+                        self.builder.bindings = arm_snapshot;
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(join).expect("block bound"),
+                        )));
+                    }
+                    self.blocks[match_entry].terminator = Some(Terminator::Match { values, arms });
+                    self.set_current(join);
+                    index = cursor;
+                }
+                LineKind::Break => {
+                    let Some(frame) = self.loop_stack.last().copied() else {
+                        return unsupported("break outside loop", line.range);
+                    };
+                    self.ensure_current(line.range);
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(frame.after).expect("block bound"),
+                    )));
+                }
+                LineKind::Continue => {
+                    let Some(frame) = self.loop_stack.last().copied() else {
+                        return unsupported("continue outside loop", line.range);
+                    };
+                    self.ensure_current(line.range);
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(frame.header).expect("block bound"),
+                    )));
+                }
+                LineKind::DeclarationHeader | LineKind::FunctionSignature => {}
+                LineKind::Field | LineKind::Invariant | LineKind::Variant => {
+                    return unsupported("non-function line", line.range);
+                }
+                LineKind::MatchArm => return unsupported("match arm body", line.range),
+                LineKind::Else => return unsupported("else outside if", line.range),
+            }
+            index += 1;
+        }
+        Ok(())
+    }
+}
+
+/// Lowers one function body through the general structured CFG path.
+fn lower_general(
+    declaration: &Declaration,
+    builder: &mut FunctionBuilder<'_>,
+    return_type: &Type,
+    scope_plan: &TaskScopePlan,
+) -> Result<Vec<Block>, CoreLowerError> {
+    let cell_names: BTreeSet<String> = declaration
+        .lines
+        .iter()
+        .filter(|line| line.kind == LineKind::Set)
+        .filter_map(|line| line.tokens.get(1).map(|token| token.text.clone()))
+        .collect();
+    let mut lowering = GeneralLowering {
+        builder,
+        blocks: Vec::new(),
+        current: None,
+        loop_stack: Vec::new(),
+        return_type,
+        scope_plan,
+        cell_names,
+        metadata: false,
+        using_resource: None,
+        nested: 0,
+        next_creation: 0,
+        emission_seq: 0,
+    };
+    let entry = lowering.new_block(declaration.range);
+    lowering.set_current(entry);
+    lowering.run(&declaration.lines, 1, declaration.lines.len())?;
+    lowering.seal_current(Terminator::Unreachable);
+    // Materialize blocks in first-emission order so instruction results stay
+    // sequential per block (the verifier's canonical-id rule), then remap
+    // every terminator reference from creation ids to final ids.
+    // Stamped (emitted-into) blocks first in emission order; never-emitted
+    // blocks (empty joins/else arms) trail in creation order. The entry —
+    // stamped first — therefore stays at index 0.
+    lowering.blocks.sort_by_key(|block| {
+        (
+            block.became_current.is_none(),
+            block.became_current.unwrap_or(0),
+            block.creation,
+        )
+    });
+    let mut id_map = BTreeMap::<usize, usize>::new();
+    for (index, block) in lowering.blocks.iter().enumerate() {
+        id_map.insert(block.creation, index);
+    }
+    let remap = |id: BlockId| -> BlockId {
+        let creation = id.0 as usize;
+        let target = id_map.get(&creation).copied().unwrap_or(creation);
+        BlockId(u32::try_from(target).expect("block bound"))
+    };
+    let blocks = lowering
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, pending)| {
+            let terminator = pending
+                .terminator
+                .as_ref()
+                .map(|terminator| match terminator {
+                    Terminator::Jump(target) => Terminator::Jump(remap(*target)),
+                    Terminator::Branch {
+                        condition,
+                        then_block,
+                        else_block,
+                    } => Terminator::Branch {
+                        condition: *condition,
+                        then_block: remap(*then_block),
+                        else_block: remap(*else_block),
+                    },
+                    Terminator::Match { values, arms } => Terminator::Match {
+                        values: values.clone(),
+                        arms: arms
+                            .iter()
+                            .map(|arm| MatchArm {
+                                patterns: arm.patterns.clone(),
+                                target: remap(arm.target),
+                                range: arm.range,
+                            })
+                            .collect(),
+                    },
+                    other => other.clone(),
+                });
+            Block {
+                id: BlockId(u32::try_from(index).expect("block bound")),
+                instructions: pending.instructions.clone(),
+                terminator: terminator.unwrap_or(Terminator::Unreachable),
+                range: source_range(pending.range),
+            }
+        })
+        .collect();
+    let entry_id = remap(BlockId(u32::try_from(entry).expect("block bound")));
+    debug_assert_eq!(entry_id, BlockId(0));
+    Ok(blocks)
 }
 
 #[allow(clippy::too_many_lines)]
@@ -440,7 +1223,12 @@ fn lower_straight_line(
                 }
             }
             LineKind::DeclarationHeader | LineKind::FunctionSignature => {}
-            LineKind::If => return unsupported("nested if control flow", line.range),
+            LineKind::If
+            | LineKind::Else
+            | LineKind::While
+            | LineKind::Break
+            | LineKind::Continue
+            | LineKind::Set => return unsupported("nested if control flow", line.range),
             LineKind::Using => {
                 let Some(name) = line.tokens.get(1) else {
                     return unsupported("using scope", line.range);
@@ -799,9 +1587,7 @@ impl FunctionBuilder<'_> {
                     );
                     Ok((value, Type::Bool))
                 }
-                TokenKind::Identifier => self.bindings.get(&token.text).cloned().ok_or_else(|| {
-                    unsupported_error(format!("unresolved value {}", token.text), token.range)
-                }),
+                TokenKind::Identifier => self.resolve_name(&token.text, token.range, output),
                 _ => Err(unsupported_error("atomic expression", token.range)),
             };
         }
@@ -816,6 +1602,31 @@ impl FunctionBuilder<'_> {
                     Operation::Variant {
                         name: joined,
                         payload: Vec::new(),
+                    },
+                    token_range(tokens),
+                    output,
+                );
+                return Ok((value, ty));
+            }
+            if self.cells.contains_key(&tokens[0].text) {
+                let (base, base_type) =
+                    self.resolve_name(&tokens[0].text, tokens[0].range, output)?;
+                let Type::Named(record) = base_type else {
+                    return unsupported("field projection", token_range(tokens));
+                };
+                let Some(ty) = self
+                    .definitions
+                    .fields
+                    .get(&(record, tokens[2].text.clone()))
+                    .cloned()
+                else {
+                    return unsupported("unknown field projection", token_range(tokens));
+                };
+                let value = self.emit(
+                    ty.clone(),
+                    Operation::Project {
+                        base,
+                        field: tokens[2].text.clone(),
                     },
                     token_range(tokens),
                     output,
@@ -1136,7 +1947,20 @@ impl FunctionBuilder<'_> {
         if tokens[..open].len() == 3 && tokens[1].kind == TokenKind::Dot {
             let receiver_name = &tokens[0].text;
             let method = &tokens[2].text;
-            if let Some((receiver, receiver_type)) = self.bindings.get(receiver_name).cloned() {
+            let receiver = if let Some((index, ty)) = self.cells.get(receiver_name).cloned() {
+                Some((
+                    self.emit(
+                        ty.clone(),
+                        Operation::ReadLocal { local: index },
+                        tokens[0].range,
+                        output,
+                    ),
+                    ty,
+                ))
+            } else {
+                self.bindings.get(receiver_name).cloned()
+            };
+            if let Some((receiver, receiver_type)) = receiver {
                 let owner = match &receiver_type {
                     Type::Capability(name) | Type::OwnedResource(name) => name.clone(),
                     _ => String::new(),
@@ -1305,6 +2129,29 @@ impl FunctionBuilder<'_> {
             format!("call target {callee}"),
             token_range(tokens),
         ))
+    }
+
+    /// Resolves one name: a mutable cell reads through `ReadLocal`, any
+    /// other binding is its SSA value.
+    fn resolve_name(
+        &mut self,
+        name: &str,
+        range: TextRange,
+        output: &mut Vec<Instruction>,
+    ) -> Result<(ValueId, Type), CoreLowerError> {
+        if let Some((index, ty)) = self.cells.get(name).cloned() {
+            let value = self.emit(
+                ty.clone(),
+                Operation::ReadLocal { local: index },
+                range,
+                output,
+            );
+            return Ok((value, ty));
+        }
+        self.bindings
+            .get(name)
+            .cloned()
+            .ok_or_else(|| unsupported_error(format!("unresolved value {name}"), range))
     }
 
     fn emit(

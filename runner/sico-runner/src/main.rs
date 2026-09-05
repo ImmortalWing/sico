@@ -483,11 +483,14 @@ impl ClientCancelBridge {
         let worker = std::thread::spawn(move || {
             let mut last = None;
             while !worker_stop.load(Ordering::Acquire) {
-                let current = worker_target
+                // Read only while a target is published: a request file that
+                // exists before the first generation registers must still be
+                // applied once that generation arrives, so pre-publish reads
+                // must not consume it into `last`.
+                if let Some(target) = worker_target
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
-                    .clone();
-                if let Some(target) = current
+                    .clone()
                     && let Ok(bytes) =
                         read_bounded(&path, MAX_CANCEL_REQUEST_BYTES, "cancel request")
                     && last.as_deref() != Some(bytes.as_slice())

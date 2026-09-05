@@ -1245,14 +1245,8 @@ fn runner_watch_accepts_generation_bound_client_cancellation() {
     // writing the request, so a slow spawn cannot race the file into the
     // pre-publish generation-0 slot (which would time out instead of
     // cancelling).
-    let mut wait = std::time::Instant::now();
-    while wait.elapsed() < std::time::Duration::from_millis(500) {
-        std::thread::sleep(std::time::Duration::from_millis(20));
-        let stderr_peek = std::fs::read_to_string(&request.with_extension("stderr"))
-            .unwrap_or_default();
-        let _ = stderr_peek; // stderr is piped, not a file; keep the wait bounded
-        break;
-    }
+    // The bridge polls every 5 ms; a bounded grace period covers process
+    // spawn before the request file appears.
     std::thread::sleep(std::time::Duration::from_millis(100));
     std::fs::write(
         &request,
@@ -1548,6 +1542,7 @@ fn run_function(name: &str, instructions: Vec<Instruction>, result: ValueId) -> 
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -1736,6 +1731,7 @@ fn spin_module() -> Module {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -1791,6 +1787,7 @@ fn trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -1838,6 +1835,7 @@ fn nested_trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -1861,6 +1859,7 @@ fn nested_trap_debug_artifact() -> sico_codegen_wasm::DebugArtifact {
         parameters: Vec::new(),
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),

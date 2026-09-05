@@ -24,6 +24,7 @@ pub enum BlockKind {
     Function,
     Match,
     If,
+    While,
     Using,
     Task,
 }
@@ -39,6 +40,7 @@ impl BlockKind {
             Self::Function => SyntaxKind::FUNCTION_DECL,
             Self::Match => SyntaxKind::MATCH_BLOCK,
             Self::If => SyntaxKind::IF_BLOCK,
+            Self::While => SyntaxKind::WHILE_BLOCK,
             Self::Using => SyntaxKind::USING_BLOCK,
             Self::Task => SyntaxKind::TASK_BLOCK,
         }
@@ -52,7 +54,7 @@ impl BlockKind {
             Self::Resource => Some(DeclarationKind::Resource),
             Self::Interface => Some(DeclarationKind::Interface),
             Self::Function => Some(DeclarationKind::Function),
-            Self::Match | Self::If | Self::Using | Self::Task => None,
+            Self::Match | Self::If | Self::While | Self::Using | Self::Task => None,
         }
     }
 }
@@ -579,6 +581,7 @@ fn opener(tokens: &[Token], line: &Line) -> Option<(BlockKind, usize)> {
         TokenKind::Interface => Some(BlockKind::Interface),
         TokenKind::Match => Some(BlockKind::Match),
         TokenKind::If => Some(BlockKind::If),
+        TokenKind::While => Some(BlockKind::While),
         TokenKind::Using => Some(BlockKind::Using),
         TokenKind::Task => Some(BlockKind::Task),
         _ => None,
@@ -603,6 +606,7 @@ fn close_kind(kind: TokenKind) -> Option<BlockKind> {
         TokenKind::Function => BlockKind::Function,
         TokenKind::Match => BlockKind::Match,
         TokenKind::If => BlockKind::If,
+        TokenKind::While => BlockKind::While,
         TokenKind::Using => BlockKind::Using,
         TokenKind::Task => BlockKind::Task,
         _ => return None,
@@ -673,7 +677,9 @@ fn missing_close_error(kind: BlockKind) -> ParseErrorKind {
         BlockKind::Using => ParseErrorKind::MissingUsingClose,
         BlockKind::Task => ParseErrorKind::MissingTaskClose,
         BlockKind::Interface => ParseErrorKind::MissingInterfaceClose,
-        BlockKind::Match | BlockKind::If => ParseErrorKind::MissingBlockClose(kind),
+        BlockKind::Match | BlockKind::If | BlockKind::While => {
+            ParseErrorKind::MissingBlockClose(kind)
+        }
     }
 }
 

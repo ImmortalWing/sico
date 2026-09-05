@@ -78,6 +78,12 @@ pub enum TokenKind {
     LessEqual,
     Error,
     Eof,
+    // M14 application-profile keywords (STEP-0130). Appended so existing
+    // discriminants — and therefore parser snapshot raw kinds — stay stable.
+    While,
+    Break,
+    Continue,
+    Set,
 }
 
 impl TokenKind {
@@ -337,7 +343,9 @@ fn keyword(word: &str) -> TokenKind {
         "async" => TokenKind::Async,
         "await" => TokenKind::Await,
         "borrow" => TokenKind::Borrow,
+        "break" => TokenKind::Break,
         "call" => TokenKind::Call,
+        "continue" => TokenKind::Continue,
         "capabilities" => TokenKind::Capabilities,
         "capability" => TokenKind::Capability,
         "case" => TokenKind::Case,
@@ -365,6 +373,8 @@ fn keyword(word: &str) -> TokenKind {
         "return" => TokenKind::Return,
         "returns" => TokenKind::Returns,
         "self" => TokenKind::SelfKeyword,
+        "set" => TokenKind::Set,
+        "while" => TokenKind::While,
         "spawn" => TokenKind::Spawn,
         "task" => TokenKind::Task,
         "try" => TokenKind::Try,

@@ -50,6 +50,7 @@ fn script_boundary_requires_the_exact_entry_signature() {
         }],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -71,6 +72,7 @@ fn script_boundary_requires_the_exact_entry_signature() {
         parameters: Vec::new(),
         return_type: Type::Unit,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -100,6 +102,7 @@ fn script_helpers_may_use_aggregates_effects_stay_refused() {
         }],
         return_type: Type::Bytes,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -220,6 +223,7 @@ fn echo_module() -> Module {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -300,6 +304,7 @@ fn error_module() -> Module {
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),

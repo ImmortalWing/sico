@@ -26,6 +26,7 @@ fn integer_identity() -> Module {
         }],
         return_type: Type::Int,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -226,6 +227,7 @@ fn verifier_diagnostic_cap_is_exact() {
             parameters: Vec::new(),
             return_type: Type::Unit,
             effects: Vec::new(),
+            locals: Vec::new(),
             entry: BlockId(0),
             blocks: Vec::new(),
             range: range(0, 0),
@@ -258,7 +260,9 @@ fn task_module() -> Module {
         }],
         return_type: Type::List(Box::new(Type::Int)),
         effects: vec!["io".into()],
+        locals: Vec::new(),
         entry: BlockId(0),
+
         blocks: vec![Block {
             id: BlockId(0),
             instructions: vec![
@@ -338,7 +342,9 @@ fn task_module() -> Module {
         }],
         return_type: Type::Future(Box::new(Type::Int)),
         effects: vec!["io".into()],
+        locals: Vec::new(),
         entry: BlockId(0),
+
         blocks: vec![Block {
             id: BlockId(0),
             instructions: vec![Instruction {

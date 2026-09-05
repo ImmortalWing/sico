@@ -293,6 +293,7 @@ fn thousand_function_component_is_valid_and_deterministic() {
             parameters: Vec::new(),
             return_type: Type::Int,
             effects: Vec::new(),
+            locals: Vec::new(),
             entry: BlockId(0),
             blocks: vec![Block {
                 id: BlockId(0),
@@ -408,6 +409,7 @@ fn select_module() -> Module {
         }],
         return_type: Type::Int,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -472,6 +474,7 @@ fn identity_module(ty: Type) -> Module {
         }],
         return_type: ty,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -592,6 +595,7 @@ fn general_module() -> Module {
         parameters: vec![parameter("value", Type::I64)],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -607,6 +611,7 @@ fn general_module() -> Module {
         parameters: vec![parameter("value", Type::I64)],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -630,6 +635,7 @@ fn general_module() -> Module {
         parameters: vec![parameter("value", Type::I64)],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -672,6 +678,7 @@ fn bool_match_function(id: u32, range: SourceRange) -> Function {
         }],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -708,6 +715,7 @@ fn record_project_function(id: u32, range: SourceRange) -> Function {
         parameters: Vec::new(),
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),
@@ -766,6 +774,7 @@ fn variant_match_function(id: u32, range: SourceRange) -> Function {
         parameters: Vec::new(),
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -821,6 +830,7 @@ fn cycle_gate_function(id: u32, range: SourceRange) -> Function {
         }],
         return_type: Type::I64,
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![
             Block {
@@ -880,6 +890,7 @@ fn fixed_function(
         ],
         return_type: return_type.clone(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),

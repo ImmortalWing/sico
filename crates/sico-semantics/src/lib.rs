@@ -539,6 +539,7 @@ fn parse_invariant(tokens: &[HirToken]) -> Option<Invariant> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn analyze_function(
     function: &FunctionDefinition,
     model: &Model,
@@ -565,8 +566,39 @@ fn analyze_function(
         })
         .map(|line| line.tokens[1].text.clone())
         .collect();
+    // M14 STEP-0130 scoped walk: names bound inside a while/if/match region
+    // are removed when the region closes (mirrors the general lowering).
+    // Each entry tracks the region's close index and the names bound inside.
+    let mut open_scopes: Vec<(usize, Vec<String>)> = Vec::new();
+    // Close indices of open `while` regions, for break/continue validation.
+    let mut open_loops: Vec<usize> = Vec::new();
+    let region_closes = region_close_map(&function.body);
     for (line_index, line) in function.body.iter().enumerate() {
+        open_scopes.retain(|(close_index, _)| *close_index > line_index);
+        open_loops.retain(|close_index| *close_index > line_index);
         match line.kind {
+            LineKind::While | LineKind::If => {
+                let condition_tokens = &line.tokens[1..line.tokens.len().saturating_sub(1)];
+                let condition = infer_expression(condition_tokens, &locals, model, diagnostics);
+                require_type(&Type::named("Bool"), &condition, diagnostics);
+            }
+            LineKind::Set => {
+                let Some(equal) = line
+                    .tokens
+                    .iter()
+                    .position(|token| token.kind == TokenKind::Equal)
+                else {
+                    continue;
+                };
+                let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+                let declared = locals.get(name).cloned();
+                let value =
+                    infer_expression(&line.tokens[equal + 1..], &locals, model, diagnostics);
+                if let Some(declared) = declared {
+                    require_type(&declared, &value, diagnostics);
+                    locals.insert(name.to_owned(), value.ty);
+                }
+            }
             LineKind::Let if line.tokens.len() >= 4 => {
                 let value = if line.tokens[3].kind == TokenKind::Try {
                     infer_try(
@@ -580,6 +612,9 @@ fn analyze_function(
                     infer_expression(&line.tokens[3..], &locals, model, diagnostics)
                 };
                 locals.insert(line.tokens[1].text.clone(), value.ty.clone());
+                for scope in &mut open_scopes {
+                    scope.1.push(line.tokens[1].text.clone());
+                }
                 facts.push(SemanticFact {
                     id: FactId {
                         node: line.id,
@@ -625,9 +660,42 @@ fn analyze_function(
             LineKind::Match => {
                 check_match(line_index, function, model, diagnostics, facts);
             }
+            LineKind::End => {
+                if let Some(close) = region_closes.get(&line_index) {
+                    open_loops.retain(|loop_close| *loop_close != line_index);
+                    if let Some((_, names)) = open_scopes.iter().find(|(c, _)| c == close) {
+                        for name in names {
+                            locals.remove(name);
+                        }
+                    }
+                    open_scopes.retain(|(c, _)| c != close);
+                }
+            }
             _ => {}
         }
     }
+}
+
+/// Maps each `end` line index to the absolute index of the construct it
+/// closes, for while/if/match regions (M14 STEP-0130).
+fn region_close_map(body: &[Line]) -> BTreeMap<usize, usize> {
+    let mut opens: Vec<(u16, usize)> = Vec::new();
+    let mut closes = BTreeMap::new();
+    for (index, line) in body.iter().enumerate() {
+        match line.kind {
+            LineKind::While | LineKind::If | LineKind::Match => {
+                opens.push((line.depth, index));
+            }
+            LineKind::End => {
+                if let Some(position) = opens.iter().rposition(|(depth, _)| *depth == line.depth) {
+                    let (_, open_index) = opens.remove(position);
+                    closes.insert(index, open_index);
+                }
+            }
+            _ => {}
+        }
+    }
+    closes
 }
 
 fn check_revision_contracts(

@@ -687,6 +687,7 @@ fn compile_eval_component(value: i64, stderr: &mut dyn Write) -> Result<Vec<u8>,
         }],
         return_type: script_result(),
         effects: Vec::new(),
+        locals: Vec::new(),
         entry: BlockId(0),
         blocks: vec![Block {
             id: BlockId(0),

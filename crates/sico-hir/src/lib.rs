@@ -113,6 +113,11 @@ pub enum LineKind {
     Match,
     MatchArm,
     If,
+    Else,
+    While,
+    Break,
+    Continue,
+    Set,
     Using,
     TaskGroup,
     End,
@@ -305,6 +310,11 @@ fn classify_line(header: bool, tokens: &[HirToken]) -> LineKind {
         Some(TokenKind::Capabilities) => LineKind::Capabilities,
         Some(TokenKind::Match) => LineKind::Match,
         Some(TokenKind::If) => LineKind::If,
+        Some(TokenKind::While) => LineKind::While,
+        Some(TokenKind::Break) => LineKind::Break,
+        Some(TokenKind::Continue) => LineKind::Continue,
+        Some(TokenKind::Set) => LineKind::Set,
+        Some(TokenKind::Else) if tokens.len() == 2 => LineKind::Else,
         Some(TokenKind::Using) => LineKind::Using,
         Some(TokenKind::Task) => LineKind::TaskGroup,
         Some(TokenKind::End) => LineKind::End,
@@ -327,6 +337,7 @@ fn opens_block(tokens: &[HirToken]) -> bool {
                 TokenKind::Function
                     | TokenKind::Match
                     | TokenKind::If
+                    | TokenKind::While
                     | TokenKind::Using
                     | TokenKind::Task
             )
