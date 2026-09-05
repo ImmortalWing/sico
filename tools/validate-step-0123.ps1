@@ -41,9 +41,12 @@ foreach ($needle in @(
 if ($audit -match 'target budgets[^.]*?met by[^.]*?subagent') { throw 'target wrongly claimed from subagent evidence' }
 if ($audit -match 'targets? (?:are|is) met') { throw 'target wrongly claimed met' }
 
-# --- ADR-0011 tiers still consistent with the baseline ---
+# --- ADR-0011 superseded by ADR-0012 (STEP-0128); both must exist ---
 $adr = Get-Content (Join-Path $root 'docs\adr\ADR-0011-ai-quality-budgets.md') -Raw -Encoding UTF8
 if ($adr -notlike '*0.974359*') { throw 'ADR-0011 baseline reference missing' }
-if ($adr -notlike '*blocked-external-evidence*') { throw 'ADR-0011 target deferral missing' }
+$adr12 = Get-Content (Join-Path $root 'docs\adr\ADR-0012-ai-quality-budgets-live-model.md') -Raw -Encoding UTF8
+if ($adr12 -notlike '*0.909544*') { throw 'ADR-0012 measured baseline missing' }
+if ($adr12 -notlike '*supersedes: ADR-0011*') { throw 'ADR-0012 supersession missing' }
+if (-not (Test-Path (Join-Path $root 'docs\reports\ai-eval-live-model-v1.md'))) { throw 'live-model report missing' }
 
-Write-Output 'STEP_0123_OK criteria=a:GO,b:GO,c:GO,d:blocked-external-evidence verdict=M13-GO oracles=5-green benches=reproducible'
+Write-Output 'STEP_0123_OK criteria=a:GO,b:GO,c:GO,d:measured-GO(ADR-0012) verdict=M13-GO oracles=5-green benches=reproducible'

@@ -2,7 +2,7 @@
 
 > - updated: 2026-09-04
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M12 complete (full GO per STEP-0127); next mainline is M14 application-ready language (entry gates satisfied); M13 remains a closed support track pending owner-supplied live-model credentials
+> - current phase: M12 complete (full GO per STEP-0127); M13 closed — live-model run measured and quality budgets met under ADR-0012 (STEP-0128); next mainline is M14 application-ready language
 > - phase context: M10/M11 complete; M12 retains secure HTTP/API automation scope; M13 AI tooling closure is a parallel support track; owner-approved future sequence is M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages and M18 representative applications/pilots; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
@@ -220,7 +220,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M13: AI tooling closure（parallel support track）
 
-状态：`in-progress / STEP-0119 complete (subagent-measured baseline 0.974359); STEP-0120–0123 reserved; live-model evaluation gated on owner-delivered DeepSeek credentials`
+状态：`complete / 收口（STEP-0119–0123 完成；STEP-0128 权威 live-model 实测 0.9095，ADR-0012 预算下达且达标——§13 质量预算项实测 GO）`
 
 主要交付：generation 失败归因与评分器/guide 修正、重测基线、AI 质量数值预算 ADR、agent 框架接入层（MCP）、语义索引 accuracy/latency 与错误频率实测、对照 `AGENT_GOAL.md` §13 的收口审计。
 

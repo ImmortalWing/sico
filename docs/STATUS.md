@@ -1,15 +1,15 @@
 # Sico project status
 
 > - updated: 2026-09-05
-> - phase: M12 Secure HTTP Provider complete (full GO per STEP-0127); M13 AI tooling closure runs as a parallel support track; M7 public deployment and M6/mobile remain deferred
+> - phase: M12 complete (full GO per STEP-0127); M13 closed — authoritative live-model run measured and budgets met under ADR-0012 (STEP-0128); M7 public deployment and M6/mobile remain deferred
 > - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence)
-> - current step: 无内部主线（M12 STEP-0111–0118、0125–0127 完成，完整 GO；M13 STEP-0119–0123 完成，GO；下一主线为 M14 应用就绪语言基线，进入条件已满足，待 owner 启动决策后预留 STEP）
+> - current step: 无内部主线（M12 完整 GO；M13 收口——live-model 实测 0.9095，ADR-0012 预算下达且达标，§13 (d)=实测 GO；下一主线为 M14 应用就绪语言基线，待 owner 启动决策后预留 STEP）
 > - current support step: 无（M13 STEP-0119/0120/0121 已完成）
 > - last completed active step: STEP-0127 (M12 full-GO audit: 10/10 gates GO；STEP-0126 Linux x64 语料全绿，证据 target/evidence/step-0126/linux/)
 > - last completed support step: STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence)
 > - next step: M14 应用就绪语言基线为下一主线（STEP-0124 路线、进入条件已满足：M12 完整 GO + M13 收口 a/b/c GO），实现 STEP 待开工时预留；权威 live-model 评测仍待 owner 提供 DeepSeek 凭据
-> - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots
-> - next support step: 无（M13 已收口）；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入以刷新 ADR-0011 target 判定
+> - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots; M13 quality-budget gap (STEP-0128) is a recorded product fact for M17/M18 planning
+> - next support step: 无（M13 已收口：live-model 实测达标，ADR-0012 记录一个既定缺口 B-repair 0.833，供未来质量步骤跟踪）
 
 ## 0. M6 exit state
 
@@ -30,6 +30,8 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
+
+[`STEP-0128`](./steps/STEP-0128-live-model-evaluation.md)（dev 分支）已按 M13 §5 插入规则完成权威 live-model 评测：DeepSeek `deepseek-chat`，96×30=2880 次真实调用，成本 $0.78（封顶 $10），实测 **0.9095**（2245/2880；generation 0.40/0.50/0.30、repair 0.914/0.833/0.994、understanding 1.00/1.00/0.999）。对照 superseding ADR-0012（owner 2026-09-05 决定：真实模型对新语言实测 ≈0.9 为现阶段达标水平）：**预算下达且达标**，§13 (d) = **实测 GO**；记录一个既定缺口 B-repair 0.833 < 0.850 target，供未来质量步骤跟踪。报告：[`docs/reports/ai-eval-live-model-v1.md`](./reports/ai-eval-live-model-v1.md)。
 
 [`STEP-0126`](./steps/STEP-0126-linux-provider-corpus.md) 已在 WSL2 Ubuntu-24.04（Linux x64 native）重跑全部 provider 语料与 runner http2 语料：provider 48/48、runner lib 37/37、http2 fixture 6/6、runner 集成 35/35（2 个为 `#[cfg(windows)]` 控制台测试）、STEP-0089 oracle 13/13，全部绿（证据 `target/evidence/step-0126/linux/validator.log`）。[`STEP-0127`](./steps/STEP-0127-m12-full-go-audit.md) 据此把 STEP-0118 的 GO-core 升级为 **M12 完整 GO**：10/10 exit gates GO，自动 NO-GO 清单零违例；M12 后不再有未关闭的内部里程碑门槛，M14 进入条件（M12 完整 GO + M13 收口 a/b/c GO + M0–M13 regression 可重跑）已满足。
 
