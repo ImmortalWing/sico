@@ -3,7 +3,7 @@
 > - updated: 2026-09-05
 > - phase: M12 complete (full GO per STEP-0127); M13 closed — authoritative live-model run measured and budgets met under ADR-0012 (STEP-0128); M7 public deployment and M6/mobile remain deferred
 > - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence)
-> - current step: M14 启动（STEP-0129 盘点完成：RFC-0038 应用 profile/支持矩阵/出口语料已发 draft 待 owner 接受；下一 STEP-0130 起逐项关闭实测差距，从循环/分支控制流开始）
+> - current step: M14 启动（STEP-0129 盘点完成：RFC-0038 应用 profile/支持矩阵/出口语料已 accepted（owner 2026-09-05）；STEP-0130 起逐项关闭实测差距，从循环/分支控制流开始）
 > - current support step: 无（M13 STEP-0119/0120/0121 已完成）
 > - last completed active step: STEP-0129 (M14 inventory + RFC-0038；此前 STEP-0128 live-model 实测 0.9095 达标、M13 收口)
 > - last completed support step: STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence)

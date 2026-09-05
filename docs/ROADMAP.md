@@ -230,7 +230,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M14: Application-ready language baseline（planned）
 
-状态：`started / STEP-0129 盘点完成；RFC-0038（应用 profile + 出口语料）draft 待 owner 接受；STEP-0130 起逐项关闭实测差距`
+状态：`started / STEP-0129 盘点完成；RFC-0038（应用 profile + 出口语料）accepted 2026-09-05；STEP-0130 起逐项关闭实测差距`
 
 目标不是宣称语言“永久完成”，而是关闭已接受源码语义与可执行后端之间妨碍真实应用的缺口。主要交付：check/build/run 支持矩阵与拒绝合同、通用循环/迭代和受 Runtime 限额约束的递归、动态集合与记录遍历、固定宽数值/位运算、模块与 versioned package 使用、compiler-facing WIT/Component binding、应用测试入口，以及代表性算法/数据/状态机程序。
 

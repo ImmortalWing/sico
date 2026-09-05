@@ -1,6 +1,7 @@
 # RFC-0038: M14 application profile and support matrix v0
 
-> - status: draft (STEP-0129)
+> - status: accepted
+> - accepted: 2026-09-05 (owner)
 > - date: 2026-09-05
 > - phase: M14 kickoff (M14 plan §7 requires this RFC before code changes)
 

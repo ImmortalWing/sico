@@ -1,6 +1,6 @@
 # STEP-0129: M14 inventory, application profile RFC and support matrix
 
-> - status: complete (RFC-0038 issued as draft for owner acceptance)
+> - status: complete (RFC-0038 accepted by owner 2026-09-05)
 > - phase: M14 (first step per M14 plan §7: inventory/RFC before code changes)
 > - started: 2026-09-05
 > - completed: 2026-09-05
