@@ -2,7 +2,7 @@
 
 > - updated: 2026-09-04
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M12 GO-core; full provider/runner integration pending
+> - current phase: M12 complete (full GO per STEP-0127); next mainline is M14 application-ready language (entry gates satisfied); M13 remains a closed support track pending owner-supplied live-model credentials
 > - phase context: M10/M11 complete; M12 retains secure HTTP/API automation scope; M13 AI tooling closure is a parallel support track; owner-approved future sequence is M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages and M18 representative applications/pilots; M7 public rollout and M6 mobile remain externally blocked
 
 ## Status vocabulary
@@ -204,7 +204,7 @@ Entry gate：satisfied by STEP-0014。
 
 ## M12: Secure HTTP Provider and Automation SDK
 
-状态：`planned after M11 GO / STEP-0111–0118 reserved`
+状态：`complete / GO（STEP-0127，2026-09-05）；STEP-0111–0118 合同与五层 + STEP-0125 guest-visible http@0.2.0 集成 + STEP-0126 Linux x64 语料全绿`
 
 主要交付：成熟 TLS 实现上的 HTTPS/SNI/certificate validation、exact scheme/host/port authority、IPv6/IDNA 与 DNS pinning、bounded streaming upload/download、redirect reauthorization、opaque Host secret injection、per-Store connection lifecycle、automation SDK/tooling 和出口审计。
 
@@ -212,7 +212,7 @@ Entry gate：satisfied by STEP-0014。
 
 模块边界：语言 semantics/IR 只拥有 HTTP 类型/effect/capability；codegen 只生成 versioned Component import；TLS/DNS/redirect/credentials 位于独立 Host provider；runner/manifest 负责默认拒绝的 endpoint/secret grants；标准库只提供不扩权的 helpers。Provider 必须复用 M11 scheduler，不创建第二套并行模型。
 
-执行计划：[`M12 Secure HTTP Provider and Automation SDK`](./plans/M12-secure-http-automation-sdk.md)，STEP-0111–0118。M12 不包含 general sockets、ambient proxy/credentials、browser state、public deployment 或 mobile Runtime completion。
+执行计划：[`M12 Secure HTTP Provider and Automation SDK`](./plans/M12-secure-http-automation-sdk.md)，STEP-0111–0118，另含收尾 STEP-0125（guest-visible `http@0.2.0`：流式/池/重试/上传/secret 经真实 guest Component 实证，源码层导入 emission 留给 M14）、STEP-0126（Linux x64 provider 语料重跑）与 STEP-0127（完整 GO 复审）。M12 不包含 general sockets、ambient proxy/credentials、browser state、public deployment 或 mobile Runtime completion。
 
 退出证据：真实 HTTPS 正反证书矩阵、IDNA/IPv4/IPv6/DNS rebinding 拒绝语料、1/16/256 MiB bounded-RSS streaming、redirect/secret non-leak、one-Store/task connection isolation、M0–M11 regression 与 actual-platform matrix。
 

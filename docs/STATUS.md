@@ -1,13 +1,13 @@
 # Sico project status
 
-> - updated: 2026-09-04
-> - phase: M12 Secure HTTP Provider is GO-core with full integration pending; M13 AI tooling closure runs as a parallel support track; M7 public deployment and M6/mobile remain deferred
-> - phase status: M11 complete (GO 2026-09-02, gates 10/10, Windows x64 + Linux x64 native); M12 must reach full GO before M14 implementation
-> - current step: 无内部主线（M12 STEP-0111–0118 完成，GO-core；M13 STEP-0119–0123 完成，GO；下一主线为 M14 应用就绪语言基线，按 STEP-0124 重排后路线图）
+> - updated: 2026-09-05
+> - phase: M12 Secure HTTP Provider complete (full GO per STEP-0127); M13 AI tooling closure runs as a parallel support track; M7 public deployment and M6/mobile remain deferred
+> - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence)
+> - current step: 无内部主线（M12 STEP-0111–0118、0125–0127 完成，完整 GO；M13 STEP-0119–0123 完成，GO；下一主线为 M14 应用就绪语言基线，进入条件已满足，待 owner 启动决策后预留 STEP）
 > - current support step: 无（M13 STEP-0119/0120/0121 已完成）
-> - last completed active step: STEP-0118 (M12 exit audit: GO-core; RFC-0037 + provider 五层 authority/TLS/framing/redirect/secrets+engine 全部冻结并测试，33/33 provider tests)
+> - last completed active step: STEP-0127 (M12 full-GO audit: 10/10 gates GO；STEP-0126 Linux x64 语料全绿，证据 target/evidence/step-0126/linux/)
 > - last completed support step: STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence)
-> - next step: finish the two residual M12 integration deliverables recorded by STEP-0118; future M14–M18 implementation STEP numbers are intentionally unreserved
+> - next step: M14 应用就绪语言基线为下一主线（STEP-0124 路线、进入条件已满足：M12 完整 GO + M13 收口 a/b/c GO），实现 STEP 待开工时预留；权威 live-model 评测仍待 owner 提供 DeepSeek 凭据
 > - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots
 > - next support step: 无（M13 已收口）；权威 live-model 评测待所有者提供 DeepSeek 凭据后按 M13 §5 插入以刷新 ADR-0011 target 判定
 
@@ -30,6 +30,10 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 [`STEP-0074`](./steps/STEP-0074-production-deployment-origin-and-ux.md) 新增第 23 个 workspace package `sico-registry-server`，通过 loopback HTTP origin、operator ZIP、release composition 和真实 Wasmtime `42` 完成本地生产部署基线。它没有创建公网域名、TLS、生产发布者或真实密钥，证据等级为 `complete-local`。
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
+
+[`STEP-0126`](./steps/STEP-0126-linux-provider-corpus.md) 已在 WSL2 Ubuntu-24.04（Linux x64 native）重跑全部 provider 语料与 runner http2 语料：provider 48/48、runner lib 37/37、http2 fixture 6/6、runner 集成 35/35（2 个为 `#[cfg(windows)]` 控制台测试）、STEP-0089 oracle 13/13，全部绿（证据 `target/evidence/step-0126/linux/validator.log`）。[`STEP-0127`](./steps/STEP-0127-m12-full-go-audit.md) 据此把 STEP-0118 的 GO-core 升级为 **M12 完整 GO**：10/10 exit gates GO，自动 NO-GO 清单零违例；M12 后不再有未关闭的内部里程碑门槛，M14 进入条件（M12 完整 GO + M13 收口 a/b/c GO + M0–M13 regression 可重跑）已满足。
+
+[`STEP-0125`](./steps/STEP-0125-http2-runner-integration.md) 已完成 STEP-0118 遗留交付物 (a)：`sico:script/http@0.2.0` 在 runner 内 guest-visible——provider 新增流式读取/连接池/幂等重试/流式上传与确定性 TLS HTTP 服务器 fixture，runner 链接 0.2.0 接口（缓冲、流式读、流式上传、secret 注入、per-Store 池与 abandoned fail-closed），CLI 新增 `--allow-endpoint/--http-trust-roots/--secret-file`，6 个手编 guest Component 测试全绿（池复用 1 连接 2 请求、chunked 字节精确、permission/protocol typed 拒绝、secret Host 侧注入、run 级取消）。源码层 import emission 留给 M14。交付物 (b) Linux x64 语料重跑为 STEP-0126。
 
 [`STEP-0075`](./steps/STEP-0075-script-profile-contract.md)–[`STEP-0084`](./steps/STEP-0084-m8-exit-audit.md) 已完成 M8，出口审计为 GO。M9 的 [`STEP-0085`](./steps/STEP-0085-streaming-script-rfc.md)–[`STEP-0094`](./steps/STEP-0094-m9-exit-audit.md) 也已完成并发出 GO；M9 Runtime execution 只在 Windows x64 上实证。M10 [`STEP-0095`](./steps/STEP-0095-observability-debug-contract.md)–[`STEP-0102`](./steps/STEP-0102-m10-exit-audit.md) 已全部完成：contract、debug triplet、typed source faults、Windows console/client cancellation、bounded task-aware events、exact DAP subset（12/20/6）与 editor/AI data boundary，exit audit 在重跑 M0–M9 aggregate 后发出 GO（[`M10 exit audit`](./reports/m10-exit-audit-v0.md)，Windows x64 GNU）。M11 STEP-0103 设计轨已完成 [`ADR-0010`](./adr/ADR-0010-single-store-structured-concurrency.md)（accepted-design），STEP-0104 完成 [`RFC-0036`](./rfc/RFC-0036-structured-concurrency-semantic-ir-v0.md) semantic/IR contract，STEP-0105 完成 scheduler core，STEP-0106 完成 cancellation tree/race/select，STEP-0107 完成 bounded channels；下一项为 STEP-0108 persistent runner, watch, REPL and DAP task integration。
 
@@ -188,4 +192,4 @@ M6 当前被外部 runner 阻塞：本机没有已授权 Android SDK/NDK、ADB�
 
 ## 8. Next step
 
-下一项执行 M11 STEP-0108：persistent runner/watch/REPL/DAP 的 task 集成（generation-isolated scheduler lifecycle、task-aware events、watch generation 替换时取消并 join 全部旧任务、100 次顺序 session 无状态/句柄/RSS 泄漏），随后 STEP-0109 Linux 原生 runner 实证与 STEP-0110 出口审计。实现期间不得改变 M10 冻结的 bounded events、redaction 与 exact DAP claims；race/select/channel 源码拼写仍待独立 RFC；TLS HTTP 顺延 M12。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate。
+下一项执行 M12 STEP-0126：在 WSL2 Ubuntu-24.04 上重跑 sico-http-provider 全部语料与 runner http2 语料（Linux x64 native），随后 STEP-0127 复审 M12 exit gates（gate 7 pooling/retry 已由 STEP-0125 关闭）并发出 M12 完整 GO/NO-GO。实现期间不得改变 RFC-0037 冻结的 authority/TLS/framing/redirect/secret 语义与 STEP-0125 的 typed-error 边界。公网 rollout、真实 pilot/model 与移动平台仍服从各自外部 gate；源码层 http@0.2.0 import emission 属于 M14 应用就绪语言基线。
