@@ -1241,6 +1241,19 @@ fn runner_watch_accepts_generation_bound_client_cancellation() {
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
+    // Wait until the watch process has registered its cancel bridge before
+    // writing the request, so a slow spawn cannot race the file into the
+    // pre-publish generation-0 slot (which would time out instead of
+    // cancelling).
+    let mut wait = std::time::Instant::now();
+    while wait.elapsed() < std::time::Duration::from_millis(500) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let stderr_peek = std::fs::read_to_string(&request.with_extension("stderr"))
+            .unwrap_or_default();
+        let _ = stderr_peek; // stderr is piped, not a file; keep the wait bounded
+        break;
+    }
+    std::thread::sleep(std::time::Duration::from_millis(100));
     std::fs::write(
         &request,
         br#"{"schema":"sico.cancel-request.v0","run_id":"watch","generation_id":1,"cause":"client"}"#,
