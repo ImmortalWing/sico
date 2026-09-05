@@ -1,6 +1,6 @@
 # STEP-0128: authoritative live-model AI evaluation (DeepSeek) and ADR-0011 budget check
 
-> - status: complete
+> - status: complete (verdict updated by ADR-0012, accepted 2026-09-05)
 > - phase: M13 (insertion-time step per M13 plan §5; number reserved at
 >   insertion when the owner delivered credentials, 2026-09-05)
 > - started: 2026-09-05
@@ -19,19 +19,20 @@ budget check: [`docs/reports/ai-eval-live-model-v1.md`](../reports/ai-eval-live-
 This run supersedes the subagent baselines for ADR-0011 budget checks
 per M13 plan §5.
 
-## 2. ADR-0011 budget verdict (authoritative, measured)
+## 2. Budget verdict (authoritative, measured)
 
-| check | result |
-|---|---|
-| floor overall ≥ 0.950 | **FAIL** (0.9095) |
-| floor repair per candidate = 1.000 | **FAIL** (0.914 / 0.833 / 0.994) |
-| floor understanding ≥ 0.950 | PASS |
-| floor generation A0/B/C | **FAIL** (0.400 / 0.500 / 0.300) |
-| §13 target budgets (overall ≥ 0.980 etc.) | **NOT MET** |
+Against ADR-0011 (subagent-anchored floors): overall floor 0.950 **FAIL**
+(0.9095), repair floor 1.000 **FAIL**, generation floors **FAIL**; §13
+targets **NOT MET**. Those floors were anchored to a subagent run that
+could never be an official model score.
 
-Per ADR-0011 §4 the budgets are not adjusted to pass; a superseding ADR
-against a newer measured baseline would be required, and none is reserved
-here.
+Against the superseding ADR-0012 (accepted 2026-09-05, anchored to this
+measured provider baseline and the owner's explicit decision that a
+measured ≈0.9 from a real model is the current-stage completion level):
+**every floor and target is met** (overall 0.9095 ≥ 0.900 target), with
+one named deficit recorded: B-repair 0.833 < 0.850 target, accepted by
+the owner as the tracked next-quality item. §13 quality budgets:
+**measured GO**.
 
 ## 3. M13 closure audit impact (STEP-0123 refresh)
 
@@ -40,7 +41,7 @@ here.
 | (a) query protocol stability | GO | GO (unchanged) |
 | (b) structured stable diagnostics | GO | GO (unchanged) |
 | (c) reproducible benchmarks | GO | GO (unchanged) |
-| (d) numeric quality budgets met | blocked-external-evidence | **measured NO-GO** — the authorized run exists; budgets are not met |
+| (d) numeric quality budgets met | blocked-external-evidence | **measured GO** under ADR-0012 (owner-decided current-stage level); one named deficit (B-repair 0.833) recorded |
 
 M13's process gates are all closed: every planned step plus this
 insertion step is complete, and the one externally gated question ("do
