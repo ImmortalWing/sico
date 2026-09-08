@@ -1,0 +1,68 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function countdown(n: I64) returns I64:
+  if I64.equal(n, I64.literal(0)):
+    return I64.literal(0)
+  end if
+  match I64.checked_sub(n, I64.literal(1)):
+    case ok(rest):
+      return countdown(rest)
+    case error(_):
+      return I64.literal(-1)
+  end match
+end function
+
+function fib(n: I64) returns I64:
+  if I64.less_than(n, I64.literal(2)):
+    return n
+  end if
+  match I64.checked_sub(n, I64.literal(1)):
+    case ok(a):
+      match I64.checked_sub(n, I64.literal(2)):
+        case ok(b):
+          match I64.checked_add(fib(a), fib(b)):
+            case ok(sum):
+              return sum
+            case error(_):
+              return I64.literal(-1)
+          end match
+        case error(_):
+          return I64.literal(-1)
+      end match
+    case error(_):
+      return I64.literal(-1)
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  if I64.equal(countdown(I64.literal(10000)), I64.literal(0)):
+    if I64.equal(fib(I64.literal(12)), I64.literal(144)):
+      return ok(ScriptOutput(stdout: sico.text.encode("recursion-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    else:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "fib"))
+    end if
+  else:
+    return error(ScriptError(code: ScriptErrorCode.DomainError, message: "countdown"))
+  end if
+end function

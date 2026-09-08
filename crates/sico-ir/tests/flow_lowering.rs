@@ -83,7 +83,7 @@ fn effect_resource_and_revision_mutations_are_rejected() {
 }
 
 #[test]
-fn cumulative_capability_is_nineteen_lowered_and_six_typed_refused() {
+fn cumulative_capability_is_twenty_lowered_and_five_typed_refused() {
     let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let mut paths = Vec::new();
     collect_sico(&repository.join("syntax-candidates/b"), &mut paths);
@@ -112,7 +112,9 @@ fn cumulative_capability_is_nineteen_lowered_and_six_typed_refused() {
     }
     // STEP-0087: await-once now lowers through the sequential executor.
     // STEP-0104: structured-pair (collect_tasks) lowers to explicit task IR.
-    assert_eq!((lowered, unsupported), (19, 6));
+    // STEP-0137: payload bindings on computed all-return match subjects
+    // spill into compiler cells, un-refusing explicit-result-handle.
+    assert_eq!((lowered, unsupported), (20, 5));
 }
 
 /// RFC-0036 §5: lowering emits the canonical scope table, LIFO region
@@ -310,7 +312,14 @@ fn operation_name(operation: &Operation) -> &'static str {
         Operation::AddInt { .. } => "add-int",
         Operation::CheckedAdd { .. } => "checked-add",
         Operation::CheckedSub { .. } => "checked-sub",
+        Operation::CheckedMul { .. } => "checked-mul",
+        Operation::CheckedDiv { .. } => "checked-div",
         Operation::EqualFixed { .. } => "equal-fixed",
+        Operation::BitAnd { .. } => "bit-and",
+        Operation::BitOr { .. } => "bit-or",
+        Operation::BitXor { .. } => "bit-xor",
+        Operation::Shl { .. } => "shl",
+        Operation::Shr { .. } => "shr",
         Operation::LessFixed { .. } => "less-fixed",
         Operation::Call { .. } => "call",
         Operation::Intrinsic { .. } => "intrinsic",

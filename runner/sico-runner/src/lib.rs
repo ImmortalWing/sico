@@ -267,6 +267,10 @@ pub enum RunOutcome {
     Timeout,
     /// Deterministic fuel exhausted.
     FuelExhausted,
+    /// Wasm call-stack budget exhausted (deep recursion trips the
+    /// `max_wasm_stack` accounting on the big-stack guest worker, never the
+    /// native thread stack).
+    StackLimit,
     /// Guest memory growth denied by the configured ceiling.
     MemoryLimit,
     /// A named Host provider failed internally rather than returning its
@@ -806,7 +810,7 @@ impl RunOutcome {
             Self::Domain { .. } => 122,
             Self::Cancelled => 123,
             Self::Timeout => 124,
-            Self::FuelExhausted | Self::MemoryLimit | Self::Trap(_) => 125,
+            Self::FuelExhausted | Self::MemoryLimit | Self::StackLimit | Self::Trap(_) => 125,
             Self::HostProviderFailure { .. } => 126,
             Self::Launch(_) => 126,
             Self::Incompatible(_) => 127,
@@ -822,6 +826,7 @@ impl RunOutcome {
             Self::Cancelled => "cancelled",
             Self::Timeout => "timeout",
             Self::FuelExhausted => "resource-limit.fuel",
+            Self::StackLimit => "resource-limit.stack",
             Self::MemoryLimit => "resource-limit.memory",
             Self::HostProviderFailure { .. } => "host-provider-failure",
             Self::Trap(_) => "trap",
@@ -1793,7 +1798,10 @@ impl PreparedProgram {
         let engine = self.runner.engine.clone();
         let cancel_for_result = cancel.clone();
         let (sender, result) = std::sync::mpsc::sync_channel(1);
-        let worker = std::thread::spawn(move || {
+        let worker = std::thread::Builder::new()
+            .name("sico-guest-debug".to_owned())
+            .stack_size(GUEST_WORKER_STACK_BYTES)
+            .spawn(move || {
             let done = Arc::new(AtomicBool::new(false));
             let watchdog_done = done.clone();
             let watchdog = std::thread::spawn(move || {
@@ -1830,7 +1838,8 @@ impl PreparedProgram {
             let _ = watchdog.join();
             drop(binding);
             let _ = sender.send(execution);
-        });
+            })
+            .expect("debug guest worker spawns");
         Ok(RuntimeDebugSession {
             control,
             cancel: cancel.clone(),
@@ -1973,22 +1982,57 @@ impl PreparedProgram {
         if let Err(fault) = store.data_mut().scheduler.make_runnable(root) {
             return Execution::without_frames(RunOutcome::Launch(format!("scheduler: {fault}")));
         }
-        let mut execution = match self.linker.instantiate(&mut store, &self.component) {
-            Ok(instance) => match instance.get_func(&mut store, "run") {
-                Some(run) => self.invoke(&mut store, &run, input, limits),
-                None => Execution::without_frames(RunOutcome::Incompatible(
-                    "component does not export run".to_owned(),
-                )),
-            },
-            Err(error) => Execution {
-                frames: engine_frames(&error),
-                cancellation_source: None,
-                outcome: if store.data().denied {
-                    RunOutcome::MemoryLimit
-                } else {
-                    RunOutcome::Launch(format!("{error}"))
-                },
-            },
+        // Instantiate and invoke on a big-stack guest worker so deep
+        // recursion trips the typed wasm-stack budget, never the native
+        // thread stack (STEP-0137). The watchdog ticks the engine from this
+        // thread while the worker runs.
+        let guest = std::thread::scope(|scope| {
+            let worker = std::thread::Builder::new()
+                .name("sico-guest".to_owned())
+                .stack_size(GUEST_WORKER_STACK_BYTES)
+                .spawn_scoped(scope, move || {
+                    let execution = match self.linker.instantiate(&mut store, &self.component) {
+                        Ok(instance) => match instance.get_func(&mut store, "run") {
+                            Some(run) => self.invoke(&mut store, &run, input, limits),
+                            None => Execution::without_frames(RunOutcome::Incompatible(
+                                "component does not export run".to_owned(),
+                            )),
+                        },
+                        Err(error) => {
+                            let denied = store.data().denied;
+                            return (
+                                store,
+                                Execution {
+                                    frames: engine_frames(&error),
+                                    cancellation_source: None,
+                                    outcome: if denied {
+                                        RunOutcome::MemoryLimit
+                                    } else {
+                                        RunOutcome::Launch(format!("{error}"))
+                                    },
+                                },
+                            );
+                        }
+                    };
+                    (store, execution)
+                });
+            match worker {
+                Ok(worker) => Ok(worker.join()),
+                Err(error) => Err(format!("guest worker spawn: {error}")),
+            }
+        });
+        let (mut store, mut execution) = match guest {
+            Ok(Ok(pair)) => pair,
+            // A panicked worker takes its Store down with it; there is
+            // nothing left to settle, so report the trap directly.
+            Ok(Err(_)) => {
+                return Execution::without_frames(RunOutcome::Trap(
+                    "guest worker panicked".to_owned(),
+                ));
+            }
+            Err(message) => {
+                return Execution::without_frames(RunOutcome::Launch(message));
+            }
         };
         let decision = arbiter.commit(execution.outcome);
         execution.outcome = decision.outcome;
@@ -2045,6 +2089,7 @@ fn scheduler_terminal(outcome: &RunOutcome) -> TerminalKind {
         RunOutcome::Domain { .. } => TerminalKind::Failed,
         RunOutcome::FuelExhausted
         | RunOutcome::MemoryLimit
+        | RunOutcome::StackLimit
         | RunOutcome::HostProviderFailure { .. }
         | RunOutcome::Trap(_)
         | RunOutcome::Launch(_)
@@ -2179,6 +2224,12 @@ fn runtime_fault(
             "runtime.fuel-exhausted",
             "runtime_fuel_exhausted",
             "execution exhausted its fuel budget",
+        ),
+        RunOutcome::StackLimit => (
+            "resource-limit.stack",
+            "runtime.stack-limit",
+            "runtime_stack_limit",
+            "execution exhausted its call-stack budget",
         ),
         RunOutcome::MemoryLimit => (
             "resource-limit.memory",
@@ -3124,6 +3175,13 @@ fn check_input(input: &ScriptInput) -> Result<(), InputViolation> {
     Ok(())
 }
 
+/// Native stack reserved for the guest worker thread. Deep guest recursion
+/// must trip the deterministic `max_wasm_stack` accounting (4 MiB) long
+/// before the native thread stack is at risk; 16x headroom guarantees the
+/// typed `StackLimit` outcome instead of a process-level native overflow
+/// (STEP-0137).
+const GUEST_WORKER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
 fn classify_error(store: &Store<RunState>, error: &wasmtime::Error) -> RunOutcome {
     if error
         .downcast_ref::<Marker>()
@@ -3148,7 +3206,20 @@ fn classify_error(store: &Store<RunState>, error: &wasmtime::Error) -> RunOutcom
     if matches!(store.get_fuel(), Ok(0)) {
         return RunOutcome::FuelExhausted;
     }
-    RunOutcome::Trap(format!("{error}"))
+    if matches!(
+        error.downcast_ref::<wasmtime::Trap>(),
+        Some(wasmtime::Trap::StackOverflow)
+    ) {
+        return RunOutcome::StackLimit;
+    }
+    RunOutcome::Trap(format!(
+        "{error}; downcast={:?}; root={}",
+        error.downcast_ref::<wasmtime::Trap>(),
+        error
+            .source()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "<none>".to_owned())
+    ))
 }
 
 fn input_val(input: &ScriptInput) -> Val {

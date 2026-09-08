@@ -1,0 +1,33 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+use math_util.twice
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match I64.equal(math_util.twice(I64.literal(21)), I64.literal(42)):
+    case true:
+      return ok(ScriptOutput(stdout: sico.text.encode("modules-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "wrong value"))
+  end match
+end function

@@ -5,8 +5,13 @@
 
 use wasm_encoder::{BlockType, Function, Instruction, MemArg, ValType};
 
+use sico_ir::{CollectionElement, CollectionIntrinsic, CollectionOperation};
+
 /// Core signature of one emitted helper.
 pub(crate) fn helper_signature(name: &str) -> (Vec<ValType>, Vec<ValType>) {
+    if let Some(intrinsic) = sico_ir::collection_intrinsic(name) {
+        return collection_helper_signature(intrinsic);
+    }
     let i32s = |count: usize| vec![ValType::I32; count];
     match name {
         "sico.bytes.concat" | "sico.text.concat" | "sico.list.append" | "sico.text.join" => {
@@ -54,6 +59,9 @@ pub(crate) fn emit_helper(
     alloc: u32,
     helpers: &std::collections::BTreeMap<&'static str, u32>,
 ) -> Function {
+    if let Some(intrinsic) = sico_ir::collection_intrinsic(name) {
+        return emit_collection_helper(intrinsic, alloc);
+    }
     match name {
         "sico.bytes.concat" | "sico.text.concat" => emit_concat(alloc),
         "sico.bytes.utf8_decode" => emit_utf8_validate(),
@@ -535,7 +543,7 @@ fn emit_split_lines(alloc: u32) -> Function {
         Instruction::End,
         Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(3),
         Instruction::Br(0), Instruction::End, Instruction::End,
-        Instruction::LocalGet(1), Instruction::I32Eqz,
+        Instruction::LocalGet(1),
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Add,
         Instruction::I32Const(-1), Instruction::I32Add,
@@ -557,12 +565,12 @@ fn emit_split_lines(alloc: u32) -> Function {
         Instruction::I32Load8U(mem(0, 0)), Instruction::I32Const(10), Instruction::I32Ne,
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(3),
-        Instruction::Br(0),
+        Instruction::Br(1),
         Instruction::End,
         // line = [line_start, ptr+i), strip a trailing CR
         Instruction::LocalGet(0), Instruction::LocalGet(3), Instruction::I32Add,
         Instruction::LocalGet(6), Instruction::I32Sub, Instruction::LocalSet(7),
-        Instruction::LocalGet(7), Instruction::I32Eqz,
+        Instruction::LocalGet(7),
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(6), Instruction::LocalGet(7), Instruction::I32Add,
         Instruction::I32Const(-1), Instruction::I32Add,
@@ -587,7 +595,7 @@ fn emit_split_lines(alloc: u32) -> Function {
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Add,
         Instruction::LocalGet(6), Instruction::I32Sub, Instruction::LocalSet(7),
-        Instruction::LocalGet(7), Instruction::I32Eqz,
+        Instruction::LocalGet(7),
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(6), Instruction::LocalGet(7), Instruction::I32Add,
         Instruction::I32Const(-1), Instruction::I32Add,
@@ -660,8 +668,9 @@ fn emit_split_words(alloc: u32) -> Function {
     is_space(&mut body);
     ops!(body;
         Instruction::If(BlockType::Empty),
-        // whitespace: close the open token if any
-        Instruction::LocalGet(7), Instruction::I32Eqz,
+        // whitespace: close the open token if any (the branch fires when
+        // in_token != 0)
+        Instruction::LocalGet(7),
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(4), Instruction::LocalGet(5), Instruction::I32Const(3),
         Instruction::I32Shl, Instruction::I32Add,
@@ -696,6 +705,469 @@ fn emit_split_words(alloc: u32) -> Function {
         Instruction::I32Store(mem(4, 2)),
         Instruction::End,
         Instruction::LocalGet(4), Instruction::LocalGet(2), Instruction::End,
+    );
+    body
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0131 insertion-ordered Map/Set helpers.
+//
+// Runtime representation: a map/set value is the `(entries pointer, count)`
+// pair, exactly like a `List[Text]` table. Each entry is one 8-byte key slot
+// plus, for maps, one 8-byte value slot:
+//
+//   map entry  [key: 8 bytes][value: 8 bytes]
+//   set entry  [key: 8 bytes]
+//
+// Key/value slot encodings: `Text`/`Bytes` are canonical `(ptr, len)` i32
+// pairs; `Bool`/`I64`/`U64` are one i64. All operations are functional
+// (copy-on-write): every mutation allocates a fresh entries table, so values
+// stay valid and iteration order is first-insertion order by construction —
+// a re-put keeps the original entry position and only overwrites the value
+// slot inside the fresh copy. A set is a map without value slots; adding an
+// existing key keeps the original table contents.
+// ---------------------------------------------------------------------------
+
+/// Byte width of one key slot (every element form is 8 bytes).
+fn collection_slot_width(_element: CollectionElement) -> i32 {
+    8
+}
+
+/// Byte width of one full entry (key + optional value).
+fn collection_entry_width(intrinsic: CollectionIntrinsic) -> i32 {
+    let mut width = collection_slot_width(intrinsic.key);
+    if intrinsic.value.is_some() {
+        width += collection_slot_width(intrinsic.key);
+    }
+    width
+}
+
+/// Whether this element is stored as a canonical `(ptr, len)` i32 pair.
+fn collection_is_pair(element: CollectionElement) -> bool {
+    matches!(element, CollectionElement::Text | CollectionElement::Bytes)
+}
+
+/// Core signature of one monomorphized collection helper.
+fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>, Vec<ValType>) {
+    use CollectionOperation::{
+        MapEmpty, MapGet, MapHas, MapKeys, MapLength, MapPut, SetAdd, SetEmpty, SetHas, SetLength,
+        SetToList,
+    };
+    let key_params = || {
+        if collection_is_pair(intrinsic.key) {
+            vec![ValType::I32, ValType::I32]
+        } else {
+            vec![ValType::I64]
+        }
+    };
+    match intrinsic.operation {
+        MapEmpty | SetEmpty => (vec![], vec![ValType::I32, ValType::I32]),
+        MapPut => {
+            let mut params = vec![ValType::I32, ValType::I32];
+            params.extend(key_params());
+            match intrinsic.value {
+                Some(value) if collection_is_pair(value) => {
+                    params.extend([ValType::I32, ValType::I32]);
+                }
+                Some(_) => params.push(ValType::I64),
+                None => {}
+            }
+            (params, vec![ValType::I32, ValType::I32])
+        }
+        MapGet => {
+            let mut params = vec![ValType::I32, ValType::I32];
+            params.extend(key_params());
+            (params, vec![ValType::I32, ValType::I64])
+        }
+        MapHas | SetHas => {
+            let mut params = vec![ValType::I32, ValType::I32];
+            params.extend(key_params());
+            (params, vec![ValType::I32])
+        }
+        MapLength | SetLength | MapKeys | SetToList => (
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I32, ValType::I32],
+        ),
+        SetAdd => {
+            let mut params = vec![ValType::I32, ValType::I32];
+            params.extend(key_params());
+            (params, vec![ValType::I32, ValType::I32])
+        }
+    }
+}
+
+/// Emits the monomorphized helper body for one collection intrinsic.
+/// Parameter slots: table(0), count(1), key(2..), then the value for
+/// `map.put`; scratch locals start after the widest parameter list (slot 6).
+fn emit_collection_helper(intrinsic: CollectionIntrinsic, alloc: u32) -> Function {
+    match intrinsic.operation {
+        CollectionOperation::MapEmpty | CollectionOperation::SetEmpty => emit_collection_empty(),
+        CollectionOperation::MapPut => emit_map_put(intrinsic, alloc),
+        CollectionOperation::MapGet => emit_map_get(intrinsic),
+        CollectionOperation::MapHas | CollectionOperation::SetHas => emit_map_has(intrinsic),
+        CollectionOperation::SetAdd => emit_set_add(intrinsic, alloc),
+        CollectionOperation::MapLength | CollectionOperation::SetLength => emit_collection_length(),
+        CollectionOperation::MapKeys => emit_map_keys(alloc),
+        CollectionOperation::SetToList => emit_set_to_list(),
+    }
+}
+
+/// `() -> (0, 0)`: the empty map/set is the null table with count 0.
+fn emit_collection_empty() -> Function {
+    let mut body = Function::new(vec![]);
+    ops!(body;
+        Instruction::I32Const(0), Instruction::I32Const(0), Instruction::End,
+    );
+    body
+}
+
+/// `(table, count)` passthrough for `length`.
+fn emit_collection_length() -> Function {
+    let mut body = Function::new(vec![]);
+    ops!(body;
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+/// Number of flat parameters one element contributes (a `Text`/`Bytes`
+/// pair is two i32s; a scalar is one i64).
+fn element_param_count(element: CollectionElement) -> u32 {
+    if collection_is_pair(element) { 2 } else { 1 }
+}
+
+/// Linear scan: pushes the index of the first entry whose key equals the
+/// argument, or `count` when absent. `index` is the scratch local holding
+/// the scan position; parameters are table(0), count(1), key(2..).
+fn emit_find_entry(body: &mut Function, intrinsic: CollectionIntrinsic, index: u32) {
+    let entry_width = collection_entry_width(intrinsic);
+    let key = intrinsic.key;
+    // verdict lives in local 9; the byte-loop cursor in local 8 (pair keys).
+    ops!(body;
+        Instruction::I32Const(0), Instruction::LocalSet(index),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(index), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+    );
+    if collection_is_pair(key) {
+        // Content equality: equal length and equal bytes. Pointer identity
+        // would be a semantic trap — dynamic Text built at runtime never
+        // shares addresses even when its contents match. The verdict is
+        // computed into local 9 with flat, stack-neutral If arms; label
+        // depths here (innermost first): byte-If(0), byte-Loop(1),
+        // byte-Block(2), len-If(3), scan-Loop(4), scan-Block(5).
+        ops!(body;
+            Instruction::I32Const(1), Instruction::LocalSet(9),
+            Instruction::LocalGet(3),
+            Instruction::LocalGet(0), Instruction::LocalGet(index), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+            Instruction::I32Ne,
+            Instruction::If(BlockType::Empty),
+            Instruction::I32Const(0), Instruction::LocalSet(9),
+            Instruction::Else,
+            Instruction::I32Const(0), Instruction::LocalSet(8),
+            Instruction::Block(BlockType::Empty),
+            Instruction::Loop(BlockType::Empty),
+            Instruction::LocalGet(8), Instruction::LocalGet(3), Instruction::I32GeU,
+            Instruction::BrIf(1),
+            Instruction::LocalGet(2), Instruction::LocalGet(8), Instruction::I32Add,
+            Instruction::I32Load8U(mem(0, 0)),
+            Instruction::LocalGet(0), Instruction::LocalGet(index), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Load(mem(0, 2)), Instruction::LocalGet(8), Instruction::I32Add,
+            Instruction::I32Load8U(mem(0, 0)),
+            Instruction::I32Ne,
+            Instruction::If(BlockType::Empty),
+            Instruction::I32Const(0), Instruction::LocalSet(9),
+            Instruction::Br(2),
+            Instruction::End,
+            Instruction::LocalGet(8), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(8),
+            Instruction::Br(0),
+            Instruction::End, Instruction::End,
+            Instruction::End,
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(0), Instruction::LocalGet(index), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I64Load(mem(0, 3)),
+            Instruction::LocalGet(2), Instruction::I64Eq,
+            Instruction::LocalSet(9),
+        );
+    }
+    // A verdict of 1 exits the scan (index = match position); 0 continues.
+    // Depths from here: scan-Loop(0), scan-Block(1).
+    ops!(body;
+        Instruction::LocalGet(9),
+        Instruction::BrIf(1),
+        Instruction::LocalGet(index), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(index),
+        Instruction::Br(0),
+        Instruction::End, Instruction::End,
+        Instruction::LocalGet(index),
+    );
+}
+
+/// `(out_table, out_count) = put(table, count, key..., value...)`:
+/// copy-on-put. Existing key: copy all entries, overwrite the value slot in
+/// the copy at the original index (first-insertion order preserved). New
+/// key: copy `count` entries then append one entry. Locals after params:
+/// new, found, scan.
+fn emit_map_put(intrinsic: CollectionIntrinsic, alloc: u32) -> Function {
+    let entry_width = collection_entry_width(intrinsic);
+    let key = intrinsic.key;
+    let value = intrinsic.value.expect("map.put carries a value element");
+    let params = 2 + element_param_count(key) + element_param_count(value);
+    let new = params;
+    let found = params + 1;
+    let index = params + 2;
+    let scratch = params + 3;
+    let value_base = 2 + element_param_count(key);
+    let locals_needed = scratch + 10;
+    let mut body = Function::new(vec![(locals_needed, ValType::I32)]);
+    // Always allocate room for one MORE entry than the source: a fresh map
+    // (count 0) must not hand out a zero-size block whose contents a later
+    // arena allocation would overwrite.
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::Call(alloc), Instruction::LocalSet(new),
+        Instruction::LocalGet(new), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    );
+    emit_find_entry(&mut body, intrinsic, index);
+    ops!(body;
+        Instruction::LocalSet(found),
+        // found < count: overwrite the value slot inside the fresh copy
+        Instruction::LocalGet(found), Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(new), Instruction::LocalGet(found), Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+    );
+    if collection_is_pair(value) {
+        ops!(body;
+            Instruction::LocalGet(value_base), Instruction::I32Store(mem(0, 2)),
+            Instruction::LocalGet(new), Instruction::LocalGet(found), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(12), Instruction::I32Add,
+            Instruction::LocalGet(value_base + 1), Instruction::I32Store(mem(0, 2)),
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(value_base), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    ops!(body;
+        Instruction::Else,
+        // new key: write the appended entry past the copied prefix
+        Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::I32Add,
+    );
+    if collection_is_pair(key) {
+        ops!(body;
+            Instruction::LocalGet(2), Instruction::I32Store(mem(0, 2)),
+            Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(4), Instruction::I32Add,
+            Instruction::LocalGet(3), Instruction::I32Store(mem(0, 2)),
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(2), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    if collection_is_pair(value) {
+        ops!(body;
+            Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+            Instruction::LocalGet(value_base), Instruction::I32Store(mem(0, 2)),
+            Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(12), Instruction::I32Add,
+            Instruction::LocalGet(value_base + 1), Instruction::I32Store(mem(0, 2)),
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+            Instruction::LocalGet(value_base), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    ops!(body;
+        Instruction::End,
+        // count stays on an overwrite and grows by one on an append; the
+        // selection goes through a scratch local because both If arms must
+        // be stack-neutral.
+        Instruction::LocalGet(found), Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(1), Instruction::LocalSet(scratch),
+        Instruction::Else,
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(scratch),
+        Instruction::End,
+        Instruction::LocalGet(new), Instruction::LocalGet(scratch),
+        Instruction::End,
+    );
+    body
+}
+
+/// `(out_table, out_count) = add(set, count, key...)`: copy-on-add; an
+/// existing key returns the fresh copy with the unchanged count. Locals
+/// after params: new, found, scan.
+fn emit_set_add(intrinsic: CollectionIntrinsic, alloc: u32) -> Function {
+    let entry_width = collection_entry_width(intrinsic);
+    let key = intrinsic.key;
+    let params = 2 + element_param_count(key);
+    let new = params;
+    let found = params + 1;
+    let index = params + 2;
+    let scratch = params + 3;
+    let locals_needed = scratch + 10;
+    let mut body = Function::new(vec![(locals_needed, ValType::I32)]);
+    // As with put: always allocate room for one extra entry so an empty set
+    // never starts from a zero-size block.
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::Call(alloc), Instruction::LocalSet(new),
+        Instruction::LocalGet(new), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    );
+    emit_find_entry(&mut body, intrinsic, index);
+    ops!(body;
+        Instruction::LocalSet(found),
+        Instruction::LocalGet(found), Instruction::LocalGet(1), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::I32Add,
+    );
+    if collection_is_pair(key) {
+        ops!(body;
+            Instruction::LocalGet(2), Instruction::I32Store(mem(0, 2)),
+            Instruction::LocalGet(new), Instruction::LocalGet(1), Instruction::I32Const(entry_width), Instruction::I32Mul,
+            Instruction::I32Add, Instruction::I32Const(4), Instruction::I32Add,
+            Instruction::LocalGet(3), Instruction::I32Store(mem(0, 2)),
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(2), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    ops!(body;
+        Instruction::End,
+        // append grows the count; an existing key keeps it (stack-neutral
+        // arms via the scratch local).
+        Instruction::LocalGet(found), Instruction::LocalGet(1), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(scratch),
+        Instruction::Else,
+        Instruction::LocalGet(1), Instruction::LocalSet(scratch),
+        Instruction::End,
+        Instruction::LocalGet(new), Instruction::LocalGet(scratch),
+        Instruction::End,
+    );
+    body
+}
+
+/// `(found) = has(table, count, key...)`. Scratch local after params: scan.
+fn emit_map_has(intrinsic: CollectionIntrinsic) -> Function {
+    let params = 2 + element_param_count(intrinsic.key);
+    let index = params;
+    let mut body = Function::new(vec![(index + 9, ValType::I32)]);
+    emit_find_entry(&mut body, intrinsic, index);
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32LtU, Instruction::End,
+    );
+    body
+}
+
+/// `(tag, payload) = get(table, count, key...)`: found -> tag 0 and the
+/// value slot; missing -> tag 1 with the overflow discriminant 0. Locals
+/// after params: tag, payload, scan.
+fn emit_map_get(intrinsic: CollectionIntrinsic) -> Function {
+    let entry_width = collection_entry_width(intrinsic);
+    let value = intrinsic.value.expect("map.get carries a value element");
+    let params = 2 + element_param_count(intrinsic.key);
+    let tag = params;
+    let payload = params + 1;
+    let index = params + 2;
+    // tag and scan index are i32; only the payload is i64. Local groups
+    // are declared in index order: tag, payload, index, then i32 scratch.
+    let scratch_count = index + 10 - tag - 2;
+    let mut body = Function::new(vec![
+        (1, ValType::I32),
+        (1, ValType::I64),
+        (scratch_count, ValType::I32),
+    ]);
+    emit_find_entry(&mut body, intrinsic, index);
+    ops!(body;
+        Instruction::LocalSet(index),
+        Instruction::LocalGet(index), Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(0), Instruction::LocalSet(tag),
+        Instruction::LocalGet(0), Instruction::LocalGet(index), Instruction::I32Const(entry_width), Instruction::I32Mul,
+        Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+    );
+    if collection_is_pair(value) {
+        ops!(body;
+            Instruction::I32Load(mem(0, 2)), Instruction::I64ExtendI32U, Instruction::LocalSet(payload),
+        );
+    } else {
+        ops!(body;
+            Instruction::I64Load(mem(0, 3)), Instruction::LocalSet(payload),
+        );
+    }
+    ops!(body;
+        Instruction::Else,
+        Instruction::I32Const(1), Instruction::LocalSet(tag),
+        Instruction::I64Const(0), Instruction::LocalSet(payload),
+        Instruction::End,
+        Instruction::LocalGet(tag), Instruction::LocalGet(payload), Instruction::End,
+    );
+    body
+}
+
+/// `(out_table, out_count) = keys(table, count)`: a map entry is 16 bytes
+/// (key slot + value slot) while a `List[Text]` table strides 8, so the key
+/// pairs are compacted into a fresh table. Returning the entries table
+/// directly would read the value slot of entry `i` as key `i + 1`. A
+/// zero-count map allocates a zero-size block that is never stored to (the
+/// copy loop exits immediately), matching the proven-empty split tables.
+fn emit_map_keys(alloc: u32) -> Function {
+    let mut body = Function::new(vec![(2, ValType::I32)]);
+    // locals: i(2), new(3); entries stride 16, list slots stride 8.
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::Call(alloc), Instruction::LocalSet(3),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(3), Instruction::LocalGet(2), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(0), Instruction::LocalGet(2), Instruction::I32Const(4),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(3), Instruction::LocalGet(2), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(0), Instruction::LocalGet(2), Instruction::I32Const(4),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(2), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(2),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+/// `(out_table, out_count) = to_list(table, count)`: a set entry IS one
+/// 8-byte key slot, so the entries table already has the `List[Text]`
+/// layout and the pair is returned unchanged — zero-copy is exact, not an
+/// approximation. The key material lives in the same arena as the set, and
+/// copy-on-write keeps the shared table immutable after creation.
+fn emit_set_to_list() -> Function {
+    let mut body = Function::new(vec![]);
+    ops!(body;
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::End,
     );
     body
 }

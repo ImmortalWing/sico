@@ -1,0 +1,113 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function xorshift64_next(state: U64) returns U64:
+  let a = U64.bit_xor(state, U64.shl(state, U64.literal(13)))
+  let b = U64.bit_xor(a, U64.shr(a, U64.literal(7)))
+  let c = U64.bit_xor(b, U64.shl(b, U64.literal(17)))
+  return c
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let state = U64.literal(88172645463325252)
+  let failures = I64.literal(0)
+  let index = I64.literal(0)
+  while I64.less_than(index, I64.literal(8)):
+    set state = xorshift64_next(state)
+    match U64.equal(state, U64.literal(8748534153485358512)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(0)):
+          set failures = I64.literal(1)
+        end if
+    end match
+    match U64.equal(state, U64.literal(3040900993826735515)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(1)):
+          set failures = I64.literal(2)
+        end if
+    end match
+    match U64.equal(state, U64.literal(3453997556048239312)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(2)):
+          set failures = I64.literal(3)
+        end if
+    end match
+    match U64.equal(state, U64.literal(16431732851926010853)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(3)):
+          set failures = I64.literal(4)
+        end if
+    end match
+    match U64.equal(state, U64.literal(8204724074003728306)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(4)):
+          set failures = I64.literal(5)
+        end if
+    end match
+    match U64.equal(state, U64.literal(17801246309558322749)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(5)):
+          set failures = I64.literal(6)
+        end if
+    end match
+    match U64.equal(state, U64.literal(7041795614029497201)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(6)):
+          set failures = I64.literal(7)
+        end if
+    end match
+    match U64.equal(state, U64.literal(16736801589742238903)):
+      case true:
+        set failures = failures
+      case false:
+        if I64.equal(index, I64.literal(7)):
+          set failures = I64.literal(8)
+        end if
+    end match
+    match I64.checked_add(index, I64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end while
+  if I64.equal(failures, I64.literal(0)):
+    return ok(ScriptOutput(stdout: sico.text.encode("prng-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  else:
+    return error(ScriptError(code: ScriptErrorCode.DomainError, message: sico.text.concat("sequence mismatch at ", sico.i64.to_text(failures))))
+  end if
+end function

@@ -1,0 +1,75 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.DomainError, message: message))
+end function
+
+function emit(out: OutputStream, lines: List[Text], index: I64) returns Result[Bool, Text]:
+  let numbered = sico.list.append(lines, sico.text.concat("chunk ", sico.i64.to_text(index)))
+  return sico.stream.write(out, sico.text.encode(sico.text.concat(sico.text.join(numbered, "\n"), "\n")))
+end function
+
+function pump(input: InputStream, out: OutputStream, index: I64, total: U64) returns Result[ScriptOutput, ScriptError]:
+  let chunk = sico.stream.read(input, U64.literal(4096))
+  match chunk:
+    case ok(bytes):
+      match U64.equal(sico.bytes.length(bytes), U64.literal(0)):
+        case true:
+          match sico.stream.write(out, sico.text.encode(sico.text.concat(sico.text.concat("total=", sico.u64.to_text(total)), "\n"))):
+            case ok(_):
+              return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+            case error(message):
+              return fail(message)
+          end match
+        case false:
+          match sico.bytes.is_utf8(bytes):
+            case false:
+              return fail(sico.text.concat("bad utf8 at chunk ", sico.i64.to_text(index)))
+            case true:
+              match emit(out, sico.text.split_lines(sico.bytes.utf8_decode(bytes)), index):
+                case ok(_):
+                  match I64.checked_add(index, I64.literal(1)):
+                    case ok(next_index):
+                      match U64.checked_add(total, U64.literal(4096)):
+                        case ok(next_total):
+                          return pump(input, out, next_index, next_total)
+                        case error(_):
+                          return fail("total overflow")
+                      end match
+                    case error(_):
+                      return fail("index overflow")
+                  end match
+                case error(message):
+                  return fail(message)
+              end match
+          end match
+      end match
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return pump(sico.stream.stdin(), sico.stream.stdout(), I64.literal(0), U64.literal(0))
+end function

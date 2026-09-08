@@ -84,6 +84,9 @@ pub enum TokenKind {
     Break,
     Continue,
     Set,
+    // RFC-0039 module keywords (STEP-0143). Appended for the same reason.
+    Module,
+    Use,
 }
 
 impl TokenKind {
@@ -375,6 +378,8 @@ fn keyword(word: &str) -> TokenKind {
         "self" => TokenKind::SelfKeyword,
         "set" => TokenKind::Set,
         "while" => TokenKind::While,
+        "module" => TokenKind::Module,
+        "use" => TokenKind::Use,
         "spawn" => TokenKind::Spawn,
         "task" => TokenKind::Task,
         "try" => TokenKind::Try,

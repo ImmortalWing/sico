@@ -69,6 +69,11 @@ pub enum DeclarationKind {
     Resource,
     Interface,
     Function,
+    /// RFC-0039: a single-line `module <name>` declaration (STEP-0143).
+    Module,
+    /// RFC-0039: a single-line `use <module>.<item>` declaration (STEP-0143).
+    /// The name carries the normalized `<module>.<item>` path.
+    Use,
 }
 
 /// Top-level declaration shape used by later semantic lowering.
@@ -127,6 +132,10 @@ pub enum ParseErrorKind {
     MissingInterfaceClose,
     MissingParameterListClose,
     UnexpectedTopLevel,
+    /// RFC-0039: `module` declarations are exactly `module <name>` (E1014).
+    InvalidModuleDeclaration,
+    /// RFC-0039: `use` declarations are exactly `use <module>.<item>` (E1015).
+    InvalidUseDeclaration,
     NestingLimitExceeded {
         limit: usize,
     },
@@ -434,6 +443,76 @@ pub fn parse(source: &SourceFile) -> Parse {
             continue;
         }
 
+        // RFC-0039 (STEP-0143): single-line `module <name>` declarations.
+        if blocks.is_empty() && first == TokenKind::Module {
+            let start_index = line.significant[0];
+            starts.insert(start_index, SyntaxKind::MODULE_DECL);
+            schedule_finish(&mut finishes, line.end);
+            if line.significant.len() == 2
+                && tokens[line.significant[1]].kind == TokenKind::Identifier
+            {
+                let name_index = line.significant[1];
+                declarations.push(Declaration {
+                    kind: DeclarationKind::Module,
+                    name: token_text(source.text(), tokens[name_index]),
+                    range: TextRange::new(
+                        tokens[start_index].range.start(),
+                        tokens[line.end - 1].range.end(),
+                    ),
+                });
+            } else if errors.len() == errors_before_line {
+                push_parse_error(
+                    &mut errors,
+                    ParseError {
+                        kind: ParseErrorKind::InvalidModuleDeclaration,
+                        range: tokens[start_index].range,
+                        related: None,
+                        anchor: RecoveryAnchor::NextDefinition,
+                    },
+                );
+            }
+            continue;
+        }
+
+        // RFC-0039 (STEP-0143): single-line `use <module>.<item>` declarations.
+        if blocks.is_empty() && first == TokenKind::Use {
+            let start_index = line.significant[0];
+            starts.insert(start_index, SyntaxKind::USE_DECL);
+            schedule_finish(&mut finishes, line.end);
+            let shaped = line.significant.len() == 4
+                && tokens[line.significant[1]].kind == TokenKind::Identifier
+                && tokens[line.significant[2]].kind == TokenKind::Dot
+                && tokens[line.significant[3]].kind == TokenKind::Identifier;
+            if shaped {
+                let module_index = line.significant[1];
+                let item_index = line.significant[3];
+                let name = format!(
+                    "{}.{}",
+                    token_text(source.text(), tokens[module_index]),
+                    token_text(source.text(), tokens[item_index])
+                );
+                declarations.push(Declaration {
+                    kind: DeclarationKind::Use,
+                    name,
+                    range: TextRange::new(
+                        tokens[start_index].range.start(),
+                        tokens[line.end - 1].range.end(),
+                    ),
+                });
+            } else if errors.len() == errors_before_line {
+                push_parse_error(
+                    &mut errors,
+                    ParseError {
+                        kind: ParseErrorKind::InvalidUseDeclaration,
+                        range: tokens[start_index].range,
+                        related: None,
+                        anchor: RecoveryAnchor::NextDefinition,
+                    },
+                );
+            }
+            continue;
+        }
+
         if let Some((kind, opener_index)) = candidate {
             if blocks.is_empty()
                 && kind.declaration().is_none()
@@ -633,6 +712,8 @@ fn starts_top_level_declaration(tokens: &[Token], line: &Line) -> bool {
             | TokenKind::Resource
             | TokenKind::Interface
             | TokenKind::Function
+            | TokenKind::Module
+            | TokenKind::Use
     ) || (matches!(first, TokenKind::Export | TokenKind::Async)
         && opener(tokens, line).is_some_and(|(kind, _)| kind == BlockKind::Function))
 }
@@ -647,6 +728,12 @@ fn token_text_is(text: &str, token: Token, expected: &str) -> bool {
     let start = usize::from(token.range.start());
     let end = usize::from(token.range.end());
     &text[start..end] == expected
+}
+
+fn token_text(text: &str, token: Token) -> String {
+    let start = usize::from(token.range.start());
+    let end = usize::from(token.range.end());
+    text[start..end].to_owned()
 }
 
 fn identifier_after(

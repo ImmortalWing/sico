@@ -10,7 +10,7 @@ use sico_source::{SourceFile, TextRange};
 
 mod lower;
 
-pub use lower::{CoreLowerError, lower_core};
+pub use lower::{CoreLowerError, ModuleImport, lower_core, lower_core_modules};
 
 pub const SCHEMA: &str = "sico.ir.v0";
 pub const MAX_IR_DIAGNOSTICS: usize = 100;
@@ -63,9 +63,23 @@ pub enum Type {
     String,
     Bytes,
     List(Box<Self>),
+    /// Insertion-ordered map (M14 STEP-0131): functional copy-on-put, keys
+    /// keep their first-insertion position, iteration follows insertion
+    /// order. Keys and values are the scalar collection surface
+    /// (`String`/`Bytes`/`Bool`/`I64`/`U64`).
+    Map {
+        key: Box<Self>,
+        value: Box<Self>,
+    },
+    /// Insertion-ordered set (M14 STEP-0131): `Map { key, value: Unit }`
+    /// sharing the map cell machinery without a value slot.
+    Set(Box<Self>),
     Named(String),
     Option(Box<Self>),
-    Result { ok: Box<Self>, error: Box<Self> },
+    Result {
+        ok: Box<Self>,
+        error: Box<Self>,
+    },
     Capability(String),
     OwnedResource(String),
     BorrowedResource(String),
@@ -186,6 +200,14 @@ pub enum Operation {
         left: ValueId,
         right: ValueId,
     },
+    CheckedMul {
+        left: ValueId,
+        right: ValueId,
+    },
+    CheckedDiv {
+        left: ValueId,
+        right: ValueId,
+    },
     EqualFixed {
         left: ValueId,
         right: ValueId,
@@ -193,6 +215,26 @@ pub enum Operation {
     LessFixed {
         left: ValueId,
         right: ValueId,
+    },
+    BitAnd {
+        left: ValueId,
+        right: ValueId,
+    },
+    BitOr {
+        left: ValueId,
+        right: ValueId,
+    },
+    BitXor {
+        left: ValueId,
+        right: ValueId,
+    },
+    Shl {
+        value: ValueId,
+        amount: ValueId,
+    },
+    Shr {
+        value: ValueId,
+        amount: ValueId,
     },
     Call {
         function: FunctionId,
@@ -280,8 +322,21 @@ impl Operation {
             Self::AddInt { left, right }
             | Self::CheckedAdd { left, right }
             | Self::CheckedSub { left, right }
+            | Self::CheckedMul { left, right }
+            | Self::CheckedDiv { left, right }
             | Self::EqualFixed { left, right }
-            | Self::LessFixed { left, right } => vec![*left, *right],
+            | Self::LessFixed { left, right }
+            | Self::BitAnd { left, right }
+            | Self::BitOr { left, right }
+            | Self::BitXor { left, right }
+            | Self::Shl {
+                value: left,
+                amount: right,
+            }
+            | Self::Shr {
+                value: left,
+                amount: right,
+            } => vec![*left, *right],
             Self::Call { arguments, .. }
             | Self::Intrinsic { arguments, .. }
             | Self::Variant {
@@ -637,11 +692,34 @@ impl<'a> Verifier<'a> {
                     self.error(path, VerifyErrorKind::TypeMismatch);
                 }
             }
-            Operation::CheckedAdd { left, right } | Operation::CheckedSub { left, right } => {
+            Operation::CheckedAdd { left, right }
+            | Operation::CheckedSub { left, right }
+            | Operation::CheckedMul { left, right }
+            | Operation::CheckedDiv { left, right } => {
                 self.verify_checked_fixed(path, instruction, available, *left, *right);
             }
             Operation::EqualFixed { left, right } | Operation::LessFixed { left, right } => {
                 self.verify_fixed_comparison(path, instruction, available, *left, *right);
+            }
+            Operation::BitAnd { left, right }
+            | Operation::BitOr { left, right }
+            | Operation::BitXor { left, right }
+            | Operation::Shl {
+                value: left,
+                amount: right,
+            }
+            | Operation::Shr {
+                value: left,
+                amount: right,
+            } => {
+                // Bit operations are pure: both operands share the result's
+                // fixed-width type, and the result is not a Result.
+                if !matches!(instruction.ty, Type::I64 | Type::U64) {
+                    self.error(path, VerifyErrorKind::TypeMismatch);
+                }
+                for operand in [*left, *right] {
+                    self.expect_type(path, available.get(&operand), &instruction.ty);
+                }
             }
             Operation::Call {
                 function,
@@ -1366,6 +1444,16 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
                 error: Box::new(Type::String),
             },
         ),
+        // STEP-0136: buffered one-shot over `sico:script/http@0.2.0` with
+        // Host-default options; the typed http-error enum surfaces as its
+        // case-name Text (guest-side static table, no Host text crosses).
+        "sico.http2.request" => (
+            vec![Type::String, Type::String, Type::Bytes],
+            Type::Result {
+                ok: Box::new(Type::Named("Http2Response".to_owned())),
+                error: Box::new(Type::String),
+            },
+        ),
         "sico.stream.stdin" => (vec![], Type::Named("InputStream".to_owned())),
         "sico.stream.stdout" | "sico.stream.stderr" => {
             (vec![], Type::Named("OutputStream".to_owned()))
@@ -1403,9 +1491,257 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         ),
         "sico.stream.close_input" => (vec![Type::Named("InputStream".to_owned())], Type::Bool),
         "sico.stream.close_output" => (vec![Type::Named("OutputStream".to_owned())], Type::Bool),
-        _ => return None,
+        _ => match collection_intrinsic(name) {
+            Some(CollectionIntrinsic {
+                operation,
+                key,
+                value,
+            }) => collection_signature(operation, key, value),
+            None => return None,
+        },
     };
     Some((parameters, result))
+}
+
+/// One scalar collection element kind accepted by the STEP-0131 surface:
+/// the five fixed-width comparable types.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionElement {
+    Text,
+    Bytes,
+    Bool,
+    I64,
+    U64,
+}
+
+impl CollectionElement {
+    #[must_use]
+    pub fn to_type(self) -> Type {
+        match self {
+            Self::Text => Type::String,
+            Self::Bytes => Type::Bytes,
+            Self::Bool => Type::Bool,
+            Self::I64 => Type::I64,
+            Self::U64 => Type::U64,
+        }
+    }
+
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "Text" => Some(Self::Text),
+            "Bytes" => Some(Self::Bytes),
+            "Bool" => Some(Self::Bool),
+            "I64" => Some(Self::I64),
+            "U64" => Some(Self::U64),
+            _ => None,
+        }
+    }
+
+    fn suffix(self) -> &'static str {
+        match self {
+            Self::Text => "Text",
+            Self::Bytes => "Bytes",
+            Self::Bool => "Bool",
+            Self::I64 => "I64",
+            Self::U64 => "U64",
+        }
+    }
+}
+
+/// One parsed `sico.map.*`/`sico.set.*` intrinsic with its instantiation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CollectionIntrinsic {
+    pub operation: CollectionOperation,
+    pub key: CollectionElement,
+    pub value: Option<CollectionElement>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollectionOperation {
+    MapEmpty,
+    MapPut,
+    MapGet,
+    MapHas,
+    MapLength,
+    MapKeys,
+    SetEmpty,
+    SetAdd,
+    SetHas,
+    SetLength,
+    SetToList,
+}
+
+impl CollectionOperation {
+    fn parse(family: &str, operation: &str) -> Option<Self> {
+        match (family, operation) {
+            ("map", "empty") => Some(Self::MapEmpty),
+            ("map", "put") => Some(Self::MapPut),
+            ("map", "get") => Some(Self::MapGet),
+            ("map", "has") => Some(Self::MapHas),
+            ("map", "length") => Some(Self::MapLength),
+            ("map", "keys") => Some(Self::MapKeys),
+            ("set", "empty") => Some(Self::SetEmpty),
+            ("set", "add") => Some(Self::SetAdd),
+            ("set", "has") => Some(Self::SetHas),
+            ("set", "length") => Some(Self::SetLength),
+            ("set", "to_list") => Some(Self::SetToList),
+            _ => None,
+        }
+    }
+
+    fn family(self) -> &'static str {
+        match self {
+            Self::MapEmpty
+            | Self::MapPut
+            | Self::MapGet
+            | Self::MapHas
+            | Self::MapLength
+            | Self::MapKeys => "map",
+            Self::SetEmpty | Self::SetAdd | Self::SetHas | Self::SetLength | Self::SetToList => {
+                "set"
+            }
+        }
+    }
+
+    fn operation(self) -> &'static str {
+        match self {
+            Self::MapPut => "put",
+            Self::MapGet => "get",
+            Self::MapKeys => "keys",
+            Self::SetAdd => "add",
+            Self::SetToList => "to_list",
+            Self::MapEmpty | Self::SetEmpty => "empty",
+            Self::MapHas | Self::SetHas => "has",
+            Self::MapLength | Self::SetLength => "length",
+        }
+    }
+}
+
+/// Parses a canonical suffixed collection intrinsic name such as
+/// `sico.map.put[Text,I64]` or `sico.set.add[I64]` (M14 STEP-0131). The
+/// suffix is the canonical instantiation composed by the lowering; any
+/// other spelling (spaces, unknown elements, bare names) is rejected so
+/// the registry stays closed.
+#[must_use]
+pub fn collection_intrinsic(name: &str) -> Option<CollectionIntrinsic> {
+    let (path, suffix) = name.split_once('[')?;
+    if !suffix.ends_with(']') {
+        return None;
+    }
+    let mut parts = path.split('.');
+    let prefix = parts.next()?;
+    if prefix != "sico" {
+        return None;
+    }
+    let family = parts.next()?;
+    let operation = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let operation = CollectionOperation::parse(family, operation)?;
+    let mut elements = suffix[..suffix.len() - 1].split(',');
+    let key = CollectionElement::parse(elements.next()?)?;
+    let value = match operation {
+        CollectionOperation::MapEmpty
+        | CollectionOperation::MapPut
+        | CollectionOperation::MapGet
+        | CollectionOperation::MapHas
+        | CollectionOperation::MapLength
+        | CollectionOperation::MapKeys => Some(CollectionElement::parse(elements.next()?)?),
+        CollectionOperation::SetEmpty
+        | CollectionOperation::SetAdd
+        | CollectionOperation::SetHas
+        | CollectionOperation::SetLength
+        | CollectionOperation::SetToList => None,
+    };
+    if elements.next().is_some() {
+        return None;
+    }
+    // `sico.map.get` is only executable for fixed-width values; the 2-slot
+    // `Result[I64|U64, NumericError]` local layout is the one shape the
+    // Script profile can materialize today (M14 STEP-0131 matrix row).
+    if operation == CollectionOperation::MapGet
+        && !matches!(value, Some(CollectionElement::I64 | CollectionElement::U64))
+    {
+        return None;
+    }
+    Some(CollectionIntrinsic {
+        operation,
+        key,
+        value,
+    })
+}
+
+/// Composes the canonical suffixed intrinsic name for one instantiation,
+/// e.g. `sico.map.put[Text,I64]` or `sico.set.add[I64]`.
+#[must_use]
+pub fn collection_intrinsic_name(
+    operation: CollectionOperation,
+    key: CollectionElement,
+    value: Option<CollectionElement>,
+) -> String {
+    let mut name = String::from("sico.");
+    name.push_str(operation.family());
+    name.push('.');
+    name.push_str(operation.operation());
+    name.push('[');
+    name.push_str(key.suffix());
+    if let Some(value) = value {
+        name.push(',');
+        name.push_str(value.suffix());
+    }
+    name.push(']');
+    name
+}
+
+fn collection_signature(
+    operation: CollectionOperation,
+    key: CollectionElement,
+    value: Option<CollectionElement>,
+) -> (Vec<Type>, Type) {
+    let key_type = key.to_type();
+    let map_of = |element: Option<CollectionElement>| match operation.family() {
+        "map" => Type::Map {
+            key: Box::new(key_type.clone()),
+            value: Box::new(
+                element
+                    .expect("map operations carry a value element")
+                    .to_type(),
+            ),
+        },
+        _ => Type::Set(Box::new(key_type.clone())),
+    };
+    let result_of = |ok: Type| Type::Result {
+        ok: Box::new(ok),
+        error: Box::new(Type::Named(NUMERIC_ERROR_TYPE.to_owned())),
+    };
+    match operation {
+        CollectionOperation::MapEmpty | CollectionOperation::SetEmpty => {
+            (Vec::new(), map_of(value.or(Some(key))))
+        }
+        CollectionOperation::MapPut => (
+            vec![
+                map_of(value),
+                key_type.clone(),
+                value.expect("map.put carries a value").to_type(),
+            ],
+            map_of(value),
+        ),
+        CollectionOperation::MapGet => (
+            vec![map_of(value), key_type],
+            result_of(value.expect("map.get carries a value").to_type()),
+        ),
+        CollectionOperation::MapHas | CollectionOperation::SetHas => {
+            (vec![map_of(value), key_type], Type::Bool)
+        }
+        CollectionOperation::MapLength | CollectionOperation::SetLength => {
+            (vec![map_of(value)], Type::U64)
+        }
+        CollectionOperation::MapKeys | CollectionOperation::SetToList => {
+            (vec![map_of(value)], Type::List(Box::new(key_type.clone())))
+        }
+        CollectionOperation::SetAdd => (vec![map_of(value), key_type.clone()], map_of(value)),
+    }
 }
 
 fn canonical_integer(value: &str) -> bool {

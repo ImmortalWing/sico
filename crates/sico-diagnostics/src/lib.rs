@@ -75,6 +75,16 @@ pub const fn syntax_identity(kind: &ParseErrorKind) -> Option<DiagnosticIdentity
             "SYNTAX_UNEXPECTED_TOP_LEVEL",
             "top level accepts declarations only; use an explicit main function",
         ),
+        ParseErrorKind::InvalidModuleDeclaration => (
+            "E1014",
+            "SYNTAX_INVALID_MODULE_DECLARATION",
+            "a module declaration is exactly: module <name>",
+        ),
+        ParseErrorKind::InvalidUseDeclaration => (
+            "E1015",
+            "SYNTAX_INVALID_USE_DECLARATION",
+            "a use declaration is exactly: use <module>.<item>",
+        ),
         _ => return None,
     };
     Some(DiagnosticIdentity {

@@ -1,0 +1,1 @@
+{"args": ["alpha", "beta"], "expect_stdout": "alpha,beta"}

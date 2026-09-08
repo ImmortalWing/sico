@@ -1,0 +1,189 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let failures = I64.literal(0)
+  match I64.checked_mul(I64.literal(6), I64.literal(7)):
+    case ok(p):
+      if I64.equal(p, I64.literal(42)):
+        set failures = failures
+      else:
+        set failures = I64.literal(1)
+      end if
+    case error(_):
+      set failures = I64.literal(2)
+  end match
+  match I64.checked_mul(I64.literal(-6), I64.literal(7)):
+    case ok(p):
+      if I64.equal(p, I64.literal(-42)):
+        set failures = failures
+      else:
+        set failures = I64.literal(3)
+      end if
+    case error(_):
+      set failures = I64.literal(4)
+  end match
+  match I64.checked_mul(I64.literal(5), I64.literal(-1)):
+    case ok(p):
+      if I64.equal(p, I64.literal(-5)):
+        set failures = failures
+      else:
+        set failures = I64.literal(5)
+      end if
+    case error(_):
+      set failures = I64.literal(6)
+  end match
+  match I64.checked_mul(I64.literal(0), I64.literal(-9223372036854775808)):
+    case ok(p):
+      if I64.equal(p, I64.literal(0)):
+        set failures = failures
+      else:
+        set failures = I64.literal(7)
+      end if
+    case error(_):
+      set failures = I64.literal(8)
+  end match
+  match I64.checked_mul(I64.literal(9223372036854775807), I64.literal(1)):
+    case ok(p):
+      if I64.equal(p, I64.literal(9223372036854775807)):
+        set failures = failures
+      else:
+        set failures = I64.literal(9)
+      end if
+    case error(_):
+      set failures = I64.literal(10)
+  end match
+  match I64.checked_mul(I64.literal(9223372036854775807), I64.literal(2)):
+    case ok(_):
+      set failures = I64.literal(11)
+    case error(_):
+      set failures = failures
+  end match
+  match I64.checked_mul(I64.literal(-9223372036854775808), I64.literal(-1)):
+    case ok(_):
+      set failures = I64.literal(12)
+    case error(_):
+      set failures = failures
+  end match
+  match I64.checked_mul(I64.literal(-4611686018427387904), I64.literal(3)):
+    case ok(_):
+      set failures = I64.literal(13)
+    case error(_):
+      set failures = failures
+  end match
+  match U64.checked_mul(U64.literal(6), U64.literal(7)):
+    case ok(p):
+      if U64.equal(p, U64.literal(42)):
+        set failures = failures
+      else:
+        set failures = I64.literal(14)
+      end if
+    case error(_):
+      set failures = I64.literal(15)
+  end match
+  match U64.checked_mul(U64.literal(0), U64.literal(18446744073709551615)):
+    case ok(p):
+      if U64.equal(p, U64.literal(0)):
+        set failures = failures
+      else:
+        set failures = I64.literal(16)
+      end if
+    case error(_):
+      set failures = I64.literal(17)
+  end match
+  match U64.checked_mul(U64.literal(18446744073709551615), U64.literal(2)):
+    case ok(_):
+      set failures = I64.literal(18)
+    case error(_):
+      set failures = failures
+  end match
+  match U64.checked_mul(U64.literal(4294967296), U64.literal(4294967296)):
+    case ok(_):
+      set failures = I64.literal(19)
+    case error(_):
+      set failures = failures
+  end match
+  match I64.checked_div(I64.literal(42), I64.literal(6)):
+    case ok(q):
+      if I64.equal(q, I64.literal(7)):
+        set failures = failures
+      else:
+        set failures = I64.literal(20)
+      end if
+    case error(_):
+      set failures = I64.literal(21)
+  end match
+  match I64.checked_div(I64.literal(-42), I64.literal(6)):
+    case ok(q):
+      if I64.equal(q, I64.literal(-7)):
+        set failures = failures
+      else:
+        set failures = I64.literal(22)
+      end if
+    case error(_):
+      set failures = I64.literal(23)
+  end match
+  match I64.checked_div(I64.literal(7), I64.literal(0)):
+    case ok(_):
+      set failures = I64.literal(24)
+    case error(_):
+      set failures = failures
+  end match
+  match I64.checked_div(I64.literal(-9223372036854775808), I64.literal(-1)):
+    case ok(_):
+      set failures = I64.literal(25)
+    case error(_):
+      set failures = failures
+  end match
+  match U64.checked_div(U64.literal(42), U64.literal(6)):
+    case ok(q):
+      if U64.equal(q, U64.literal(7)):
+        set failures = failures
+      else:
+        set failures = I64.literal(26)
+      end if
+    case error(_):
+      set failures = I64.literal(27)
+  end match
+  match U64.checked_div(U64.literal(7), U64.literal(0)):
+    case ok(_):
+      set failures = I64.literal(28)
+    case error(_):
+      set failures = failures
+  end match
+  match U64.checked_div(U64.literal(18446744073709551615), U64.literal(1)):
+    case ok(q):
+      if U64.equal(q, U64.literal(18446744073709551615)):
+        set failures = failures
+      else:
+        set failures = I64.literal(29)
+      end if
+    case error(_):
+      set failures = I64.literal(30)
+  end match
+  if I64.equal(failures, I64.literal(0)):
+    return ok(ScriptOutput(stdout: sico.text.encode("mul-div-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  else:
+    return error(ScriptError(code: ScriptErrorCode.DomainError, message: sico.text.concat("failed check ", sico.i64.to_text(failures))))
+  end if
+end function

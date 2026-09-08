@@ -1983,6 +1983,7 @@ fn malformed_component() -> Vec<u8> {
         sico_codegen_wasm::FsUse::default(),
         sico_codegen_wasm::StreamUse::default(),
         false,
+        false,
         0,
     )
 }

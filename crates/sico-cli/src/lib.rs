@@ -3,8 +3,10 @@
 #![forbid(unsafe_code)]
 
 mod cache;
+mod modules;
 mod repl;
 mod run;
+mod test;
 
 use std::{
     ffi::{OsStr, OsString},
@@ -23,7 +25,7 @@ use sico_codegen_wasm::{
 };
 use sico_diagnostics::{render_syntax_json, render_syntax_text, syntax_identity};
 use sico_format::format as canonical_format;
-use sico_ir::{CoreLowerError, Module, Type, lower_core};
+use sico_ir::{CoreLowerError, Module, Type, lower_core, lower_core_modules};
 use sico_parser::{DeclarationKind, Parse, parse};
 use sico_semantics::{Analysis, DiagnosticArgument, analyze};
 use sico_source::{SourceFile, SourceId, TextRange};
@@ -74,6 +76,7 @@ where
         Some(("run", command)) => run::run_run(command, stdin, stdout, stderr),
         Some(("watch", command)) => run::run_watch(command, stdout, stderr),
         Some(("repl", command)) => repl::run_repl(command, stdin, stdout, stderr),
+        Some(("test", command)) => test::run_test(command, stdout, stderr),
         Some(("eval", command)) => run::run_eval(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
@@ -85,6 +88,7 @@ fn command() -> Command {
         .about("Sico compiler toolchain")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(test::test_command())
         .subcommand(
             Command::new("check")
                 .about("Check source syntax and static semantics")
@@ -268,6 +272,15 @@ fn compile_source_debug(
             return Err(EXIT_TOOL_ERROR);
         }
     };
+    // STEP-0143 limitation: debug artifacts stay single-file; module sets
+    // refuse with a typed message instead of wrong cross-module maps.
+    if modules::has_module_uses(&name, &bytes) {
+        let _ = writeln!(
+            stderr,
+            "sico: --debug-info does not support module imports yet; build without --debug-info"
+        );
+        return Err(EXIT_TOOL_ERROR);
+    }
     let (source, module) = prepare_source_bytes(&name, &bytes, profile, stdout, stderr)?;
     let executable = std::env::current_exe()
         .and_then(fs::read)
@@ -333,12 +346,87 @@ pub(crate) fn compile_source_bytes(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<Vec<u8>, i32> {
-    let (source, module) = prepare_source_bytes(name, bytes, profile, stdout, stderr)?;
+    let assembled = match modules::assemble_from_bytes(name, bytes) {
+        Ok(assembled) => assembled,
+        Err(modules::AssembleError::Frontend(source, parsed)) => {
+            return Err(emit_frontend_failure(
+                &source, &parsed, false, stdout, stderr,
+            ));
+        }
+        Err(modules::AssembleError::Diagnostics(lines)) => {
+            for line in &lines {
+                let _ = writeln!(stderr, "{line}");
+            }
+            return Err(EXIT_DIAGNOSTIC);
+        }
+        Err(modules::AssembleError::Tool(message)) => {
+            let _ = writeln!(stderr, "{message}");
+            return Err(EXIT_TOOL_ERROR);
+        }
+    };
+    compile_assembled(&assembled, profile, stdout, stderr)
+}
+
+/// Compiles an assembled RFC-0039 module set (STEP-0143): per-file semantic
+/// gates with file-attributed diagnostics, then the merged lowering. A
+/// single-file set behaves exactly like the pre-modules path.
+fn compile_assembled(
+    assembled: &modules::Assembled,
+    profile: &str,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<Vec<u8>, i32> {
+    let mut analyses = Vec::new();
+    for source in std::iter::once(&assembled.entry)
+        .chain(assembled.imports.iter().map(|import| &import.source))
+    {
+        let analysis = analyze(source).expect("successful parse must lower for semantic analysis");
+        if !analysis.is_success() {
+            return Err(emit_semantic_result(
+                source, &analysis, false, stdout, stderr,
+            ));
+        }
+        analyses.push(analysis);
+    }
+    if profile == "script-v0"
+        && let Err(message) = validate_script_declarations(&analyses[0])
+    {
+        let _ = writeln!(
+            stderr,
+            "sico: cannot build {}: {message}",
+            assembled.entry.name()
+        );
+        return Err(EXIT_TOOL_ERROR);
+    }
+    let imports: Vec<sico_ir::ModuleImport> = assembled
+        .imports
+        .iter()
+        .map(|import| sico_ir::ModuleImport {
+            name: import.name.as_str(),
+            source: &import.source,
+        })
+        .collect();
+    let module = match lower_core_modules(&assembled.entry, &imports) {
+        Ok(module) => module,
+        Err(error) => {
+            let _ = writeln!(
+                stderr,
+                "sico: cannot lower {}: {}",
+                assembled.entry.name(),
+                lower_error(&error)
+            );
+            return Err(EXIT_TOOL_ERROR);
+        }
+    };
     if profile == "script-v0" {
-        return compile_script_module(&module, &source, stderr);
+        return compile_script_module(&module, &assembled.entry, stderr);
     }
     if let Err(message) = validate_entry(&module) {
-        let _ = writeln!(stderr, "sico: cannot build {}: {message}", source.name());
+        let _ = writeln!(
+            stderr,
+            "sico: cannot build {}: {message}",
+            assembled.entry.name()
+        );
         return Err(EXIT_TOOL_ERROR);
     }
     match compile_component(&module) {
@@ -347,7 +435,7 @@ pub(crate) fn compile_source_bytes(
             let _ = writeln!(
                 stderr,
                 "sico: cannot generate Component for {}: {}",
-                source.name(),
+                assembled.entry.name(),
                 codegen_error(&error)
             );
             Err(EXIT_TOOL_ERROR)
@@ -751,12 +839,49 @@ fn run_check(
     else {
         return EXIT_TOOL_ERROR;
     };
-    let parsed = parse(&source);
-    if !parsed.is_success() {
-        return emit_frontend_failure(&source, &parsed, json_output, stdout, stderr);
+    // RFC-0039 (STEP-0143): assemble the module set first; parse failures
+    // (entry or imports) surface through the same frontend renderer.
+    let assembled = match modules::assemble_from_bytes(source.name(), source.text().as_bytes()) {
+        Ok(assembled) => assembled,
+        Err(modules::AssembleError::Frontend(source, parsed)) => {
+            return emit_frontend_failure(&source, &parsed, json_output, stdout, stderr);
+        }
+        Err(modules::AssembleError::Diagnostics(lines)) => {
+            for line in &lines {
+                let _ = writeln!(stderr, "{line}");
+            }
+            return EXIT_DIAGNOSTIC;
+        }
+        Err(modules::AssembleError::Tool(message)) => {
+            let _ = writeln!(stderr, "{message}");
+            return EXIT_TOOL_ERROR;
+        }
+    };
+    let entry_analysis =
+        analyze(&assembled.entry).expect("successful parse must lower for semantic analysis");
+    if !entry_analysis.is_success() {
+        return emit_semantic_result(
+            &assembled.entry,
+            &entry_analysis,
+            json_output,
+            stdout,
+            stderr,
+        );
     }
-    let analysis = analyze(&source).expect("successful parse must lower for semantic analysis");
-    emit_semantic_result(&source, &analysis, json_output, stdout, stderr)
+    for import in &assembled.imports {
+        let analysis =
+            analyze(&import.source).expect("successful parse must lower for semantic analysis");
+        if !analysis.is_success() {
+            return emit_semantic_result(&import.source, &analysis, json_output, stdout, stderr);
+        }
+    }
+    emit_semantic_result(
+        &assembled.entry,
+        &entry_analysis,
+        json_output,
+        stdout,
+        stderr,
+    )
 }
 
 fn run_format(
@@ -893,7 +1018,7 @@ pub(crate) fn read_input_bytes(
     }
 }
 
-fn emit_frontend_failure(
+pub(crate) fn emit_frontend_failure(
     source: &SourceFile,
     parsed: &Parse,
     json_output: bool,
@@ -1085,5 +1210,7 @@ const fn declaration_kind(kind: DeclarationKind) -> &'static str {
         DeclarationKind::Resource => "resource",
         DeclarationKind::Interface => "interface",
         DeclarationKind::Function => "function",
+        DeclarationKind::Module => "module",
+        DeclarationKind::Use => "use",
     }
 }

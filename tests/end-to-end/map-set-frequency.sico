@@ -1,0 +1,75 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let counts = sico.map.empty[Text,I64]()
+  let seen = sico.set.empty[Text]()
+  let words = sico.text.split_words(sico.text.trim(sico.bytes.utf8_decode(input.stdin)))
+  let index = U64.literal(0)
+  while U64.less_than(index, U64.literal(6)):
+    match sico.list.get(words, index):
+      case ok(word):
+        match sico.map.get[Text,I64](counts, word):
+          case ok(current):
+            match I64.checked_add(current, I64.literal(1)):
+              case ok(incremented):
+                set counts = sico.map.put[Text,I64](counts, word, incremented)
+              case error(_):
+                return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+            end match
+          case error(_):
+            set counts = sico.map.put[Text,I64](counts, word, I64.literal(1))
+        end match
+        set seen = sico.set.add[Text](seen, word)
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "index"))
+    end match
+    match U64.checked_add(index, U64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end while
+  match U64.equal(sico.map.length[Text,I64](counts), U64.literal(4)):
+    case true:
+      match sico.set.has[Text](seen, "delta"):
+        case true:
+          match U64.equal(sico.set.length[Text](seen), U64.literal(4)):
+            case true:
+              match sico.map.has[Text,I64](counts, "missing"):
+                case false:
+                  return ok(ScriptOutput(stdout: sico.text.encode("map-set-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                case true:
+                  return error(ScriptError(code: ScriptErrorCode.DomainError, message: "phantom key"))
+              end match
+            case false:
+              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set size"))
+          end match
+        case false:
+          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set hit"))
+      end match
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "distinct count"))
+  end match
+end function

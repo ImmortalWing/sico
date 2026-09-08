@@ -1,0 +1,10 @@
+module math_util
+
+function twice(x: I64) returns I64:
+  match I64.checked_mul(x, I64.literal(2)):
+    case ok(value):
+      return value
+    case error(_):
+      return I64.literal(-1)
+  end match
+end function

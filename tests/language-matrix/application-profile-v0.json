@@ -1,0 +1,234 @@
+{
+  "schema": "sico.application-profile.v0",
+  "step": "STEP-0131..0143",
+  "rfc": "RFC-0038;RFC-0039",
+  "updated": "2026-09-08",
+  "profile": "script-v0",
+  "matrix": {
+    "executable": {
+      "records-enums-variant-construction": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "user types cross function boundaries; frozen since M2/M3"
+      },
+      "functions-non-recursive-calls": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "call target resolved after verification"
+      },
+      "match-all-arms-return": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "frozen all-return match shape (STEP-0083)"
+      },
+      "while-if-else-break-continue-set": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "STEP-0130 general control flow via IR mutable cells"
+      },
+      "map-empty-put-get-has-length-keys": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0131",
+        "instantiations": "sico.map.*[K,V] with K in {Text,Bytes,Bool,I64,U64}, V in {Text,Bytes,Bool,I64,U64}; map.get restricted to V in {I64,U64} (fixed-width Result local layout)",
+        "semantics": "functional copy-on-write; first-insertion key order; re-put keeps original position and overwrites value",
+        "notes": "keys compared by byte content (Text/Bytes) or value (I64/U64/Bool)"
+      },
+      "set-empty-add-has-length-to-list": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0131",
+        "instantiations": "sico.set.*[K] with K in {Text,Bytes,Bool,I64,U64}; keys/to_list restricted to K=Text (List[Text] element layout)",
+        "semantics": "add is idempotent per key; membership and length deterministic"
+      },
+      "result-option-checked-arithmetic": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "Result[I64|U64, NumericError] two-slot form; Result[Text|Bytes, NumericError] four-slot form (STEP-0131)"
+      },
+      "list-text-get-append-length": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "sico.list.* on List[Text]"
+      },
+      "fixed-width-arithmetic": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "I64/U64 checked_add/checked_sub/checked_mul/checked_div/equal/less_than; checked_div reports division-by-zero (NumericError third case, STEP-0134)",
+        "step": "STEP-0134"
+      },
+      "bit-operations": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0132",
+        "notes": "I64/U64 bit_and/bit_or/bit_xor/shl/shr; shift amount shares the operand type and wasm masks counts to [0,63]; shr is arithmetic on I64, logical on U64"
+      },
+      "stdlib-intrinsics-36": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "text/bytes/json/fs/http@0.1.0/streams"
+      },
+      "http-0-2-0-guest-visible": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0136",
+        "notes": "source-level sico.http2.request (buffered one-shot, Host-default options) emitted beside http@0.1.0; typed http-error surfaces as case-name Text; headers narrowed off the v0 source record; e2e vs TLS fixture server incl. ungranted permission refusal"
+      },
+      "task-scopes-sequential-v1": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "parallelism-1; first-class Task/Future/Stream values refused"
+      },
+      "source-prng-xorshift64": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0135",
+        "notes": "deterministic seeded PRNG as pure Sico source (xorshift64 13/7/17 on U64 bit ops); first 8 outputs of seed 88172645463325252 pinned to a Python reference vector; no ambient randomness"
+      },
+      "recursion-runtime-bounded": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0137",
+        "notes": "general recursion executable; exhaustion is the typed RunOutcome::StackLimit (resource-limit.stack, exit 125) from the runner wasm-stack budget; the runner stays reusable after exhaustion; payload bindings in all-return matches on computed subjects spill into compiler cells"
+      },
+      "offline-block-solver-port": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0138",
+        "notes": "8x8 bitboard solver in pure Sico source (bit ops, general recursion, checked arithmetic); byte-exact vs the frozen Python oracle corpus on trivial/medium/hard/limit fixtures; max_nodes exhaustion yields the typed application-level limit outcome"
+      },
+      "streaming-transform": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0139",
+        "notes": "bounded-memory stdin/stdout line-numbering transform in pure Sico (4 KiB chunks, 1 MiB driven through default budgets); typed partial failure on non-UTF-8 input; stream reads/writes are host-cancellable"
+      },
+      "capability-state-machine": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0139",
+        "notes": "fs-persisted sealed/open/burned machine with unary revision guard, typed illegal-transition and stale-refusal outcomes, and deterministic recovery from missing/corrupt documents"
+      },
+      "string-escapes": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0139",
+        "notes": "source string escapes (\\ \\n \\r \\t \\0 \\\") decode to their characters; previously \\n silently stayed as two literal characters"
+      },
+      "source-modules-use": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0143",
+        "rfc": "RFC-0039",
+        "semantics": "explicit `module <name>` declaration per imported file (basename must match); `use <module>.<item>` per line; qualified references (module.item); DFS discovery from the entry's use graph in source order; entry file is the program root and declares no module",
+        "notes": "imports carry functions only in v0; single-file programs assemble untouched (byte-identical lowering)"
+      }
+    },
+    "refused": {
+      "unbounded-int-at-abi": {
+        "refusal": "unbounded Int parameter"
+      },
+      "non-scalar-component-values": {
+        "refusal": "non-scalar Component value"
+      },
+      "first-class-task-future-stream": {
+        "refusal": "async_unsupported"
+      },
+      "map-get-non-fixed-width-value": {
+        "check": true,
+        "build": true,
+        "refusal": "typed unsupported-call at build; only I64/U64 values materialize",
+        "step": "STEP-0131"
+      },
+      "keys-to-list-non-text-keys": {
+        "check": true,
+        "build": true,
+        "refusal": "typed unsupported-call at build; traversal materializes List[Text] only",
+        "step": "STEP-0131"
+      },
+      "http2-streaming-upload-from-source": {
+        "check": true,
+        "build": true,
+        "refusal": "unknown-callee at check (declared gap); typed unsupported-call at build",
+        "step": "STEP-0136",
+        "notes": "request-streaming/open-upload/finish and response-body/request-body resources stay Component-level only (runner-evidenced since STEP-0125); source emission is later work"
+      },
+      "module-cycle": {
+        "check": true,
+        "refusal": "E8003 module-cycle at the linking use site",
+        "step": "STEP-0143"
+      },
+      "module-file-mismatch-or-missing-decl": {
+        "check": true,
+        "refusal": "E8001/E8002 module declaration missing or naming a different module",
+        "step": "STEP-0143"
+      },
+      "module-unknown-or-item-missing": {
+        "check": true,
+        "refusal": "E8004 unknown module file; E8005 unknown item; E8011 non-function import kind",
+        "step": "STEP-0143"
+      },
+      "module-limits": {
+        "check": true,
+        "refusal": "E8007 use depth > 32; E8008 modules > 64; E8006 duplicate use; E8009 stdin entry; E8010 entry module declaration",
+        "step": "STEP-0143"
+      },
+      "unimported-qualified-reference": {
+        "check": true,
+        "build": true,
+        "refusal": "typed unsupported-call at build (pre-F4 behavior kept in v0; check-time call-target resolution is a declared follow-up)",
+        "step": "STEP-0143"
+      },
+      "user-function-checked-result-script-profile": {
+        "check": true,
+        "build": true,
+        "refusal": "typed unsupported at build: recorded ABI seam defect (packed value layout vs full flat declared width) produced invalid WebAssembly; no frozen corpus ever exercised it",
+        "step": "STEP-0143",
+        "notes": "repair scheduled as a dedicated defect step; return the payload and do the checked match at the call site meanwhile"
+      }
+    },
+    "proposed": {
+      "for-loops": true,
+      "closures": true,
+      "map-set-record-keys-values": "record/enum keys and values; non-Text traversal elements",
+      "http-0-2-0-source-emission": "later M14 STEP"
+    }
+  },
+  "exit-corpus": {
+    "map-set-fixture": "tests/end-to-end/map-set-frequency.sico",
+    "runner-test": "runner/sico-runner/tests/map_set.rs",
+    "control-flow-fixture": "tests/end-to-end/control-flow-counter.sico",
+    "solver-oracle": "案例项目/俄罗斯方块消除/oracle/oracle.py",
+    "solver-corpus": "案例项目/俄罗斯方块消除/oracle/corpus.json",
+    "solver-fixture": "tests/end-to-end/block-solver.sico",
+    "solver-runner-test": "runner/sico-runner/tests/block_solver.rs",
+    "stream-fixture": "tests/end-to-end/stream-transform.sico",
+    "stream-runner-test": "runner/sico-runner/tests/stream_transform.rs",
+    "state-machine-fixture": "tests/end-to-end/capability-state-machine.sico",
+    "state-machine-runner-test": "runner/sico-runner/tests/capability_state_machine.rs",
+    "sico-test-fixtures": "tests/sico-tests",
+    "modules-fixture": "tests/end-to-end/modules-report/main.sico",
+    "modules-module": "tests/end-to-end/modules-report/math_util.sico",
+    "modules-test-fixture": "tests/end-to-end/modules-report/main.test.json"
+  }
+}

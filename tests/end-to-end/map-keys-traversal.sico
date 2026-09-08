@@ -1,0 +1,99 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let m0 = sico.map.empty[Text,I64]()
+  let m1 = sico.map.put[Text,I64](m0, "alpha", I64.literal(1))
+  let m2 = sico.map.put[Text,I64](m1, "beta", I64.literal(2))
+  let m3 = sico.map.put[Text,I64](m2, "gamma", I64.literal(3))
+  let keys = sico.map.keys[Text,I64](m3)
+  let noise = sico.text.concat("interleaved", "-allocation")
+  let joined = sico.text.join(keys, "|")
+  match sico.text.starts_with(joined, "alpha|beta|gamma"):
+    case true:
+      match U64.equal(sico.text.length(joined), U64.literal(16)):
+        case true:
+          match sico.list.get(keys, U64.literal(1)):
+            case ok(second):
+              match sico.map.has[Text,I64](m3, second):
+                case true:
+                  match sico.map.get[Text,I64](m3, second):
+                    case ok(points):
+                      match I64.equal(points, I64.literal(2)):
+                        case true:
+                          match U64.equal(sico.list.length(sico.map.keys[Text,I64](m0)), U64.literal(0)):
+                            case true:
+                              match sico.text.starts_with(sico.text.join(sico.map.keys[Text,I64](m1), "|"), "alpha"):
+                                case true:
+                                  let s0 = sico.set.empty[Text]()
+                                  let s1 = sico.set.add[Text](s0, "delta")
+                                  let s2 = sico.set.add[Text](s1, "epsilon")
+                                  let s3 = sico.set.add[Text](s2, "zeta")
+                                  let members = sico.set.to_list[Text](s3)
+                                  let mjoined = sico.text.join(members, "|")
+                                  match sico.text.starts_with(mjoined, "delta|epsilon|zeta"):
+                                    case true:
+                                      match U64.equal(sico.text.length(mjoined), U64.literal(18)):
+                                        case true:
+                                          match sico.list.get(members, U64.literal(2)):
+                                            case ok(third):
+                                              match sico.set.has[Text](s3, third):
+                                                case true:
+                                                  return ok(ScriptOutput(stdout: sico.text.encode("traversal-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                                                case false:
+                                                  return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set member content"))
+                                              end match
+                                            case error(_):
+                                              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set index"))
+                                          end match
+                                        case false:
+                                          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set join length"))
+                                      end match
+                                    case false:
+                                      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "set join order"))
+                                  end match
+                                case false:
+                                  return error(ScriptError(code: ScriptErrorCode.DomainError, message: "singleton keys"))
+                              end match
+                            case false:
+                              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "empty keys"))
+                          end match
+                        case false:
+                          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "value round-trip"))
+                      end match
+                    case error(_):
+                      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "key get miss"))
+                  end match
+                case false:
+                  return error(ScriptError(code: ScriptErrorCode.DomainError, message: "key has miss"))
+              end match
+            case error(_):
+              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "map index"))
+          end match
+        case false:
+          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "map join length"))
+      end match
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "map join order"))
+  end match
+end function

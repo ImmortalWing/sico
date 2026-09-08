@@ -487,10 +487,24 @@ pub(crate) struct ScriptEmit {
     http: bool,
     /// Core function index of the `sico.http.request` import, when used.
     http_index: Option<u32>,
+    /// STEP-0136: the program calls `sico.http2.request` (http@0.2.0).
+    http2: bool,
+    /// Core function index of the `sico.http2.request` import, when used.
+    http2_index: Option<u32>,
+    /// Absolute data-segment address of the http-error case-name table
+    /// (eight pointer+length pairs in WIT declaration order), when used.
+    http2_error_table: Option<u32>,
 }
 
 /// Maps an intrinsic to the helper functions it needs at runtime.
 fn helper_dependencies(name: &str) -> &'static [&'static str] {
+    // STEP-0131 collection helpers are monomorphized per instantiation; each
+    // self-contained helper leaks its own canonical name once (bounded by the
+    // closed `collection_intrinsic` grammar: 11 operations × ≤25 instantiations).
+    if sico_ir::collection_intrinsic(name).is_some() {
+        let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
+        return Box::leak(vec![leaked].into_boxed_slice());
+    }
     match name {
         "sico.json.is_valid" => &[
             "sico.json.ws",
@@ -571,7 +585,7 @@ pub fn compile_script_program_with_debug(
     build_debug_artifact(&core, &component, "sico-script-core", input)
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn compile_script_program_parts(
     module: &IrModule,
 ) -> Result<(CoreCompilation, Vec<u8>), CodegenError> {
@@ -605,6 +619,7 @@ fn compile_script_program_parts(
     let mut fs = canonical::FsUse::default();
     let mut streams = canonical::StreamUse::default();
     let mut http = false;
+    let mut http2 = false;
     for function in &module.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
@@ -623,6 +638,7 @@ fn compile_script_program_parts(
                         "sico.stream.close_input" => streams.close_input = true,
                         "sico.stream.close_output" => streams.close_output = true,
                         "sico.http.request" => http = true,
+                        "sico.http2.request" => http2 = true,
                         _ => {}
                     }
                 }
@@ -650,11 +666,34 @@ fn compile_script_program_parts(
         prefix.extend_from_slice(&data_bytes);
         data_bytes = prefix;
     }
+    // The http2 error-name table sits after every literal (the stream table
+    // owns address 0): eight absolute pointer+length pairs in WIT
+    // declaration order, then the case-name bytes.
+    let mut http2_error_table = None;
+    if http2 {
+        let base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 3) & !3;
+        while u64::try_from(data_bytes.len()).unwrap_or(u64::MAX) < u64::from(base) {
+            data_bytes.push(0);
+        }
+        let mut cursor = base
+            + u32::try_from(canonical::HTTP2_ERROR_TEXTS.len() * 8)
+                .map_err(|_| unsupported("run", "http2 error table exceeds arena"))?;
+        for text in canonical::HTTP2_ERROR_TEXTS {
+            data_bytes.extend_from_slice(&cursor.to_le_bytes());
+            data_bytes.extend_from_slice(&u32::try_from(text.len()).unwrap_or(0).to_le_bytes());
+            cursor += u32::try_from(text.len()).unwrap_or(0);
+        }
+        for text in canonical::HTTP2_ERROR_TEXTS {
+            data_bytes.extend_from_slice(text.as_bytes());
+        }
+        http2_error_table = Some(base);
+    }
     let arena_base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 7) & !7;
-    let import_count = u32::from(fs.any() || streams.any() || http)
+    let import_count = u32::from(fs.any() || streams.any() || http || http2)
         + (fs.import_count() - u32::from(fs.any()))
         + streams.import_count()
-        + u32::from(http);
+        + u32::from(http)
+        + u32::from(http2);
     let function_indices = module
         .functions
         .iter()
@@ -674,6 +713,7 @@ fn compile_script_program_parts(
     let mut fs_indices = BTreeMap::new();
     let mut stream_indices = BTreeMap::new();
     let mut http_index = None;
+    let mut http2_index = None;
     {
         let mut next = 1_u32; // core import 0 is the transport realloc
         for import in canonical::FS_IMPORTS {
@@ -690,6 +730,10 @@ fn compile_script_program_parts(
         }
         if http {
             http_index = Some(next);
+            next += 1;
+        }
+        if http2 {
+            http2_index = Some(next);
         }
     }
     let mut used_helpers = std::collections::BTreeSet::new();
@@ -730,10 +774,14 @@ fn compile_script_program_parts(
         stream_indices,
         http,
         http_index,
+        http2,
+        http2_index,
+        http2_error_table,
     };
     let variant_tags = VariantTags::new(module, Some(&emit.abi))?;
     let core = build_script_core(module, run, &emit, &function_indices, &variant_tags)?;
-    let component = canonical::wrap_script_component(&core.bytes, fs, streams, http, arena_base);
+    let component =
+        canonical::wrap_script_component(&core.bytes, fs, streams, http, http2, arena_base);
     Ok((core, component))
 }
 
@@ -782,11 +830,12 @@ fn build_script_core(
     let mut functions = FunctionSection::new();
     let mut code = CodeSection::new();
     let mut debug_functions = Vec::with_capacity(module.functions.len());
-    let import_count = u32::from(emit.fs.any() || emit.streams.any() || emit.http)
+    let import_count = u32::from(emit.fs.any() || emit.streams.any() || emit.http || emit.http2)
         + (emit.fs.import_count() - u32::from(emit.fs.any()))
         + emit.streams.import_count()
-        + u32::from(emit.http);
-    if emit.fs.any() || emit.streams.any() || emit.http {
+        + u32::from(emit.http)
+        + u32::from(emit.http2);
+    if emit.fs.any() || emit.streams.any() || emit.http || emit.http2 {
         // Import types occupy type indices 0..import_count so the
         // type-index-equals-function-index invariant keeps holding.
         types.ty().function(
@@ -835,12 +884,38 @@ fn build_script_core(
                 [],
             );
         }
+        if emit.http2 {
+            types.ty().function(
+                canonical::HTTP2_IMPORT
+                    .core_params
+                    .iter()
+                    .map(|flat| match flat {
+                        Flat::I32 => ValType::I32,
+                        Flat::I64 => ValType::I64,
+                    })
+                    .collect::<Vec<_>>(),
+                [],
+            );
+        }
     }
     for (index, function) in module.functions.iter().enumerate() {
         if !function.effects.is_empty() {
             return Err(unsupported(
                 &function.name,
                 "effectful function without a Component host adapter",
+            ));
+        }
+        // STEP-0143 defect record: a non-`run` function returning a
+        // checked fixed-width `Result` declares the full flat width
+        // [tag, ok, error] but its body emits the packed two-slot value
+        // form, producing invalid WebAssembly. No frozen corpus ever
+        // exercised this seam before; refuse with a typed message until
+        // the dedicated ABI-repair step lands instead of emitting a
+        // silently invalid module.
+        if function.name != "run" && is_checked_fixed_result(&function.return_type) {
+            return Err(unsupported(
+                &function.name,
+                "user function returning a checked fixed-width Result in the Script profile (recorded defect; return the payload value and do the checked match at the call site)",
             ));
         }
         let function_index = import_count
@@ -916,7 +991,7 @@ fn build_script_core(
     functions.function(emit.alloc_index);
     functions.function(emit.realloc_index);
     functions.function(emit.post_return_index);
-    if emit.fs.any() || emit.streams.any() || emit.http {
+    if emit.fs.any() || emit.streams.any() || emit.http || emit.http2 {
         // The transport module owns the memory and the bump allocator; the
         // local alloc/realloc forward to the imported realloc (core import 0)
         // so one allocator serves guest and host-lowered fs calls alike.
@@ -1005,7 +1080,7 @@ fn finish_script_core(
     functions: &FunctionSection,
     code: &CodeSection,
 ) -> Result<Vec<u8>, CodegenError> {
-    let transport = emit.fs.any() || emit.streams.any() || emit.http;
+    let transport = emit.fs.any() || emit.streams.any() || emit.http || emit.http2;
     let imports = transport.then(|| script_transport_imports(emit));
     let mut memories = MemorySection::new();
     if !transport {
@@ -1109,6 +1184,14 @@ fn script_transport_imports(emit: &ScriptEmit) -> ImportSection {
         imports.import(
             canonical::HTTP_INTERFACE,
             canonical::HTTP_IMPORT.function,
+            EntityType::Function(type_index),
+        );
+        type_index += 1;
+    }
+    if emit.http2 {
+        imports.import(
+            canonical::HTTP2_INTERFACE,
+            canonical::HTTP2_IMPORT.function,
             EntityType::Function(type_index),
         );
     }
@@ -1290,7 +1373,7 @@ fn component_type(
 
 fn define_numeric_types(builder: &mut ComponentBuilder) -> NumericComponentTypes {
     let (error_type, error) = builder.type_defined(Some("numeric-error"));
-    error.enum_type(["overflow", "underflow"]);
+    error.enum_type(["overflow", "underflow", "division-by-zero"]);
     let error_type = builder.export("numeric-error", ComponentExportKind::Type, error_type, None);
 
     let (i64_result, result) = builder.type_defined(Some("checked-i64"));
@@ -2057,6 +2140,7 @@ impl VariantTags {
                 ("none".to_owned(), 1),
                 ("NumericError.overflow".to_owned(), 0),
                 ("NumericError.underflow".to_owned(), 1),
+                ("NumericError.division-by-zero".to_owned(), 2),
             ] {
                 tags.insert(name, tag);
             }
@@ -2240,11 +2324,51 @@ fn compile_instructions(
             Operation::CheckedSub { left, right } => {
                 emit_checked_fixed(function, layout, instruction, *left, *right, false, body)?;
             }
+            Operation::CheckedMul { left, right } => {
+                emit_checked_mul(function, layout, instruction, *left, *right, body)?;
+            }
+            Operation::CheckedDiv { left, right } => {
+                emit_checked_div(function, layout, instruction, *left, *right, body)?;
+            }
             Operation::EqualFixed { left, right } => {
                 emit_fixed_comparison(function, layout, instruction, *left, *right, true, body)?;
             }
             Operation::LessFixed { left, right } => {
                 emit_fixed_comparison(function, layout, instruction, *left, *right, false, body)?;
+            }
+            // STEP-0132: bit operations are pure single-slot i64 instructions
+            // in both fixed-width types. Shr is arithmetic for I64 and
+            // logical for U64; wasm masks shift counts to [0, 63].
+            Operation::BitAnd { left, right }
+            | Operation::BitOr { left, right }
+            | Operation::BitXor { left, right }
+            | Operation::Shl {
+                value: left,
+                amount: right,
+            }
+            | Operation::Shr {
+                value: left,
+                amount: right,
+            } => {
+                let left_slot = layout.scalar(&function.name, *left)?;
+                let right_slot = layout.scalar(&function.name, *right)?;
+                let result = layout.scalar(&function.name, instruction.result)?;
+                body.instruction(&Instruction::LocalGet(left_slot));
+                body.instruction(&Instruction::LocalGet(right_slot));
+                body.instruction(&match &instruction.operation {
+                    Operation::BitAnd { .. } => Instruction::I64And,
+                    Operation::BitOr { .. } => Instruction::I64Or,
+                    Operation::BitXor { .. } => Instruction::I64Xor,
+                    Operation::Shl { .. } => Instruction::I64Shl,
+                    _ => {
+                        if matches!(instruction.ty, Type::U64) {
+                            Instruction::I64ShrU
+                        } else {
+                            Instruction::I64ShrS
+                        }
+                    }
+                });
+                body.instruction(&Instruction::LocalSet(result));
             }
             // sequential-v1 (RFC-0036 §5.4): spawn is the eager call itself;
             // the `Task[T]` result shares the callee's resolved-value layout.
@@ -2686,6 +2810,173 @@ fn emit_checked_fixed(
     Ok(())
 }
 
+/// STEP-0134 checked multiply. The product is computed with wrapping
+/// `i64.mul`; overflow is then detected by dividing the product back. The
+/// division check is sound on two's complement: for `a != 0` the wrapped
+/// product is `p = a*b - k*2^64` with `|k*2^64/a| > 1` whenever `k != 0`,
+/// so `trunc(p / a)` can never equal `b` after a real overflow. The two
+/// trapping divisions are pre-empted: `a == 0` short-circuits, and
+/// `a == -1` overflows iff `b == i64::MIN` without dividing.
+fn emit_checked_mul(
+    function: &IrFunction,
+    layout: &LocalLayout,
+    instruction: &sico_ir::Instruction,
+    left: ValueId,
+    right: ValueId,
+    body: &mut Function,
+) -> Result<(), CodegenError> {
+    let Type::Result { ok, .. } = &instruction.ty else {
+        return Err(unsupported(&function.name, "checked result type"));
+    };
+    let [tag, payload] = layout.get(&function.name, instruction.result)? else {
+        return Err(unsupported(&function.name, "checked result layout"));
+    };
+    let left = layout.scalar(&function.name, left)?;
+    let right = layout.scalar(&function.name, right)?;
+
+    body.instruction(&Instruction::LocalGet(left));
+    body.instruction(&Instruction::LocalGet(right));
+    body.instruction(&Instruction::I64Mul);
+    body.instruction(&Instruction::LocalSet(*payload));
+
+    match ok.as_ref() {
+        Type::I64 => {
+            emit_i64_mul_overflow_condition(body, left, right, *payload);
+        }
+        Type::U64 => {
+            body.instruction(&Instruction::LocalGet(left));
+            body.instruction(&Instruction::I64Eqz);
+            body.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::Else);
+            body.instruction(&Instruction::LocalGet(*payload));
+            body.instruction(&Instruction::LocalGet(left));
+            body.instruction(&Instruction::I64DivU);
+            body.instruction(&Instruction::LocalGet(right));
+            body.instruction(&Instruction::I64Ne);
+            body.instruction(&Instruction::End);
+        }
+        _ => return Err(unsupported(&function.name, "checked fixed operand")),
+    }
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::I32Const(1));
+    body.instruction(&Instruction::LocalSet(*tag));
+    // error payload: the direction of the lost product — same-sign operands
+    // overflow positive, mixed signs underflow.
+    match ok.as_ref() {
+        Type::I64 => {
+            body.instruction(&Instruction::LocalGet(left));
+            body.instruction(&Instruction::I64Const(0));
+            body.instruction(&Instruction::I64LtS);
+            body.instruction(&Instruction::LocalGet(right));
+            body.instruction(&Instruction::I64Const(0));
+            body.instruction(&Instruction::I64LtS);
+            body.instruction(&Instruction::I32Xor);
+            body.instruction(&Instruction::I64ExtendI32U);
+        }
+        Type::U64 => {
+            body.instruction(&Instruction::I64Const(0));
+        }
+        _ => return Err(unsupported(&function.name, "checked fixed error")),
+    }
+    body.instruction(&Instruction::LocalSet(*payload));
+    body.instruction(&Instruction::Else);
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::LocalSet(*tag));
+    body.instruction(&Instruction::End);
+    Ok(())
+}
+
+/// I64 overflow condition for `emit_checked_mul`: `a == 0` never overflows;
+/// `a == -1` overflows iff `b == i64::MIN`; otherwise divide back. The
+/// nested result-typed If arms each leave one i32 on the stack.
+fn emit_i64_mul_overflow_condition(body: &mut Function, left: u32, right: u32, payload: u32) {
+    body.instruction(&Instruction::LocalGet(left));
+    body.instruction(&Instruction::I64Eqz);
+    body.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::Else);
+    body.instruction(&Instruction::LocalGet(left));
+    body.instruction(&Instruction::I64Const(-1));
+    body.instruction(&Instruction::I64Eq);
+    body.instruction(&Instruction::If(BlockType::Result(ValType::I32)));
+    body.instruction(&Instruction::LocalGet(right));
+    body.instruction(&Instruction::I64Const(i64::MIN));
+    body.instruction(&Instruction::I64Eq);
+    body.instruction(&Instruction::Else);
+    body.instruction(&Instruction::LocalGet(payload));
+    body.instruction(&Instruction::LocalGet(left));
+    body.instruction(&Instruction::I64DivS);
+    body.instruction(&Instruction::LocalGet(right));
+    body.instruction(&Instruction::I64Ne);
+    body.instruction(&Instruction::End);
+    body.instruction(&Instruction::End);
+}
+
+/// STEP-0134 checked divide. Division by zero reports
+/// `NumericError.division-by-zero`; `i64::MIN / -1` reports `overflow`
+/// (the only signed-overflow case); every other division is exact and
+/// trap-free.
+fn emit_checked_div(
+    function: &IrFunction,
+    layout: &LocalLayout,
+    instruction: &sico_ir::Instruction,
+    left: ValueId,
+    right: ValueId,
+    body: &mut Function,
+) -> Result<(), CodegenError> {
+    let Type::Result { ok, .. } = &instruction.ty else {
+        return Err(unsupported(&function.name, "checked result type"));
+    };
+    let [tag, payload] = layout.get(&function.name, instruction.result)? else {
+        return Err(unsupported(&function.name, "checked result layout"));
+    };
+    let left = layout.scalar(&function.name, left)?;
+    let right = layout.scalar(&function.name, right)?;
+
+    body.instruction(&Instruction::LocalGet(right));
+    body.instruction(&Instruction::I64Eqz);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::I32Const(1));
+    body.instruction(&Instruction::LocalSet(*tag));
+    body.instruction(&Instruction::I64Const(2));
+    body.instruction(&Instruction::LocalSet(*payload));
+    body.instruction(&Instruction::Else);
+    if matches!(ok.as_ref(), Type::I64) {
+        body.instruction(&Instruction::LocalGet(left));
+        body.instruction(&Instruction::I64Const(i64::MIN));
+        body.instruction(&Instruction::I64Eq);
+        body.instruction(&Instruction::LocalGet(right));
+        body.instruction(&Instruction::I64Const(-1));
+        body.instruction(&Instruction::I64Eq);
+        body.instruction(&Instruction::I32And);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        body.instruction(&Instruction::I32Const(1));
+        body.instruction(&Instruction::LocalSet(*tag));
+        body.instruction(&Instruction::I64Const(0));
+        body.instruction(&Instruction::LocalSet(*payload));
+        body.instruction(&Instruction::Else);
+    }
+    if !matches!(ok.as_ref(), Type::I64 | Type::U64) {
+        return Err(unsupported(&function.name, "checked fixed operand"));
+    }
+    body.instruction(&Instruction::LocalGet(left));
+    body.instruction(&Instruction::LocalGet(right));
+    body.instruction(if matches!(ok.as_ref(), Type::I64) {
+        &Instruction::I64DivS
+    } else {
+        &Instruction::I64DivU
+    });
+    body.instruction(&Instruction::LocalSet(*payload));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::LocalSet(*tag));
+    if matches!(ok.as_ref(), Type::I64) {
+        body.instruction(&Instruction::End);
+    }
+    body.instruction(&Instruction::End);
+    Ok(())
+}
+
 fn emit_fixed_comparison(
     function: &IrFunction,
     layout: &LocalLayout,
@@ -3100,6 +3391,173 @@ fn emit_http_call(
     Ok(())
 }
 
+/// Lowers `sico.http2.request` (STEP-0136, RFC-0037): the buffered one-shot
+/// over `sico:script/http@0.2.0` with Host-default options (empty headers,
+/// no redirect follow, no retry, Host-default timeout). The 32-byte result
+/// area carries tag@0; on ok, status s64 @8 and body ptr/len @24/28 (the
+/// response headers @16/20 are lifted and deliberately narrowed away); on
+/// error, the http-error discriminant i32 @8 maps to the static case-name
+/// table in the data segment.
+#[allow(clippy::too_many_lines)]
+fn emit_http2_call(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "http2 call outside script profile",
+        ));
+    };
+    let Some((return_area, copy_destination)) = context.scratch else {
+        return Err(unsupported(&function.name, "http2 call scratch layout"));
+    };
+    let import = emit
+        .http2_index
+        .ok_or_else(|| unsupported(&function.name, "http2 import layout"))?;
+    let error_table = emit
+        .http2_error_table
+        .ok_or_else(|| unsupported(&function.name, "http2 error table layout"))?;
+    let mem = |offset: u64, align: u32| MemArg {
+        offset,
+        align,
+        memory_index: 0,
+    };
+
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(canonical::HTTP2_RESULT_SIZE)
+            .map_err(|_| unsupported(&function.name, "http2 result area"))?,
+    ));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(return_area));
+    for offset in [0_u64, 4, 8, 12, 16, 20, 24, 28] {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Store(mem(offset, 2)));
+    }
+    // Wire order: method pair, url pair, the flattened default options
+    // (empty headers (0, 0), follow-redirects 0, retry-idempotent 0,
+    // timeout-ms 0 = Host default), body pair, result-area pointer.
+    let [method, url, body_argument] = arguments else {
+        return Err(unsupported(&function.name, "http2 request arity"));
+    };
+    for argument in [method, url] {
+        for slot in layout.get(&function.name, *argument)? {
+            body.instruction(&Instruction::LocalGet(*slot));
+        }
+    }
+    for instruction in [
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I32Const(0),
+        Instruction::I64Const(0),
+    ] {
+        body.instruction(&instruction);
+    }
+    for slot in layout.get(&function.name, *body_argument)? {
+        body.instruction(&Instruction::LocalGet(*slot));
+    }
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::Call(import));
+
+    let result = layout.get(&function.name, instruction.result)?;
+    let [
+        tag,
+        ok_status,
+        ok_pointer,
+        ok_length,
+        err_pointer,
+        err_length,
+    ] = result
+    else {
+        return Err(unsupported(&function.name, "http2 result layout"));
+    };
+    for instruction in [
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::LocalSet(*tag),
+        // status (s64 at 8)
+        Instruction::LocalGet(return_area),
+        Instruction::I64Load(mem(8, 3)),
+        Instruction::LocalSet(*ok_status),
+        // response body pointer/length at 24/28
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(24, 2)),
+        Instruction::LocalSet(copy_destination),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(28, 2)),
+        Instruction::LocalSet(*ok_length),
+        // http-error discriminant (i32 at 8) → case-name table lookup
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(8, 2)),
+        // On the ok side offset 8 holds the low status half, not a
+        // discriminant — force code 0 so the bounds check never traps
+        // (the table result is discarded by the select below anyway).
+        Instruction::I32Const(0),
+        Instruction::LocalGet(*tag),
+        Instruction::Select,
+        Instruction::LocalSet(return_area),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Const(8),
+        Instruction::I32GeU,
+    ] {
+        body.instruction(&instruction);
+    }
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::Unreachable);
+    body.instruction(&Instruction::End);
+    let table = i32::try_from(error_table)
+        .map_err(|_| unsupported(&function.name, "http2 error table layout"))?;
+    for instruction in [
+        Instruction::LocalGet(return_area),
+        Instruction::I32Const(3),
+        Instruction::I32Shl,
+        Instruction::I32Const(table),
+        Instruction::I32Add,
+        Instruction::LocalSet(return_area),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(*err_pointer),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(*err_length),
+    ] {
+        body.instruction(&instruction);
+    }
+    // select the live side by the tag; losing side is already zero
+    for (source, destination, err_side) in [
+        (copy_destination, ok_pointer, false),
+        (*ok_length, ok_length, false),
+        (*err_pointer, err_pointer, true),
+        (*err_length, err_length, true),
+    ] {
+        if err_side {
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::LocalGet(source));
+        } else {
+            body.instruction(&Instruction::LocalGet(source));
+            body.instruction(&Instruction::I32Const(0));
+        }
+        body.instruction(&Instruction::LocalGet(*tag));
+        body.instruction(&Instruction::I32Eqz);
+        body.instruction(&Instruction::Select);
+        body.instruction(&Instruction::LocalSet(*destination));
+    }
+    // status is meaningful only on success
+    body.instruction(&Instruction::LocalGet(*ok_status));
+    body.instruction(&Instruction::I64Const(0));
+    body.instruction(&Instruction::LocalGet(*tag));
+    body.instruction(&Instruction::I32Eqz);
+    body.instruction(&Instruction::Select);
+    body.instruction(&Instruction::LocalSet(*ok_status));
+    Ok(())
+}
+
 /// Lowers one scoped `sico.fs.*` call. Arguments cross as (pointer, length)
 /// pairs into the shared transport memory; the 12-byte Canonical ABI result
 /// area is zeroed before the call and fanned out into the full-width
@@ -3471,6 +3929,12 @@ fn emit_intrinsic(
         "sico.http.request" => {
             emit_http_call(context, body, instruction, arguments)?;
         }
+        "sico.http2.request" => {
+            emit_http2_call(context, body, instruction, arguments)?;
+        }
+        _ if sico_ir::collection_intrinsic(name).is_some() => {
+            emit_collection_call(context, body, instruction, name, arguments)?;
+        }
         "sico.fs.read" | "sico.fs.exists" | "sico.fs.write" => {
             emit_fs_call(context, body, instruction, name, arguments)?;
         }
@@ -3808,6 +4272,75 @@ fn emit_intrinsic(
             body.instruction(&Instruction::LocalSet(*pointer));
         }
         _ => return Err(unsupported(&function.name, "stdlib intrinsic")),
+    }
+    Ok(())
+}
+
+/// Lowers one `sico.map.*[K,V]`/`sico.set.*[K]` intrinsic (M14 STEP-0131):
+/// push the flat operand slots in the helper's parameter order, call the
+/// monomorphized helper, and store its result slots.
+fn emit_collection_call(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    name: &str,
+    arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let result = layout.get(&function.name, instruction.result)?;
+    let flat = |value: ValueId| -> Result<Vec<u32>, CodegenError> {
+        Ok(layout.get(&function.name, value)?.to_vec())
+    };
+    // Pair-typed operands (map/set values and `Text` keys/results) occupy two
+    // i32 slots; scalars occupy one i64 slot. The helper signatures in
+    // `collection_helper_signature` consume exactly this order.
+    for argument in arguments {
+        for slot in flat(*argument)? {
+            body.instruction(&Instruction::LocalGet(slot));
+        }
+    }
+    let helper = context
+        .script
+        .and_then(|emit| emit.helpers.get(name))
+        .copied()
+        .ok_or_else(|| unsupported(&function.name, "collection helper layout"))?;
+    body.instruction(&Instruction::Call(helper));
+    // `length` is the one operation whose IR result type (a scalar `U64`)
+    // is narrower than the helper's `(table, count)` pair: drop the table
+    // and widen the count. Everything else stores the pair/tag forms
+    // verbatim into the result slots planned by `flat_ir_types`.
+    if matches!(
+        sico_ir::collection_intrinsic(name),
+        Some(sico_ir::CollectionIntrinsic {
+            operation: sico_ir::CollectionOperation::MapLength
+                | sico_ir::CollectionOperation::SetLength,
+            ..
+        })
+    ) {
+        // The helper returned `(table i32, count i32)`; keep only the count
+        // and widen it into the scalar U64 result slot. The first scratch
+        // local (`return_area`, i32) safely holds the dropped table pointer.
+        let [value] = result else {
+            return Err(unsupported(
+                &function.name,
+                "collection length result layout",
+            ));
+        };
+        let Some((scratch, _)) = context.scratch else {
+            return Err(unsupported(
+                &function.name,
+                "collection length scratch layout",
+            ));
+        };
+        body.instruction(&Instruction::LocalSet(scratch));
+        body.instruction(&Instruction::LocalGet(scratch));
+        body.instruction(&Instruction::I64ExtendI32U);
+        body.instruction(&Instruction::LocalSet(*value));
+        return Ok(());
+    }
+    for slot in result.iter().rev() {
+        body.instruction(&Instruction::LocalSet(*slot));
     }
     Ok(())
 }

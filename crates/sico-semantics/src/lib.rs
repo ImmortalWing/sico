@@ -283,7 +283,11 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
             DeclarationKind::Function => {
                 insert_function_definition(declaration, &mut model, &mut facts);
             }
-            DeclarationKind::Interface => {}
+            // Interfaces stay outline-only (M5 design history). RFC-0039
+            // (STEP-0143): `module`/`use` carry no per-file semantics —
+            // the CLI module-link pass verifies them across the module
+            // set before compilation, so nothing is silently discarded.
+            DeclarationKind::Interface | DeclarationKind::Module | DeclarationKind::Use => {}
         }
     }
     (model, facts)
@@ -2446,7 +2450,17 @@ fn infer_fixed_width_call(
     if !matches!(target, "I64" | "U64")
         || !matches!(
             operation,
-            "checked_add" | "checked_sub" | "equal" | "less_than"
+            "checked_add"
+                | "checked_sub"
+                | "checked_mul"
+                | "checked_div"
+                | "equal"
+                | "less_than"
+                | "bit_and"
+                | "bit_or"
+                | "bit_xor"
+                | "shl"
+                | "shr"
         )
     {
         return None;
@@ -2469,6 +2483,10 @@ fn infer_fixed_width_call(
     }
     let ty = if matches!(operation, "equal" | "less_than") {
         Type::named("Bool")
+    } else if matches!(operation, "bit_and" | "bit_or" | "bit_xor" | "shl" | "shr") {
+        // Bit operations are infallible and stay in the operand type
+        // (STEP-0132).
+        fixed
     } else {
         Type::Generic {
             name: "Result".to_owned(),
@@ -2482,6 +2500,148 @@ fn infer_fixed_width_call(
     })
 }
 
+/// STEP-0131 canonical `sico.map.*[K,V]` / `sico.set.*[K]` collection
+/// intrinsics. The suffix grammar mirrors `sico_ir::collection_intrinsic`
+/// (the authoritative compiler-side parser); `sico-semantics` lives in the
+/// language module and must not depend on the compiler module, so the closed
+/// grammar is intentionally duplicated here — keep the two in sync. An
+/// instantiation that parses but is outside the v0 executable surface
+/// (non-fixed-width `map.get` values, non-`Text` `keys`/`to_list` key
+/// elements) returns `None` so the call falls through to the unknown-callee
+/// diagnostic instead of an undeclared check/build gap.
+fn infer_collection_call(
+    callee: &str,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Value> {
+    let named = |name: &str| Type::Named(name.to_owned());
+    let generic = |name: &str, arguments: Vec<Type>| Type::Generic {
+        name: name.to_owned(),
+        arguments,
+    };
+    let numeric_result = |ok: Type| generic("Result", vec![ok, named("NumericError")]);
+    let (operation, key, value) = parse_collection_suffix(callee)?;
+    let key_type = named(key);
+    let map_type = |value: Option<&str>| match value {
+        Some(value) => generic("Map", vec![key_type.clone(), named(value)]),
+        None => generic("Set", vec![key_type.clone()]),
+    };
+    let (parameters, result) = match operation {
+        "map.empty" | "set.empty" => {
+            if !values.is_empty() {
+                let found = format!("{} arguments", values.len());
+                push_diagnostic(
+                    diagnostics,
+                    "E2001",
+                    "TYPE_MISMATCH",
+                    format!("expected 0 arguments, found {found}"),
+                    [("expected", "0 arguments"), ("found", found.as_str())],
+                    range,
+                );
+                return Some(unknown(range));
+            }
+            (Vec::new(), map_type(value.as_deref()))
+        }
+        "map.put" => (
+            vec![
+                map_type(value.as_deref()),
+                key_type.clone(),
+                named(value.as_deref()?),
+            ],
+            map_type(value.as_deref()),
+        ),
+        "map.get" => (
+            vec![map_type(value.as_deref()), key_type],
+            numeric_result(named(value.as_deref()?)),
+        ),
+        "map.has" | "set.has" => (vec![map_type(value.as_deref()), key_type], named("Bool")),
+        "map.length" | "set.length" => (vec![map_type(value.as_deref())], named("U64")),
+        "map.keys" | "set.to_list" => (
+            vec![map_type(value.as_deref())],
+            generic("List", vec![key_type]),
+        ),
+        _ => return None,
+    };
+    if parameters.len() != values.len() {
+        let expected = format!("{} arguments", parameters.len());
+        let found = format!("{} arguments", values.len());
+        push_diagnostic(
+            diagnostics,
+            "E2001",
+            "TYPE_MISMATCH",
+            format!("expected {expected}, found {found}"),
+            [("expected", expected.as_str()), ("found", found.as_str())],
+            range,
+        );
+        return Some(unknown(range));
+    }
+    for (parameter, value) in parameters.iter().zip(values) {
+        require_type(parameter, value, diagnostics);
+    }
+    Some(Value {
+        ty: result,
+        range,
+        integer: None,
+    })
+}
+
+/// Parses one canonical suffixed collection intrinsic name, e.g.
+/// `sico.map.put[Text,I64]` or `sico.set.add[I64]`, into its operation and
+/// element spellings. Returns `None` for every non-canonical spelling.
+fn parse_collection_suffix(callee: &str) -> Option<(&str, &str, Option<String>)> {
+    const OPERATIONS: &[(&str, bool)] = &[
+        ("map.empty", true),
+        ("map.put", true),
+        ("map.get", true),
+        ("map.has", true),
+        ("map.length", true),
+        ("map.keys", true),
+        ("set.empty", false),
+        ("set.add", false),
+        ("set.has", false),
+        ("set.length", false),
+        ("set.to_list", false),
+    ];
+    const ELEMENTS: &[&str] = &["Text", "Bytes", "Bool", "I64", "U64"];
+    let (path, suffix) = callee.split_once('[')?;
+    if !suffix.ends_with(']') {
+        return None;
+    }
+    let (_operation, carries_value) = OPERATIONS.iter().find(|entry| entry.0 == path)?;
+    let mut elements = suffix[..suffix.len() - 1].split(',');
+    let key = elements.next()?;
+    if !ELEMENTS.contains(&key) {
+        return None;
+    }
+    let value = if *carries_value {
+        let value = elements.next()?;
+        if !ELEMENTS.contains(&value) {
+            return None;
+        }
+        Some(value.to_owned())
+    } else {
+        None
+    };
+    if elements.next().is_some() {
+        return None;
+    }
+    // v0 executable surface: `map.get` materializes only the fixed-width
+    // `Result[I64|U64, NumericError]` local layout; traversal helpers
+    // (`map.keys`/`set.to_list`) materialize only `List[Text]`. Everything
+    // else returns `None` so the call falls to the unknown-callee diagnostic
+    // instead of an undeclared check/build gap.
+    let executable = match path {
+        "map.get" => matches!(value.as_deref(), Some("I64" | "U64")),
+        "map.keys" | "set.to_list" => key == "Text",
+        _ => true,
+    };
+    if !executable {
+        return None;
+    }
+    Some((path, key, value))
+}
+
 #[allow(clippy::too_many_lines)]
 fn infer_stdlib_call(
     callee: &str,
@@ -2489,6 +2649,9 @@ fn infer_stdlib_call(
     range: TextRange,
     diagnostics: &mut Vec<SemanticDiagnostic>,
 ) -> Option<Value> {
+    if let Some(value) = infer_collection_call(callee, values, range, diagnostics) {
+        return Some(value);
+    }
     let named = |name: &str| Type::Named(name.to_owned());
     let generic = |name: &str, argument: Type| Type::Generic {
         name: name.to_owned(),
@@ -2559,6 +2722,15 @@ fn infer_stdlib_call(
             Type::Generic {
                 name: "Result".to_owned(),
                 arguments: vec![named("HttpResponse"), named("Text")],
+            },
+        ),
+        // STEP-0136: buffered one-shot over http@0.2.0 with Host-default
+        // options; the typed http-error enum surfaces as its case-name Text.
+        "sico.http2.request" => (
+            vec![named("Text"), named("Text"), named("Bytes")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Http2Response"), named("Text")],
             },
         ),
         "sico.stream.stdin" => (vec![], named("InputStream")),

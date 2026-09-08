@@ -22,7 +22,11 @@ use sico_package::compose;
 use sico_source::{SourceFile, SourceId};
 
 use crate::cache::{CacheKeyParts, SourceCache, cache_key};
-use crate::{EXIT_TOOL_ERROR, compile_source_bytes, lower_error, read_input_bytes};
+use crate::modules::Assembled;
+use crate::{
+    EXIT_DIAGNOSTIC, EXIT_TOOL_ERROR, compile_assembled, compile_source_bytes, lower_error,
+    read_input_bytes,
+};
 
 pub const EXIT_COMPILE_DIAGNOSTIC: i32 = 120;
 pub const EXIT_CLI_FAILURE: i32 = 121;
@@ -168,11 +172,30 @@ pub fn run_run(
         Ok(source) => source,
         Err(message) => return tool_failure(stderr, json, "cli", &message),
     };
-    let identity = match CacheIdentity::new(&source) {
+    // RFC-0039 (STEP-0143): assemble the module set before the cache key so
+    // module files contribute to the identity; link failures surface here.
+    let assembled = match crate::modules::assemble_from_bytes(&name, &source) {
+        Ok(assembled) => assembled,
+        Err(crate::modules::AssembleError::Frontend(source, parsed)) => {
+            return crate::emit_frontend_failure(&source, &parsed, json, stdout, stderr);
+        }
+        Err(crate::modules::AssembleError::Diagnostics(lines)) => {
+            for line in &lines {
+                let _ = writeln!(stderr, "{line}");
+            }
+            return EXIT_DIAGNOSTIC;
+        }
+        Err(crate::modules::AssembleError::Tool(message)) => {
+            return tool_failure(stderr, json, "cli", &message);
+        }
+    };
+    let module_blob = assembled.cache_blob();
+    let identity = match CacheIdentity::new(&source, &module_blob) {
         Ok(identity) => identity,
         Err(message) => return tool_failure(stderr, json, "cli", &message),
     };
-    let component_path = match identity.cached_component(&name, &source, json, stdout, stderr) {
+    let component_path = match identity.cached_component_assembled(&assembled, json, stdout, stderr)
+    {
         Ok(path) => path,
         Err(exit) => return exit,
     };
@@ -464,7 +487,7 @@ fn write_exclusive(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// True when the compiled component imports `sico:script/streams@0.1.0`.
 /// An unreadable artifact reports false and fails later at the runner.
-fn component_imports_streams(component: &std::path::Path) -> bool {
+pub(crate) fn component_imports_streams(component: &std::path::Path) -> bool {
     let Ok(bytes) = std::fs::read(component) else {
         return false;
     };
@@ -494,7 +517,7 @@ pub fn run_eval(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn W
     };
     let mut synthesized = b"eval\0".to_vec();
     synthesized.extend_from_slice(expression.as_bytes());
-    let identity = match CacheIdentity::new(&synthesized) {
+    let identity = match CacheIdentity::new(&synthesized, &[]) {
         Ok(identity) => identity,
         Err(message) => return tool_failure(stderr, json, "cli", &message),
     };
@@ -556,12 +579,12 @@ fn unsupported_eval() -> String {
     "sico: eval v0 supports compile-time constant Int expressions only".to_owned()
 }
 
-struct CacheIdentity {
+pub(crate) struct CacheIdentity {
     key: [u8; 32],
 }
 
 impl CacheIdentity {
-    fn new(source: &[u8]) -> Result<Self, String> {
+    pub(crate) fn new(source: &[u8], module_sources: &[u8]) -> Result<Self, String> {
         let executable = std::env::current_exe()
             .map_err(|error| format!("sico: cannot locate the compiler executable: {error}"))?;
         let executable_bytes = std::fs::read(&executable)
@@ -577,6 +600,7 @@ impl CacheIdentity {
                 script_wit_version: "sico:script@0.1.0",
                 adapter_digest: &adapter_digest,
                 source,
+                module_sources,
                 app_id: "sico",
                 app_version: env!("CARGO_PKG_VERSION"),
                 profile_id: "script-v0",
@@ -586,23 +610,22 @@ impl CacheIdentity {
         })
     }
 
-    fn cached_component(
+    pub(crate) fn cached_component_assembled(
         &self,
-        name: &str,
-        source: &[u8],
+        assembled: &Assembled,
         json: bool,
         stdout: &mut dyn Write,
         stderr: &mut dyn Write,
     ) -> Result<PathBuf, i32> {
         let Some(cache) = SourceCache::open() else {
             return compile_and_cache(None, &self.key, || {
-                compile_source_bytes(name, source, "script-v0", stdout, stderr)
+                compile_assembled(assembled, "script-v0", stdout, stderr)
             });
         };
         match cache.get(&self.key) {
             Ok(Some(_)) => Ok(cache.entry_for(&self.key)),
             Ok(None) => compile_and_cache(Some(&cache), &self.key, || {
-                compile_source_bytes(name, source, "script-v0", stdout, stderr)
+                compile_assembled(assembled, "script-v0", stdout, stderr)
             }),
             Err(error) => Err(cache_failure(stderr, json, &error)),
         }
@@ -819,7 +842,7 @@ fn execute_runner(
     }
 }
 
-fn find_runner() -> Option<PathBuf> {
+pub(crate) fn find_runner() -> Option<PathBuf> {
     if let Some(path) = std::env::var_os("SICO_RUNNER") {
         // An explicit override is authoritative: a broken path fails closed
         // at launch instead of silently falling through to another runner.

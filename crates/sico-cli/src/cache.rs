@@ -29,6 +29,9 @@ pub struct CacheKeyParts<'a> {
     pub script_wit_version: &'a str,
     pub adapter_digest: &'a [u8; 32],
     pub source: &'a [u8],
+    /// RFC-0039 (STEP-0143): length-prefixed module import bytes in
+    /// discovery order; empty for single-file programs.
+    pub module_sources: &'a [u8],
     pub app_id: &'a str,
     pub app_version: &'a str,
     pub profile_id: &'a str,
@@ -48,6 +51,7 @@ pub fn cache_key(parts: &CacheKeyParts<'_>) -> [u8; 32] {
     field(&mut hasher, parts.script_wit_version.as_bytes());
     hasher.update(parts.adapter_digest);
     field(&mut hasher, parts.source);
+    field(&mut hasher, parts.module_sources);
     field(&mut hasher, parts.app_id.as_bytes());
     field(&mut hasher, parts.app_version.as_bytes());
     field(&mut hasher, parts.profile_id.as_bytes());
@@ -183,6 +187,7 @@ mod tests {
             script_wit_version: "sico:script@0.1.0",
             adapter_digest: &[2; 32],
             source,
+            module_sources: &[],
             app_id: "sico",
             app_version: "0.0.2-dev",
             profile_id: "script-v0",

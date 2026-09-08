@@ -535,9 +535,14 @@ fn usage_io_and_unimplemented_commands_are_tool_errors() {
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("Usage:"));
 
-    let output = run(["test", "app.sico"], None);
+    // STEP-0140 made `test` a real subcommand; an unknown spelling is still
+    // a tool error, and `sico test` on a missing path reports typed CLI text.
+    let output = run(["test-old", "app.sico"], None);
     assert_eq!(output.status.code(), Some(2));
     assert!(stderr(&output).contains("unrecognized subcommand"));
+    let output = run(["test", "does-not-exist-dir"], None);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(stderr(&output).contains("path not found"));
 
     let output = run(["check", "does-not-exist.sico"], None);
     assert_eq!(output.status.code(), Some(2));

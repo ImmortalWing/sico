@@ -1,0 +1,203 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.DomainError, message: message))
+end function
+
+function invalid(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: message))
+end function
+
+function subU(a: U64, b: U64) returns U64:
+  match U64.checked_sub(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function strip_quotes(quoted: Text) returns Text:
+  let len = sico.text.length(quoted)
+  let inner = sico.bytes.slice(sico.text.encode(quoted), U64.literal(1), subU(len, U64.literal(2)))
+  match inner:
+    case ok(raw):
+      return sico.bytes.utf8_decode(raw)
+    case error(_):
+      return ""
+  end match
+end function
+
+function write_doc(state: Text, revision: Text) returns Result[Bool, Text]:
+  let head = sico.text.concat(sico.text.concat(sico.text.concat("{\"state\":\"", state), "\",\"revision\":\""), revision)
+  return sico.fs.write("state.json", sico.text.encode(sico.text.concat(head, "\"}")))
+end function
+
+function answer(kind: Text, state: Text, revision: Text) returns Result[ScriptOutput, ScriptError]:
+  let report = sico.text.concat(sico.text.concat(sico.text.concat(sico.text.concat(kind, ":"), state), ":"), sico.u64.to_text(sico.text.length(revision)))
+  return ok(ScriptOutput(stdout: sico.text.encode(report), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function
+
+function transition(command: Text, state: Text, revision: Text, expected: Text) returns Result[ScriptOutput, ScriptError]:
+  let guard = false
+  match U64.equal(sico.text.length(revision), sico.text.length(expected)):
+    case false:
+      return fail(sico.text.concat("stale revision: expected ", sico.u64.to_text(sico.text.length(expected))))
+    case true:
+      set guard = true
+  end match
+  match sico.text.contains(command, "open"):
+    case true:
+      match sico.text.contains(state, "sealed"):
+        case true:
+          match write_doc("open", sico.text.concat(revision, "+")):
+            case ok(_):
+              return answer("ok", "open", sico.text.concat(revision, "+"))
+            case error(message):
+              return fail(message)
+          end match
+        case false:
+          return fail("open requires sealed")
+      end match
+    case false:
+      match sico.text.contains(command, "seal"):
+        case true:
+          match sico.text.contains(state, "open"):
+            case true:
+              match write_doc("sealed", sico.text.concat(revision, "+")):
+                case ok(_):
+                  return answer("ok", "sealed", sico.text.concat(revision, "+"))
+                case error(message):
+                  return fail(message)
+              end match
+            case false:
+              return fail("seal requires open")
+          end match
+        case false:
+          match sico.text.contains(command, "burn"):
+            case true:
+              match sico.text.contains(state, "open"):
+                case true:
+                  match write_doc("burned", sico.text.concat(revision, "+")):
+                    case ok(_):
+                      return answer("ok", "burned", sico.text.concat(revision, "+"))
+                    case error(message):
+                      return fail(message)
+                  end match
+                case false:
+                  return fail("burn requires open")
+              end match
+            case false:
+              match sico.text.contains(command, "query"):
+                case true:
+                  return answer("ok", state, revision)
+                case false:
+                  return fail("unknown command")
+              end match
+          end match
+      end match
+  end match
+end function
+
+function recover(command: Text, expected: Text) returns Result[ScriptOutput, ScriptError]:
+  match write_doc("sealed", ""):
+    case ok(_):
+      return transition(command, "sealed", "", expected)
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function load_and_transition(command: Text, expected: Text) returns Result[ScriptOutput, ScriptError]:
+  let exists = sico.fs.exists("state.json")
+  match exists:
+    case ok(present):
+      match present:
+        case false:
+          return recover(command, expected)
+        case true:
+          let document = sico.fs.read("state.json")
+          match document:
+            case ok(bytes):
+              let utf8 = sico.bytes.is_utf8(bytes)
+              let doc = sico.bytes.utf8_decode(bytes)
+              let valid = sico.json.is_valid(doc)
+              let has_state = sico.json.has(doc, "state")
+              let has_revision = sico.json.has(doc, "revision")
+              match utf8:
+                case false:
+                  return recover(command, expected)
+                case true:
+                  match valid:
+                    case false:
+                      return recover(command, expected)
+                    case true:
+                      match has_state:
+                        case false:
+                          return recover(command, expected)
+                        case true:
+                          match has_revision:
+                            case false:
+                              return recover(command, expected)
+                            case true:
+                              let state = strip_quotes(sico.json.get(doc, "state"))
+                              let revision = strip_quotes(sico.json.get(doc, "revision"))
+                              return transition(command, state, revision, expected)
+                          end match
+                      end match
+                  end match
+              end match
+            case error(message):
+              return fail(message)
+          end match
+      end match
+    case error(_):
+      // The frozen fs.exists surface reports a missing file as a typed
+      // read error; treat it as absent and recover (STEP-0139).
+      return recover(command, expected)
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let ack = false
+  match U64.equal(sico.list.length(input.arguments), U64.literal(2)):
+    case false:
+      return invalid("expected two arguments")
+    case true:
+      set ack = true
+  end match
+  let command = sico.list.get(input.arguments, U64.literal(0))
+  let expected = sico.list.get(input.arguments, U64.literal(1))
+  match command:
+    case ok(command_text):
+      match expected:
+        case ok(expected_text):
+          return load_and_transition(command_text, expected_text)
+        case error(_):
+          return invalid("missing expected revision")
+      end match
+    case error(_):
+      return invalid("missing command")
+  end match
+end function

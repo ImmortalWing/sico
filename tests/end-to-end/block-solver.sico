@@ -1,0 +1,1314 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function addU(a: U64, b: U64) returns U64:
+  match U64.checked_add(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return U64.literal(18446744073709551615)
+  end match
+end function
+
+function subU(a: U64, b: U64) returns U64:
+  match U64.checked_sub(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function mulU(a: U64, b: U64) returns U64:
+  match U64.checked_mul(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return U64.literal(18446744073709551615)
+  end match
+end function
+
+function addI(a: I64, b: I64) returns I64:
+  match I64.checked_add(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return I64.literal(9223372036854775807)
+  end match
+end function
+
+function negI(a: I64) returns I64:
+  return subI(I64.literal(0), a)
+end function
+
+function subI(a: I64, b: I64) returns I64:
+  match I64.checked_sub(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return I64.literal(-9223372036854775808)
+  end match
+end function
+
+function mulI(a: I64, b: I64) returns I64:
+  match I64.checked_mul(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return I64.literal(9223372036854775807)
+  end match
+end function
+
+function divI(a: I64, b: I64) returns I64:
+  match I64.checked_div(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return I64.literal(0)
+  end match
+end function
+
+function popcount_u(x: U64) returns U64:
+  let a = subU(x, U64.bit_and(U64.shr(x, U64.literal(1)), U64.literal(6148914691236517205)))
+  let b = addI_u(U64.bit_and(a, U64.literal(3689348814741910323)), U64.bit_and(U64.shr(a, U64.literal(2)), U64.literal(3689348814741910323)))
+  let c = U64.bit_and(addI_u(b, U64.shr(b, U64.literal(4))), U64.literal(1085102592571150095))
+  let s1 = addI_u(c, U64.shr(c, U64.literal(8)))
+  let s2 = addI_u(s1, U64.shr(c, U64.literal(16)))
+  let s3 = addI_u(s2, U64.shr(c, U64.literal(24)))
+  let s4 = addI_u(s3, U64.shr(c, U64.literal(32)))
+  let s5 = addI_u(s4, U64.shr(c, U64.literal(40)))
+  let s6 = addI_u(s5, U64.shr(c, U64.literal(48)))
+  let s7 = addI_u(s6, U64.shr(c, U64.literal(56)))
+  return U64.bit_and(s7, U64.literal(255))
+end function
+
+function addI_u(a: U64, b: U64) returns U64:
+  match U64.checked_add(a, b):
+    case ok(v):
+      return v
+    case error(_):
+      return U64.literal(18446744073709551615)
+  end match
+end function
+
+
+function bridge64(x: U64) returns I64:
+  match U64.less_than(x, U64.literal(64)):
+    case false:
+      return I64.literal(64)
+    case true:
+      return bridge_small(x)
+  end match
+  return I64.literal(0)
+end function
+
+function bridge_small(x: U64) returns I64:
+    match U64.less_than(x, U64.literal(32)):
+      case true:
+        match U64.less_than(x, U64.literal(16)):
+          case true:
+            match U64.less_than(x, U64.literal(8)):
+              case true:
+                match U64.less_than(x, U64.literal(4)):
+                  case true:
+                    match U64.less_than(x, U64.literal(2)):
+                      case true:
+                        match U64.equal(x, U64.literal(0)):
+                          case true:
+                            return I64.literal(0)
+                          case false:
+                            return I64.literal(1)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(2)):
+                          case true:
+                            return I64.literal(2)
+                          case false:
+                            return I64.literal(3)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(6)):
+                      case true:
+                        match U64.equal(x, U64.literal(4)):
+                          case true:
+                            return I64.literal(4)
+                          case false:
+                            return I64.literal(5)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(6)):
+                          case true:
+                            return I64.literal(6)
+                          case false:
+                            return I64.literal(7)
+                        end match
+                    end match
+                end match
+              case false:
+                match U64.less_than(x, U64.literal(12)):
+                  case true:
+                    match U64.less_than(x, U64.literal(10)):
+                      case true:
+                        match U64.equal(x, U64.literal(8)):
+                          case true:
+                            return I64.literal(8)
+                          case false:
+                            return I64.literal(9)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(10)):
+                          case true:
+                            return I64.literal(10)
+                          case false:
+                            return I64.literal(11)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(14)):
+                      case true:
+                        match U64.equal(x, U64.literal(12)):
+                          case true:
+                            return I64.literal(12)
+                          case false:
+                            return I64.literal(13)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(14)):
+                          case true:
+                            return I64.literal(14)
+                          case false:
+                            return I64.literal(15)
+                        end match
+                    end match
+                end match
+            end match
+          case false:
+            match U64.less_than(x, U64.literal(24)):
+              case true:
+                match U64.less_than(x, U64.literal(20)):
+                  case true:
+                    match U64.less_than(x, U64.literal(18)):
+                      case true:
+                        match U64.equal(x, U64.literal(16)):
+                          case true:
+                            return I64.literal(16)
+                          case false:
+                            return I64.literal(17)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(18)):
+                          case true:
+                            return I64.literal(18)
+                          case false:
+                            return I64.literal(19)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(22)):
+                      case true:
+                        match U64.equal(x, U64.literal(20)):
+                          case true:
+                            return I64.literal(20)
+                          case false:
+                            return I64.literal(21)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(22)):
+                          case true:
+                            return I64.literal(22)
+                          case false:
+                            return I64.literal(23)
+                        end match
+                    end match
+                end match
+              case false:
+                match U64.less_than(x, U64.literal(28)):
+                  case true:
+                    match U64.less_than(x, U64.literal(26)):
+                      case true:
+                        match U64.equal(x, U64.literal(24)):
+                          case true:
+                            return I64.literal(24)
+                          case false:
+                            return I64.literal(25)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(26)):
+                          case true:
+                            return I64.literal(26)
+                          case false:
+                            return I64.literal(27)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(30)):
+                      case true:
+                        match U64.equal(x, U64.literal(28)):
+                          case true:
+                            return I64.literal(28)
+                          case false:
+                            return I64.literal(29)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(30)):
+                          case true:
+                            return I64.literal(30)
+                          case false:
+                            return I64.literal(31)
+                        end match
+                    end match
+                end match
+            end match
+        end match
+      case false:
+        match U64.less_than(x, U64.literal(48)):
+          case true:
+            match U64.less_than(x, U64.literal(40)):
+              case true:
+                match U64.less_than(x, U64.literal(36)):
+                  case true:
+                    match U64.less_than(x, U64.literal(34)):
+                      case true:
+                        match U64.equal(x, U64.literal(32)):
+                          case true:
+                            return I64.literal(32)
+                          case false:
+                            return I64.literal(33)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(34)):
+                          case true:
+                            return I64.literal(34)
+                          case false:
+                            return I64.literal(35)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(38)):
+                      case true:
+                        match U64.equal(x, U64.literal(36)):
+                          case true:
+                            return I64.literal(36)
+                          case false:
+                            return I64.literal(37)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(38)):
+                          case true:
+                            return I64.literal(38)
+                          case false:
+                            return I64.literal(39)
+                        end match
+                    end match
+                end match
+              case false:
+                match U64.less_than(x, U64.literal(44)):
+                  case true:
+                    match U64.less_than(x, U64.literal(42)):
+                      case true:
+                        match U64.equal(x, U64.literal(40)):
+                          case true:
+                            return I64.literal(40)
+                          case false:
+                            return I64.literal(41)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(42)):
+                          case true:
+                            return I64.literal(42)
+                          case false:
+                            return I64.literal(43)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(46)):
+                      case true:
+                        match U64.equal(x, U64.literal(44)):
+                          case true:
+                            return I64.literal(44)
+                          case false:
+                            return I64.literal(45)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(46)):
+                          case true:
+                            return I64.literal(46)
+                          case false:
+                            return I64.literal(47)
+                        end match
+                    end match
+                end match
+            end match
+          case false:
+            match U64.less_than(x, U64.literal(56)):
+              case true:
+                match U64.less_than(x, U64.literal(52)):
+                  case true:
+                    match U64.less_than(x, U64.literal(50)):
+                      case true:
+                        match U64.equal(x, U64.literal(48)):
+                          case true:
+                            return I64.literal(48)
+                          case false:
+                            return I64.literal(49)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(50)):
+                          case true:
+                            return I64.literal(50)
+                          case false:
+                            return I64.literal(51)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(54)):
+                      case true:
+                        match U64.equal(x, U64.literal(52)):
+                          case true:
+                            return I64.literal(52)
+                          case false:
+                            return I64.literal(53)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(54)):
+                          case true:
+                            return I64.literal(54)
+                          case false:
+                            return I64.literal(55)
+                        end match
+                    end match
+                end match
+              case false:
+                match U64.less_than(x, U64.literal(60)):
+                  case true:
+                    match U64.less_than(x, U64.literal(58)):
+                      case true:
+                        match U64.equal(x, U64.literal(56)):
+                          case true:
+                            return I64.literal(56)
+                          case false:
+                            return I64.literal(57)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(58)):
+                          case true:
+                            return I64.literal(58)
+                          case false:
+                            return I64.literal(59)
+                        end match
+                    end match
+                  case false:
+                    match U64.less_than(x, U64.literal(62)):
+                      case true:
+                        match U64.equal(x, U64.literal(60)):
+                          case true:
+                            return I64.literal(60)
+                          case false:
+                            return I64.literal(61)
+                        end match
+                      case false:
+                        match U64.equal(x, U64.literal(62)):
+                          case true:
+                            return I64.literal(62)
+                          case false:
+                            return I64.literal(63)
+                        end match
+                    end match
+                end match
+            end match
+        end match
+    end match
+  return I64.literal(64)
+end function
+
+function popcount_i(x: U64) returns I64:
+  return bridge64(popcount_u(x))
+end function
+
+function lowest_bit_index(x: U64) returns U64:
+  let n = U64.literal(0)
+  let rest = x
+  match U64.equal(U64.bit_and(rest, U64.literal(4294967295)), U64.literal(0)):
+    case true:
+      set n = U64.literal(32)
+      set rest = U64.shr(rest, U64.literal(32))
+    case false:
+      set n = n
+  end match
+  match U64.equal(U64.bit_and(rest, U64.literal(65535)), U64.literal(0)):
+    case true:
+      set n = addU(n, U64.literal(16))
+      set rest = U64.shr(rest, U64.literal(16))
+    case false:
+      set n = n
+  end match
+  match U64.equal(U64.bit_and(rest, U64.literal(255)), U64.literal(0)):
+    case true:
+      set n = addU(n, U64.literal(8))
+      set rest = U64.shr(rest, U64.literal(8))
+    case false:
+      set n = n
+  end match
+  match U64.equal(U64.bit_and(rest, U64.literal(15)), U64.literal(0)):
+    case true:
+      set n = addU(n, U64.literal(4))
+      set rest = U64.shr(rest, U64.literal(4))
+    case false:
+      set n = n
+  end match
+  match U64.equal(U64.bit_and(rest, U64.literal(3)), U64.literal(0)):
+    case true:
+      set n = addU(n, U64.literal(2))
+      set rest = U64.shr(rest, U64.literal(2))
+    case false:
+      set n = n
+  end match
+  match U64.equal(U64.bit_and(rest, U64.literal(1)), U64.literal(0)):
+    case true:
+      set n = addU(n, U64.literal(1))
+    case false:
+      set n = n
+  end match
+  return n
+end function
+
+
+function largest_empty_region(occ: U64) returns I64:
+  let full = U64.literal(18446744073709551615)
+  let hmask = U64.literal(9187201950435737471)
+  let empty = U64.bit_xor(full, occ)
+  let visited = U64.literal(0)
+  let largest = I64.literal(0)
+  let remaining = U64.bit_xor(empty, visited)
+  while U64.less_than(U64.literal(0), remaining):
+    let start_bit = U64.shl(U64.literal(1), lowest_bit_index(remaining))
+    let frontier = start_bit
+    let region = U64.literal(0)
+    while U64.less_than(U64.literal(0), frontier):
+      set region = U64.bit_or(region, frontier)
+      let spread = U64.bit_or(U64.bit_or(U64.bit_and(U64.shl(frontier, U64.literal(1)), hmask), U64.shr(frontier, U64.literal(1))), U64.bit_or(U64.shl(frontier, U64.literal(8)), U64.shr(frontier, U64.literal(8))))
+      set frontier = U64.bit_and(U64.bit_and(spread, empty), U64.bit_xor(full, region))
+    end while
+    set visited = U64.bit_or(visited, region)
+    match I64.less_than(largest, popcount_i(region)):
+      case true:
+        set largest = popcount_i(region)
+      case false:
+        set largest = largest
+    end match
+    set remaining = U64.bit_xor(empty, visited)
+  end while
+  return largest
+end function
+
+function evaluate(occ: U64, targets: U64, reward: I64) returns I64:
+  let pot = I64.literal(0)
+  let r = U64.literal(0)
+  while U64.less_than(r, U64.literal(8)):
+    let rowmask = U64.shl(U64.literal(255), U64.shl(r, U64.literal(3)))
+    let count = popcount_i(U64.bit_and(occ, rowmask))
+    set pot = addI(pot, mulI(mulI(count, count), mulI(count, count)))
+    set r = addU(r, U64.literal(1))
+  end while
+  let c = U64.literal(0)
+  while U64.less_than(c, U64.literal(8)):
+    let colmask = U64.shl(U64.literal(72340172838076673), c)
+    let countc = popcount_i(U64.bit_and(occ, colmask))
+    set pot = addI(pot, mulI(mulI(countc, countc), mulI(countc, countc)))
+    set c = addU(c, U64.literal(1))
+  end while
+  let pot_term = divI(mulI(pot, I64.literal(14000)), I64.literal(4096))
+  let base = subI(reward, mulI(I64.literal(150), popcount_i(occ)))
+  let with_largest = addI(base, mulI(I64.literal(1400), largest_empty_region(occ)))
+  let with_pot = addI(with_largest, pot_term)
+  return subI(with_pot, mulI(I64.literal(2600), popcount_i(targets)))
+end function
+
+function cleared_mask(occupied: U64) returns U64:
+  let cleared = U64.literal(0)
+  let r = U64.literal(0)
+  while U64.less_than(r, U64.literal(8)):
+    let rowmask = U64.shl(U64.literal(255), U64.shl(r, U64.literal(3)))
+    match U64.equal(U64.bit_and(occupied, rowmask), rowmask):
+      case true:
+        set cleared = U64.bit_or(cleared, rowmask)
+      case false:
+        set cleared = cleared
+    end match
+    set r = addU(r, U64.literal(1))
+  end while
+  let c = U64.literal(0)
+  while U64.less_than(c, U64.literal(8)):
+    let colmask = U64.shl(U64.literal(72340172838076673), c)
+    match U64.equal(U64.bit_and(occupied, colmask), colmask):
+      case true:
+        set cleared = U64.bit_or(cleared, colmask)
+      case false:
+        set cleared = cleared
+    end match
+    set c = addU(c, U64.literal(1))
+  end while
+  return cleared
+end function
+
+function lines_of(occupied: U64) returns I64:
+  let lines = I64.literal(0)
+  let r = U64.literal(0)
+  while U64.less_than(r, U64.literal(8)):
+    let rowmask = U64.shl(U64.literal(255), U64.shl(r, U64.literal(3)))
+    match U64.equal(U64.bit_and(occupied, rowmask), rowmask):
+      case true:
+        set lines = addI(lines, I64.literal(1))
+      case false:
+        set lines = lines
+    end match
+    set r = addU(r, U64.literal(1))
+  end while
+  let c = U64.literal(0)
+  while U64.less_than(c, U64.literal(8)):
+    let colmask = U64.shl(U64.literal(72340172838076673), c)
+    match U64.equal(U64.bit_and(occupied, colmask), colmask):
+      case true:
+        set lines = addI(lines, I64.literal(1))
+      case false:
+        set lines = lines
+    end match
+    set c = addU(c, U64.literal(1))
+  end while
+  return lines
+end function
+
+function same_shape(am: U64, ah: U64, aw: U64, bm: U64, bh: U64, bw: U64) returns Bool:
+  let same = false
+  match U64.equal(am, bm):
+    case false:
+      set same = same
+    case true:
+      match U64.equal(ah, bh):
+        case false:
+          set same = same
+        case true:
+          match U64.equal(aw, bw):
+            case true:
+              set same = true
+            case false:
+              set same = same
+          end match
+      end match
+  end match
+  return same
+end function
+
+function score_of(packed: I64) returns I64:
+  return subI(divI(packed, I64.literal(1073741824)), I64.literal(1000000000))
+end function
+
+function pack_best(score: I64, placed: I64, nodes: I64, limit: I64) returns I64:
+  let off = addI(score, I64.literal(1000000000))
+  let with_placed = addI(mulI(off, I64.literal(1073741824)), mulI(placed, I64.literal(524288)))
+  let with_nodes = addI(with_placed, mulI(nodes, I64.literal(2)))
+  return addI(with_nodes, limit)
+end function
+
+function unpack_placed(packed: I64) returns I64:
+  let score_off = divI(packed, I64.literal(1073741824))
+  let rem1 = subI(packed, mulI(score_off, I64.literal(1073741824)))
+  return divI(rem1, I64.literal(524288))
+end function
+
+function unpack_nodes(packed: I64) returns I64:
+  let score_off = divI(packed, I64.literal(1073741824))
+  let rem1 = subI(packed, mulI(score_off, I64.literal(1073741824)))
+  let placed = divI(rem1, I64.literal(524288))
+  let rem2 = subI(rem1, mulI(placed, I64.literal(524288)))
+  return divI(rem2, I64.literal(2))
+end function
+
+function unpack_limit(packed: I64) returns Bool:
+  let score_off = divI(packed, I64.literal(1073741824))
+  let rem1 = subI(packed, mulI(score_off, I64.literal(1073741824)))
+  let placed = divI(rem1, I64.literal(524288))
+  let rem2 = subI(rem1, mulI(placed, I64.literal(524288)))
+  let nodes = divI(rem2, I64.literal(2))
+  match I64.equal(subI(rem2, mulI(nodes, I64.literal(2))), I64.literal(1)):
+    case true:
+      return true
+    case false:
+      return false
+  end match
+end function
+
+function visit(level: I64, count: I64, used: U64, occ: U64, targets: U64, reward: I64, m0: U64, h0: U64, w0: U64, m1: U64, h1: U64, w1: U64, m2: U64, h2: U64, w2: U64, m3: U64, h3: U64, w3: U64) returns I64:
+  let guard = false
+  match I64.equal(level, count):
+    case true:
+      return pack_best(evaluate(occ, targets, reward), I64.literal(0), I64.literal(0), I64.literal(0))
+    case false:
+      set guard = true
+  end match
+  let best_score = I64.literal(-1000000000)
+  let best_placed = I64.literal(0)
+  let frame = I64.literal(0)
+  let any_limit = I64.literal(0)
+  let r0 = try_slot(I64.literal(0), U64.literal(1), level, count, used, occ, targets, reward, frame, m0, h0, w0, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match I64.less_than(best_score, score_of(r0)):
+    case true:
+      set best_score = score_of(r0)
+      set best_placed = unpack_placed(r0)
+      set best_score = best_score
+    case false:
+      set best_score = best_score
+  end match
+  set frame = addI(frame, unpack_nodes(r0))
+  match unpack_limit(r0):
+    case true:
+      return pack_best(best_score, best_placed, frame, I64.literal(1))
+    case false:
+      set guard = guard
+  end match
+  let r1 = try_slot(I64.literal(1), U64.literal(2), level, count, used, occ, targets, reward, frame, m1, h1, w1, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match I64.less_than(best_score, score_of(r1)):
+    case true:
+      set best_score = score_of(r1)
+      set best_placed = unpack_placed(r1)
+      set best_score = best_score
+    case false:
+      set best_score = best_score
+  end match
+  set frame = addI(frame, unpack_nodes(r1))
+  match unpack_limit(r1):
+    case true:
+      return pack_best(best_score, best_placed, frame, I64.literal(1))
+    case false:
+      set guard = guard
+  end match
+  let r2 = try_slot(I64.literal(2), U64.literal(4), level, count, used, occ, targets, reward, frame, m2, h2, w2, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match I64.less_than(best_score, score_of(r2)):
+    case true:
+      set best_score = score_of(r2)
+      set best_placed = unpack_placed(r2)
+      set best_score = best_score
+    case false:
+      set best_score = best_score
+  end match
+  set frame = addI(frame, unpack_nodes(r2))
+  match unpack_limit(r2):
+    case true:
+      return pack_best(best_score, best_placed, frame, I64.literal(1))
+    case false:
+      set guard = guard
+  end match
+  let r3 = try_slot(I64.literal(3), U64.literal(8), level, count, used, occ, targets, reward, frame, m3, h3, w3, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match I64.less_than(best_score, score_of(r3)):
+    case true:
+      set best_score = score_of(r3)
+      set best_placed = unpack_placed(r3)
+      set best_score = best_score
+    case false:
+      set best_score = best_score
+  end match
+  set frame = addI(frame, unpack_nodes(r3))
+  match unpack_limit(r3):
+    case true:
+      return pack_best(best_score, best_placed, frame, I64.literal(1))
+    case false:
+      set guard = guard
+  end match
+  return pack_best(best_score, best_placed, frame, I64.literal(0))
+end function
+
+function try_slot(k: I64, slot_bit: U64, level: I64, count: I64, used: U64, occ: U64, targets: U64, reward: I64, frame: I64, mk: U64, hk: U64, wk: U64, m0: U64, h0: U64, w0: U64, m1: U64, h1: U64, w1: U64, m2: U64, h2: U64, w2: U64, m3: U64, h3: U64, w3: U64) returns I64:
+  let guard = false
+  match U64.equal(U64.bit_and(used, slot_bit), U64.literal(0)):
+    case false:
+      return pack_best(I64.literal(-1000000000), I64.literal(0), I64.literal(0), I64.literal(0))
+    case true:
+      set guard = true
+  end match
+  match I64.less_than(count, addI(k, I64.literal(1))):
+    case true:
+      return pack_best(I64.literal(-1000000000), I64.literal(0), I64.literal(0), I64.literal(0))
+    case false:
+      set guard = guard
+  end match
+  let dup = false
+  match I64.less_than(I64.literal(0), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(1)), U64.literal(0)):
+        case true:
+          match same_shape(m0, h0, w0, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match I64.less_than(I64.literal(1), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(2)), U64.literal(0)):
+        case true:
+          match same_shape(m1, h1, w1, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match I64.less_than(I64.literal(2), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(4)), U64.literal(0)):
+        case true:
+          match same_shape(m2, h2, w2, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match dup:
+    case true:
+      return pack_best(I64.literal(-1000000000), I64.literal(0), I64.literal(0), I64.literal(0))
+    case false:
+      set dup = dup
+  end match
+  let nodes = I64.literal(0)
+  let limit = I64.literal(0)
+  let best_score = I64.literal(-1000000000)
+  let best_placed = I64.literal(0)
+  let hb = subU(U64.literal(9), hk)
+  let wb = subU(U64.literal(9), wk)
+  let r = U64.literal(0)
+  while U64.less_than(r, hb):
+    let c = U64.literal(0)
+    while U64.less_than(c, wb):
+      set nodes = addI(nodes, I64.literal(1))
+      match I64.less_than(I64.literal(200000), addI(frame, nodes)):
+        case true:
+          set limit = I64.literal(1)
+        case false:
+          let shifted = U64.shl(mk, addU(mulU(r, U64.literal(8)), c))
+          match U64.equal(U64.bit_and(shifted, occ), U64.literal(0)):
+            case true:
+              let occupied = U64.bit_or(occ, shifted)
+              let cleared = cleared_mask(occupied)
+              let lines = lines_of(occupied)
+              let cleared_targets = popcount_i(U64.bit_and(targets, cleared))
+              let occupied2 = U64.bit_and(occupied, U64.bit_xor(U64.literal(18446744073709551615), cleared))
+              let targets2 = U64.bit_and(targets, U64.bit_xor(U64.literal(18446744073709551615), cleared))
+              let reward2 = addI(mulI(I64.literal(12000), mulI(lines, lines)), mulI(I64.literal(26000), cleared_targets))
+              let child = visit(addI(level, I64.literal(1)), count, U64.bit_or(used, slot_bit), occupied2, targets2, addI(reward, reward2), m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+              set nodes = addI(nodes, unpack_nodes(child))
+              match I64.less_than(best_score, score_of(child)):
+                case true:
+                  set best_score = score_of(child)
+                  set best_placed = addI(unpack_placed(child), I64.literal(1))
+                  set best_score = best_score
+                case false:
+                  set best_score = best_score
+              end match
+              match unpack_limit(child):
+                case true:
+                  set limit = I64.literal(1)
+                case false:
+                  set limit = limit
+              end match
+            case false:
+              set limit = limit
+          end match
+      end match
+      match I64.equal(limit, I64.literal(1)):
+        case true:
+          set c = wb
+        case false:
+          set c = addU(c, U64.literal(1))
+      end match
+    end while
+    match I64.equal(limit, I64.literal(1)):
+      case true:
+        set r = hb
+      case false:
+        set r = addU(r, U64.literal(1))
+    end match
+  end while
+  return pack_best(best_score, best_placed, nodes, limit)
+end function
+
+function build_moves(level: I64, count: I64, used: U64, occ: U64, targets: U64, reward: I64, target: I64, m0: U64, h0: U64, w0: U64, m1: U64, h1: U64, w1: U64, m2: U64, h2: U64, w2: U64, m3: U64, h3: U64, w3: U64) returns Text:
+  let guard = false
+  match I64.equal(level, count):
+    case true:
+      return ""
+    case false:
+      set guard = true
+  end match
+  let f0 = slot_moves(I64.literal(0), U64.literal(1), level, count, used, occ, targets, reward, target, m0, h0, w0, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match U64.equal(sico.text.length(f0), U64.literal(0)):
+    case false:
+      return f0
+    case true:
+      set guard = true
+  end match
+  let f1 = slot_moves(I64.literal(1), U64.literal(2), level, count, used, occ, targets, reward, target, m1, h1, w1, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match U64.equal(sico.text.length(f1), U64.literal(0)):
+    case false:
+      return f1
+    case true:
+      set guard = true
+  end match
+  let f2 = slot_moves(I64.literal(2), U64.literal(4), level, count, used, occ, targets, reward, target, m2, h2, w2, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match U64.equal(sico.text.length(f2), U64.literal(0)):
+    case false:
+      return f2
+    case true:
+      set guard = true
+  end match
+  let f3 = slot_moves(I64.literal(3), U64.literal(8), level, count, used, occ, targets, reward, target, m3, h3, w3, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  match U64.equal(sico.text.length(f3), U64.literal(0)):
+    case false:
+      return f3
+    case true:
+      set guard = true
+  end match
+  return ""
+end function
+
+function slot_moves(k: I64, slot_bit: U64, level: I64, count: I64, used: U64, occ: U64, targets: U64, reward: I64, target: I64, mk: U64, hk: U64, wk: U64, m0: U64, h0: U64, w0: U64, m1: U64, h1: U64, w1: U64, m2: U64, h2: U64, w2: U64, m3: U64, h3: U64, w3: U64) returns Text:
+  let guard = false
+  match U64.equal(U64.bit_and(used, slot_bit), U64.literal(0)):
+    case false:
+      return ""
+    case true:
+      set guard = true
+  end match
+  match I64.less_than(count, addI(k, I64.literal(1))):
+    case true:
+      return ""
+    case false:
+      set guard = guard
+  end match
+  let dup = false
+  match I64.less_than(I64.literal(0), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(1)), U64.literal(0)):
+        case true:
+          match same_shape(m0, h0, w0, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match I64.less_than(I64.literal(1), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(2)), U64.literal(0)):
+        case true:
+          match same_shape(m1, h1, w1, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match I64.less_than(I64.literal(2), k):
+    case true:
+      match U64.equal(U64.bit_and(used, U64.literal(4)), U64.literal(0)):
+        case true:
+          match same_shape(m2, h2, w2, mk, hk, wk):
+            case true:
+              set dup = true
+            case false:
+              set dup = dup
+          end match
+        case false:
+          set dup = dup
+      end match
+    case false:
+      set dup = dup
+  end match
+  match dup:
+    case true:
+      return ""
+    case false:
+      set dup = dup
+  end match
+  let hb = subU(U64.literal(9), hk)
+  let wb = subU(U64.literal(9), wk)
+  let stop = false
+  let r = U64.literal(0)
+  while U64.less_than(r, hb):
+    let c = U64.literal(0)
+    while U64.less_than(c, wb):
+      match U64.equal(U64.bit_and(U64.shl(mk, addU(mulU(r, U64.literal(8)), c)), occ), U64.literal(0)):
+        case true:
+          let occupied = U64.bit_or(occ, U64.shl(mk, addU(mulU(r, U64.literal(8)), c)))
+          let cleared = cleared_mask(occupied)
+          let lines = lines_of(occupied)
+          let cleared_targets = popcount_i(U64.bit_and(targets, cleared))
+          let occupied2 = U64.bit_and(occupied, U64.bit_xor(U64.literal(18446744073709551615), cleared))
+          let targets2 = U64.bit_and(targets, U64.bit_xor(U64.literal(18446744073709551615), cleared))
+          let reward2 = addI(mulI(I64.literal(12000), mulI(lines, lines)), mulI(I64.literal(26000), cleared_targets))
+          let child = visit(addI(level, I64.literal(1)), count, U64.bit_or(used, slot_bit), occupied2, targets2, addI(reward, reward2), m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+          match I64.equal(score_of(child), target):
+            case true:
+              let moved = sico.text.concat(sico.text.concat(sico.text.concat(sico.text.concat(sico.i64.to_text(k), ":"), sico.u64.to_text(r)), ","), sico.u64.to_text(c))
+              let rest = build_moves(addI(level, I64.literal(1)), count, U64.bit_or(used, slot_bit), occupied2, targets2, addI(reward, reward2), target, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+              match U64.equal(sico.text.length(rest), U64.literal(0)):
+                case true:
+                  return moved
+                case false:
+                  return sico.text.concat(moved, sico.text.concat(";", rest))
+              end match
+            case false:
+              set guard = guard
+          end match
+          match unpack_limit(child):
+            case true:
+              set stop = true
+            case false:
+              set guard = guard
+          end match
+        case false:
+          set guard = guard
+      end match
+      match stop:
+        case true:
+          set c = wb
+        case false:
+          set c = addU(c, U64.literal(1))
+      end match
+    end while
+    match stop:
+      case true:
+        set r = hb
+      case false:
+        set r = addU(r, U64.literal(1))
+    end match
+  end while
+  return ""
+end function
+function invalid(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: message))
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let ack = false
+  match sico.bytes.is_utf8(input.stdin):
+    case false:
+      return invalid("stdin is not valid UTF-8")
+    case true:
+      set ack = true
+  end match
+  let document = sico.bytes.utf8_decode(input.stdin)
+  match sico.json.is_valid(document):
+    case false:
+      return invalid("stdin is not valid JSON")
+    case true:
+      set ack = true
+  end match
+  match sico.json.has(document, "board"):
+    case false:
+      return invalid("missing board")
+    case true:
+      set ack = true
+  end match
+  match sico.json.has(document, "tray"):
+    case false:
+      return invalid("missing tray")
+    case true:
+      set ack = true
+  end match
+  let board_quoted = sico.json.get(document, "board")
+  let board_len = sico.text.length(board_quoted)
+  match U64.less_than(U64.literal(2), board_len):
+    case false:
+      return invalid("board field")
+    case true:
+      set ack = true
+  end match
+  let board_inner = sico.bytes.slice(sico.text.encode(board_quoted), U64.literal(1), subU(board_len, U64.literal(2)))
+  let occ = U64.literal(0)
+  let targets = U64.literal(0)
+  match board_inner:
+    case ok(board_bytes):
+      match U64.equal(sico.bytes.length(board_bytes), U64.literal(64)):
+        case false:
+          return invalid("board length")
+        case true:
+          set ack = true
+      end match
+      let i = U64.literal(0)
+      while U64.less_than(i, U64.literal(64)):
+        let cell = sico.bytes.slice(board_bytes, i, U64.literal(1))
+        match cell:
+          case ok(one):
+            let ch = sico.bytes.utf8_decode(one)
+            match sico.text.contains(ch, "#"):
+              case true:
+                set occ = U64.bit_or(occ, U64.shl(U64.literal(1), i))
+              case false:
+                match sico.text.contains(ch, "T"):
+                  case true:
+                    set occ = U64.bit_or(occ, U64.shl(U64.literal(1), i))
+                    set targets = U64.bit_or(targets, U64.shl(U64.literal(1), i))
+                  case false:
+                    match sico.text.contains(ch, "."):
+                      case true:
+                        set occ = occ
+                      case false:
+                        return invalid("board charset")
+                    end match
+                end match
+            end match
+          case error(_):
+            return invalid("board slice")
+        end match
+        set i = addU(i, U64.literal(1))
+      end while
+    case error(_):
+      return invalid("board slice")
+  end match
+  let tray_quoted = sico.json.get(document, "tray")
+  let tray_len = sico.text.length(tray_quoted)
+  match U64.less_than(U64.literal(2), tray_len):
+    case false:
+      return invalid("tray field")
+    case true:
+      set tray_len = tray_len
+  end match
+  let tray_inner = sico.bytes.slice(sico.text.encode(tray_quoted), U64.literal(1), subU(tray_len, U64.literal(2)))
+  let m0 = U64.literal(0)
+  let h0 = U64.literal(0)
+  let w0 = U64.literal(0)
+  let m1 = U64.literal(0)
+  let h1 = U64.literal(0)
+  let w1 = U64.literal(0)
+  let m2 = U64.literal(0)
+  let h2 = U64.literal(0)
+  let w2 = U64.literal(0)
+  let m3 = U64.literal(0)
+  let h3 = U64.literal(0)
+  let w3 = U64.literal(0)
+  let count_u = U64.literal(0)
+  let cur_mask = U64.literal(0)
+  let cur_r = U64.literal(0)
+  let cur_c = U64.literal(0)
+  let cur_w = U64.literal(0)
+  let started = false
+  match tray_inner:
+    case ok(tray_bytes):
+      let ti = U64.literal(0)
+      while U64.less_than(ti, sico.bytes.length(tray_bytes)):
+        let tcell = sico.bytes.slice(tray_bytes, ti, U64.literal(1))
+        match tcell:
+          case ok(one):
+            let tch = sico.bytes.utf8_decode(one)
+            match sico.text.contains(tch, "|"):
+              case true:
+                match started:
+                  case false:
+                    return invalid("empty tray piece")
+                  case true:
+                    set started = started
+                end match
+                match U64.equal(count_u, U64.literal(0)):
+                  case true:
+                    set m0 = cur_mask
+                    set h0 = addU(cur_r, U64.literal(1))
+                    set w0 = cur_w
+                  case false:
+                    match U64.equal(count_u, U64.literal(1)):
+                      case true:
+                        set m1 = cur_mask
+                        set h1 = addU(cur_r, U64.literal(1))
+                        set w1 = cur_w
+                      case false:
+                        match U64.equal(count_u, U64.literal(2)):
+                          case true:
+                            set m2 = cur_mask
+                            set h2 = addU(cur_r, U64.literal(1))
+                            set w2 = cur_w
+                          case false:
+                            set count_u = count_u
+                        end match
+                    end match
+                end match
+                match U64.less_than(count_u, U64.literal(4)):
+                  case false:
+                    return invalid("tray size")
+                  case true:
+                    set count_u = count_u
+                end match
+                set count_u = addU(count_u, U64.literal(1))
+                set cur_mask = U64.literal(0)
+                set cur_r = U64.literal(0)
+                set cur_c = U64.literal(0)
+                set cur_w = U64.literal(0)
+              case false:
+                match sico.text.contains(tch, ";"):
+                  case true:
+                    set started = true
+                    set cur_r = addU(cur_r, U64.literal(1))
+                    set cur_c = U64.literal(0)
+                  case false:
+                    match sico.text.contains(tch, "#"):
+                      case true:
+                        set started = true
+                        set cur_mask = U64.bit_or(cur_mask, U64.shl(U64.literal(1), addU(mulU(cur_r, U64.literal(8)), cur_c)))
+                        set cur_c = addU(cur_c, U64.literal(1))
+                        match U64.less_than(cur_w, cur_c):
+                          case true:
+                            set cur_w = cur_c
+                          case false:
+                            set cur_w = cur_w
+                        end match
+                      case false:
+                        match sico.text.contains(tch, "."):
+                          case true:
+                            set started = true
+                            set cur_c = addU(cur_c, U64.literal(1))
+                            match U64.less_than(cur_w, cur_c):
+                              case true:
+                                set cur_w = cur_c
+                              case false:
+                                set cur_w = cur_w
+                            end match
+                          case false:
+                            return invalid("tray charset")
+                        end match
+                    end match
+                end match
+            end match
+          case error(_):
+            return invalid("tray slice")
+        end match
+        set ti = addU(ti, U64.literal(1))
+      end while
+      match started:
+        case false:
+          return invalid("empty tray")
+        case true:
+          set started = started
+      end match
+      match U64.equal(count_u, U64.literal(0)):
+        case true:
+          set m0 = cur_mask
+          set h0 = addU(cur_r, U64.literal(1))
+          set w0 = cur_w
+        case false:
+          match U64.equal(count_u, U64.literal(1)):
+            case true:
+              set m1 = cur_mask
+              set h1 = addU(cur_r, U64.literal(1))
+              set w1 = cur_w
+            case false:
+              match U64.equal(count_u, U64.literal(2)):
+                case true:
+                  set m2 = cur_mask
+                  set h2 = addU(cur_r, U64.literal(1))
+                  set w2 = cur_w
+                case false:
+                  set m3 = cur_mask
+                  set h3 = addU(cur_r, U64.literal(1))
+                  set w3 = cur_w
+              end match
+          end match
+      end match
+      set count_u = addU(count_u, U64.literal(1))
+    case error(_):
+      return invalid("tray slice")
+  end match
+  let count_i = I64.literal(1)
+  match U64.equal(count_u, U64.literal(2)):
+    case true:
+      set count_i = I64.literal(2)
+    case false:
+      set count_i = count_i
+  end match
+  match U64.equal(count_u, U64.literal(3)):
+    case true:
+      set count_i = I64.literal(3)
+    case false:
+      set count_i = count_i
+  end match
+  match U64.equal(count_u, U64.literal(4)):
+    case true:
+      set count_i = I64.literal(4)
+    case false:
+      set count_i = count_i
+  end match
+  let packed = visit(I64.literal(0), count_i, U64.literal(0), occ, targets, I64.literal(0), m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+  let report_score = score_of(packed)
+  let report_placed = I64.literal(0)
+  let report_moves = ""
+  let report_limit = "false"
+  match unpack_limit(packed):
+    case true:
+      set report_limit = "true"
+    case false:
+      set report_limit = "false"
+  end match
+  match I64.less_than(I64.literal(-1000000000), report_score):
+    case true:
+      set report_placed = unpack_placed(packed)
+      set report_moves = build_moves(I64.literal(0), count_i, U64.literal(0), occ, targets, I64.literal(0), report_score, m0, h0, w0, m1, h1, w1, m2, h2, w2, m3, h3, w3)
+    case false:
+      set report_score = evaluate(occ, targets, I64.literal(0))
+      set report_moves = ""
+      set report_placed = I64.literal(0)
+  end match
+  let r1 = sico.text.concat("{\"placed\":", sico.i64.to_text(report_placed))
+  let r2 = sico.text.concat(r1, ",\"score\":")
+  let r3 = sico.text.concat(r2, sico.i64.to_text(report_score))
+  let r4 = sico.text.concat(r3, ",\"moves\":\"")
+  let r5 = sico.text.concat(r4, report_moves)
+  let r6 = sico.text.concat(r5, "\",\"limit\":")
+  let r7 = sico.text.concat(r6, report_limit)
+  let report = sico.text.concat(r7, "}")
+  return ok(ScriptOutput(stdout: sico.text.encode(report), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

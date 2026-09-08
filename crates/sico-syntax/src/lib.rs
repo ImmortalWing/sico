@@ -26,6 +26,8 @@ impl SyntaxKind {
     pub const ERROR: Self = Self(12);
     pub const MISSING: Self = Self(13);
     pub const WHILE_BLOCK: Self = Self(14);
+    pub const MODULE_DECL: Self = Self(15);
+    pub const USE_DECL: Self = Self(16);
     pub const TOKEN_BASE: u16 = 1_000;
 
     /// Encodes a lexer token discriminant as a rowan syntax kind.

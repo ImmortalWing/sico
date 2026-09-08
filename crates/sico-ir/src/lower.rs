@@ -117,34 +117,114 @@ impl TaskScopePlan {
 /// Returns frontend/semantic diagnostics, a typed unsupported feature, or
 /// independent verifier errors.
 pub fn lower_core(source: &SourceFile) -> Result<Module, CoreLowerError> {
-    match require_semantic_success(source) {
-        Ok(_) => {}
-        Err(EntryError::Frontend(error)) => return Err(CoreLowerError::Frontend(error)),
-        Err(EntryError::Semantic(diagnostics)) => {
-            return Err(CoreLowerError::Semantic(diagnostics));
+    lower_core_modules(source, &[])
+}
+
+/// One RFC-0039 module import: its prefix and already-discovered source
+/// (STEP-0143). Order must be the CLI link pass's deterministic discovery
+/// order; cycle freedom and `use`-site verification happen there.
+#[derive(Clone, Copy, Debug)]
+pub struct ModuleImport<'a> {
+    pub name: &'a str,
+    pub source: &'a SourceFile,
+}
+
+/// Lowers the entry source plus RFC-0039 module imports into one verified
+/// IR `Module` (STEP-0143).
+///
+/// Every file keeps its single-file lowering path; functions receive
+/// globally unique ids from per-file bases (entry first, imports in the
+/// given order), so cross-module qualified calls — resolved through the
+/// `module.item` aliases in the caller's definition table — need no
+/// post-pass rewriting. Imported function display names become
+/// `module.name`; entry names stay bare, so single-module programs lower
+/// byte-identically to [`lower_core`].
+///
+/// # Errors
+///
+/// Same contract as [`lower_core`], applied to every file, plus the
+/// independent verifier over the merged module.
+pub fn lower_core_modules(
+    entry: &SourceFile,
+    imports: &[ModuleImport<'_>],
+) -> Result<Module, CoreLowerError> {
+    let mut declarations: Vec<(Option<&str>, Vec<Declaration>)> = Vec::new();
+    for (prefix, source) in std::iter::once((None, entry)).chain(
+        imports
+            .iter()
+            .map(|import| (Some(import.name), import.source)),
+    ) {
+        match require_semantic_success(source) {
+            Ok(_) => {}
+            Err(EntryError::Frontend(error)) => return Err(CoreLowerError::Frontend(error)),
+            Err(EntryError::Semantic(diagnostics)) => {
+                return Err(CoreLowerError::Semantic(diagnostics));
+            }
         }
+        let hir =
+            lower(source).map_err(|error| CoreLowerError::Frontend(AnalyzeError::Lower(error)))?;
+        declarations.push((prefix, hir.declarations));
     }
-    let hir =
-        lower(source).map_err(|error| CoreLowerError::Frontend(AnalyzeError::Lower(error)))?;
-    let definitions = Definitions::from_declarations(&hir.declarations);
-    let mut module = Module::new(source.name(), source.len().into());
+
+    let mut bases = Vec::new();
+    let mut next_function = 1_u32;
+    for (_, decls) in &declarations {
+        bases.push(next_function);
+        next_function += decls
+            .iter()
+            .filter(|declaration| declaration.kind == DeclarationKind::Function)
+            .count() as u32;
+    }
+
+    let mut functions = Vec::new();
     let mut task_scopes = BTreeMap::new();
-    for declaration in &hir.declarations {
-        if declaration.kind == DeclarationKind::Function {
-            let (function, scopes) = lower_function(declaration, &definitions)?;
+    for (index, ((prefix, decls), base)) in declarations.iter().zip(&bases).enumerate() {
+        let mut definitions = Definitions::from_declarations(decls, *prefix, *base);
+        for (other_index, (other_prefix, other_decls)) in declarations.iter().enumerate() {
+            if other_index == index {
+                continue;
+            }
+            if let Some(other_prefix) = other_prefix {
+                definitions.add_qualified_aliases(other_decls, other_prefix, bases[other_index]);
+            }
+        }
+        for declaration in decls {
+            if declaration.kind != DeclarationKind::Function {
+                continue;
+            }
+            let (mut function, scopes) = lower_function(declaration, &definitions)?;
+            if index > 0 {
+                function.name = format!(
+                    "{}.{}",
+                    prefix.expect("import files carry a module prefix"),
+                    function.name
+                );
+            }
             if !scopes.is_empty() {
                 task_scopes.insert(function.id, scopes);
             }
-            module.functions.push(function);
+            functions.push(function);
         }
     }
+
+    let mut module = Module::new(entry.name(), entry.len().into());
+    // The merged module's "source" is the file set: verifier range bounds
+    // widen to the combined length (identical to the entry length for
+    // single-file programs, whose lowering path is unchanged).
+    let mut combined_len = u64::from(u32::from(entry.len()));
+    for import in imports {
+        combined_len += u64::from(u32::from(import.source.len()));
+    }
+    module.source_len = u32::try_from(combined_len)
+        .expect("combined source length stays inside the u32 source bound");
+    module.functions = functions;
     if !task_scopes.is_empty() {
         module.task_scopes = Some(task_scopes);
     }
     if module.functions.is_empty() {
         return unsupported(
             "module without core function",
-            TextRange::up_to(source.len()),
+            TextRange::up_to(entry.len()),
         );
     }
     let errors = verify(&module);
@@ -156,7 +236,11 @@ pub fn lower_core(source: &SourceFile) -> Result<Module, CoreLowerError> {
 }
 
 impl Definitions {
-    fn from_declarations(declarations: &[Declaration]) -> Self {
+    fn from_declarations(
+        declarations: &[Declaration],
+        module_prefix: Option<&str>,
+        first_function_id: u32,
+    ) -> Self {
         let mut definitions = Self::default();
         for declaration in declarations {
             match declaration.kind {
@@ -177,9 +261,11 @@ impl Definitions {
                     definitions.declared_types.insert(declaration.name.clone());
                 }
                 DeclarationKind::Function | DeclarationKind::Interface => {}
+                // RFC-0039 (STEP-0143): module/use carry no type surface.
+                DeclarationKind::Module | DeclarationKind::Use => {}
             }
         }
-        let mut next_function = 1_u32;
+        let mut next_function = first_function_id;
         for declaration in declarations {
             match declaration.kind {
                 DeclarationKind::Newtype | DeclarationKind::Record => {
@@ -206,31 +292,22 @@ impl Definitions {
                     }
                 }
                 DeclarationKind::Function => {
-                    let header = &declaration.lines[0].tokens;
-                    let (mut parameters, return_type) = parse_signature(header);
-                    for (_, ty, _) in &mut parameters {
-                        *ty = definitions.resolve_type(ty.clone());
+                    if let Some((name, mut signature)) =
+                        function_signature(&definitions, declaration, FunctionId(next_function))
+                    {
+                        if let Some(prefix) = module_prefix {
+                            let mut qualified = signature.clone();
+                            qualified.id = FunctionId(next_function);
+                            definitions
+                                .functions
+                                .insert(format!("{prefix}.{name}"), qualified);
+                        }
+                        signature.id = FunctionId(next_function);
+                        definitions.functions.insert(name, signature);
+                        next_function += 1;
                     }
-                    let async_function = header.iter().any(|token| token.kind == TokenKind::Async);
-                    let return_type = definitions.resolve_type(return_type);
-                    // RFC-0036 §5.2: an async function's IR signature returns
-                    // `Future[T]`; the body resolves it by returning `T`.
-                    let return_type = if async_function {
-                        Type::Future(Box::new(return_type))
-                    } else {
-                        return_type
-                    };
-                    definitions.functions.insert(
-                        declaration.name.clone(),
-                        Signature {
-                            id: FunctionId(next_function),
-                            parameters,
-                            return_type,
-                            async_function,
-                        },
-                    );
-                    next_function += 1;
                 }
+                DeclarationKind::Module | DeclarationKind::Use => {}
                 DeclarationKind::Capability
                 | DeclarationKind::Resource
                 | DeclarationKind::Interface => {
@@ -258,6 +335,31 @@ impl Definitions {
         definitions
     }
 
+    /// RFC-0039 (STEP-0143): registers `prefix.name` aliases for another
+    /// file's functions so qualified cross-module calls resolve against
+    /// that file's own globally-based ids. Only the qualified key is
+    /// inserted; bare names stay file-local.
+    fn add_qualified_aliases(
+        &mut self,
+        declarations: &[Declaration],
+        prefix: &str,
+        first_function_id: u32,
+    ) {
+        let mut next_function = first_function_id;
+        for declaration in declarations {
+            if declaration.kind != DeclarationKind::Function {
+                continue;
+            }
+            if let Some((name, mut signature)) =
+                function_signature(self, declaration, FunctionId(next_function))
+            {
+                signature.id = FunctionId(next_function);
+                self.functions.insert(format!("{prefix}.{name}"), signature);
+                next_function += 1;
+            }
+        }
+    }
+
     fn resolve_type(&self, ty: Type) -> Type {
         match ty {
             Type::Named(name) if self.capabilities.contains(&name) => Type::Capability(name),
@@ -276,6 +378,42 @@ impl Definitions {
             other => other,
         }
     }
+}
+
+/// RFC-0039 (STEP-0143): computes a function declaration's resolved
+/// signature without inserting it, so `from_declarations` and
+/// `add_qualified_aliases` share one code path.
+fn function_signature(
+    definitions: &Definitions,
+    declaration: &Declaration,
+    id: FunctionId,
+) -> Option<(String, Signature)> {
+    if declaration.kind != DeclarationKind::Function {
+        return None;
+    }
+    let header = &declaration.lines[0].tokens;
+    let (mut parameters, return_type) = parse_signature(header);
+    for (_, ty, _) in &mut parameters {
+        *ty = definitions.resolve_type(ty.clone());
+    }
+    let async_function = header.iter().any(|token| token.kind == TokenKind::Async);
+    let return_type = definitions.resolve_type(return_type);
+    // RFC-0036 §5.2: an async function's IR signature returns
+    // `Future[T]`; the body resolves it by returning `T`.
+    let return_type = if async_function {
+        Type::Future(Box::new(return_type))
+    } else {
+        return_type
+    };
+    Some((
+        declaration.name.clone(),
+        Signature {
+            id,
+            parameters,
+            return_type,
+            async_function,
+        },
+    ))
 }
 
 fn lower_function(
@@ -510,7 +648,6 @@ struct GeneralLowering<'a, 'b> {
     loop_stack: Vec<LoopFrame>,
     return_type: &'a Type,
     scope_plan: &'a TaskScopePlan,
-    cell_names: BTreeSet<String>,
     metadata: bool,
     using_resource: Option<ValueId>,
     nested: usize,
@@ -571,10 +708,16 @@ impl GeneralLowering<'_, '_> {
                         None,
                         &mut self.blocks[self.current.expect("current")].instructions,
                     )?;
-                    if self.cell_names.contains(name) {
-                        if self.builder.cells.contains_key(name) {
-                            return unsupported("cell redeclared", line.range);
-                        }
+                    if self.builder.cells.contains_key(name) {
+                        return unsupported("cell redeclared", line.range);
+                    }
+                    // Inside a general CFG every `let` becomes a mutable
+                    // local cell: IR values are block-scoped, so a binding
+                    // read in a later block (loop body, arm, join) must live
+                    // in a cell, whether or not the source reassigns it.
+                    // Straight-line bodies keep plain bindings via
+                    // `lower_straight_line`, so frozen shapes are unchanged.
+                    if name.is_empty() || !name.starts_with('#') {
                         let local = u32::try_from(self.builder.locals.len())
                             .map_err(|_| unsupported_error("local limit", line.range))?;
                         self.builder.locals.push(Local {
@@ -871,16 +1014,33 @@ impl GeneralLowering<'_, '_> {
                     // Payload-binding arms read the subject inside their own
                     // block; IR values are block-scoped, so a non-parameter
                     // subject spills into a compiler-generated cell first.
-                    let needs_spill = arm_ranges.iter().any(|(arm_index, _)| {
+                    // STEP-0137: the spill triggers on the payload binding
+                    // itself, not on ok/error tokens in arm bodies — the
+                    // token heuristic refused payload bindings in
+                    // plain-value matches (e.g. recursive functions
+                    // returning scalars). Programs that compiled before
+                    // either took the parameter path or already spilled, so
+                    // no previously accepted shape changes.
+                    let binds_payload = arm_ranges.iter().any(|(arm_index, _)| {
                         let arm_line = &lines[*arm_index];
-                        strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1])
-                            .iter()
-                            .any(|token| {
-                                matches!(token.kind, TokenKind::OkKeyword | TokenKind::ErrorKeyword)
-                            })
-                    }) && values
-                        .first()
-                        .is_some_and(|value| value.0 >= self.builder.parameter_count);
+                        let pattern_tokens =
+                            strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1]);
+                        let patterns: Vec<_> = split_top_level(pattern_tokens, TokenKind::Comma)
+                            .into_iter()
+                            .map(parse_pattern)
+                            .collect();
+                        patterns.len() == 1
+                            && matches!(
+                                &patterns[0],
+                                Pattern::Variant { name, payload }
+                                    if matches!(name.as_str(), "ok" | "error")
+                                        && matches!(payload.as_slice(), [Pattern::Binding(_)])
+                            )
+                    });
+                    let needs_spill = binds_payload
+                        && values
+                            .first()
+                            .is_some_and(|value| value.0 >= self.builder.parameter_count);
                     let spill_cell = if needs_spill {
                         let Some(subject_type) = value_types.first().cloned() else {
                             return unsupported("match payload binding", lines[index].range);
@@ -989,9 +1149,30 @@ impl GeneralLowering<'_, '_> {
                                 arm_line.range,
                                 &mut self.blocks[arm_block].instructions,
                             );
+                            // A payload binding may be read after the match
+                            // joins (IR values are block-scoped), so it spills
+                            // into a compiler-generated cell; the binding then
+                            // resolves through `ReadLocal` in every block.
+                            let cell_name = format!("#match{binding}");
+                            let local = u32::try_from(self.builder.locals.len())
+                                .map_err(|_| unsupported_error("local limit", arm_line.range))?;
+                            self.builder.locals.push(Local {
+                                name: cell_name,
+                                ty: payload_type.clone(),
+                                range: source_range(arm_line.range),
+                            });
                             self.builder
-                                .bindings
-                                .insert(binding, (payload, payload_type));
+                                .cells
+                                .insert(binding, (local, payload_type.clone()));
+                            self.builder.emit(
+                                Type::Unit,
+                                Operation::WriteLocal {
+                                    local,
+                                    value: payload,
+                                },
+                                arm_line.range,
+                                &mut self.blocks[arm_block].instructions,
+                            );
                         }
                         self.nested += 1;
                         self.run(lines, arm_index + 1, body_end)?;
@@ -1043,12 +1224,6 @@ fn lower_general(
     return_type: &Type,
     scope_plan: &TaskScopePlan,
 ) -> Result<Vec<Block>, CoreLowerError> {
-    let cell_names: BTreeSet<String> = declaration
-        .lines
-        .iter()
-        .filter(|line| line.kind == LineKind::Set)
-        .filter_map(|line| line.tokens.get(1).map(|token| token.text.clone()))
-        .collect();
     let mut lowering = GeneralLowering {
         builder,
         blocks: Vec::new(),
@@ -1056,7 +1231,6 @@ fn lower_general(
         loop_stack: Vec::new(),
         return_type,
         scope_plan,
-        cell_names,
         metadata: false,
         using_resource: None,
         nested: 0,
@@ -1287,6 +1461,65 @@ fn lower_match(
         value_types.push(ty);
     }
 
+    // STEP-0137: a computed match subject with payload-binding arms spills
+    // into a cell; the WriteLocal must be emitted into the entry block
+    // BEFORE any arm instructions allocate value ids (the verifier requires
+    // canonical id order across the whole function).
+    let mut spill = None;
+    {
+        let binds_payload = declaration.lines[match_index + 1..]
+            .iter()
+            .take_while(|line| line.kind != LineKind::End)
+            .any(|line| {
+                if line.kind != LineKind::MatchArm {
+                    return false;
+                }
+                let pattern_tokens = strip_outer_parens(&line.tokens[1..line.tokens.len() - 1]);
+                let patterns: Vec<_> = split_top_level(pattern_tokens, TokenKind::Comma)
+                    .into_iter()
+                    .map(parse_pattern)
+                    .collect();
+                patterns.len() == 1
+                    && matches!(
+                        &patterns[0],
+                        Pattern::Variant { name, payload }
+                            if matches!(name.as_str(), "ok" | "error")
+                                && matches!(payload.as_slice(), [Pattern::Binding(_)])
+                    )
+            });
+        let subject_computed = values
+            .first()
+            .is_some_and(|value| value.0 >= builder.parameter_count);
+        if binds_payload && subject_computed {
+            let Some(subject_type) = value_types.first().cloned() else {
+                return unsupported(
+                    "match payload binding",
+                    declaration.lines[match_index].range,
+                );
+            };
+            let name = format!("#match{}", builder.locals.len());
+            let local = u32::try_from(builder.locals.len()).map_err(|_| {
+                unsupported_error("local limit", declaration.lines[match_index].range)
+            })?;
+            builder.locals.push(Local {
+                name,
+                ty: subject_type,
+                range: source_range(declaration.lines[match_index].range),
+            });
+            let subject = values.first().copied().expect("match subject");
+            builder.emit(
+                Type::Unit,
+                Operation::WriteLocal {
+                    local,
+                    value: subject,
+                },
+                declaration.lines[match_index].range,
+                &mut entry_instructions,
+            );
+            spill = Some(local);
+        }
+    }
+
     let mut blocks = Vec::new();
     let mut arms = Vec::new();
     let mut cursor = match_index + 1;
@@ -1344,11 +1577,23 @@ fn lower_match(
             else {
                 return unsupported("match payload binding on non-Result", line.range);
             };
-            // IR values are block-scoped: only a match subject that is a
-            // function parameter stays visible inside the arm block.
-            if base.0 >= builder.parameter_count {
-                return unsupported("match payload binding", line.range);
-            }
+            // IR values are block-scoped: a match subject that is a function
+            // parameter stays visible inside the arm block; a computed
+            // subject reads the entry-block spill cell (allocated before the
+            // arm loop so value ids stay canonical; STEP-0137).
+            let base = if base.0 >= builder.parameter_count {
+                let Some(local) = spill else {
+                    return unsupported("match payload binding", line.range);
+                };
+                builder.emit(
+                    value_types.first().expect("match subject").clone(),
+                    Operation::ReadLocal { local },
+                    line.range,
+                    &mut instructions,
+                )
+            } else {
+                *base
+            };
             let payload_type = match variant.as_str() {
                 "ok" => ok.as_ref().clone(),
                 _ => error.as_ref().clone(),
@@ -1356,7 +1601,7 @@ fn lower_match(
             let value = builder.emit(
                 payload_type.clone(),
                 Operation::Project {
-                    base: *base,
+                    base,
                     field: variant.clone(),
                 },
                 line.range,
@@ -1846,7 +2091,17 @@ impl FunctionBuilder<'_> {
             && matches!(target, "I64" | "U64")
             && matches!(
                 operation,
-                "checked_add" | "checked_sub" | "equal" | "less_than"
+                "checked_add"
+                    | "checked_sub"
+                    | "checked_mul"
+                    | "checked_div"
+                    | "equal"
+                    | "less_than"
+                    | "bit_and"
+                    | "bit_or"
+                    | "bit_xor"
+                    | "shl"
+                    | "shr"
             )
         {
             let [left, right] = arguments.as_slice() else {
@@ -1872,8 +2127,36 @@ impl FunctionBuilder<'_> {
                     checked_fixed_result(fixed.clone()),
                     Operation::CheckedSub { left, right },
                 ),
+                "checked_mul" => (
+                    checked_fixed_result(fixed.clone()),
+                    Operation::CheckedMul { left, right },
+                ),
+                "checked_div" => (
+                    checked_fixed_result(fixed.clone()),
+                    Operation::CheckedDiv { left, right },
+                ),
                 "equal" => (Type::Bool, Operation::EqualFixed { left, right }),
                 "less_than" => (Type::Bool, Operation::LessFixed { left, right }),
+                // Bit operations are infallible and stay in the operand type
+                // (STEP-0132). Shift amounts share the operand type; wasm
+                // masks counts to [0, 63].
+                "bit_and" => (fixed.clone(), Operation::BitAnd { left, right }),
+                "bit_or" => (fixed.clone(), Operation::BitOr { left, right }),
+                "bit_xor" => (fixed.clone(), Operation::BitXor { left, right }),
+                "shl" => (
+                    fixed.clone(),
+                    Operation::Shl {
+                        value: left,
+                        amount: right,
+                    },
+                ),
+                "shr" => (
+                    fixed.clone(),
+                    Operation::Shr {
+                        value: left,
+                        amount: right,
+                    },
+                ),
                 _ => unreachable!("matched fixed intrinsic above"),
             };
             let value = self.emit(ty.clone(), operation, token_range(tokens), output);
@@ -2260,6 +2543,11 @@ fn parse_type(tokens: &[HirToken]) -> Type {
         "Text" => Type::String,
         "Bytes" => Type::Bytes,
         "List" if arguments.len() == 1 => Type::List(Box::new(arguments[0].clone())),
+        "Map" if arguments.len() == 2 => Type::Map {
+            key: Box::new(arguments[0].clone()),
+            value: Box::new(arguments[1].clone()),
+        },
+        "Set" if arguments.len() == 1 => Type::Set(Box::new(arguments[0].clone())),
         "Option" if arguments.len() == 1 => Type::Option(Box::new(arguments[0].clone())),
         "Result" if arguments.len() == 2 => Type::Result {
             ok: Box::new(arguments[0].clone()),
@@ -2450,11 +2738,36 @@ fn source_range(range: TextRange) -> SourceRange {
 }
 
 fn unquote(text: &str) -> String {
-    text.strip_prefix('"')
-        .and_then(|text| text.strip_suffix('"'))
-        .unwrap_or(text)
-        .replace("\\\"", "\"")
-        .replace("\\\\", "\\")
+    let body = text
+        .strip_prefix('\"')
+        .and_then(|text| text.strip_suffix('\"'))
+        .unwrap_or(text);
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        #[allow(
+            clippy::match_same_arms,
+            reason = "an escaped backslash and a trailing lone backslash both keep one backslash"
+        )]
+        match chars.next() {
+            Some('\"') => out.push('\"'),
+            Some('\\') => out.push('\\'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('0') => out.push('\0'),
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn unsupported<T>(feature: impl Into<String>, range: TextRange) -> Result<T, CoreLowerError> {

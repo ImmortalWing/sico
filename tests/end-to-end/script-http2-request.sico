@@ -1,0 +1,40 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+record Http2Response:
+  field status: I64
+  field body: Bytes
+end record
+
+function finish(result: Result[Http2Response, Text]) returns Result[ScriptOutput, ScriptError]:
+  match result:
+    case ok(response):
+      return ok(ScriptOutput(stdout: sico.bytes.concat(sico.text.encode(sico.text.concat(sico.i64.to_text(response.status), ":")), response.body), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case error(name):
+      return ok(ScriptOutput(stdout: sico.text.encode(sico.text.concat("error:", name)), stderr: sico.text.encode(""), exit_code: I64.literal(1)))
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return finish(sico.http2.request("GET", sico.text.join(input.arguments, ""), sico.text.encode("")))
+end function

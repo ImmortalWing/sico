@@ -1,0 +1,89 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let board = U64.literal(44)
+  let mask = U64.literal(14)
+  let popcount = U64.literal(0)
+  let work = board
+  let scanning = U64.literal(1)
+  while U64.equal(scanning, U64.literal(1)):
+    set scanning = U64.literal(0)
+    match U64.equal(work, U64.literal(0)):
+      case false:
+        set scanning = U64.literal(1)
+      case true:
+    end match
+    match U64.equal(scanning, U64.literal(1)):
+      case true:
+        match U64.equal(U64.bit_and(work, U64.literal(1)), U64.literal(1)):
+          case true:
+            match U64.checked_add(popcount, U64.literal(1)):
+              case ok(next_count):
+                set popcount = next_count
+              case error(_):
+                return error(ScriptError(code: ScriptErrorCode.DomainError, message: "pop overflow"))
+            end match
+          case false:
+        end match
+        set work = U64.shr(work, U64.literal(1))
+      case false:
+    end match
+  end while
+  match U64.equal(popcount, U64.literal(3)):
+    case true:
+      match U64.equal(U64.bit_and(board, mask), U64.literal(12)):
+        case true:
+          match U64.equal(U64.bit_or(board, mask), U64.literal(46)):
+            case true:
+              match U64.equal(U64.bit_xor(board, mask), U64.literal(34)):
+                case true:
+                  match U64.equal(U64.shl(U64.literal(1), U64.literal(3)), U64.literal(8)):
+                    case true:
+                      match U64.equal(U64.shr(U64.literal(8), U64.literal(3)), U64.literal(1)):
+                        case true:
+                          match I64.equal(I64.shr(I64.literal(-8), I64.literal(1)), I64.literal(-4)):
+                            case true:
+                              return ok(ScriptOutput(stdout: sico.text.encode("bit-ops-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                            case false:
+                              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "i64 shr"))
+                          end match
+                        case false:
+                          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "u64 shr"))
+                      end match
+                    case false:
+                      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "u64 shl"))
+                  end match
+                case false:
+                  return error(ScriptError(code: ScriptErrorCode.DomainError, message: "u64 xor"))
+              end match
+            case false:
+              return error(ScriptError(code: ScriptErrorCode.DomainError, message: "u64 or"))
+          end match
+        case false:
+          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "u64 and"))
+      end match
+    case false:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "popcount"))
+  end match
+end function

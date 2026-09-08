@@ -46,6 +46,26 @@ pub(crate) const HTTP_INTERFACE: &str = "sico:script/http@0.1.0";
 /// record or string payload at 8, size 24).
 pub(crate) const HTTP_RESULT_SIZE: u32 = 24;
 
+/// STEP-0136 source-visible `sico:script/http@0.2.0` buffered request.
+pub(crate) const HTTP2_INTERFACE: &str = "sico:script/http@0.2.0";
+/// Canonical ABI result area for `http2.request`: tag at 0; the response
+/// payload at 8 (status s64 @8, headers ptr/len @16/20, body ptr/len
+/// @24/28); the http-error discriminant i32 @8 on the error side.
+pub(crate) const HTTP2_RESULT_SIZE: u32 = 32;
+/// `http-error` case names in WIT declaration order (the wire discriminant
+/// order). The guest maps the tag to the case name through a data-segment
+/// table — no Host text ever crosses the boundary.
+pub(crate) const HTTP2_ERROR_TEXTS: &[&str] = &[
+    "permission",
+    "authority",
+    "tls",
+    "dns",
+    "limit",
+    "cancel",
+    "protocol",
+    "io",
+];
+
 /// Which `sico:script/fs-*@0.1.0` functions one program calls.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FsUse {
@@ -242,6 +262,29 @@ pub(crate) const HTTP_IMPORT: StreamImport = StreamImport {
     core_results: &[],
 };
 
+/// The buffered `http@0.2.0` one-shot (STEP-0136): method/url, the
+/// flattened default `options` (headers pair, two bool flags, timeout
+/// u64), body, and the result-area pointer.
+pub(crate) const HTTP2_IMPORT: StreamImport = StreamImport {
+    intrinsic: "sico.http2.request",
+    function: "request",
+    core_params: &[
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+        Flat::I64,
+        Flat::I32,
+        Flat::I32,
+        Flat::I32,
+    ],
+    core_results: &[],
+};
+
 pub(crate) fn stream_used(usage: StreamUse, import: &StreamImport) -> bool {
     match import.intrinsic {
         "sico.stream.stdin" => usage.stdin,
@@ -291,6 +334,10 @@ pub(crate) struct ScriptAbi {
     pub error: RecordLayout,
     /// RFC-0031 `http.response` record layout (status s64, body list<u8>).
     pub http_response: RecordLayout,
+    /// STEP-0136 `Http2Response` source record layout (status s64, body
+    /// list<u8>): the `http@0.2.0` wire response also carries headers, but
+    /// the v0 source surface deliberately narrows to status/body.
+    pub http2_response: RecordLayout,
     /// `script-error-code` discriminants by bare case name, in declaration order.
     pub error_tags: BTreeMap<String, i32>,
     pub result_size: u32,
@@ -304,6 +351,7 @@ impl ScriptAbi {
     ///
     /// Panics only if the repository-frozen WIT no longer declares the exact
     /// `sico:script/program@0.1.0` boundary; unit tests pin that contract.
+    #[allow(clippy::similar_names)]
     pub(crate) fn load() -> Self {
         let mut resolve = Resolve::default();
         let package = resolve
@@ -347,6 +395,25 @@ impl ScriptAbi {
         let error = record_layout(&resolve, &sizes, error_id);
         let error_tags = enum_tags(&resolve, code_id);
         let http_response = http_response_layout(&resolve, &sizes, package);
+        let http2_response = RecordLayout {
+            size: 16,
+            align: 8,
+            flat: vec![Flat::I64, Flat::I32, Flat::I32],
+            fields: vec![
+                FieldLayout {
+                    name: "status".to_owned(),
+                    byte_offset: 0,
+                    slot_start: 0,
+                    slot_len: 1,
+                },
+                FieldLayout {
+                    name: "body".to_owned(),
+                    byte_offset: 8,
+                    slot_start: 1,
+                    slot_len: 2,
+                },
+            ],
+        };
 
         let (result_size, result_payload_offset) = {
             let payload_align = output.align.max(error.align);
@@ -365,6 +432,7 @@ impl ScriptAbi {
             output,
             error,
             http_response,
+            http2_response,
             error_tags,
             result_size,
             result_payload_offset,
@@ -381,7 +449,15 @@ impl ScriptAbi {
         match ty {
             sico_ir::Type::Bool => Some(vec![Flat::I32]),
             sico_ir::Type::I64 | sico_ir::Type::U64 => Some(vec![Flat::I64]),
-            sico_ir::Type::String | sico_ir::Type::Bytes => Some(vec![Flat::I32, Flat::I32]),
+            // A `Text`/`Bytes` is the canonical `(ptr, len)` pair.
+            // STEP-0131: an insertion-ordered map/set value shares the same
+            // flat pair shape — `(entries table pointer, entry count)`;
+            // entry slots carry the key (and value) scalars and only emitted
+            // collection helpers dereference them.
+            sico_ir::Type::String
+            | sico_ir::Type::Bytes
+            | sico_ir::Type::Map { .. }
+            | sico_ir::Type::Set(_) => Some(vec![Flat::I32, Flat::I32]),
             sico_ir::Type::Task(inner) | sico_ir::Type::Future(inner) => self.flat_ir_types(inner),
             sico_ir::Type::List(element) => {
                 let element = match element.as_ref() {
@@ -390,11 +466,25 @@ impl ScriptAbi {
                 };
                 (element == &sico_ir::Type::String).then(|| vec![Flat::I32, Flat::I32])
             }
+            // `sico.list.get`/`sico.map.get[K,I64]` results as spill cells:
+            // tag, ok payload (ptr/len), and the numeric error tag. The
+            // fixed-width `Result[I64|U64, NumericError]` form above stays
+            // the packed two-slot [tag, payload] shape.
+            sico_ir::Type::Result { ok, error }
+                if matches!(ok.as_ref(), sico_ir::Type::String | sico_ir::Type::Bytes)
+                    && matches!(error.as_ref(), sico_ir::Type::Named(name) if name == sico_ir::NUMERIC_ERROR_TYPE) =>
+            {
+                Some(vec![Flat::I32, Flat::I32, Flat::I32, Flat::I32])
+            }
+            sico_ir::Type::Named(name) if name == sico_ir::NUMERIC_ERROR_TYPE => {
+                Some(vec![Flat::I32])
+            }
             sico_ir::Type::Named(name) => match name.as_str() {
                 "ScriptInput" => Some(self.input.flat.clone()),
                 "ScriptOutput" => Some(self.output.flat.clone()),
                 "ScriptError" => Some(self.error.flat.clone()),
                 "HttpResponse" => Some(self.http_response.flat.clone()),
+                "Http2Response" => Some(self.http2_response.flat.clone()),
                 // RFC-0030 stream handles are Canonical ABI resource indices.
                 "ScriptErrorCode" | "InputStream" | "OutputStream" => Some(vec![Flat::I32]),
                 _ => None,
@@ -416,6 +506,7 @@ impl ScriptAbi {
             "ScriptOutput" => Some(&self.output),
             "ScriptError" => Some(&self.error),
             "HttpResponse" => Some(&self.http_response),
+            "Http2Response" => Some(&self.http2_response),
             _ => None,
         }
     }
@@ -773,6 +864,92 @@ fn fs_write_instance() -> InstanceType {
     types
 }
 
+/// Instance type of `sico:script/http@0.2.0` (RFC-0037) restricted to the
+/// buffered one-shot `request` — the only surface STEP-0136 emits from
+/// source. Index bookkeeping mirrors the proven runner fixture: resource
+/// exports consume one type index, `ty()` consumes one, `Eq` alias exports
+/// consume one, `Func` exports consume none.
+fn http2_instance() -> InstanceType {
+    let mut types = InstanceType::new();
+    // 0: resource response-body (declared, unused by the buffered slice)
+    types.export(
+        "response-body",
+        ComponentTypeRef::Type(TypeBounds::SubResource),
+    );
+    // 1 ty list<u8>; 2 alias byte-list
+    types.ty().defined_type().list(PrimitiveValType::U8);
+    types.export("byte-list", ComponentTypeRef::Type(TypeBounds::Eq(1)));
+    // 3 ty header; 4 alias header
+    types.ty().defined_type().record([
+        (
+            "name",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+        (
+            "value",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+    ]);
+    types.export("header", ComponentTypeRef::Type(TypeBounds::Eq(3)));
+    // 5 ty list<header>; 6 alias header-list
+    types.ty().defined_type().list(ComponentValType::Type(4));
+    types.export("header-list", ComponentTypeRef::Type(TypeBounds::Eq(5)));
+    // 7 ty http-error; 8 alias http-error
+    types
+        .ty()
+        .defined_type()
+        .enum_type(HTTP2_ERROR_TEXTS.iter().copied());
+    types.export("http-error", ComponentTypeRef::Type(TypeBounds::Eq(7)));
+    // 9 ty options; 10 alias options
+    types.ty().defined_type().record([
+        ("headers", ComponentValType::Type(6)),
+        (
+            "follow-redirects",
+            ComponentValType::Primitive(PrimitiveValType::Bool),
+        ),
+        (
+            "retry-idempotent",
+            ComponentValType::Primitive(PrimitiveValType::Bool),
+        ),
+        (
+            "timeout-ms",
+            ComponentValType::Primitive(PrimitiveValType::U64),
+        ),
+    ]);
+    types.export("options", ComponentTypeRef::Type(TypeBounds::Eq(9)));
+    // 11 ty response-head (declared for parity, unused by `request`)
+    types.ty().defined_type().record([
+        ("status", ComponentValType::Primitive(PrimitiveValType::S64)),
+        ("headers", ComponentValType::Type(6)),
+    ]);
+    types.export("response-head", ComponentTypeRef::Type(TypeBounds::Eq(11)));
+    // 13 ty response; 14 alias response; 15 ty result<response, http-error>
+    types.ty().defined_type().record([
+        ("status", ComponentValType::Primitive(PrimitiveValType::S64)),
+        ("headers", ComponentValType::Type(6)),
+        ("body", ComponentValType::Type(2)),
+    ]);
+    types.export("response", ComponentTypeRef::Type(TypeBounds::Eq(13)));
+    types.ty().defined_type().result(
+        Some(ComponentValType::Type(14)),
+        Some(ComponentValType::Type(8)),
+    );
+    let mut function = types.ty().function();
+    function
+        .params([
+            (
+                "method",
+                ComponentValType::Primitive(PrimitiveValType::String),
+            ),
+            ("url", ComponentValType::Primitive(PrimitiveValType::String)),
+            ("options", ComponentValType::Type(10)),
+            ("body", ComponentValType::Type(2)),
+        ])
+        .result(Some(ComponentValType::Type(15)));
+    types.export("request", ComponentTypeRef::Func(16));
+    types
+}
+
 /// Instance type of `sico:script/http@0.1.0` (RFC-0031).
 fn http_instance() -> InstanceType {
     let mut types = InstanceType::new();
@@ -905,12 +1082,13 @@ fn streams_instance() -> InstanceType {
 /// Panics only if the frozen fs import table no longer matches the declared
 /// interface usage (a build-time inconsistency, pinned by tests).
 #[must_use]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 pub fn wrap_script_component(
     core: &[u8],
     fs: FsUse,
     streams: StreamUse,
     http: bool,
+    http2: bool,
     heap_base: u32,
 ) -> Vec<u8> {
     let mut builder = ComponentBuilder::default();
@@ -945,9 +1123,15 @@ pub fn wrap_script_component(
         let http_ty = builder.type_instance(Some("http"), &http_instance());
         http_imported = Some(builder.import(HTTP_INTERFACE, ComponentTypeRef::Instance(http_ty)));
     }
+    let mut http2_imported = None;
+    if http2 {
+        let http2_ty = builder.type_instance(Some("http2"), &http2_instance());
+        http2_imported =
+            Some(builder.import(HTTP2_INTERFACE, ComponentTypeRef::Instance(http2_ty)));
+    }
 
     let mut transport = None;
-    if fs.any() || streams.any() || http {
+    if fs.any() || streams.any() || http || http2 {
         let module = builder.core_module_raw(Some("fs-transport"), &fs_transport_module(heap_base));
         let instance = builder.core_instantiate(
             Some("fs-transport"),
@@ -1003,6 +1187,23 @@ pub fn wrap_script_component(
             );
             lowered
                 .entry(HTTP_INTERFACE)
+                .or_default()
+                .push(("request", lowered_function));
+        }
+        if http2 {
+            let instance = http2_imported.expect("http2 interface imported when used");
+            let function = builder.alias_export(instance, "request", ComponentExportKind::Func);
+            let lowered_function = builder.lower_func(
+                Some("request"),
+                function,
+                [
+                    CanonicalOption::UTF8,
+                    CanonicalOption::Memory(memory),
+                    CanonicalOption::Realloc(realloc),
+                ],
+            );
+            lowered
+                .entry(HTTP2_INTERFACE)
                 .or_default()
                 .push(("request", lowered_function));
         }
