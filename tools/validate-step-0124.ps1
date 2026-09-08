@@ -71,8 +71,16 @@ if ($caseReadme -notlike '*M14 纯 Sico 离线求解器、M16 capture/input、M1
     throw 'block-game milestone acceptance chain is missing'
 }
 
-if ($roadmap -match 'STEP-01(?:2[5-9]|[3-9][0-9])') {
-    throw 'future M14-M18 implementation STEP numbers must not be reserved by this planning decision'
+# The planning decision must not RESERVE future STEP numbers. A STEP number
+# referenced by the roadmap is legitimate only when its execution record
+# exists under docs/steps (implemented steps are no longer reservations).
+$roadmapSteps = [regex]::Matches($roadmap, 'STEP-01(?:2[5-9]|[3-9][0-9])') |
+    ForEach-Object { $_.Value } | Sort-Object -Unique
+foreach ($step in $roadmapSteps) {
+    $matches0 = Get-ChildItem (Join-Path $root 'docs\steps') -Filter ($step + '-*.md') -ErrorAction SilentlyContinue
+    if (-not $matches0) {
+        throw "roadmap references $step without an execution record under docs/steps (future STEP numbers must not be reserved by the planning decision)"
+    }
 }
 
 Write-Output 'STEP_0124_OK milestones=M14-M18 steps=unreserved layers=language,web-ui,native-automation,vision-model,applications'
