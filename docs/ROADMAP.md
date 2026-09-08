@@ -230,7 +230,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M14: Application-ready language baseline（planned）
 
-状态：`in-progress / STEP-0129 盘点 + RFC-0038 accepted；STEP-0130 通用控制流完成；下一：动态集合、位运算、源级 PRNG、模块/WIT、sico test`
+状态：`complete / GO 2026-09-06（STEP-0141 出口审计：gate 1–6、8 GO；gate 7 = blocked-external-evidence，owner 凭据门控）。STEP-0130–0140：控制流/集合/位运算/缺陷修复+arena 审计/checked_mul+div/源级 PRNG/http@0.2.0 源码 emission/有界递归/方块求解器 oracle 移植 4/4 字节级一致/流式变换+能力状态机/sico test`
 
 目标不是宣称语言“永久完成”，而是关闭已接受源码语义与可执行后端之间妨碍真实应用的缺口。主要交付：check/build/run 支持矩阵与拒绝合同、通用循环/迭代和受 Runtime 限额约束的递归、动态集合与记录遍历、固定宽数值/位运算、模块与 versioned package 使用、compiler-facing WIT/Component binding、应用测试入口，以及代表性算法/数据/状态机程序。
 
@@ -242,11 +242,11 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M15: Web platform and UI controls（planned, direction confirmed）
 
-状态：`planned / renumbered from former M14 on 2026-09-04; no step numbers reserved yet`
+状态：`in-progress / STEP-0142 kickoff 2026-09-07; RFC-0039 accepted 2026-09-08 (modules slice landed as STEP-0143: module/use executable end to end, E8001–E8011 link refusals; package resolution and user WIT are later slices); implementation per M15 plan §7`
 
-承载 [`DIRECTION.md`](../DIRECTION.md) §3.1 的前端目标与 §8.3 阶段 6/7。主要交付：Web 宿主形态 ADR（浏览器直跑 Component 与受控 webview 的证据化选择）、compiler-facing UI/WIT binding、控件/布局/事件/渲染/可访问性合同，以及 DOM、网络、存储和生命周期的标准宿主接口。M12 的 HTTP authority 与 M14 的 package/WIT 绑定必须复用，不建立浏览器专用语言语义。
+承载 [`DIRECTION.md`](../DIRECTION.md) §3.1 的前端目标与 §8.3 阶段 6/7。主要交付：Web 宿主形态 ADR（浏览器直跑 Component 与受控 webview 的证据化选择）、compiler-facing UI/WIT binding、控件/布局/事件/渲染/可访问性合同，以及 DOM、网络、存储和生命周期的标准宿主接口。M12 的 HTTP authority 必须复用；M14 计划 §3.3 的源码模块/package 解析与 compiler-facing user WIT 未随 M14 交付（STEP-0141 范围声明），M15 以前置工作轨先关闭该缺口；不建立浏览器专用语言语义。
 
-进入条件：M14 GO；M13 AI 工作流结论已纳入工具链；原生生态已有可验证的真实应用与包消费基线。进入前只允许 contract/prototype，不得宣称浏览器或页面级 UI 支持。
+进入条件：M14 GO；M13 AI 工作流结论已纳入工具链；原生生态已有可验证的真实应用与包消费基线。owner 于 2026-09-07 决定保留第三项条件：由 M15 计划 §3.0 前置轨退出测试按 clean-room-consumer 级交付关闭（独立代码路径、有界特性清单、如实标注同作者局限），不重划条件。进入前只允许 contract/prototype，不得宣称浏览器或页面级 UI 支持。
 
 退出条件：同一 Sico 业务组件在声明支持的 Web Host 与原生 Host 保持核心行为；网页控件、事件、状态、权限、可访问性和恶意输入语料通过真实浏览器/Host 验证；平台声明只来自实际 runner。
 
@@ -254,7 +254,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M16: Native Automation Host（planned）
 
-状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+状态：`planned / owner-approved 2026-09-04; plan refined 2026-09-07 (owner request); no step numbers reserved yet`
 
 为 AI 的观察—规划—执行—校验循环提供独立、显式授权的原生宿主能力。主要交付：scoped window/surface identity、窗口级截图、pointer/touch 输入、可选键盘输入、preview/commit 分离、操作后状态验证、速率/时间/区域限制、审计事件和紧急停止。capture authority 与 input authority 必须分离；默认不授予全桌面、后台键盘、剪贴板、凭据或任意进程控制。
 
@@ -266,7 +266,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M17: Vision and model package ecosystem（planned）
 
-状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+状态：`planned / owner-approved 2026-09-04; plan refined 2026-09-07 (owner request); no step numbers reserved yet`
 
 把图像/视觉/推理作为 versioned package 与受限 provider 生态，而不是膨胀核心语言或隐式授予硬件权限。主要交付：稳定 Image/Pixel/Region 数据合同，颜色/缩放/模板/轮廓/网格等确定性基础包，可选原生加速 provider，模型/权重 digest 与 provenance，CPU/GPU/内存/时间预算，以及可重现的精度、回退和跨平台证据。
 

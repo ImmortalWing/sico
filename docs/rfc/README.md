@@ -42,7 +42,10 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0034`](./RFC-0034-tooling-execution-plan-v0.md) | accepted | 统一 LSP/AI direct-argv execution plan、1 MiB logs、client cancellation 与 compile-only source-map/debug 边界 |
 | [`RFC-0035`](./RFC-0035-runtime-observability-debug-v0.md) | accepted | 冻结 digest-bound debug identity/map、Runtime fault/event、typed cancellation race 与机器 DAP claimed subset |
 | [`RFC-0036`](./RFC-0036-structured-concurrency-semantic-ir-v0.md) | accepted | 冻结 task scope 静态身份、eager-start spawn、affine 消费规则、E5003/E5103–E5105 与 IR task-scope 表/操作 |
+| [`RFC-0037`](./RFC-0037-secure-http-provider-v0.md) | accepted | 冻结 secure HTTP provider authority/TLS/framing/redirect/secret 合同与 `sico:script/http@0.2.0` 结构化错误分类 |
+| [`RFC-0038`](./RFC-0038-application-profile-v0.md) | accepted | 冻结 M14 应用 profile 支持矩阵（控制流/集合/位运算/checked 算术/源级 PRNG/http emission）与出口语料 |
+| [`RFC-0039`](./RFC-0039-source-modules-package-resolution-user-wit-v0.md) | accepted（部分实现） | 显式源码模块与 `use` 导入、M7 lock 包解析、user WIT 导入 v0 值域与 typed 拒绝类；模块切片已随 STEP-0143 落地，包解析/user WIT 为后续切片 |
 
-下一可用编号：`RFC-0037`。
+下一可用编号：`RFC-0040`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

@@ -1,13 +1,13 @@
 # Sico project status
 
-> - updated: 2026-09-05
+> - updated: 2026-09-07
 > - phase: M12 complete (full GO per STEP-0127); M13 closed — authoritative live-model run measured and budgets met under ADR-0012 (STEP-0128); M7 public deployment and M6/mobile remain deferred
 > - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence)
-> - current step: M14 启动（STEP-0129 盘点完成：RFC-0038 应用 profile/支持矩阵/出口语料已 accepted（owner 2026-09-05）；STEP-0130 起逐项关闭实测差距，从循环/分支控制流开始）
+> - current step: M14 出口审计完成（STEP-0141，2026-09-06）：**M14 = GO**——8 项出口 gate 中 7 项 GO（含 Linux x64 原生复核 14/14 套件全绿），gate 7（M14 profile 的 AI 回归重测）= blocked-external-evidence（owner 凭据门控，沿用 M13 先例不门控语言/运行时里程碑）；下一：M15/M16 计划细化与 M17 规划完成（owner 2026-09-07 要求；无 STEP 预留），M15/M16 实现开工前须关闭各自计划的入口条件；owner 同日决策 M15 入口条件 3 保留：由 §3.0 前置轨退出测试按 clean-room-consumer 级交付关闭，不重划条件。M15 已开工：STEP-0142 完成（2026-09-07，实测盘点 + RFC-0039 草案 + 消费者特性清单冻结）；[`RFC-0039`](./rfc/RFC-0039-source-modules-package-resolution-user-wit-v0.md) 已于 2026-09-08 经 owner 接受（D1 = typed 拒绝；修正案 A1–A6），其**模块切片随 STEP-0143 落地**：`module`/`use` 关键字、CLI 链接层（E8001–E8011 fail-closed）、跨模块限定调用经合并 IR（单文件字节不变）、run 缓存键覆盖模块字节；顺带记录并 typed 拒绝一个预存 codegen 接缝缺陷（用户函数返回 checked fixed Result 产出非法 Wasm，修复排独立缺陷步），并修复 validate-step-0131 预存断裂；§2.2 检查期解析、§2.3 包解析、§2.4 user WIT 为后续切片；M16（threat model/WIT RFC/平台 ADR）与 M17（图像合同 RFC）合同轨可并行
 > - current support step: 无（M13 STEP-0119/0120/0121 已完成）
-> - last completed active step: STEP-0130 (general control flow: 全部验证绿；此前 STEP-0129 RFC-0038、STEP-0128 live-model 达标)
+> - last completed active step: STEP-0143 (RFC-0039 模块切片：module/use 全链路可执行 + E8xxx 链接拒绝 + 预存 checked-Result 接缝缺陷 typed 拒绝；此前 STEP-0142 M15 开工盘点 + RFC-0039 草案、STEP-0141 M14 出口审计 GO)
 > - last completed support step: STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence)
-> - next step: M14 应用就绪语言基线为下一主线（STEP-0124 路线、进入条件已满足：M12 完整 GO + M13 收口 a/b/c GO），实现 STEP 待开工时预留；权威 live-model 评测仍待 owner 提供 DeepSeek 凭据
+> - next step: RFC-0039 下一切片二选一——§2.2 检查期调用目标解析（含未导入限定引用的 check 期拒绝）或 §2.3 包解析；独立缺陷步：checked fixed Result 用户函数返回接缝的 ABI 修复（STEP-0143 记录，typed 拒绝已覆盖）；洁净室消费者应用 `pilots/log-analyzer` 待模块/包面稳定后动工；M16 threat model/capability WIT RFC/平台 ADR 与 M17 图像数据合同 RFC 可并行起草；权威 live-model 评测（M14 gate 7 重测）仍待 owner 提供 DeepSeek 凭据
 > - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots; M13 quality-budget gap (STEP-0128) is a recorded product fact for M17/M18 planning
 > - next support step: 无（M13 已收口：live-model 实测达标，ADR-0012 记录一个既定缺口 B-repair 0.833，供未来质量步骤跟踪）
 
@@ -31,9 +31,35 @@ M8 Script Profile 与 M9 streaming/async/interactive 已分别通过出口审计
 
 [`STEP-0093`](./steps/STEP-0093-editor-ai-execution-integration.md) 新增第 24 个 workspace package `sico-tooling-protocol`，由 LSP 与 AI tools 共同依赖；module-boundary validator 精确覆盖 24 packages 与 4 条窄依赖例外。
 
+[`STEP-0142`](./steps/STEP-0142-m15-kickoff-inventory-modules-wit-rfc.md) 已完成 M15 计划 §7 要求的开工盘点（镜像 STEP-0129 模式）：实测探针证明编译单元恰为单文件、`module`/`use` 触发 E1013、`interface` 声明被语义静默丢弃（check ok + outline 可见 + 代码生成忽略——未声明行为缺口）、调用目标在 codegen 期才解析（未定义调用过 check、build 拒绝）；[`RFC-0039`](./rfc/RFC-0039-source-modules-package-resolution-user-wit-v0.md) 草案冻结前置轨合同（显式 `module` 声明 + `use` 导入、经 M7 lock 的 versioned 包解析、user WIT 导入 v0 值域、13 类 typed 拒绝 + limit+1），状态 draft 待 owner 接受；同文件冻结洁净室消费者 `pilots/log-analyzer` 有界特性清单（M15 入口条件 3 的关闭载体，owner 2026-09-07 决策保留条件按证据关闭）。
+
 [`STEP-0129`](./steps/STEP-0129-m14-inventory-profile-rfc.md) 已完成 M14 计划 §7 要求的开工前盘点：实测探针证明递归过 check 但被"match 分支必须 return"与 fixed intrinsic 面封死，loop/if 语法尚不存在；[`RFC-0038`](./rfc/RFC-0038-application-profile-v0.md) 冻结应用 profile（循环/分支/集合/位运算/源级 PRNG/http@0.2.0 emission）与出口语料（方块求解器增强语料 + 流式 + capability 状态机），状态 draft 待 owner 接受。
 
 [`STEP-0130`](./steps/STEP-0130-general-control-flow.md) 已落地 RFC-0038 profile 的控制流切片：`while`/`if`-`else`/`break`/`continue`/`set` 重新赋值经 IR mutable cells 与通用结构化 CFG 降级全链路可执行（冻结的 all-return match、revision-if、直线形状字节不变）；端到端语料 `tests/end-to-end/control-flow-counter.sico` 经真实 runner 验证确定性结果；顺带修复 watch cancel bridge 抢跑消费请求文件的实缺陷。
+
+[`STEP-0131`](./steps/STEP-0131-dynamic-collections-map-set.md) 已落地 RFC-0038 profile 的集合切片：`Type::Map`/`Type::Set`（插入序、copy-on-write、首插键序）与 11 个带元素后缀的 canonical intrinsics（`sico.map.empty/put/get/has/length/keys`、`sico.set.empty/add/has/length/to_list`）经语义推断、IR verifier 与 Wasm 代码生成全链路可执行；键按字节内容比较（Text/Bytes），修复 split_words 关闭条件反转的预存在缺陷（元素长度此前从未 e2e 可执行）；machine-readable 支持矩阵 `tests/language-matrix/application-profile-v0.json` 与校验器 `tools/validate-step-0131.ps1` 落地；端到端语料 `tests/end-to-end/map-set-frequency.sico`（词频 Map/Set 计数）经真实 runner 验证。
+
+[`STEP-0132`](./steps/STEP-0132-bit-operations.md) 已落地 RFC-0038 profile 的位运算切片：`I64`/`U64` 的 `bit_and/bit_or/bit_xor/shl/shr`（移位量同类型，wasm 掩码至 [0,63]；`I64` 算术右移、`U64` 逻辑右移）经语义、IR verifier 与代码生成全链路可执行；端到端语料 `tests/end-to-end/bit-ops-bitboard.sico`（popcount 循环 + 位恒等断言 + 移位语义区分）经真实 runner 验证。
+
+[`STEP-0133`](./steps/STEP-0133-map-keys-stride-and-arena-audit.md) 已承接 STEP-0131 缺陷取证报告的 §2.6 移交项：逐一审计 `sico-codegen-wasm` 全部 `$alloc` 站点（零尺寸块仅在证明无存储/不逃逸时判定安全），发现并修复一个真实缺陷——`map.keys` 此前把 16 字节步距的 map entries 表原样当作 8 字节步距的 `List[Text]` 表返回，索引 ≥1 的元素读到的是前一条目的 value 槽（基线实证 `"alpha|beta"` 被 join 成 `"alpha|"`）；修复为压缩拷贝，`set.to_list` 保持零拷贝（步距本就精确）；新增端到端语料 `tests/end-to-end/map-keys-traversal.sico`（遍历助手元素内容、内容回查、交错分配、空/单例 map）经真实 runner 验证。
+
+[`STEP-0134`](./steps/STEP-0134-checked-mul-div.md) 已补齐 RFC-0038 profile 第 5 项的乘除切片：`I64`/`U64.checked_mul/checked_div` 经语义、IR verifier 与代码生成全链路可执行；mul 溢出用回除法检测（含 `a==0`/`a==-1` 预排空，文档化 soundness 论证），div 上报新增的 `NumericError.division-by-zero` 第三 case（仅生成组件类型导出，非 WIT 合同变更）；`NumericError` 枚举扩展使 `fixed-width-component` 快照 +17 字节（追加式快照约定，core 快照字节不变）；端到端语料 `checked-mul-div.sico`（19 项 guest 断言）经真实 runner 验证。
+
+[`STEP-0135`](./steps/STEP-0135-source-level-prng.md) 已落地 RFC-0038 profile 第 7 项：源级确定性 PRNG 无需任何编译器新表面——xorshift64（13/7/17）以纯 Sico 源码（`U64` 位运算 + while 循环）实现，种子 88172645463325252 的前 8 个输出钉住 Python 参考序列；无任何 ambient 随机性进入任何表面；端到端语料 `prng-xorshift.sico` 经真实 runner 验证。
+
+[`STEP-0141`](./steps/STEP-0141-m14-exit-audit.md) 已出具 M14 出口审计：**GO**。逐项证据：无未声明 check/build/run 缺口（矩阵+校验器；一处行为缺口——字符串 `
+` 转义静默保留——已修复并声明）；三个验收应用经真实 Component Runtime 全部可执行；求解器与冻结 Python oracle 4/4 字节级一致且节点记账等价（limit fixture 204,077/204,077）；limit+1 全部 typed 且宿主可复用（StackLimit 复用测试）；M7/M12 安全语料原样承载；Windows（除已文档化的 console-control 环境敏感 flake，隔离复跑通过）与 Linux x64（WSL2 原生，14/14 套件全绿，证据 `target/evidence/step-0141/linux/`）双平台复核完成；gate 7（M14 profile 的 AI 回归重测）按 M13 先例记为 blocked-external-evidence（owner 凭据门控）。范围诚实声明：M14 计划 §3.3 的 modules/WIT 项不在 RFC-0038 冻结 profile 内、无 STEP、不作宣称。
+
+[`STEP-0140`](./steps/STEP-0140-sico-test.md) 已落地 M14 §3.4 的 `sico test`：`NAME.sico` + `NAME.test.json` 成对发现（递归、排序、忽略无清单源），清单字段 `stdin/args/expect_exit/expect_stdout`（拒绝未知字段），经与 `sico run` 相同的缓存身份构建并通过真实 `sico-runner` 默认限额执行，stdout 字节级比较；流式组件在 v0 外（typed 拒绝）；`tests/sico-tests/` 附带两个已提交用例；CLI 集成测试 2/2（排序发现/失败优先/exit 0-1/args 与 expect_exit 生效）。
+
+[`STEP-0139`](./steps/STEP-0139-stream-and-state-machine.md) 已落地 RFC-0038 §3.2 两个伴随验收应用：流式行号变换（4 KiB 有界分块读取，1 MiB 输入经默认预算全量回环；非 UTF-8 输入产生 typed 部分失败 exit 122；流读写走宿主可取消通道）与 fs 持久化能力状态机（sealed/open/burned 三态、单元串修订守卫、typed 非法迁移与陈旧拒绝、缺失/损坏文档确定性恢复）；顺带修复两个预存在 stdlib 缺陷——`text.split_lines` 的非 LF 分支 `br 0` 错指 if 标签导致逐字节落行并越界写表（元素内容此前从未 e2e 覆盖），及该助手内三处 `len == 0` 守卫反转（末尾 LF 计数与 CR 剥离失效）——并补齐 `unquote` 的字符串转义解码（此前 `
+` 静默保留为两个字符）。
+
+[`STEP-0138`](./steps/STEP-0138-block-solver-port.md) 已落地 RFC-0038 §3.1 主验收应用：8x8 位算术方块求解器以纯 Sico 源码实现（位运算/一般递归/checked 算术/确定性搜索/typed node-limit），与固定 Python oracle 的冻结语料 4/4 fixture 字节级一致（trivial/medium/hard 完整搜索 + limit 部分证据）；`medium`/`limit` 触发 200,000 节点预算并携带最佳部分方案（出口 gate 4）；双方在 limit fixture 的节点记账完全一致（204,077）；移植期间修复五个移植缺陷（bridge 饱和/SWAR 回绕乘不安全/原点 off-by-one/陈旧字符 cell/第 4 棋子 flush 缺失）；冻结 capability 计数更新为 20 lowered/5 refused（STEP-0137 spill 释放 explicit-result-handle）。
+
+[`STEP-0137`](./steps/STEP-0137-bounded-recursion.md) 已关闭 RFC-0038 profile 第 2 项：递归全链路可执行——修复冻结 all-return match 对计算主题 payload binding 的误拒（spill 到编译器生成 cell，冻结形状字节不变）；runner 将 wasmtime `Trap::StackOverflow` 分类为新 typed `RunOutcome::StackLimit`（`resource-limit.stack`/exit 125），guest 实例化+调用移到 64 MiB 栈专用 worker 线程，深递归先触发确定性 4 MiB wasm 栈预算而非原生栈崩溃（修复前探针直接打崩进程）；耗尽后 Host 可复用（出口 gate 4）；端到端语料 `recursion-depth.sico`（万层 countdown + fib(12)）与 `recursion-unbounded.sico` 经真实 runner 验证。
+
+[`STEP-0136`](./steps/STEP-0136-http2-source-emission.md) 已落地 RFC-0038 profile 第 8 项：源码级 `sico.http2.request`（buffered one-shot，Host 默认 options：空 headers、不跟随重定向、不重试、Host 默认超时）发射 `sico:script/http@0.2.0` 导入，与冻结的 0.1.0 兼容面并存；typed `http-error` 经 data 段静态表映射为 case 名 Text（Host 文本不过界，遵守 RFC-0037 无泄漏规则）；修复 bring-up 期间发现的判别式边界检查在 ok 侧误读 status 低半字的 trap；streaming/upload 与资源保持 Component 级（矩阵已声明）；端到端经真实 TLS fixture server 验证（授权回环 `200:source-http2`；未授权 `error:permission` 且零连接）。
 
 [`STEP-0128`](./steps/STEP-0128-live-model-evaluation.md)（dev 分支）已按 M13 §5 插入规则完成权威 live-model 评测：DeepSeek `deepseek-chat`，96×30=2880 次真实调用，成本 $0.78（封顶 $10），实测 **0.9095**（2245/2880；generation 0.40/0.50/0.30、repair 0.914/0.833/0.994、understanding 1.00/1.00/0.999）。对照 superseding ADR-0012（owner 2026-09-05 决定：真实模型对新语言实测 ≈0.9 为现阶段达标水平）：**预算下达且达标**，§13 (d) = **实测 GO**；记录一个既定缺口 B-repair 0.833 < 0.850 target，供未来质量步骤跟踪。报告：[`docs/reports/ai-eval-live-model-v1.md`](./reports/ai-eval-live-model-v1.md)。
 
