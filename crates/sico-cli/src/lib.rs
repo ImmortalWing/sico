@@ -4,6 +4,7 @@
 
 mod cache;
 mod modules;
+mod packages;
 mod repl;
 mod run;
 mod test;
@@ -348,7 +349,8 @@ pub(crate) fn compile_source_bytes(
 ) -> Result<Vec<u8>, i32> {
     let assembled = match modules::assemble_from_bytes(name, bytes) {
         Ok(assembled) => assembled,
-        Err(modules::AssembleError::Frontend(source, parsed)) => {
+        Err(modules::AssembleError::Frontend(failure)) => {
+            let modules::FrontendFailure { source, parsed } = *failure;
             return Err(emit_frontend_failure(
                 &source, &parsed, false, stdout, stderr,
             ));
@@ -376,20 +378,32 @@ fn compile_assembled(
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> Result<Vec<u8>, i32> {
-    let mut analyses = Vec::new();
-    for source in std::iter::once(&assembled.entry)
-        .chain(assembled.imports.iter().map(|import| &import.source))
-    {
-        let analysis = analyze(source).expect("successful parse must lower for semantic analysis");
-        if !analysis.is_success() {
-            return Err(emit_semantic_result(
-                source, &analysis, false, stdout, stderr,
-            ));
+    let set = modules::analyze_set(assembled);
+    if !set.entry.is_success() {
+        return Err(emit_semantic_result(
+            &assembled.entry,
+            &set.entry,
+            false,
+            stdout,
+            stderr,
+        ));
+    }
+    for (name, analysis) in &set.imports {
+        if analysis.is_success() {
+            continue;
         }
-        analyses.push(analysis);
+        let source = assembled
+            .imports
+            .iter()
+            .find(|import| &import.name == name)
+            .map(|import| &import.source)
+            .expect("analyzed imports come from the assembled set");
+        return Err(emit_semantic_result(
+            source, analysis, false, stdout, stderr,
+        ));
     }
     if profile == "script-v0"
-        && let Err(message) = validate_script_declarations(&analyses[0])
+        && let Err(message) = validate_script_declarations(&set.entry)
     {
         let _ = writeln!(
             stderr,
@@ -406,7 +420,17 @@ fn compile_assembled(
             source: &import.source,
         })
         .collect();
-    let module = match lower_core_modules(&assembled.entry, &imports) {
+    let package_imports: Vec<sico_ir::PackageImport<'_>> = assembled
+        .packages
+        .iter()
+        .map(|package| sico_ir::PackageImport {
+            name: package.name.as_str(),
+            version: package.version,
+            interface: package.interface_kebab.as_str(),
+            functions: &package.functions,
+        })
+        .collect();
+    let module = match lower_core_modules(&assembled.entry, &imports, &package_imports) {
         Ok(module) => module,
         Err(error) => {
             let _ = writeln!(
@@ -797,10 +821,19 @@ pub(crate) fn lower_error(error: &CoreLowerError) -> String {
             "semantic gate failed unexpectedly with {} diagnostic(s)",
             diagnostics.len()
         ),
-        CoreLowerError::InvalidIr(errors) => format!(
-            "IR verifier rejected compiler output with {} error(s)",
-            errors.len()
-        ),
+        CoreLowerError::InvalidIr(errors) => {
+            // Compiler-defect visibility: every verifier rejection names its
+            // function and stable error kind so the defect is debuggable.
+            let details = errors
+                .iter()
+                .map(|error| format!("{}: {:?}", error.path, error.kind))
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!(
+                "IR verifier rejected compiler output with {} error(s): {details}",
+                errors.len()
+            )
+        }
     }
 }
 
@@ -843,7 +876,8 @@ fn run_check(
     // (entry or imports) surface through the same frontend renderer.
     let assembled = match modules::assemble_from_bytes(source.name(), source.text().as_bytes()) {
         Ok(assembled) => assembled,
-        Err(modules::AssembleError::Frontend(source, parsed)) => {
+        Err(modules::AssembleError::Frontend(failure)) => {
+            let modules::FrontendFailure { source, parsed } = *failure;
             return emit_frontend_failure(&source, &parsed, json_output, stdout, stderr);
         }
         Err(modules::AssembleError::Diagnostics(lines)) => {
@@ -857,31 +891,23 @@ fn run_check(
             return EXIT_TOOL_ERROR;
         }
     };
-    let entry_analysis =
-        analyze(&assembled.entry).expect("successful parse must lower for semantic analysis");
-    if !entry_analysis.is_success() {
-        return emit_semantic_result(
-            &assembled.entry,
-            &entry_analysis,
-            json_output,
-            stdout,
-            stderr,
-        );
+    let set = modules::analyze_set(&assembled);
+    if !set.entry.is_success() {
+        return emit_semantic_result(&assembled.entry, &set.entry, json_output, stdout, stderr);
     }
-    for import in &assembled.imports {
-        let analysis =
-            analyze(&import.source).expect("successful parse must lower for semantic analysis");
-        if !analysis.is_success() {
-            return emit_semantic_result(&import.source, &analysis, json_output, stdout, stderr);
+    for (name, analysis) in &set.imports {
+        if analysis.is_success() {
+            continue;
         }
+        let source = assembled
+            .imports
+            .iter()
+            .find(|import| &import.name == name)
+            .map(|import| &import.source)
+            .expect("analyzed imports come from the assembled set");
+        return emit_semantic_result(source, analysis, json_output, stdout, stderr);
     }
-    emit_semantic_result(
-        &assembled.entry,
-        &entry_analysis,
-        json_output,
-        stdout,
-        stderr,
-    )
+    emit_semantic_result(&assembled.entry, &set.entry, json_output, stdout, stderr)
 }
 
 fn run_format(

@@ -1,8 +1,8 @@
 {
   "schema": "sico.application-profile.v0",
-  "step": "STEP-0131..0143",
+  "step": "STEP-0131..0170",
   "rfc": "RFC-0038;RFC-0039",
-  "updated": "2026-09-08",
+  "updated": "2026-09-13",
   "profile": "script-v0",
   "matrix": {
     "executable": {
@@ -142,6 +142,24 @@
         "rfc": "RFC-0039",
         "semantics": "explicit `module <name>` declaration per imported file (basename must match); `use <module>.<item>` per line; qualified references (module.item); DFS discovery from the entry's use graph in source order; entry file is the program root and declares no module",
         "notes": "imports carry functions only in v0; single-file programs assemble untouched (byte-identical lowering)"
+      },
+      "packages-user-wit": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.3/§2.4",
+        "semantics": "`use pkg <name> version <n> expose <Interface>` resolved through `sico-lock.json` (verified signed package, pure component); exposed `interface <Name> version <n>` becomes the `sico:user/<name>@<n>` import identity; qualified `<package>.<function>` calls cross as Component imports; v0 value set per amendment A7 (scalars, one-level lists, Result with scalar error; return area ABI)",
+        "notes": "producer-stamped interface digest (`sico:user-interface` custom section) is the E8016 shape gate; the runner bridges dynamic Val forwarding and re-checks arities fail-closed; no ambient authority for packages"
+      },
+      "infix-equality-conditions": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0169",
+        "rfc": "RFC-0044",
+        "semantics": "infix `left == right` in if conditions lowers to EqualFixed for same-width I64/U64 operands; mixed-width or non-fixed operands keep the typed refusal",
+        "notes": "bare integer literals remain unbounded Int (NUM-001 oracle unchanged) — the bare-literal typing decision is recorded as the v1 open question in RFC-0044"
       }
     },
     "refused": {
@@ -157,19 +175,19 @@
       "map-get-non-fixed-width-value": {
         "check": true,
         "build": true,
-        "refusal": "typed unsupported-call at build; only I64/U64 values materialize",
+        "refusal": "E2031 unresolved-call-target at check (declared gap; STEP-0144 moved it ahead of the build backend)",
         "step": "STEP-0131"
       },
       "keys-to-list-non-text-keys": {
         "check": true,
         "build": true,
-        "refusal": "typed unsupported-call at build; traversal materializes List[Text] only",
+        "refusal": "E2031 unresolved-call-target at check (declared gap; STEP-0144 moved it ahead of the build backend)",
         "step": "STEP-0131"
       },
       "http2-streaming-upload-from-source": {
         "check": true,
         "build": true,
-        "refusal": "unknown-callee at check (declared gap); typed unsupported-call at build",
+        "refusal": "E2031 unresolved-call-target at check (declared gap); typed unsupported-call at build",
         "step": "STEP-0136",
         "notes": "request-streaming/open-upload/finish and response-body/request-body resources stay Component-level only (runner-evidenced since STEP-0125); source emission is later work"
       },
@@ -196,8 +214,8 @@
       "unimported-qualified-reference": {
         "check": true,
         "build": true,
-        "refusal": "typed unsupported-call at build (pre-F4 behavior kept in v0; check-time call-target resolution is a declared follow-up)",
-        "step": "STEP-0143"
+        "refusal": "E2031 unresolved-call-target at check (RFC-0039 section 2.2 landed in STEP-0144)",
+        "step": "STEP-0144"
       },
       "user-function-checked-result-script-profile": {
         "check": true,
@@ -205,6 +223,51 @@
         "refusal": "typed unsupported at build: recorded ABI seam defect (packed value layout vs full flat declared width) produced invalid WebAssembly; no frozen corpus ever exercised it",
         "step": "STEP-0143",
         "notes": "repair scheduled as a dedicated defect step; return the payload and do the checked match at the call site meanwhile"
+      },
+      "unresolved-call-target": {
+        "check": true,
+        "refusal": "E2031 unresolved-call-target with the callee identity; match scrutinees included (RFC-0039 section 2.2)",
+        "step": "STEP-0144"
+      },
+      "package-unknown-or-missing": {
+        "refusal": "E8012 unknown package / E8013 missing lock, artifact, digest mismatch or failed verification",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.3"
+      },
+      "package-version-or-limit": {
+        "refusal": "E8014 lock version mismatch / E8015 more than 16 packages",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.3"
+      },
+      "wit-shape-mismatch": {
+        "refusal": "E8016 package exports do not match the declared interface (producer stamp digest gate; runner arity re-check)",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.4"
+      },
+      "wit-unsupported-type": {
+        "refusal": "E8017 interface signature outside the amendment-A7 flat value set (records/enums/nested/async/maps)",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.4"
+      },
+      "duplicate-or-colliding-package": {
+        "refusal": "E8018 package name colliding with a module name",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.3"
+      },
+      "export-user-interface": {
+        "refusal": "E8019 `export function` prefix (D1 typed refusal; the Script run export is the only export)",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.4/§2.5"
+      },
+      "unknown-exposed-interface": {
+        "refusal": "E8020 expose names an interface the file does not declare as versioned",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.4"
+      },
+      "impure-package": {
+        "refusal": "E8021 package component with its own imports (v0 packages are pure, zero authority)",
+        "step": "STEP-0147",
+        "rfc": "RFC-0039 §2.4"
       }
     },
     "proposed": {
@@ -229,6 +292,8 @@
     "sico-test-fixtures": "tests/sico-tests",
     "modules-fixture": "tests/end-to-end/modules-report/main.sico",
     "modules-module": "tests/end-to-end/modules-report/math_util.sico",
-    "modules-test-fixture": "tests/end-to-end/modules-report/main.test.json"
+    "modules-test-fixture": "tests/end-to-end/modules-report/main.test.json",
+    "packages-fixture-dir": "tests/end-to-end/packages-log-analyzer",
+    "packages-refusal-corpus": "crates/sico-cli/tests/packages_command.rs"
   }
 }

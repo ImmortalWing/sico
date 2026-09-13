@@ -14,8 +14,16 @@ use sico_runner::{
 const HTTP2_SOURCE: &str = include_str!("../../../tests/end-to-end/script-http2-request.sico");
 
 fn compile_source() -> Vec<u8> {
-    let directory =
-        std::env::temp_dir().join(format!("sico-step0136-http2-{}", std::process::id()));
+    // Both tests compile concurrently: a per-call counter keeps their
+    // scratch directories disjoint (a shared PID directory raced).
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static CALL: AtomicUsize = AtomicUsize::new(0);
+    let directory = std::env::temp_dir().join(format!(
+        "sico-step0136-http2-{}-{}",
+        std::process::id(),
+        CALL.fetch_add(1, Ordering::Relaxed)
+    ));
+    let _ = std::fs::remove_dir_all(&directory);
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("http2-request.sico");
     let component_path = directory.join("http2-request.component.wasm");
@@ -101,6 +109,10 @@ fn source_emitted_http2_typed_refusal_names_the_case() {
         }
         other => panic!("expected guest output, got {other:?}"),
     }
-    assert_eq!(server.connection_count(), 0, "no bytes on a denied endpoint");
+    assert_eq!(
+        server.connection_count(),
+        0,
+        "no bytes on a denied endpoint"
+    );
     server.stop();
 }

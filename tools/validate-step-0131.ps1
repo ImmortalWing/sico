@@ -22,9 +22,28 @@ if (-not (Test-Path $runnerTest)) { throw "runner test missing: $runnerTest" }
 
 # STEP-0143 (RFC-0039): the module-slice fixtures must exist and the
 # modules entry must declare the executable check/build/run triple.
-if ($json.step -notmatch '0143$') {
+if ($json.step -notmatch '01(4[3-9]|7[0])$') {
     throw "matrix step does not include the modules slice: $($json.step)"
 }
+
+# STEP-0147 (RFC-0039 section 2.3/2.4): the package/user-WIT slice must be
+# executable end to end and the refusal corpus must exist.
+if ($json.step -notmatch '0147|0170') {
+    throw "matrix step does not include the packages slice: $($json.step)"
+}
+$packages = $json.matrix.executable.'packages-user-wit'
+if (-not $packages) { throw 'packages-user-wit matrix entry missing' }
+if (-not ($packages.check -and $packages.build -and $packages.run)) {
+    throw 'packages-user-wit must be executable end to end'
+}
+$refusals = $json.matrix.refused
+foreach ($member in 'package-unknown-or-missing', 'package-version-or-limit',
+    'wit-shape-mismatch', 'wit-unsupported-type', 'duplicate-or-colliding-package',
+    'export-user-interface', 'unknown-exposed-interface', 'impure-package') {
+    if (-not $refusals.$member) { throw "refused matrix entry missing: $member" }
+}
+$refusalCorpus = Join-Path $repo $json.'exit-corpus'.'packages-refusal-corpus'
+if (-not (Test-Path $refusalCorpus)) { throw "packages refusal corpus missing: $refusalCorpus" }
 foreach ($member in 'modules-fixture', 'modules-module', 'modules-test-fixture') {
     $path = Join-Path $repo $json.'exit-corpus'.$member
     if (-not (Test-Path $path)) { throw "modules fixture missing: $path" }

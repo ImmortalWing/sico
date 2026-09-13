@@ -1,0 +1,50 @@
+{
+ "schema": "sico.m15.ui-corpus.v0",
+ "browser": "Microsoft Edge (Chromium) 152.0.4191.66 headless",
+ "cases": [
+  {
+   "name": "render-basic",
+   "pass": true,
+   "got": "container[stack] group:text \"ReportGoab\"|text[] heading \"Report title\":text \"Report\"|button[] button \"Go button\":text \"Go\" f1|list[] list \"Rows\" items=2 f2"
+  },
+  {
+   "name": "determinism",
+   "pass": true,
+   "got": "container[flow] group:text \"xy\"|text[] text:text \"x\"|text[] text:text \"y\""
+  },
+  {
+   "name": "hostile-text",
+   "pass": true,
+   "scriptsAfter": 2,
+   "links": 0,
+   "literal": true
+  },
+  {
+   "name": "hostile-url",
+   "pass": true,
+   "got": "Error: E-ui-scheme: image source must be https"
+  },
+  {
+   "name": "events-fifo",
+   "pass": true,
+   "got": "b1,b3,b2"
+  },
+  {
+   "name": "rate-limit",
+   "pass": true,
+   "got": "Error: E-ui-rate: more than 256 events per host turn"
+  },
+  {
+   "name": "size-limit",
+   "pass": true,
+   "got": "Error: E-ui-size: text exceeds 64KiB"
+  },
+  {
+   "name": "Confirm",
+   "pass": true,
+   "role": "button",
+   "tab": "3"
+  }
+ ],
+ "all_pass": true
+}

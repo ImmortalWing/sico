@@ -3,13 +3,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use sico_hir::{Declaration, HirToken, Line, LineKind, lower};
 use sico_lexer::TokenKind;
 use sico_parser::DeclarationKind;
-use sico_semantics::{AnalyzeError, SemanticDiagnostic};
+use sico_semantics::{
+    AnalyzeError, ImportedFunction, PackageInterface, SemanticDiagnostic, Type as SemanticType,
+    analyze_with_interfaces, exported_functions,
+};
 use sico_source::{SourceFile, TextRange};
 
 use crate::{
-    Block, BlockId, ConstructField, EntryError, Function, FunctionId, Instruction, Local, MatchArm,
-    Module, Operation, Parameter, Pattern, SourceRange, TaskScope, Terminator, Type, ValueId,
-    VerifyError, require_semantic_success, verify,
+    Block, BlockId, ConstructField, Function, FunctionId, Instruction, Local, MatchArm, Module,
+    Operation, Parameter, Pattern, SourceRange, TaskScope, Terminator, Type, ValueId, VerifyError,
+    verify,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +49,71 @@ struct Definitions {
     /// User-declared newtype/record/enum names that shadow profile types
     /// such as `Bytes`/`List` (STEP-0080).
     declared_types: BTreeSet<String>,
+    /// RFC-0039 §2.4 (STEP-0147): package-import signatures keyed by the
+    /// qualified source callee `<package>.<function>`, carrying the full
+    /// import name the IR intrinsic records.
+    package_functions: BTreeMap<String, PackageSignature>,
+}
+
+/// One package import's lowering signature (RFC-0039 §2.4, STEP-0147).
+#[derive(Clone)]
+struct PackageSignature {
+    import_name: String,
+    parameters: Vec<Type>,
+    result: Type,
+}
+
+/// RFC-0039 §2.3/§2.4 (STEP-0147): one resolved package dependency, as
+/// supplied by the CLI link pass. `functions` are the exposed interface's
+/// signatures in the semantic surface; lowering converts them to IR types
+/// (fail-closed on anything outside the frozen v0 conversion).
+#[derive(Clone, Copy, Debug)]
+pub struct PackageImport<'a> {
+    pub name: &'a str,
+    pub version: u64,
+    pub interface: &'a str,
+    pub functions: &'a BTreeMap<String, ImportedFunction>,
+}
+
+/// Converts a semantic surface type into the IR import type. The check
+/// gate (E8017) already confines versioned interfaces to the v0 value
+/// set; this conversion refuses anything else instead of guessing.
+fn unsupported_package_type(
+    package: &PackageImport<'_>,
+    function_name: &str,
+    offender: &str,
+) -> CoreLowerError {
+    unsupported_error(
+        format!(
+            "package {}@{} function {}: type {offender} is outside the v0 user-WIT value set",
+            package.name, package.version, function_name
+        ),
+        TextRange::up_to(0.into()),
+    )
+}
+
+fn import_type(ty: &SemanticType) -> Result<Type, String> {
+    match ty {
+        SemanticType::Named(name) => match name.as_str() {
+            "Bool" => Ok(Type::Bool),
+            "I64" => Ok(Type::I64),
+            "U64" => Ok(Type::U64),
+            "Text" => Ok(Type::String),
+            "Bytes" => Ok(Type::Bytes),
+            "Unit" => Ok(Type::Unit),
+            other => Err(other.to_owned()),
+        },
+        SemanticType::Generic { name, arguments } => match (name.as_str(), arguments.as_slice()) {
+            ("List", [inner]) => Ok(Type::List(Box::new(import_type(inner)?))),
+            ("Option", [inner]) => Ok(Type::Option(Box::new(import_type(inner)?))),
+            ("Result", [ok, error]) => Ok(Type::Result {
+                ok: Box::new(import_type(ok)?),
+                error: Box::new(import_type(error)?),
+            }),
+            _ => Err(name.clone()),
+        },
+        SemanticType::Unknown => Err("<unknown>".to_owned()),
+    }
 }
 
 struct FunctionBuilder<'a> {
@@ -117,7 +185,7 @@ impl TaskScopePlan {
 /// Returns frontend/semantic diagnostics, a typed unsupported feature, or
 /// independent verifier errors.
 pub fn lower_core(source: &SourceFile) -> Result<Module, CoreLowerError> {
-    lower_core_modules(source, &[])
+    lower_core_modules(source, &[], &[])
 }
 
 /// One RFC-0039 module import: its prefix and already-discovered source
@@ -144,22 +212,66 @@ pub struct ModuleImport<'a> {
 ///
 /// Same contract as [`lower_core`], applied to every file, plus the
 /// independent verifier over the merged module.
+///
+/// # Panics
+///
+/// Panics only if import discovery produced more than `u32::MAX` source
+/// files or functions, which the CLI link limits make unreachable.
+#[allow(clippy::too_many_lines)] // the merged lowering drives the whole set
 pub fn lower_core_modules(
     entry: &SourceFile,
     imports: &[ModuleImport<'_>],
+    packages: &[PackageImport<'_>],
 ) -> Result<Module, CoreLowerError> {
     let mut declarations: Vec<(Option<&str>, Vec<Declaration>)> = Vec::new();
-    for (prefix, source) in std::iter::once((None, entry)).chain(
-        imports
-            .iter()
-            .map(|import| (Some(import.name), import.source)),
-    ) {
-        match require_semantic_success(source) {
-            Ok(_) => {}
-            Err(EntryError::Frontend(error)) => return Err(CoreLowerError::Frontend(error)),
-            Err(EntryError::Semantic(diagnostics)) => {
-                return Err(CoreLowerError::Semantic(diagnostics));
+    // RFC-0039 §2.3/§2.4 (STEP-0147): the package surface is identical for
+    // every file in the set — modules may call package functions too.
+    let package_surfaces: Vec<(String, PackageInterface)> = packages
+        .iter()
+        .map(|package| {
+            (
+                package.name.to_owned(),
+                PackageInterface {
+                    package: package.name.to_owned(),
+                    version: package.version,
+                    interface: package.interface.to_owned(),
+                    functions: package.functions.clone(),
+                },
+            )
+        })
+        .collect();
+    let package_map: BTreeMap<String, PackageInterface> =
+        package_surfaces.iter().cloned().collect();
+    // RFC-0039 §2.2 (STEP-0144): each file's semantic gate sees the
+    // module-import surface (every import's exported functions), so
+    // qualified cross-module calls resolve exactly as they did at check
+    // time instead of failing the gate as unresolved callees.
+    let import_surfaces: Vec<BTreeMap<String, ImportedFunction>> = imports
+        .iter()
+        .map(|import| exported_functions(import.source))
+        .collect();
+    for (file_index, (prefix, source)) in std::iter::once((None, entry))
+        .chain(
+            imports
+                .iter()
+                .map(|import| (Some(import.name), import.source)),
+        )
+        .enumerate()
+    {
+        let mut modules: BTreeMap<String, BTreeMap<String, ImportedFunction>> = BTreeMap::new();
+        for (other, import) in imports.iter().enumerate() {
+            let surface_index = other + 1;
+            if surface_index == file_index {
+                continue;
             }
+            if let Some(surface) = import_surfaces.get(other) {
+                modules.insert(import.name.to_owned(), surface.clone());
+            }
+        }
+        let analysis = analyze_with_interfaces(source, &modules, &package_map)
+            .map_err(CoreLowerError::Frontend)?;
+        if !analysis.is_success() {
+            return Err(CoreLowerError::Semantic(analysis.diagnostics));
         }
         let hir =
             lower(source).map_err(|error| CoreLowerError::Frontend(AnalyzeError::Lower(error)))?;
@@ -170,16 +282,58 @@ pub fn lower_core_modules(
     let mut next_function = 1_u32;
     for (_, decls) in &declarations {
         bases.push(next_function);
-        next_function += decls
-            .iter()
-            .filter(|declaration| declaration.kind == DeclarationKind::Function)
-            .count() as u32;
+        next_function += u32::try_from(
+            decls
+                .iter()
+                .filter(|declaration| declaration.kind == DeclarationKind::Function)
+                .count(),
+        )
+        .expect("source limits bound functions per module");
     }
 
     let mut functions = Vec::new();
     let mut task_scopes = BTreeMap::new();
+    let mut module_import_signatures = BTreeMap::new();
     for (index, ((prefix, decls), base)) in declarations.iter().zip(&bases).enumerate() {
         let mut definitions = Definitions::from_declarations(decls, *prefix, *base);
+        for package in packages {
+            for (function_name, imported) in package.functions {
+                let parameters = imported
+                    .parameters
+                    .iter()
+                    .map(import_type)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|name| unsupported_package_type(package, function_name, &name))?;
+                let result = import_type(&imported.returns)
+                    .map_err(|name| unsupported_package_type(package, function_name, &name))?;
+                // RFC-0039 §2.4 (STEP-0147): source identifiers map to
+                // boundary kebab-case (`parse_line` -> `parse-line`);
+                // WIT names are kebab and the mapping is injective.
+                let boundary_name = crate::boundary_kebab(function_name);
+                definitions.package_functions.insert(
+                    format!("{}.{}", package.name, function_name),
+                    PackageSignature {
+                        import_name: format!(
+                            "sico:user/{}@{}.0.0.{}",
+                            crate::boundary_kebab(package.interface),
+                            package.version,
+                            boundary_name
+                        ),
+                        parameters: parameters.clone(),
+                        result: result.clone(),
+                    },
+                );
+                let full = format!(
+                    "sico:user/{}@{}.0.0.{}",
+                    crate::boundary_kebab(package.interface),
+                    package.version,
+                    boundary_name
+                );
+                module_import_signatures
+                    .entry(full)
+                    .or_insert((parameters.clone(), result.clone()));
+            }
+        }
         for (other_index, (other_prefix, other_decls)) in declarations.iter().enumerate() {
             if other_index == index {
                 continue;
@@ -218,6 +372,7 @@ pub fn lower_core_modules(
     module.source_len = u32::try_from(combined_len)
         .expect("combined source length stays inside the u32 source bound");
     module.functions = functions;
+    module.import_signatures = module_import_signatures;
     if !task_scopes.is_empty() {
         module.task_scopes = Some(task_scopes);
     }
@@ -260,9 +415,11 @@ impl Definitions {
                 DeclarationKind::Enum => {
                     definitions.declared_types.insert(declaration.name.clone());
                 }
-                DeclarationKind::Function | DeclarationKind::Interface => {}
                 // RFC-0039 (STEP-0143): module/use carry no type surface.
-                DeclarationKind::Module | DeclarationKind::Use => {}
+                DeclarationKind::Function
+                | DeclarationKind::Interface
+                | DeclarationKind::Module
+                | DeclarationKind::Use => {}
             }
         }
         let mut next_function = first_function_id;
@@ -476,7 +633,13 @@ fn lower_function(
     });
     let blocks = if let Some(index) = if_index {
         if is_revision_if_shape(declaration, index) {
-            lower_revision_if(declaration, index, &mut builder, &body_return_type)?
+            // RFC-0044: the frozen revision-guard path declines non-Revision
+            // equality (the common `if a == b: return ...` shape); those
+            // fall back to the general CFG, which lowers infix equality.
+            match lower_revision_if(declaration, index, &mut builder, &body_return_type)? {
+                Some(blocks) => blocks,
+                None => lower_general(declaration, &mut builder, &body_return_type, &scope_plan)?,
+            }
         } else {
             lower_general(declaration, &mut builder, &body_return_type, &scope_plan)?
         }
@@ -909,8 +1072,81 @@ impl GeneralLowering<'_, '_> {
                     let depth = line.depth;
                     let condition_tokens =
                         strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
-                    if top_level_position(condition_tokens, TokenKind::EqualEqual).is_some() {
-                        return unsupported("infix equality condition", line.range);
+                    if let Some(position) =
+                        top_level_position(condition_tokens, TokenKind::EqualEqual)
+                    {
+                        // RFC-0044 (language v1 batch 1): infix equality on
+                        // two same-width fixed operands lowers to the
+                        // EqualFixed comparison — the exact shape the
+                        // typed `.equal` dispatch emits.
+                        let left_tokens = &condition_tokens[..position];
+                        let right_tokens = &condition_tokens[position + 1..];
+                        self.ensure_current(line.range);
+                        let current = self.current.expect("current");
+                        let (left_value, left_ty) = self.builder.expression(
+                            left_tokens,
+                            None,
+                            &mut self.blocks[current].instructions,
+                        )?;
+                        let (right_value, right_ty) = self.builder.expression(
+                            right_tokens,
+                            None,
+                            &mut self.blocks[current].instructions,
+                        )?;
+                        if left_ty != right_ty || !matches!(left_ty, Type::I64 | Type::U64) {
+                            return unsupported(
+                                "infix equality condition operand types",
+                                line.range,
+                            );
+                        }
+                        let condition = self.builder.emit(
+                            Type::Bool,
+                            Operation::EqualFixed {
+                                left: left_value,
+                                right: right_value,
+                            },
+                            line.range,
+                            &mut self.blocks[current].instructions,
+                        );
+                        let then_block = self.new_block(line.range);
+                        let else_block = self.new_block(line.range);
+                        let join = self.new_block(line.range);
+                        self.seal_current(Terminator::Branch {
+                            condition,
+                            then_block: BlockId(u32::try_from(then_block).expect("block bound")),
+                            else_block: BlockId(u32::try_from(else_block).expect("block bound")),
+                        });
+                        let close =
+                            find_region_close(lines, index + 1, end, depth, true, line.range)?;
+                        self.nested += 1;
+                        let snapshot = self.builder.bindings.clone();
+                        self.set_current(then_block);
+                        self.run(
+                            lines,
+                            index + 1,
+                            close.else_index.unwrap_or(close.end_index),
+                        )?;
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(join).expect("block bound"),
+                        )));
+                        if let Some(else_index) = close.else_index {
+                            let arm_snapshot = self.builder.bindings.clone();
+                            self.set_current(else_block);
+                            self.run(lines, else_index + 1, close.end_index)?;
+                            self.builder.bindings = arm_snapshot;
+                            self.seal_current(Terminator::Jump(BlockId(
+                                u32::try_from(join).expect("block bound"),
+                            )));
+                        } else {
+                            self.blocks[else_block].terminator = Some(Terminator::Jump(BlockId(
+                                u32::try_from(join).expect("block bound"),
+                            )));
+                        }
+                        self.builder.bindings = snapshot;
+                        self.nested -= 1;
+                        self.set_current(join);
+                        index = close.end_index;
+                        continue;
                     }
                     self.ensure_current(line.range);
                     let (condition, condition_ty) = self.builder.expression(
@@ -1640,7 +1876,7 @@ fn lower_revision_if(
     if_index: usize,
     builder: &mut FunctionBuilder<'_>,
     return_type: &Type,
-) -> Result<Vec<Block>, CoreLowerError> {
+) -> Result<Option<Vec<Block>>, CoreLowerError> {
     if declaration.lines[1..if_index].iter().any(|line| {
         !matches!(
             line.kind,
@@ -1652,7 +1888,8 @@ fn lower_revision_if(
     let if_line = &declaration.lines[if_index];
     let condition_tokens = &if_line.tokens[1..if_line.tokens.len() - 1];
     let Some(equal) = top_level_position(condition_tokens, TokenKind::EqualEqual) else {
-        return unsupported("non-revision if condition", if_line.range);
+        // Not an equality guard at all: fall back to the general CFG.
+        return Ok(None);
     };
     let mut entry_instructions = Vec::new();
     let (left, left_type) =
@@ -1664,7 +1901,9 @@ fn lower_revision_if(
     )?;
     if left_type != right_type || !matches!(left_type, Type::Named(ref name) if name == "Revision")
     {
-        return unsupported("non-revision equality guard", if_line.range);
+        // RFC-0044: non-Revision equality (e.g. bare-integer comparisons)
+        // routes to the general CFG, which lowers EqualFixed directly.
+        return Ok(None);
     }
     let condition = builder.emit(
         Type::Bool,
@@ -1710,7 +1949,7 @@ fn lower_revision_if(
             &mut else_instructions,
         )?
         .0;
-    Ok(vec![
+    Ok(Some(vec![
         Block {
             id: BlockId(0),
             instructions: entry_instructions,
@@ -1733,7 +1972,7 @@ fn lower_revision_if(
             terminator: Terminator::Return(Some(else_value)),
             range: source_range(else_line.range),
         },
-    ])
+    ]))
 }
 
 impl FunctionBuilder<'_> {
@@ -2185,6 +2424,29 @@ impl FunctionBuilder<'_> {
                 output,
             );
             return Ok((value, result));
+        }
+        if let Some(package) = self.definitions.package_functions.get(&callee) {
+            if package.parameters.len() != arguments.len() {
+                return unsupported("package call arity", token_range(tokens));
+            }
+            let mut values = Vec::with_capacity(arguments.len());
+            for (argument, parameter) in arguments.iter().zip(&package.parameters) {
+                values.push(
+                    self.expression(argument_value(argument), Some(parameter), output)?
+                        .0,
+                );
+            }
+            let ty = package.result.clone();
+            let value = self.emit(
+                ty.clone(),
+                Operation::Intrinsic {
+                    name: package.import_name.clone(),
+                    arguments: values,
+                },
+                token_range(tokens),
+                output,
+            );
+            return Ok((value, ty));
         }
         if let Some(signature) = self.definitions.functions.get(&callee) {
             if arguments.len() != signature.parameters.len() {

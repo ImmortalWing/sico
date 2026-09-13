@@ -1,6 +1,6 @@
 {
   "schema": "sico.user-manual-contract.v1",
-  "version": "0.0.2-dev",
+  "version": "0.1.0",
   "root_readme_role": "user-entry",
   "development_manual": "docs/development/README.md",
   "manuals": [

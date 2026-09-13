@@ -76,12 +76,32 @@ pub enum DeclarationKind {
     Use,
 }
 
+/// RFC-0039 §2.3/§2.4 (STEP-0147): structured payload for the declaration
+/// forms whose identity is more than a name. Absent (`None`) everywhere the
+/// pre-existing surface is unchanged.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum DeclarationDetail {
+    #[default]
+    None,
+    /// `use pkg <name> version <n> [expose <interface>]`: the resolved
+    /// package dependency and the user WIT interface it must expose.
+    Package {
+        package: String,
+        version: u64,
+        expose: Option<String>,
+    },
+    /// `interface <name> version <n>:`: the boundary identity spelling; the
+    /// version-less corpus form stays accepted with `None` semantics.
+    InterfaceVersion(u64),
+}
+
 /// Top-level declaration shape used by later semantic lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration {
     pub kind: DeclarationKind,
     pub name: String,
     pub range: TextRange,
+    pub detail: DeclarationDetail,
 }
 
 /// Minimal semantic module shape.
@@ -134,8 +154,12 @@ pub enum ParseErrorKind {
     UnexpectedTopLevel,
     /// RFC-0039: `module` declarations are exactly `module <name>` (E1014).
     InvalidModuleDeclaration,
-    /// RFC-0039: `use` declarations are exactly `use <module>.<item>` (E1015).
+    /// RFC-0039: `use` declarations are exactly `use <module>.<item>` or the
+    /// RFC-0039 §2.3 package form (E1015).
     InvalidUseDeclaration,
+    /// RFC-0039 §2.4 (STEP-0147): `interface <name> version <n>:` is the only
+    /// versioned spelling and `<n>` must be a positive integer (E1016).
+    InvalidInterfaceVersion,
     NestingLimitExceeded {
         limit: usize,
     },
@@ -224,6 +248,7 @@ struct OpenBlock {
     start: TextSize,
     open_range: TextRange,
     name: Option<String>,
+    version: Option<u64>,
     top_level: bool,
 }
 
@@ -386,10 +411,17 @@ pub fn parse(source: &SourceFile) -> Parse {
                         if open.top_level
                             && let (Some(kind), Some(name)) = (open.kind.declaration(), open.name)
                         {
+                            let detail = match open.version {
+                                Some(version) if kind == DeclarationKind::Interface => {
+                                    DeclarationDetail::InterfaceVersion(version)
+                                }
+                                _ => DeclarationDetail::None,
+                            };
                             declarations.push(Declaration {
                                 kind,
                                 name,
                                 range: TextRange::new(open.start, tokens[line.end - 1].range.end()),
+                                detail,
                             });
                         }
                     }
@@ -438,6 +470,7 @@ pub fn parse(source: &SourceFile) -> Parse {
                         tokens[start_index].range.start(),
                         tokens[line.end - 1].range.end(),
                     ),
+                    detail: DeclarationDetail::None,
                 });
             }
             continue;
@@ -459,6 +492,7 @@ pub fn parse(source: &SourceFile) -> Parse {
                         tokens[start_index].range.start(),
                         tokens[line.end - 1].range.end(),
                     ),
+                    detail: DeclarationDetail::None,
                 });
             } else if errors.len() == errors_before_line {
                 push_parse_error(
@@ -474,7 +508,9 @@ pub fn parse(source: &SourceFile) -> Parse {
             continue;
         }
 
-        // RFC-0039 (STEP-0143): single-line `use <module>.<item>` declarations.
+        // RFC-0039 (STEP-0143): single-line `use <module>.<item>` declarations,
+        // extended in STEP-0147 with the §2.3 package form
+        // `use pkg <name> version <n> [expose <interface>]`.
         if blocks.is_empty() && first == TokenKind::Use {
             let start_index = line.significant[0];
             starts.insert(start_index, SyntaxKind::USE_DECL);
@@ -498,7 +534,12 @@ pub fn parse(source: &SourceFile) -> Parse {
                         tokens[start_index].range.start(),
                         tokens[line.end - 1].range.end(),
                     ),
+                    detail: DeclarationDetail::None,
                 });
+            } else if let Some(declaration) =
+                parse_use_package(source.text(), tokens, &line.significant)
+            {
+                declarations.push(declaration);
             } else if errors.len() == errors_before_line {
                 push_parse_error(
                     &mut errors,
@@ -553,11 +594,47 @@ pub fn parse(source: &SourceFile) -> Parse {
             let name = kind.declaration().and_then(|_| {
                 identifier_after(source.text(), tokens, &line.significant, opener_index)
             });
+            let version = if kind == BlockKind::Interface {
+                interface_version(source.text(), tokens, &line.significant, opener_index).or_else(
+                    || {
+                        if errors.len() == errors_before_line {
+                            // A `version` token present but malformed is a
+                            // typed parse error (E1016); a version-less
+                            // opener stays the accepted corpus form.
+                            let has_version = line
+                                .significant
+                                .iter()
+                                .copied()
+                                .skip_while(|index| *index != opener_index)
+                                .skip(1)
+                                .any(|index| {
+                                    tokens[index].kind == TokenKind::Identifier
+                                        && token_text_is(source.text(), tokens[index], "version")
+                                });
+                            if has_version {
+                                push_parse_error(
+                                    &mut errors,
+                                    ParseError {
+                                        kind: ParseErrorKind::InvalidInterfaceVersion,
+                                        range: tokens[opener_index].range,
+                                        related: None,
+                                        anchor: RecoveryAnchor::NextDefinition,
+                                    },
+                                );
+                            }
+                        }
+                        None
+                    },
+                )
+            } else {
+                None
+            };
             blocks.push(OpenBlock {
                 kind,
                 start: tokens[node_start].range.start(),
                 open_range: tokens[opener_index].range,
                 name,
+                version,
                 top_level,
             });
         } else if blocks.is_empty() && errors.len() == errors_before_line {
@@ -752,6 +829,88 @@ fn identifier_after(
             let range = tokens[index].range;
             text[usize::from(range.start())..usize::from(range.end())].to_owned()
         })
+}
+
+/// RFC-0039 §2.4 (STEP-0147): the opener line of an interface block may
+/// carry the boundary version — `interface <name> version <n>:` — as five
+/// significant tokens. Returns `None` for the version-less corpus form and
+/// for anything else (malformed versions are refused by the caller).
+fn interface_version(
+    text: &str,
+    tokens: &[Token],
+    significant: &[usize],
+    opener: usize,
+) -> Option<u64> {
+    let rest: Vec<usize> = significant
+        .iter()
+        .copied()
+        .skip_while(|index| *index != opener)
+        .skip(1)
+        .collect();
+    if rest.len() != 4
+        || tokens[rest[1]].kind != TokenKind::Identifier
+        || !token_text_is(text, tokens[rest[1]], "version")
+        || tokens[rest[2]].kind != TokenKind::Integer
+    {
+        return None;
+    }
+    let digits = token_text(text, tokens[rest[2]]);
+    if digits.starts_with('0') {
+        return None;
+    }
+    digits.parse::<u64>().ok().filter(|version| *version > 0)
+}
+
+/// RFC-0039 §2.3 (STEP-0147): `use pkg <name> version <n> [expose
+/// <interface>]`. The `pkg`, `version` and `expose` markers are contextual:
+/// they are only special inside this line shape, so existing sources using
+/// them as identifiers are unaffected.
+fn parse_use_package(text: &str, tokens: &[Token], significant: &[usize]) -> Option<Declaration> {
+    let rest: Vec<usize> = significant.iter().copied().skip(1).collect();
+    let package_form = rest.len() == 4 || rest.len() == 6;
+    if !package_form
+        || tokens[rest[0]].kind != TokenKind::Identifier
+        || !token_text_is(text, tokens[rest[0]], "pkg")
+        || tokens[rest[1]].kind != TokenKind::Identifier
+        || tokens[rest[2]].kind != TokenKind::Identifier
+        || !token_text_is(text, tokens[rest[2]], "version")
+        || tokens[rest[3]].kind != TokenKind::Integer
+    {
+        return None;
+    }
+    if rest.len() == 6
+        && (tokens[rest[4]].kind != TokenKind::Identifier
+            || !token_text_is(text, tokens[rest[4]], "expose")
+            || tokens[rest[5]].kind != TokenKind::Identifier)
+    {
+        return None;
+    }
+    let package = token_text(text, tokens[rest[1]]);
+    if package.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    let digits = token_text(text, tokens[rest[3]]);
+    if digits.starts_with('0') {
+        return None;
+    }
+    let version = digits.parse::<u64>().ok().filter(|version| *version > 0)?;
+    let expose = if rest.len() == 6 {
+        Some(token_text(text, tokens[rest[5]]))
+    } else {
+        None
+    };
+    let start = significant.first().copied()?;
+    let end = significant.last().copied()?;
+    Some(Declaration {
+        kind: DeclarationKind::Use,
+        name: package.clone(),
+        range: TextRange::new(tokens[start].range.start(), tokens[end].range.end()),
+        detail: DeclarationDetail::Package {
+            package,
+            version,
+            expose,
+        },
+    })
 }
 
 fn missing_close_error(kind: BlockKind) -> ParseErrorKind {

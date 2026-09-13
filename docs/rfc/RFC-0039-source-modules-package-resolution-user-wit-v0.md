@@ -5,9 +5,44 @@
 > - date: 2026-09-07
 > - phase: M15 prerequisite track (M15 plan §3.0; the M14 §3.3 carry-over the STEP-0141 scope-honesty note left unclaimed)
 > - depends: RFC-0012 (Component/WIT boundary), RFC-0013 (async/resource mapping), RFC-0015/0024/0025/0026 (package format, registry, update, lock), RFC-0033 (top-level syntax decision), RFC-0038 (application profile)
-> - implemented (partial): §2.1 modules + §2.5 D1 refusal + the E8xxx module-link diagnostics landed in STEP-0143; §2.2 full check-time resolution, §2.3 packages and §2.4 user WIT are later slices under this RFC
+> - implemented (partial): §2.1 modules + §2.5 D1 refusal + the E8xxx module-link diagnostics landed in STEP-0143; §2.2 full check-time resolution landed in STEP-0144; §2.3 packages + §2.4 user WIT (with the A7/A8 amendments) land in STEP-0147
 
-## Accepted amendments (2026-09-08, at acceptance/implementation time)
+## Accepted amendments (2026-09-08, at acceptance/implementation time; A7/A8 added 2026-09-10 at STEP-0147)
+
+- A7 (§2.4): the v0 user-WIT value set is the **flat subset**: parameters
+  are `Bool`, `I64`, `U64`, `Text`, `Bytes`, or `List[Text]`; returns may
+  additionally be `Unit` or `Result[ok, Text]` with
+  `ok ∈ {Unit, Bool, Text, List[Text]}`. Nested compositions, `Option`,
+  records/enums across the boundary, numeric lists (`List[I64]` et al —
+  the guest local layout materialises `List[Text]` only), maps, async,
+  and resource shapes stay outside v0 with the typed
+  `E-wit-unsupported-type` refusal (E8017). Rationale: every remaining
+  shape flattens to trivial core slots (all `i32` for variant payloads)
+  under the fs/stream/http return-area convention, which keeps the
+  canonical-ABI surface exactly as proven by the frozen M8/M12 corpora.
+  Boundary names are kebab-case: source `Csv`/`parse_line` render as
+  `csv`/`parse-line` (deterministic, injective; component extern names
+  require kebab).
+- A7b (§2.5 D1 refinement, 2026-09-10): the E8019 `export function`
+  refusal fires only for **script-profile programs** (sources defining
+  the `main` entry). The M2-era effects/revision oracles accept
+  export-prefixed boundary-style functions without `main`, and accepted
+  oracles outrank a blanket refusal; the refinement keeps D1's intent —
+  no silent user exports in script programs — while leaving the
+  check-only corpus untouched.
+- A8 (§2.3): the v0 source lock is `sico-lock.json`
+  (`sico:source-lock:v0`), a deterministic **projection** of the RFC-0026
+  graph: per package exactly `{name, version, path, sha256}` over the
+  *signed* package artifact (deny-unknown-fields, explicit paths, no
+  acquisition). Shape validation (E8016) is producer-stamped: the
+  package builder embeds the interface identity and the SHA-256 of the
+  canonical interface specification text in a `sico:user-interface`
+  custom section; the CLI compares the stamp against the source-declared
+  interface, and the runner re-checks arities fail-closed at link time.
+  The trust chain — owner-curated lock → exact artifact digest →
+  producer-stamped digest → declared interface — is explicit; a full
+  structural component-type walker stays future work and its absence is
+  declared here rather than hidden.
 
 - A1 (§2.1): the grammar has no brace delimiters, so `use <module>.{a, b}`
   becomes one `use <module>.<item>` declaration per line.

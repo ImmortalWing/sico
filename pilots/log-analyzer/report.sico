@@ -1,0 +1,10 @@
+module report
+
+function render(column: Text, count: I64, minimum: I64, maximum: I64, mean_x1000: I64) returns Text:
+  let header = sico.text.concat("column=", column)
+  let count_line = sico.text.concat("\ncount=", sico.i64.to_text(count))
+  let min_line = sico.text.concat("\nmin=", sico.i64.to_text(minimum))
+  let max_line = sico.text.concat("\nmax=", sico.i64.to_text(maximum))
+  let mean_line = sico.text.concat("\nmean_x1000=", sico.i64.to_text(mean_x1000))
+  return sico.text.concat(sico.text.concat(sico.text.concat(header, count_line), sico.text.concat(min_line, max_line)), mean_line)
+end function

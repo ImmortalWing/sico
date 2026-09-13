@@ -1,0 +1,5 @@
+{"client":[464,281],"hwnd":1837254,"phase":"observe","window_rect":[37,271,517,591]}
+{"digest":"5360715fb582d475faf9802212c36b68e37aad9b1a392f68cfed1984eab9df03","phase":"capture-before","size":[464,281]}
+{"action":[90,116],"phase":"preview"}
+{"changed":true,"digest":"b3be5a2c855db2c2f6d2ef1a4245e31ed8e51a10d193bc762b3fcb64927bc36f","phase":"capture-after"}
+{"phase":"verify","result":"matched"}

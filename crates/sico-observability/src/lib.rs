@@ -1280,7 +1280,7 @@ mod tests {
             },
             compiler: CompilerIdentity {
                 package: "sico-compiler".into(),
-                version: "0.0.2-dev".into(),
+                version: "0.1.0".into(),
                 executable_sha256: compiler_sha256,
             },
             language_semantics: "sico.semantics.v0".into(),

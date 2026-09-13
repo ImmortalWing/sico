@@ -23,6 +23,7 @@ fn cross_module_calls_lower_and_verify_with_unique_ids() {
             name: "math",
             source: &math,
         }],
+        &[],
     )
     .expect("merged module lowers");
 
@@ -58,8 +59,8 @@ fn merged_lowering_is_deterministic() {
         name: "math",
         source: &math,
     }];
-    let first = lower_core_modules(&entry, &imports).unwrap();
-    let second = lower_core_modules(&entry, &imports).unwrap();
+    let first = lower_core_modules(&entry, &imports, &[]).unwrap();
+    let second = lower_core_modules(&entry, &imports, &[]).unwrap();
     assert_eq!(
         serde_json::to_string(&first).unwrap(),
         serde_json::to_string(&second).unwrap()
@@ -74,7 +75,7 @@ fn single_file_lowering_is_unchanged_by_the_module_path() {
         "function main() returns Int:\n  return 7\nend function\n",
     );
     let direct = lower_core(&entry).unwrap();
-    let via_modules = lower_core_modules(&entry, &[]).unwrap();
+    let via_modules = lower_core_modules(&entry, &[], &[]).unwrap();
     assert_eq!(
         serde_json::to_string(&direct).unwrap(),
         serde_json::to_string(&via_modules).unwrap()

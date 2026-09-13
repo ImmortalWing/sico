@@ -1,0 +1,133 @@
+{
+ "schema": "sico.m18.web-ui-pilot.v0",
+ "browser": "Microsoft Edge (Chromium) 152.0.4191.66 headless --virtual-time-budget",
+ "event_script": [
+  "initial",
+  "filter-errors click",
+  "filter-all click"
+ ],
+ "trace": [
+  {
+   "event": null,
+   "tree": {
+    "widget": "container",
+    "id": "root",
+    "layout": "stack",
+    "children": [
+     {
+      "widget": "text",
+      "id": "title",
+      "properties": {
+       "text": "All logs"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-errors",
+      "properties": {
+       "text": "Only errors"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-all",
+      "properties": {
+       "text": "All logs"
+      }
+     },
+     {
+      "widget": "text",
+      "id": "entries",
+      "properties": {
+       "text": "ERROR disk full | INFO boot ok | INFO user login | "
+      }
+     }
+    ]
+   }
+  },
+  {
+   "event": {
+    "kind": "click",
+    "node_id": "filter-errors"
+   },
+   "tree": {
+    "widget": "container",
+    "id": "root",
+    "layout": "stack",
+    "children": [
+     {
+      "widget": "text",
+      "id": "title",
+      "properties": {
+       "text": "Errors"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-errors",
+      "properties": {
+       "text": "Only errors"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-all",
+      "properties": {
+       "text": "All logs"
+      }
+     },
+     {
+      "widget": "text",
+      "id": "entries",
+      "properties": {
+       "text": "1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "event": {
+    "kind": "click",
+    "node_id": "filter-all"
+   },
+   "tree": {
+    "widget": "container",
+    "id": "root",
+    "layout": "stack",
+    "children": [
+     {
+      "widget": "text",
+      "id": "title",
+      "properties": {
+       "text": "All logs"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-errors",
+      "properties": {
+       "text": "Only errors"
+      }
+     },
+     {
+      "widget": "button",
+      "id": "filter-all",
+      "properties": {
+       "text": "All logs"
+      }
+     },
+     {
+      "widget": "text",
+      "id": "entries",
+      "properties": {
+       "text": "ERROR disk full | INFO boot ok | INFO user login | "
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "final_serialized": "container:text \"All logsOnly errorsAll logsERROR disk full | INFO boot ok | INFO user login | \"|text:text \"All logs\"|button:text \"Only errors\"|button:text \"All logs\"|text:text \"ERROR disk full | INFO boot ok | INFO user login | \"",
+ "entries_render": "ERROR disk full | INFO boot ok | INFO user login | (trailing separator: deterministic v0 artifact, recorded)"
+}

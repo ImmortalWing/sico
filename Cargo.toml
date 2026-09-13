@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "crates/sico-automation-fixture",
+    "crates/sico-automation-host",
     "crates/sico-app-cli",
     "crates/sico-cli",
     "crates/sico-ai-tools",
@@ -39,7 +41,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.0.2-dev"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 publish = false

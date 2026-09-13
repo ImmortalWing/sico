@@ -1,0 +1,278 @@
+//! STEP-0162 fixture generator: emits the RFC-0042 v0 UI renderer corpus
+//! page (web/ui-corpus.html) — a self-contained deterministic renderer +
+//! hostile-content/event/a11y/limit corpus cases. Run explicitly:
+//!
+//! ```text
+//! cargo test -p sico-cli --offline --test generate_ui_corpus -- --ignored --nocapture
+//! ```
+
+use std::{fs, path::PathBuf};
+
+/// Pinned canonical serialization of the render-basic tree (recorded from
+/// the reference renderer run; asserts render stability).
+const BASIC_EXPECTED: &str = "container[stack] group:text \"ReportGoab\"|text[] heading \"Report title\":text \"Report\"|button[] button \"Go button\":text \"Go\" f1|list[] list \"Rows\" items=2 f2";
+
+#[test]
+#[ignore = "explicit fixture generator: refreshes web/ui-corpus.html"]
+#[allow(clippy::too_many_lines)] // one HTML page with eight inline cases
+fn generate_ui_corpus() {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let web_dir = repository.join("web");
+    fs::create_dir_all(&web_dir).unwrap();
+    let basic_expected_js = format!("'{}'", BASIC_EXPECTED.replace('\'', "\\'"));
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Sico UI renderer corpus</title></head>
+<body>
+<div id="results">RUNNING</div>
+<div id="mount"></div>
+<script>
+{renderer}
+</script>
+<script>
+const CASES = [];
+const BASIC_EXPECTED = {basic_expected};
+
+function record(name, data) {{ CASES.push({{ name, ...data }}); }}
+
+// 1. render-basic: a stack container with text/button/list renders the
+//    expected canonical serialization (roles, names, focus order).
+function caseRenderBasic() {{
+  const tree = {{
+    widget: "container", id: "root", layout: "stack",
+    children: [
+      {{ widget: "text", id: "title", properties: {{ text: "Report" }}, accessibility: {{ role: "heading", name: "Report title" }} }},
+      {{ widget: "button", id: "go", properties: {{ text: "Go" }}, accessibility: {{ name: "Go button", focus_order: 1 }} }},
+      {{ widget: "list", id: "rows", properties: {{ items: ["a", "b"] }}, accessibility: {{ name: "Rows", focus_order: 2 }} }},
+    ],
+  }};
+  const mount = SicoUI.render(document.getElementById("mount"), tree);
+  const got = SicoUI.serialize(mount);
+  record("render-basic", {{ pass: got === SicoUI.canonical(BASIC_EXPECTED), got }});
+}}
+
+// 2. determinism: rendering the same tree twice serializes identically.
+function caseDeterminism() {{
+  const tree = {{ widget: "container", id: "root", layout: "flow", children: [
+    {{ widget: "text", id: "t1", properties: {{ text: "x" }} }},
+    {{ widget: "text", id: "t2", properties: {{ text: "y" }} }} ] }};
+  const a = SicoUI.serialize(SicoUI.render(mount(), tree));
+  const b = SicoUI.serialize(SicoUI.render(mount(), tree));
+  record("determinism", {{ pass: a === b, got: a }});
+}}
+
+// 3. hostile-text: guest strings containing markup/script render as
+//    literal text — never become elements or attributes.
+function caseHostileText() {{
+  const before = document.getElementsByTagName("script").length;
+  const tree = {{ widget: "container", id: "root", layout: "stack", children: [
+    {{ widget: "text", id: "evil", properties: {{ text: "<img src=x onerror=alert(1)><script>alert(2)<\\/script>" }} }},
+    {{ widget: "text", id: "evil2", properties: {{ text: "><svg onload=alert(3)>pwn" }} }},
+  ] }};
+  const mountNode = SicoUI.render(mount(), tree);
+  const scriptsAfter = document.getElementsByTagName("script").length;
+  const links = mountNode.querySelectorAll("a,img").length;
+  const literal = mountNode.textContent.includes("<img src=x onerror=alert(1)>")
+    && mountNode.textContent.includes("<svg onload=alert(3)>pwn");
+  record("hostile-text", {{ pass: scriptsAfter === before && links === 0 && literal,
+    scriptsAfter, links, literal }});
+}}
+
+// 4. hostile-url: an image whose source is not https is a typed refusal.
+function caseHostileUrl() {{
+  try {{
+    SicoUI.render(mount(), {{ widget: "container", id: "root", layout: "stack", children: [
+      {{ widget: "image", id: "i", properties: {{ source: "javascript:alert(1)" }} }} ] }});
+    record("hostile-url", {{ pass: false, got: "accepted" }});
+  }} catch (e) {{
+    record("hostile-url", {{ pass: String(e).includes("scheme"), got: String(e) }});
+  }}
+}}
+
+// 5. events-fifo: three queued clicks dispatch in queue order.
+function caseEventsFifo() {{
+  const order = [];
+  const tree = {{ widget: "container", id: "root", layout: "stack", children: [
+    {{ widget: "button", id: "b1", properties: {{ text: "1" }} }},
+    {{ widget: "button", id: "b2", properties: {{ text: "2" }} }},
+    {{ widget: "button", id: "b3", properties: {{ text: "3" }} }} ] }};
+  const ui = SicoUI.bind(mount(), tree);
+  ui.queue({{ kind: "click", node_id: "b1" }});
+  ui.queue({{ kind: "click", node_id: "b3" }});
+  ui.queue({{ kind: "click", node_id: "b2" }});
+  ui.dispatch(e => {{ order.push(e.node_id); }});
+  record("events-fifo", {{ pass: order.join(",") === "b1,b3,b2", got: order.join(",") }});
+}}
+
+// 6. rate-limit: more than the per-turn event bound is a typed refusal.
+function caseRateLimit() {{
+  const ui = SicoUI.bind(mount(), {{ widget: "container", id: "root", layout: "stack", children: [
+    {{ widget: "button", id: "b", properties: {{ text: "x" }} }} ] }});
+  let refused = null;
+  for (let i = 0; i < 300; i++) {{
+    try {{ ui.queue({{ kind: "click", node_id: "b" }}); }}
+    catch (e) {{ refused = String(e); break; }}
+  }}
+  record("rate-limit", {{ pass: refused !== null && refused.includes("rate"), got: refused }});
+}}
+
+// 7. size-limit: text beyond the 64 KiB argument-class bound is typed.
+function caseSizeLimit() {{
+  try {{
+    SicoUI.render(mount(), {{ widget: "container", id: "root", layout: "stack", children: [
+      {{ widget: "text", id: "big", properties: {{ text: "x".repeat(64 * 1024 + 1) }} }} ] }});
+    record("size-limit", {{ pass: false, got: "accepted" }});
+  }} catch (e) {{
+    record("size-limit", {{ pass: String(e).includes("size"), got: String(e) }});
+  }}
+}}
+
+// 8. a11y: roles map to ARIA; focus order drives tabindex.
+function caseA11y() {{
+  const mountNode = SicoUI.render(mount(), {{ widget: "container", id: "root", layout: "stack", children: [
+    {{ widget: "button", id: "ok", properties: {{ text: "OK" }}, accessibility: {{ name: "Confirm", focus_order: 3 }} }} ] }});
+  const btn = mountNode.querySelector("[data-widget='button']");
+  const role = btn.getAttribute("role");
+  const name = btn.getAttribute("aria-label");
+  const tab = btn.getAttribute("tabindex");
+  record("a11y", {{ pass: role === "button" && name === "Confirm" && tab === "3",
+    role, name, tab }});
+}}
+
+function mount() {{
+  const m = document.createElement("div");
+  document.getElementById("mount").appendChild(m);
+  return m;
+}}
+
+const cases = [caseRenderBasic, caseDeterminism, caseHostileText, caseHostileUrl,
+  caseEventsFifo, caseRateLimit, caseSizeLimit, caseA11y];
+for (const c of cases) {{
+  try {{ c(); }}
+  catch (e) {{ record("crash-" + c.name, {{ pass: false, got: String(e) }}); }}
+}}
+document.getElementById("results").textContent =
+  "UI-CORPUS " + JSON.stringify(CASES);
+</script>
+</body>
+</html>
+"#,
+        renderer = ui_renderer_js(),
+        basic_expected = basic_expected_js,
+    );
+    fs::write(web_dir.join("ui-corpus.html"), html).unwrap();
+    println!("ui corpus page written");
+}
+
+/// The RFC-0042 v0 renderer: closed widget set, deterministic stack/flow
+/// layout, FIFO typed events, ARIA/focus mapping, hostile-content rules
+/// (textContent only), size/rate typed refusals. Pure string DOM writes.
+fn ui_renderer_js() -> &'static str {
+    r#"
+const SicoUI = (() => {
+  const WIDGETS = new Set(["container", "text", "button", "text-input", "list", "image"]);
+  const MAX_TEXT = 64 * 1024;
+  const MAX_ITEMS = 1024;
+  const MAX_EVENTS_PER_TURN = 256;
+
+  function assertWidget(kind) {
+    if (!WIDGETS.has(kind)) throw new Error("E-ui-unknown-widget: " + kind);
+  }
+  function assertSize(value, what) {
+    if (typeof value === "string" && value.length > MAX_TEXT)
+      throw new Error("E-ui-size: " + what + " exceeds 64KiB");
+  }
+
+  function build(node) {
+    assertWidget(node.widget);
+    if (!node.id) throw new Error("E-ui-id-required");
+    const el = document.createElement(
+      node.widget === "container" ? "div"
+        : node.widget === "text" ? "span"
+        : node.widget === "list" ? "ul"
+        : node.widget
+    );
+    el.dataset.widget = node.widget;
+    el.dataset.id = node.id;
+    const a = node.accessibility || {};
+    el.setAttribute("role", a.role || ({
+      container: "group", text: "text", button: "button",
+      "text-input": "textbox", list: "list", image: "img",
+    }[node.widget]));
+    if (a.name) el.setAttribute("aria-label", a.name);
+    if (a.focus_order) el.setAttribute("tabindex", String(a.focus_order));
+    const p = node.properties || {};
+    if (node.widget === "text") {
+      assertSize(p.text, "text");
+      // Hostile-content rule: textContent only — never innerHTML.
+      el.textContent = p.text ?? "";
+    } else if (node.widget === "button") {
+      assertSize(p.text, "button text");
+      el.textContent = p.text ?? "";
+    } else if (node.widget === "text-input") {
+      assertSize(p.placeholder, "placeholder");
+      if (p.placeholder) el.setAttribute("placeholder", p.placeholder);
+      el.setAttribute("value", p.value ?? "");
+    } else if (node.widget === "list") {
+      const items = p.items || [];
+      if (items.length > MAX_ITEMS) throw new Error("E-ui-size: list exceeds 1024 items");
+      for (const item of items) {
+        const li = document.createElement("li");
+        li.setAttribute("role", "listitem");
+        assertSize(String(item), "list item");
+        li.textContent = String(item);
+        el.appendChild(li);
+      }
+    } else if (node.widget === "image") {
+      const src = p.source || "";
+      if (src && !src.startsWith("https://"))
+        throw new Error("E-ui-scheme: image source must be https");
+      el.setAttribute("src", src);
+      el.setAttribute("alt", a.name || "");
+    }
+    if (node.widget === "container") {
+      el.dataset.layout = node.layout || "stack";
+      for (const child of node.children || []) el.appendChild(build(child));
+    }
+    return el;
+  }
+
+  function serialize(el) {
+    const isList = el.dataset.widget === "list";
+    const parts = [
+      (el.dataset.widget || "listitem") + "[" + (el.dataset.layout || "") + "]" +
+        (el.getAttribute("role") ? " " + el.getAttribute("role") : "") +
+        (el.getAttribute("aria-label") ? " \"" + el.getAttribute("aria-label") + "\"" : "") +
+        (isList ? " items=" + el.children.length : ":text \"" + el.textContent + "\"") +
+        (el.getAttribute("tabindex") ? " f" + el.getAttribute("tabindex") : ""),
+    ];
+    if (!isList) {
+      for (const child of el.children) parts.push(serialize(child));
+    }
+    return parts.join("|");
+  }
+
+  function bind(mount, tree) {
+    let queue = [];
+    return {
+      queue(event) {
+        if (!event || typeof event.node_id !== "string" || event.kind !== "click")
+          throw new Error("E-ui-event: typed events only (click)");
+        if (queue.length >= MAX_EVENTS_PER_TURN)
+          throw new Error("E-ui-rate: more than " + MAX_EVENTS_PER_TURN + " events per host turn");
+        queue.push(event);
+      },
+      dispatch(handler) {
+        const current = queue;
+        queue = [];
+        for (const event of current) handler(event); // FIFO, one host turn
+        return current.length;
+      },
+    };
+  }
+
+  return { render: (m, t) => { m.replaceChildren(build(t)); return m.firstChild; }, serialize, canonical: (s) => s, bind };
+})();
+"#
+}

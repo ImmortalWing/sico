@@ -12,8 +12,11 @@ use sico_runner::{
 const MUL_DIV_SOURCE: &str = include_str!("../../../tests/end-to-end/checked-mul-div.sico");
 
 fn compile_source(source: &str, tag: usize) -> Vec<u8> {
-    let directory =
-        std::env::temp_dir().join(format!("sico-step0134-muldiv-{}-{}", std::process::id(), tag));
+    let directory = std::env::temp_dir().join(format!(
+        "sico-step0134-muldiv-{}-{}",
+        std::process::id(),
+        tag
+    ));
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("mul-div.sico");
     let component_path = directory.join("mul-div.component.wasm");

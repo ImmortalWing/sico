@@ -73,7 +73,7 @@ fn debug_linked_component_packages_without_absorbing_sidecars() {
             source_bytes: text,
             display_uri: Some("workspace://answer.sico"),
             compiler_package: "sico-compiler",
-            compiler_version: "0.0.2-dev",
+            compiler_version: "0.1.0",
             compiler_executable_sha256: &compiler_sha256,
             adapter_identities: Vec::new(),
             wit_identities: Vec::new(),

@@ -1,0 +1,48 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+// RFC-0044 (language v1 batch 1): infix `==` conditions lower directly —
+// the same EqualFixed comparison the typed `.equal` calls emit. Bare
+// integer literals remain unbounded Int (NUM-001 arbitrary-precision
+// oracle unchanged); fixed-width literals use the I64.literal/U64.literal
+// forms.
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let answer = I64.literal(42)
+  let label = "init"
+  if answer == I64.literal(42):
+    set label = "eq"
+  end if
+  if sico.text.length(label) == U64.literal(2):
+    set label = sico.text.concat(label, "|len")
+  end if
+  match I64.checked_add(answer, I64.literal(-7)):
+    case ok(sum):
+      if sum == I64.literal(35):
+        set label = sico.text.concat(label, "|sum")
+      end if
+    case error(_):
+      set label = sico.text.concat(label, "|overflow")
+  end match
+  return ok(ScriptOutput(stdout: sico.text.encode(label), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

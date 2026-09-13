@@ -25,10 +25,12 @@ use wasmparser::{Parser, Payload};
 
 mod canonical;
 mod json;
+pub mod package_builder;
 mod stdlib;
 
 use canonical::{Flat, ScriptAbi};
 pub use canonical::{FsUse, SCRIPT_WIT, StreamUse, script_types_instance, wrap_script_component};
+pub use sico_ir;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CodegenError {
@@ -494,6 +496,12 @@ pub(crate) struct ScriptEmit {
     /// Absolute data-segment address of the http-error case-name table
     /// (eight pointer+length pairs in WIT declaration order), when used.
     http2_error_table: Option<u32>,
+    /// RFC-0039 §2.4 (STEP-0147): user-WIT package imports, deterministic
+    /// (instance-name, function-name) order, with their core indices.
+    user_imports: Vec<canonical::UserImport>,
+    /// Core import index per full user import name
+    /// (`sico:user/<interface>@<version>.<function>`).
+    user_indices: BTreeMap<String, u32>,
 }
 
 /// Maps an intrinsic to the helper functions it needs at runtime.
@@ -620,6 +628,7 @@ fn compile_script_program_parts(
     let mut streams = canonical::StreamUse::default();
     let mut http = false;
     let mut http2 = false;
+    let mut user_call_names = std::collections::BTreeSet::new();
     for function in &module.functions {
         for block in &function.blocks {
             for instruction in &block.instructions {
@@ -641,10 +650,56 @@ fn compile_script_program_parts(
                         "sico.http2.request" => http2 = true,
                         _ => {}
                     }
+                    // RFC-0039 §2.4 (STEP-0147): user-WIT package imports
+                    // carry their full `sico:user/<interface>@<version>`
+                    // identity in the intrinsic name.
+                    if name.starts_with("sico:user/") {
+                        user_call_names.insert(name.clone());
+                    }
                 }
             }
         }
     }
+    // Group the called user functions by instance and attach the frozen
+    // signatures from the lowering's import table. Unknown names are a
+    // typed refusal (defensive: lowering emits only verified signatures).
+    let mut user_import_map: BTreeMap<
+        String,
+        BTreeMap<String, (Vec<sico_ir::Type>, sico_ir::Type)>,
+    > = BTreeMap::new();
+    for name in &user_call_names {
+        let (instance, function) = split_user_import_name(name)
+            .ok_or_else(|| unsupported(name, "user import identity"))?;
+        let signature = module
+            .import_signatures
+            .get(name.as_str())
+            .ok_or_else(|| unsupported(name, "user import signature"))?;
+        user_import_map
+            .entry(instance.to_owned())
+            .or_default()
+            .insert(
+                function.to_owned(),
+                (signature.0.clone(), signature.1.clone()),
+            );
+    }
+    let user_imports: Vec<canonical::UserImport> = user_import_map
+        .into_iter()
+        .map(|(name, functions)| canonical::UserImport {
+            name,
+            functions: functions
+                .into_iter()
+                .map(|(name, (parameters, result))| canonical::UserFunction {
+                    name,
+                    parameters,
+                    result,
+                })
+                .collect(),
+        })
+        .collect();
+    let user_function_count: u32 = user_imports
+        .iter()
+        .map(|import| u32::try_from(import.functions.len()).unwrap_or(u32::MAX))
+        .sum();
     // The stream-error text table sits at the very start of the data segment
     // (four absolute pointer+length pairs followed by the texts).
     if streams.read || streams.write || streams.flush || streams.pump {
@@ -689,11 +744,13 @@ fn compile_script_program_parts(
         http2_error_table = Some(base);
     }
     let arena_base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 7) & !7;
-    let import_count = u32::from(fs.any() || streams.any() || http || http2)
-        + (fs.import_count() - u32::from(fs.any()))
-        + streams.import_count()
-        + u32::from(http)
-        + u32::from(http2);
+    let import_count =
+        u32::from(fs.any() || streams.any() || http || http2 || !user_imports.is_empty())
+            + (fs.import_count() - u32::from(fs.any()))
+            + streams.import_count()
+            + u32::from(http)
+            + u32::from(http2)
+            + user_function_count;
     let function_indices = module
         .functions
         .iter()
@@ -714,6 +771,7 @@ fn compile_script_program_parts(
     let mut stream_indices = BTreeMap::new();
     let mut http_index = None;
     let mut http2_index = None;
+    let mut user_indices: BTreeMap<String, u32> = BTreeMap::new();
     {
         let mut next = 1_u32; // core import 0 is the transport realloc
         for import in canonical::FS_IMPORTS {
@@ -734,6 +792,13 @@ fn compile_script_program_parts(
         }
         if http2 {
             http2_index = Some(next);
+            next += 1;
+        }
+        for import in &user_imports {
+            for function in &import.functions {
+                user_indices.insert(format!("{}.{}", import.name, function.name), next);
+                next += 1;
+            }
         }
     }
     let mut used_helpers = std::collections::BTreeSet::new();
@@ -777,11 +842,20 @@ fn compile_script_program_parts(
         http2,
         http2_index,
         http2_error_table,
+        user_imports,
+        user_indices,
     };
     let variant_tags = VariantTags::new(module, Some(&emit.abi))?;
     let core = build_script_core(module, run, &emit, &function_indices, &variant_tags)?;
-    let component =
-        canonical::wrap_script_component(&core.bytes, fs, streams, http, http2, arena_base);
+    let component = canonical::wrap_script_component(
+        &core.bytes,
+        fs,
+        streams,
+        http,
+        http2,
+        &emit.user_imports,
+        arena_base,
+    );
     Ok((core, component))
 }
 
@@ -830,12 +904,27 @@ fn build_script_core(
     let mut functions = FunctionSection::new();
     let mut code = CodeSection::new();
     let mut debug_functions = Vec::with_capacity(module.functions.len());
-    let import_count = u32::from(emit.fs.any() || emit.streams.any() || emit.http || emit.http2)
-        + (emit.fs.import_count() - u32::from(emit.fs.any()))
+    let import_count = u32::from(
+        emit.fs.any()
+            || emit.streams.any()
+            || emit.http
+            || emit.http2
+            || !emit.user_imports.is_empty(),
+    ) + (emit.fs.import_count() - u32::from(emit.fs.any()))
         + emit.streams.import_count()
         + u32::from(emit.http)
-        + u32::from(emit.http2);
-    if emit.fs.any() || emit.streams.any() || emit.http || emit.http2 {
+        + u32::from(emit.http2)
+        + emit
+            .user_imports
+            .iter()
+            .map(|import| u32::try_from(import.functions.len()).unwrap_or(u32::MAX))
+            .sum::<u32>();
+    if emit.fs.any()
+        || emit.streams.any()
+        || emit.http
+        || emit.http2
+        || !emit.user_imports.is_empty()
+    {
         // Import types occupy type indices 0..import_count so the
         // type-index-equals-function-index invariant keeps holding.
         types.ty().function(
@@ -897,6 +986,29 @@ fn build_script_core(
                 [],
             );
         }
+        // RFC-0039 §2.4 (STEP-0147): one core type per user import —
+        // flattened params plus the caller-allocated return-area pointer;
+        // results are always returned through the area (MAX_FLAT_RESULTS
+        // follows the script profile convention).
+        for import in &emit.user_imports {
+            for function in &import.functions {
+                let mut core_params = Vec::new();
+                for parameter in &function.parameters {
+                    let Some(flat) = canonical::user_param_flatten(parameter) else {
+                        return Err(unsupported(
+                            &function.name,
+                            "user import parameter value set",
+                        ));
+                    };
+                    core_params.extend(flat.iter().map(|flat| match flat {
+                        Flat::I32 => ValType::I32,
+                        Flat::I64 => ValType::I64,
+                    }));
+                }
+                core_params.push(ValType::I32);
+                types.ty().function(core_params, []);
+            }
+        }
     }
     for (index, function) in module.functions.iter().enumerate() {
         if !function.effects.is_empty() {
@@ -905,19 +1017,12 @@ fn build_script_core(
                 "effectful function without a Component host adapter",
             ));
         }
-        // STEP-0143 defect record: a non-`run` function returning a
-        // checked fixed-width `Result` declares the full flat width
-        // [tag, ok, error] but its body emits the packed two-slot value
-        // form, producing invalid WebAssembly. No frozen corpus ever
-        // exercised this seam before; refuse with a typed message until
-        // the dedicated ABI-repair step lands instead of emitting a
-        // silently invalid module.
-        if function.name != "run" && is_checked_fixed_result(&function.return_type) {
-            return Err(unsupported(
-                &function.name,
-                "user function returning a checked fixed-width Result in the Script profile (recorded defect; return the payload value and do the checked match at the call site)",
-            ));
-        }
+        // STEP-0148 (RFC-0039 A6 repair): user functions returning a
+        // checked fixed-width `Result` are legal again. The core callee
+        // declares the full flat width [tag, ok, error]; `emit_return`
+        // widens the packed two-slot value form on the way out and the
+        // call site re-packs it on the way in, so the seam can no longer
+        // produce invalid WebAssembly.
         let function_index = import_count
             + u32::try_from(index).map_err(|_| CodegenError::ModuleTooLarge {
                 functions: module.functions.len(),
@@ -991,10 +1096,16 @@ fn build_script_core(
     functions.function(emit.alloc_index);
     functions.function(emit.realloc_index);
     functions.function(emit.post_return_index);
-    if emit.fs.any() || emit.streams.any() || emit.http || emit.http2 {
+    if emit.fs.any()
+        || emit.streams.any()
+        || emit.http
+        || emit.http2
+        || !emit.user_imports.is_empty()
+    {
         // The transport module owns the memory and the bump allocator; the
         // local alloc/realloc forward to the imported realloc (core import 0)
-        // so one allocator serves guest and host-lowered fs calls alike.
+        // so one allocator serves guest and host-lowered provider calls
+        // alike (fs, streams, http and RFC-0039 §2.4 package imports).
         let alloc = emit_alloc_forwarded();
         let realloc = emit_realloc_forwarded();
         let post_return = emit_post_return_noop();
@@ -1080,7 +1191,11 @@ fn finish_script_core(
     functions: &FunctionSection,
     code: &CodeSection,
 ) -> Result<Vec<u8>, CodegenError> {
-    let transport = emit.fs.any() || emit.streams.any() || emit.http || emit.http2;
+    let transport = emit.fs.any()
+        || emit.streams.any()
+        || emit.http
+        || emit.http2
+        || !emit.user_imports.is_empty();
     let imports = transport.then(|| script_transport_imports(emit));
     let mut memories = MemorySection::new();
     if !transport {
@@ -1194,6 +1309,17 @@ fn script_transport_imports(emit: &ScriptEmit) -> ImportSection {
             canonical::HTTP2_IMPORT.function,
             EntityType::Function(type_index),
         );
+        type_index += 1;
+    }
+    for import in &emit.user_imports {
+        for function in &import.functions {
+            imports.import(
+                &import.name,
+                &function.name,
+                EntityType::Function(type_index),
+            );
+            type_index += 1;
+        }
     }
     imports
 }
@@ -1423,7 +1549,11 @@ fn lower_result_type(
             if abi == CoreAbi::ComponentLift {
                 Ok(vec![ValType::I32])
             } else {
-                Ok(vec![ValType::I32, ValType::I64])
+                // STEP-0148 (A6 repair): the Direct path declares the same
+                // full flat width the script profile declares — [tag, ok,
+                // error] — and `emit_return`/the call site widen and re-pack
+                // the packed value form at the seam.
+                Ok(vec![ValType::I32, ValType::I64, ValType::I32])
             }
         }
         Type::Task(_) => Err(async_unsupported(function, "Task")),
@@ -2402,7 +2532,30 @@ fn compile_instructions(
                     .ok_or_else(|| unsupported(&function.name, "call target after verification"))?;
                 body.instruction(&Instruction::Call(target));
                 let result = layout.get(&function.name, instruction.result)?;
-                if abi == CoreAbi::ComponentLift && is_checked_fixed_result(&instruction.ty) {
+                if abi == CoreAbi::Direct && is_checked_fixed_result(&instruction.ty) {
+                    // STEP-0148: the callee returned the full flat width
+                    // [tag, ok, error] (losing side zeroed); re-pack into
+                    // the [tag, payload] value form, where the payload is
+                    // the ok value or the zero-extended error tag.
+                    let [tag, payload] = result else {
+                        return Err(unsupported(&function.name, "checked call result layout"));
+                    };
+                    let Some((_, copy_destination)) = context.scratch else {
+                        return Err(unsupported(&function.name, "checked call scratch layout"));
+                    };
+                    body.instruction(&Instruction::LocalSet(copy_destination));
+                    body.instruction(&Instruction::LocalSet(*payload));
+                    body.instruction(&Instruction::LocalSet(*tag));
+                    body.instruction(&Instruction::LocalGet(*tag));
+                    body.instruction(&Instruction::I32Eqz);
+                    body.instruction(&Instruction::If(BlockType::Empty));
+                    body.instruction(&Instruction::Else);
+                    body.instruction(&Instruction::LocalGet(copy_destination));
+                    body.instruction(&Instruction::I64ExtendI32U);
+                    body.instruction(&Instruction::LocalSet(*payload));
+                    body.instruction(&Instruction::End);
+                } else if abi == CoreAbi::ComponentLift && is_checked_fixed_result(&instruction.ty)
+                {
                     let [tag, payload] = result else {
                         return Err(unsupported(&function.name, "checked call result layout"));
                     };
@@ -3033,7 +3186,27 @@ fn emit_return(
         return emit_script_return(context, body, value, emit);
     }
     if let Some(value) = value {
-        if abi == CoreAbi::ComponentLift && is_checked_fixed_result(&function.return_type) {
+        if abi == CoreAbi::Direct && is_checked_fixed_result(&function.return_type) {
+            // STEP-0148: the packed value form is [tag, payload] with the
+            // payload carrying the ok value or the numeric error tag; the
+            // declared core width is [tag, ok, error]. Widen with the
+            // losing side zeroed.
+            let [tag, payload] = layout.get(&function.name, value)? else {
+                return Err(unsupported(&function.name, "checked result layout"));
+            };
+            body.instruction(&Instruction::LocalGet(*tag));
+            body.instruction(&Instruction::LocalGet(*payload));
+            body.instruction(&Instruction::I64Const(0));
+            body.instruction(&Instruction::LocalGet(*tag));
+            body.instruction(&Instruction::I32Eqz);
+            body.instruction(&Instruction::Select);
+            body.instruction(&Instruction::LocalGet(*payload));
+            body.instruction(&Instruction::I32WrapI64);
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::LocalGet(*tag));
+            body.instruction(&Instruction::I32Eqz);
+            body.instruction(&Instruction::Select);
+        } else if abi == CoreAbi::ComponentLift && is_checked_fixed_result(&function.return_type) {
             let [tag, payload] = layout.get(&function.name, value)? else {
                 return Err(unsupported(&function.name, "checked result layout"));
             };
@@ -3388,6 +3561,187 @@ fn emit_http_call(
     body.instruction(&Instruction::I32Eqz);
     body.instruction(&Instruction::Select);
     body.instruction(&Instruction::LocalSet(*ok_status));
+    Ok(())
+}
+
+/// Splits a full user import name into its instance identity and function
+/// name: `sico:user/<interface>@<version>.<function>`.
+fn split_user_import_name(name: &str) -> Option<(&str, &str)> {
+    // The instance identity carries semver (`csv@1.0.0`) with dots; the
+    // function name is the last dot-separated segment. The full instance
+    // identity (prefix included) is the import name both sides agree on.
+    if !name.starts_with("sico:user/") {
+        return None;
+    }
+    let (instance, function) = name.rsplit_once('.')?;
+    Some((instance, function))
+}
+
+/// Lowers one RFC-0039 §2.4 user-WIT package call (STEP-0147, amendment A7).
+/// Arguments flatten directly (scalars one slot; `Text`/`Bytes`/`List[T]`
+/// their `(ptr, len)` pair into the shared transport memory); the result is
+/// always written by the callee into a caller-allocated return area —
+/// the exact convention of the fs/stream/http imports. Result shapes lay
+/// out as a discriminant byte at 0 plus the payload at 4 (both v0 cases
+/// are pointer-length or byte payloads).
+#[allow(clippy::too_many_lines)] // the per-shape result reads are one coherent table
+fn emit_user_call(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    name: &str,
+    arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "user import call outside script profile",
+        ));
+    };
+    let Some((return_area, copy_destination)) = context.scratch else {
+        return Err(unsupported(&function.name, "user import scratch layout"));
+    };
+    let import_index = emit
+        .user_indices
+        .get(name)
+        .copied()
+        .ok_or_else(|| unsupported(&function.name, "user import index layout"))?;
+    let signature = emit
+        .user_imports
+        .iter()
+        .find(|import| name.starts_with(&format!("{}.", import.name)))
+        .and_then(|import| {
+            import
+                .functions
+                .iter()
+                .find(|entry| format!("{}.{}", import.name, entry.name) == name)
+        })
+        .ok_or_else(|| unsupported(&function.name, "user import signature layout"))?;
+    let mem = |offset: u64, align: u32| MemArg {
+        offset,
+        align,
+        memory_index: 0,
+    };
+
+    // Caller-allocated return area, zeroed before the call.
+    let area_size = canonical::user_result_area_size(&signature.result);
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(area_size.max(1)).unwrap_or(1),
+    ));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(return_area));
+    let mut offset = 0_u64;
+    while offset < u64::from(area_size) {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Store(mem(offset, 2)));
+        offset += 4;
+    }
+    // Flattened arguments, then the area pointer.
+    if arguments.len() != signature.parameters.len() {
+        return Err(unsupported(&function.name, "user import arity"));
+    }
+    for (argument, parameter) in arguments.iter().zip(&signature.parameters) {
+        let slots = layout.get(&function.name, *argument)?;
+        let expected = match parameter {
+            sico_ir::Type::Bool | sico_ir::Type::I64 | sico_ir::Type::U64 => 1,
+            sico_ir::Type::String | sico_ir::Type::Bytes | sico_ir::Type::List(_) => 2,
+            _ => {
+                return Err(unsupported(
+                    &function.name,
+                    "user import parameter value set",
+                ));
+            }
+        };
+        if slots.len() != expected {
+            return Err(unsupported(&function.name, "user import operand layout"));
+        }
+        for slot in slots {
+            body.instruction(&Instruction::LocalGet(*slot));
+        }
+    }
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::Call(import_index));
+
+    // Read the area into the result's guest slots.
+    let result_slots = layout.get(&function.name, instruction.result)?;
+    match &signature.result {
+        sico_ir::Type::Unit => {}
+        sico_ir::Type::Bool => {
+            let [value] = result_slots else {
+                return Err(unsupported(&function.name, "user import result layout"));
+            };
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load8U(mem(0, 0)));
+            body.instruction(&Instruction::LocalSet(*value));
+        }
+        sico_ir::Type::I64 | sico_ir::Type::U64 => {
+            let [value] = result_slots else {
+                return Err(unsupported(&function.name, "user import result layout"));
+            };
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I64Load(mem(0, 3)));
+            body.instruction(&Instruction::LocalSet(*value));
+        }
+        sico_ir::Type::String | sico_ir::Type::Bytes | sico_ir::Type::List(_) => {
+            let [pointer, length] = result_slots else {
+                return Err(unsupported(&function.name, "user import result layout"));
+            };
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load(mem(0, 2)));
+            body.instruction(&Instruction::LocalSet(*pointer));
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load(mem(4, 2)));
+            body.instruction(&Instruction::LocalSet(*length));
+        }
+        sico_ir::Type::Result { ok, .. } => {
+            let [tag, ok_slots @ .., err_ptr, err_len] = result_slots else {
+                return Err(unsupported(&function.name, "user import result layout"));
+            };
+            // Discriminant byte, then the joined payload slot pair at 4/8.
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load8U(mem(0, 0)));
+            body.instruction(&Instruction::LocalSet(*tag));
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load(mem(4, 2)));
+            body.instruction(&Instruction::LocalSet(copy_destination));
+            body.instruction(&Instruction::LocalGet(return_area));
+            body.instruction(&Instruction::I32Load(mem(8, 2)));
+            body.instruction(&Instruction::LocalSet(return_area));
+            // Error side (keep the payload when tag != 0) …
+            for (source, destination) in [(copy_destination, *err_ptr), (return_area, *err_len)] {
+                body.instruction(&Instruction::I32Const(0));
+                body.instruction(&Instruction::LocalGet(source));
+                body.instruction(&Instruction::LocalGet(*tag));
+                body.instruction(&Instruction::I32Eqz);
+                body.instruction(&Instruction::Select);
+                body.instruction(&Instruction::LocalSet(destination));
+            }
+            // … then the ok side (keep when tag == 0): the ok pointer slot
+            // first, then the ok length slot when the ok payload is a
+            // pointer-length shape (Unit/Bool carry at most one slot).
+            if let Some(destination) = ok_slots.first().copied() {
+                body.instruction(&Instruction::LocalGet(copy_destination));
+                body.instruction(&Instruction::I32Const(0));
+                body.instruction(&Instruction::LocalGet(*tag));
+                body.instruction(&Instruction::I32Eqz);
+                body.instruction(&Instruction::Select);
+                body.instruction(&Instruction::LocalSet(destination));
+            }
+            if let Some(destination) = ok_slots.get(1).copied() {
+                body.instruction(&Instruction::LocalGet(return_area));
+                body.instruction(&Instruction::I32Const(0));
+                body.instruction(&Instruction::LocalGet(*tag));
+                body.instruction(&Instruction::I32Eqz);
+                body.instruction(&Instruction::Select);
+                body.instruction(&Instruction::LocalSet(destination));
+            }
+            let _ = ok;
+        }
+        _ => return Err(unsupported(&function.name, "user import result value set")),
+    }
     Ok(())
 }
 
@@ -3931,6 +4285,9 @@ fn emit_intrinsic(
         }
         "sico.http2.request" => {
             emit_http2_call(context, body, instruction, arguments)?;
+        }
+        _ if name.starts_with("sico:user/") => {
+            emit_user_call(context, body, instruction, name, arguments)?;
         }
         _ if sico_ir::collection_intrinsic(name).is_some() => {
             emit_collection_call(context, body, instruction, name, arguments)?;

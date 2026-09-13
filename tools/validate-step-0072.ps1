@@ -2,6 +2,9 @@ param([string]$RepositoryRoot = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $root = (Resolve-Path $RepositoryRoot).Path
+# rg emits UTF-8 paths; PowerShell 5.1 defaults to decoding native output
+# as ANSI, which mangles the Chinese-named case directory (see run-ci.ps1).
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 
 function Read-RepoFile([string]$relativePath) {
     $path = Join-Path $root $relativePath
@@ -17,7 +20,7 @@ $appCliSource = Read-RepoFile 'crates/sico-app-cli/src/lib.rs'
 $workspace = Read-RepoFile 'Cargo.toml'
 $step = Read-RepoFile 'docs/steps/STEP-0072-user-manual-information-architecture.md'
 
-if ($contract.schema -ne 'sico.user-manual-contract.v1' -or $contract.version -ne '0.0.2-dev' -or $contract.root_readme_role -ne 'user-entry') { throw 'user manual contract identity drifted' }
+if ($contract.schema -ne 'sico.user-manual-contract.v1' -or $contract.version -ne '0.1.0' -or $contract.root_readme_role -ne 'user-entry') { throw 'user manual contract identity drifted' }
 if (@($contract.manuals).Count -ne 11 -or @($contract.manuals | Sort-Object -Unique).Count -ne 11) { throw 'user manual index must contain eleven unique files' }
 foreach ($manual in $contract.manuals) {
     $null = Read-RepoFile (Join-Path 'docs/user-guide' $manual)
@@ -34,7 +37,7 @@ foreach ($command in $contract.application_cli_commands) {
     if (-not $appCliSource.Contains($implemented)) { throw "application CLI implementation missing documented command: $command" }
     if (-not $rootReadme.Contains("sico-app $command")) { throw "root user entry missing application command: $command" }
 }
-if (-not $workspace.Contains('version = "0.0.2-dev"') -or -not $rootReadme.Contains('`0.0.2-dev`')) { throw 'documented version does not match workspace' }
+if (-not $workspace.Contains('version = "0.1.0"') -or -not $rootReadme.Contains('`0.1.0`')) { throw 'documented version does not match workspace' }
 if (-not $rootReadme.StartsWith('# Sico ') -or -not $rootReadme.Contains('docs/user-guide/README.md') -or -not $rootReadme.Contains('docs/development/README.md')) { throw 'root README is not the user entry' }
 if (-not $development.StartsWith('# Sico ') -or -not $development.Contains('../../DEVELOPMENT.md') -or -not $development.Contains('../user-guide/README.md')) { throw 'development handbook migration is incomplete' }
 
@@ -73,4 +76,4 @@ if ($badLinks.Count -ne 0) {
     throw "broken Markdown links:$([Environment]::NewLine)$details"
 }
 
-Write-Output 'STEP_0072_OK version=0.0.2-dev manuals=11 language_commands=4 app_commands=4 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'
+Write-Output 'STEP_0072_OK version=0.1.0 manuals=11 language_commands=4 app_commands=4 quick_start=42 unsigned_dev=verified signed_dev=verified lsp=bounded ai=compiler-backed production=external-gated platforms=honest'

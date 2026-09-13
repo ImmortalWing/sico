@@ -1,0 +1,116 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+record Http2Response:
+  field status: I64
+  field body: Bytes
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match sico.list.get(input.arguments, U64.literal(0)):
+    case ok(base):
+      return agent(base)
+    case error(_):
+      return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode("missing base url"), exit_code: I64.literal(2)))
+  end match
+end function
+
+function agent(base: Text) returns Result[ScriptOutput, ScriptError]:
+  match sico.http2.request("GET", sico.text.concat(base, "/config"), sico.text.encode("")):
+    case ok(config):
+      match step_config(config):
+        case ok(_):
+          match sico.http2.request("GET", sico.text.concat(base, "/task/7"), sico.text.encode("")):
+            case ok(task_response):
+              match step_task(task_response):
+                case ok(task_name):
+                  match sico.http2.request("POST", sico.text.concat(base, "/result"), sico.bytes.concat(sico.bytes.concat(sico.text.encode("task="), sico.text.encode(task_name)), sico.text.encode(":ok"))):
+                    case ok(result):
+                      match step_result(result):
+                        case ok(_):
+                          return ok(ScriptOutput(stdout: sico.text.encode("agent:config-ok|task-ok|result-accepted"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                        case error(reason):
+                          return fail(reason)
+                      end match
+                    case error(reason):
+                      return fail(reason)
+                  end match
+                case error(reason):
+                  return fail(reason)
+              end match
+            case error(reason):
+              return fail(reason)
+          end match
+        case error(reason):
+          return fail(reason)
+      end match
+    case error(reason):
+      return fail(reason)
+  end match
+end function
+
+function step_config(response: Http2Response) returns Result[Text, Text]:
+  if I64.equal(response.status, I64.literal(200)):
+    let body = sico.bytes.utf8_decode(response.body)
+    if sico.text.contains(body, "mode=strict"):
+      return ok("config-ok")
+    end if
+    return error("unexpected config")
+  end if
+  return error("config status")
+end function
+
+function step_task(response: Http2Response) returns Result[Text, Text]:
+  if I64.equal(response.status, I64.literal(200)):
+    let body = sico.bytes.utf8_decode(response.body)
+    if same_text(body, "task-7:summarize:alpha-log"):
+      return ok("summarize-alpha-log")
+    end if
+    return error("unexpected task")
+  end if
+  return error("task status")
+end function
+
+function step_result(response: Http2Response) returns Result[Text, Text]:
+  if I64.equal(response.status, I64.literal(200)):
+    let body = sico.bytes.utf8_decode(response.body)
+    if sico.text.contains(body, "accepted"):
+      return ok("result-accepted")
+    end if
+    return error("unexpected result")
+  end if
+  return error("result status")
+end function
+
+function same_text(left: Text, right: Text) returns Bool:
+  if sico.text.starts_with(left, right):
+    if sico.text.starts_with(right, left):
+      return true
+    end if
+  end if
+  return false
+end function
+
+function fail(reason: Text) returns Result[ScriptOutput, ScriptError]:
+  return ok(ScriptOutput(stdout: sico.text.encode(sico.text.concat("agent-fail:", reason)), stderr: sico.text.encode(""), exit_code: I64.literal(1)))
+end function

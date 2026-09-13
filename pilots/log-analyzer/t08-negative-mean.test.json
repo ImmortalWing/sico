@@ -1,0 +1,1 @@
+{"stdin": "route,latency\nalpha,-7\nbeta,3\n", "args": ["latency"], "expect_exit": 0, "expect_stdout": "column=latency\ncount=2\nmin=-7\nmax=3\nmean_x1000=-2000"}

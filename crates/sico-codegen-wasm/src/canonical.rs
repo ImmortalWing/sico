@@ -300,6 +300,137 @@ pub(crate) fn stream_used(usage: StreamUse, import: &StreamImport) -> bool {
     }
 }
 
+/// RFC-0039 §2.3/§2.4 (STEP-0147): one user-WIT package interface the
+/// program imports. `name` is the full component import name
+/// (`sico:user/<interface>@<version>`); `functions` carry the frozen v0
+/// signatures in deterministic (sorted) function order.
+#[derive(Clone, Debug)]
+pub struct UserImport {
+    pub name: String,
+    pub functions: Vec<UserFunction>,
+}
+
+/// One user-WIT function signature (RFC-0039 §2.4 amendment A7): params
+/// are scalars or one-level lists; returns additionally `Result[ok, err]`
+/// or plain scalars/lists. Everything rides the shared transport memory
+/// exactly like the fs/stream/http imports.
+#[derive(Clone, Debug)]
+pub struct UserFunction {
+    pub name: String,
+    pub parameters: Vec<sico_ir::Type>,
+    pub result: sico_ir::Type,
+}
+
+/// Caller-allocated return-area byte size for one v0 result shape.
+pub(crate) fn user_result_area_size(result: &sico_ir::Type) -> u32 {
+    match result {
+        sico_ir::Type::Unit => 1,
+        sico_ir::Type::Bool => 4,
+        // I64/U64 fold into the (ptr, len)-shaped 8-byte area class.
+        sico_ir::Type::I64
+        | sico_ir::Type::U64
+        | sico_ir::Type::String
+        | sico_ir::Type::Bytes
+        | sico_ir::Type::List(_) => 8,
+        sico_ir::Type::Result { .. } => 12,
+        // A7 confines v0 interface returns to the shapes above; anything
+        // else is refused before emission.
+        _ => 0,
+    }
+}
+
+/// Flattened core parameter slots of one v0 param shape (canonical ABI):
+/// scalars ride one slot, `Text`/`Bytes`/`List[T]` ride `(ptr, len)`.
+pub(crate) fn user_param_flatten(ty: &sico_ir::Type) -> Option<Vec<Flat>> {
+    Some(match ty {
+        sico_ir::Type::Bool => vec![Flat::I32],
+        sico_ir::Type::I64 | sico_ir::Type::U64 => vec![Flat::I64],
+        sico_ir::Type::String | sico_ir::Type::Bytes => vec![Flat::I32, Flat::I32],
+        sico_ir::Type::List(inner) if matches!(inner.as_ref(), sico_ir::Type::String) => {
+            vec![Flat::I32, Flat::I32]
+        }
+        _ => return None,
+    })
+}
+
+/// Pushes one v0 type as a component type, returning its reference.
+/// Defined types (lists, results) are appended to the instance type and
+/// cached by shape so repeated types share one definition.
+fn push_component_type(
+    types: &mut InstanceType,
+    cache: &mut BTreeMap<String, ComponentValType>,
+    next: &mut u32,
+    ty: &sico_ir::Type,
+) -> Option<ComponentValType> {
+    if let Some(cached) = cache.get(&format!("{ty:?}")) {
+        return Some(*cached);
+    }
+    let value = match ty {
+        sico_ir::Type::Bool => ComponentValType::Primitive(PrimitiveValType::Bool),
+        sico_ir::Type::I64 => ComponentValType::Primitive(PrimitiveValType::S64),
+        sico_ir::Type::U64 => ComponentValType::Primitive(PrimitiveValType::U64),
+        sico_ir::Type::String => ComponentValType::Primitive(PrimitiveValType::String),
+        sico_ir::Type::Bytes => {
+            types.ty().defined_type().list(PrimitiveValType::U8);
+            let id = *next;
+            *next += 1;
+            ComponentValType::Type(id)
+        }
+        sico_ir::Type::List(inner) => {
+            let inner = push_component_type(types, cache, next, inner)?;
+            types.ty().defined_type().list(inner);
+            let id = *next;
+            *next += 1;
+            ComponentValType::Type(id)
+        }
+        sico_ir::Type::Result { ok, error } => {
+            let ok = match ok.as_ref() {
+                sico_ir::Type::Unit => None,
+                other => Some(push_component_type(types, cache, next, other)?),
+            };
+            let error = push_component_type(types, cache, next, error)?;
+            types.ty().defined_type().result(ok, Some(error));
+            let id = *next;
+            *next += 1;
+            ComponentValType::Type(id)
+        }
+        _ => return None,
+    };
+    cache.insert(format!("{ty:?}"), value);
+    Some(value)
+}
+
+/// Builds the component instance type for one user-WIT interface: one
+/// function declaration per signature, inline primitive/list/result types
+/// only (records/enums stay outside v0 per amendment A7).
+pub fn user_interface_instance(import: &UserImport) -> Option<InstanceType> {
+    let mut types = InstanceType::new();
+    let mut next_type = 0_u32;
+    let mut cache = BTreeMap::new();
+    for function in &import.functions {
+        let mut params = Vec::new();
+        for (index, parameter) in function.parameters.iter().enumerate() {
+            let value = push_component_type(&mut types, &mut cache, &mut next_type, parameter)?;
+            params.push((format!("p{index}").leak() as &str, value));
+        }
+        let result = match &function.result {
+            sico_ir::Type::Unit => None,
+            other => Some(push_component_type(
+                &mut types,
+                &mut cache,
+                &mut next_type,
+                other,
+            )?),
+        };
+        let mut signature = types.ty().function();
+        signature.params(params);
+        signature.result(result);
+        types.export(&function.name, ComponentTypeRef::Func(next_type));
+        next_type += 1;
+    }
+    Some(types)
+}
+
 /// Flattened Canonical ABI slot kind for a boundary value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Flat {
@@ -1089,6 +1220,7 @@ pub fn wrap_script_component(
     streams: StreamUse,
     http: bool,
     http2: bool,
+    user_imports: &[UserImport],
     heap_base: u32,
 ) -> Vec<u8> {
     let mut builder = ComponentBuilder::default();
@@ -1129,9 +1261,23 @@ pub fn wrap_script_component(
         http2_imported =
             Some(builder.import(HTTP2_INTERFACE, ComponentTypeRef::Instance(http2_ty)));
     }
+    // RFC-0039 §2.4 (STEP-0147): one import instance per user-WIT package
+    // interface, named by its full `sico:user/<interface>@<version>` identity.
+    let mut user_instances: Vec<(String, u32)> = Vec::new();
+    for import in user_imports {
+        let name: &'static str = Box::leak(import.name.clone().into_boxed_str());
+        let Some(instance_ty) = user_interface_instance(import) else {
+            // Unreachable for lowered programs: every signature passed the
+            // A7 value-set gate; refuse instead of emitting a wrong world.
+            continue;
+        };
+        let ty = builder.type_instance(Some(name), &instance_ty);
+        let instance = builder.import(name, ComponentTypeRef::Instance(ty));
+        user_instances.push((import.name.clone(), instance));
+    }
 
     let mut transport = None;
-    if fs.any() || streams.any() || http || http2 {
+    if fs.any() || streams.any() || http || http2 || !user_imports.is_empty() {
         let module = builder.core_module_raw(Some("fs-transport"), &fs_transport_module(heap_base));
         let instance = builder.core_instantiate(
             Some("fs-transport"),
@@ -1206,6 +1352,29 @@ pub fn wrap_script_component(
                 .entry(HTTP2_INTERFACE)
                 .or_default()
                 .push(("request", lowered_function));
+        }
+        for (name, instance) in &user_instances {
+            let Some(import) = user_imports.iter().find(|import| &import.name == name) else {
+                continue;
+            };
+            for function in &import.functions {
+                let fname: &'static str = Box::leak(function.name.clone().into_boxed_str());
+                let function_alias =
+                    builder.alias_export(*instance, fname, ComponentExportKind::Func);
+                let lowered_function = builder.lower_func(
+                    Some(fname),
+                    function_alias,
+                    [
+                        CanonicalOption::UTF8,
+                        CanonicalOption::Memory(memory),
+                        CanonicalOption::Realloc(realloc),
+                    ],
+                );
+                lowered
+                    .entry(Box::leak(name.clone().into_boxed_str()) as &str)
+                    .or_default()
+                    .push((fname, lowered_function));
+            }
         }
         if streams.any() {
             let instance = streams_imported.expect("streams interface imported when used");

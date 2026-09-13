@@ -1,0 +1,66 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+interface ImageVision version 1:
+  function occupancy(pixels: Bytes, threshold: U64, pixel_count: U64) returns Bytes
+  function occupancy_mask(pixels: Bytes, threshold: U64, pixel_count: U64) returns Bytes
+  function threshold(pixels: Bytes, threshold: U64, pixel_count: U64) returns Bytes
+  function to_grey8(pixels: Bytes, threshold: U64, pixel_count: U64) returns Bytes
+end interface
+
+use pkg image_vision version 1 expose ImageVision
+
+// M18 pilot 4 (M17 consumer): the tetris board reader - the recognition
+// chain capture -> image-vision.occupancy_mask -> this reader, entirely in
+// Sico over the RFC-0039 package/user-WIT surface.
+//
+// Input stdin = the BGRA8 board bitmap from the M16 capture path. The
+// vision package reduces it to a per-column ASCII mask ("1" = occupied).
+// This reader reports the deterministic board summary (width + mask).
+// Fail-closed: empty capture is a typed error.
+
+// pixel_count = bytes / 4 via checked division (typed overflow path).
+function pixel_count(bytes_total: U64) returns U64:
+  match U64.checked_div(bytes_total, U64.literal(4)):
+    case ok(count):
+      return count
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let size = sico.bytes.length(input.stdin)
+  if U64.equal(size, U64.literal(0)):
+    return fail("empty board capture")
+  end if
+  let mask_bytes = image_vision.occupancy_mask(input.stdin, U64.literal(8), pixel_count(sico.bytes.length(input.stdin)))
+  let mask = sico.bytes.utf8_decode(mask_bytes)
+  let report = sico.text.concat(sico.text.concat("width=", sico.u64.to_text(sico.bytes.length(mask_bytes))), sico.text.concat("; mask=", mask))
+  return ok(ScriptOutput(stdout: sico.text.encode(report), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  let text = sico.text.concat("board-reader: ", message)
+  return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(text), exit_code: I64.literal(1)))
+end function

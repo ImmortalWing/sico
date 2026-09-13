@@ -1,7 +1,9 @@
 use std::{
     fs,
+    io::Write,
     path::PathBuf,
-    sync::atomic::{AtomicU64, Ordering},
+    process::{Command, Stdio},
+    sync::atomic::{AtomicI64, AtomicU64, Ordering},
 };
 
 use sico_app_cli::{EXIT_SUCCESS, EXIT_TOOL_ERROR};
@@ -201,6 +203,144 @@ fn pack_script_builds_a_strict_v1_package_with_verified_closure() {
     fs::remove_file(scalar_package).unwrap();
 }
 
+/// The never-e2e-tested seam (`sico-app run` on a `--script` package):
+/// the composed component is a `wasi:cli` command exporting `run`, so the
+/// Runtime must execute it without `--invoke main()`, forward stdin into
+/// the `ScriptInput` channel, and propagate the guest exit code verbatim.
+#[allow(clippy::too_many_lines)]
+#[test]
+fn run_executes_a_script_package_end_to_end() {
+    let Some(runtime) = std::env::var_os("SICO_TEST_WASMTIME") else {
+        // run-ci sets SICO_TEST_WASMTIME; without a runtime binary the
+        // launch seam cannot be exercised.
+        return;
+    };
+    let program_component = echo_program();
+    let adapter = sico_app_cli::compose::script_adapter_component();
+    let composed = sico_app_cli::compose::compose_script_command(&program_component, &adapter);
+    let command = temp("echo-run.command.wasm");
+    let package = temp("echo-run.sapp");
+    fs::write(&command, &composed).unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = sico_app_cli::run(
+        [
+            "sico-app",
+            "pack",
+            "--script",
+            "--output",
+            path(&package),
+            path(&command),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(exit, EXIT_SUCCESS, "{}", String::from_utf8_lossy(&stderr));
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sico-app"))
+        .args([
+            "run",
+            "--allow-unsigned-dev",
+            "--runtime",
+            runtime.to_str().unwrap(),
+            "--grant",
+            "script.args",
+            "--grant",
+            "script.stdio",
+            path(&package),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("sico-app launches");
+    child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(b"ping")
+        .unwrap();
+    let out = child.wait_with_output().expect("sico-app waits");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "ping",
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(EXIT_SUCCESS),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The guest's mapped Script result drives the exit: a nonzero
+    // exit_code field collapses to process exit 1 (adapter contract —
+    // exact 0..=119 codes are a direct-runner contract), which this path
+    // propagates verbatim instead of reclassifying as a Runtime fault.
+    EXIT_CODE.store(7, Ordering::Relaxed);
+    let composed = sico_app_cli::compose::compose_script_command(&echo_program(), &adapter);
+    let command = temp("echo-exit7.command.wasm");
+    let package = temp("echo-exit7.sapp");
+    fs::write(&command, &composed).unwrap();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let exit = sico_app_cli::run(
+        [
+            "sico-app",
+            "pack",
+            "--script",
+            "--output",
+            path(&package),
+            path(&command),
+        ],
+        &mut stdout,
+        &mut stderr,
+    );
+    assert_eq!(exit, EXIT_SUCCESS, "{}", String::from_utf8_lossy(&stderr));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_sico-app"))
+        .args([
+            "run",
+            "--allow-unsigned-dev",
+            "--runtime",
+            runtime.to_str().unwrap(),
+            "--grant",
+            "script.args",
+            "--grant",
+            "script.stdio",
+            path(&package),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("sico-app launches");
+    child
+        .stdin
+        .take()
+        .expect("piped stdin")
+        .write_all(b"ping")
+        .unwrap();
+    let out = child.wait_with_output().expect("sico-app waits");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "ping",
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "nonzero exit_code collapses to 1"
+    );
+    EXIT_CODE.store(0, Ordering::Relaxed);
+
+    fs::remove_file(command).unwrap();
+    fs::remove_file(package).unwrap();
+}
+
+static EXIT_CODE: AtomicI64 = AtomicI64::new(0);
+
 fn echo_program() -> Vec<u8> {
     use sico_ir::{
         Block, BlockId, ConstructField, Function, FunctionId, Instruction, Module, Operation,
@@ -246,7 +386,7 @@ fn echo_program() -> Vec<u8> {
                 Instruction {
                     result: ValueId(3),
                     ty: Type::I64,
-                    operation: Operation::ConstI64(0),
+                    operation: Operation::ConstI64(EXIT_CODE.load(Ordering::Relaxed)),
                     range,
                 },
                 Instruction {

@@ -1,0 +1,43 @@
+[package]
+name = "sico-automation-host"
+description = "Native Automation Host capability core and synthetic surface (M16)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Xps",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
+[[example]]
+name = "real_loop"
+path = "examples/real_loop.rs"
+
+[[example]]
+name = "m16_corpus"
+path = "examples/m16_corpus.rs"
+
+[dev-dependencies]
+
+# The win32 module is the architecture-sanctioned FFI home (ADR-0013 §5);
+# the shared core stays unsafe-free. The workspace lint set is re-declared
+# here with unsafe_code relaxed for exactly this crate.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

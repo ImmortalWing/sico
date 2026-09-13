@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use sico_lexer::{Token, TokenKind, lex};
-use sico_parser::{DeclarationKind, parse};
+use sico_parser::{DeclarationDetail, DeclarationKind, parse};
 use sico_source::{SourceFile, TextRange};
 
 /// Stable preorder identity within one lowered module.
@@ -64,6 +64,9 @@ pub struct Declaration {
     pub range: TextRange,
     pub lines: Vec<Line>,
     pub token_tree: Vec<TokenTree>,
+    /// RFC-0039 §2.3/§2.4 (STEP-0147): the package/interface version payload
+    /// carried through from the parser; `None` for every other form.
+    pub detail: DeclarationDetail,
 }
 
 impl Declaration {
@@ -239,6 +242,7 @@ pub fn lower(source: &SourceFile) -> Result<Module, LowerError> {
             range: declaration.range,
             lines,
             token_tree: token_trees(&declaration_tokens),
+            detail: declaration.detail.clone(),
         });
     }
     Ok(Module {

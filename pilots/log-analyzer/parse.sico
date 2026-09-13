@@ -1,0 +1,45 @@
+module parse
+
+interface Csv version 1:
+  function parse_line(line: Text) returns Result[List[Text], Text]
+end interface
+
+use pkg csv version 1 expose Csv
+
+function fields(line: Text) returns Result[List[Text], Text]:
+  return csv.parse_line(line)
+end function
+
+function empty_fields() returns List[Text]:
+  return sico.text.split_lines("")
+end function
+
+function same_text(left: Text, right: Text) returns Bool:
+  if sico.text.starts_with(left, right):
+    if sico.text.starts_with(right, left):
+      return true
+    end if
+  end if
+  return false
+end function
+
+function column_index(header: List[Text], name: Text) returns Result[U64, Text]:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(header)):
+    match sico.list.get(header, index):
+      case ok(field):
+        if same_text(field, name):
+          return ok(index)
+        end if
+      case error(_):
+        return error("missing")
+    end match
+    match U64.checked_add(index, U64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return error("missing")
+    end match
+  end while
+  return error("missing")
+end function

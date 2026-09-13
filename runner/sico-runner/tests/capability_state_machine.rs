@@ -20,10 +20,8 @@ struct Machine {
 
 impl Machine {
     fn new(tag: u32) -> Self {
-        let root = std::env::temp_dir().join(format!(
-            "sico-step0139-csm-{}-{tag}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("sico-step0139-csm-{}-{tag}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         Self { root }
     }
@@ -64,11 +62,7 @@ impl Machine {
     fn run(&self, component: &[u8], command: &str, expected: &str) -> RunOutcome {
         let runner = Runner::new().expect("runner builds");
         let prepared = runner
-            .prepare_program_with_net(
-                component,
-                &self.grants(),
-                &NetGrants::default(),
-            )
+            .prepare_program_with_net(component, &self.grants(), &NetGrants::default())
             .expect("state machine component links");
         prepared
             .run(
@@ -110,16 +104,28 @@ fn capability_state_machine_transitions_guards_and_recovers() {
 
     // Missing state: deterministic recovery to the initial document, then
     // the command applies against the recovered state.
-    assert_eq!(Machine::stdout_of(machine.run(&component, "query", "")), "ok:sealed:0");
+    assert_eq!(
+        Machine::stdout_of(machine.run(&component, "query", "")),
+        "ok:sealed:0"
+    );
     // Legal transition, guarded by the caller's expected revision.
-    assert_eq!(Machine::stdout_of(machine.run(&component, "open", "")), "ok:open:1");
-    assert_eq!(Machine::stdout_of(machine.run(&component, "seal", "+")), "ok:sealed:2");
+    assert_eq!(
+        Machine::stdout_of(machine.run(&component, "open", "")),
+        "ok:open:1"
+    );
+    assert_eq!(
+        Machine::stdout_of(machine.run(&component, "seal", "+")),
+        "ok:sealed:2"
+    );
     // Illegal transition: typed refusal, state document untouched.
     match machine.run(&component, "burn", "++") {
         RunOutcome::Domain { message, .. } => assert_eq!(message, "burn requires open"),
         other => panic!("expected typed refusal, got {other:?}"),
     }
-    assert_eq!(Machine::stdout_of(machine.run(&component, "query", "++")), "ok:sealed:2");
+    assert_eq!(
+        Machine::stdout_of(machine.run(&component, "query", "++")),
+        "ok:sealed:2"
+    );
     // Stale revision guard: the caller's expectation lags the document.
     match machine.run(&component, "open", "+") {
         RunOutcome::Domain { message, .. } => {
@@ -134,7 +140,10 @@ fn capability_state_machine_transitions_guards_and_recovers() {
         "ok:sealed:0"
     );
     // The recovered machine accepts transitions again.
-    assert_eq!(Machine::stdout_of(machine.run(&component, "open", "")), "ok:open:1");
+    assert_eq!(
+        Machine::stdout_of(machine.run(&component, "open", "")),
+        "ok:open:1"
+    );
 }
 
 #[test]
@@ -142,8 +151,14 @@ fn repeated_state_machine_runs_are_deterministic() {
     let machine = Machine::new(2);
     let component = machine.component();
     for _ in 0..2 {
-        assert_eq!(Machine::stdout_of(machine.run(&component, "query", "")), "ok:sealed:0");
-        assert_eq!(Machine::stdout_of(machine.run(&component, "open", "")), "ok:open:1");
+        assert_eq!(
+            Machine::stdout_of(machine.run(&component, "query", "")),
+            "ok:sealed:0"
+        );
+        assert_eq!(
+            Machine::stdout_of(machine.run(&component, "open", "")),
+            "ok:open:1"
+        );
         // Reset for the next repetition.
         machine.corrupt();
     }

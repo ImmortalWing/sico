@@ -217,30 +217,80 @@ try {
     Reset-Directory -SafeParent (Join-Path $repositoryRoot 'target') -Path $packagingRoot
     $smokeRoot = Join-Path $packagingRoot 'smoke'
     New-Item -ItemType Directory -Path $smokeRoot | Out-Null
-    $smokeSource = Join-Path $smokeRoot 'one-plus-two.sico'
-    $smokeComponent = Join-Path $smokeRoot 'one-plus-two.component.wasm'
-    $smokePackage = Join-Path $smokeRoot 'one-plus-two.sapp'
+    $smokeSource = Join-Path $smokeRoot 'scalar-main.sico'
+    $smokeComponent = Join-Path $smokeRoot 'scalar-main.component.wasm'
+    $smokePackage = Join-Path $smokeRoot 'scalar-main.sapp'
+    $scriptSmokeSource = Join-Path $smokeRoot 'checked-add-script.sico'
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    [IO.File]::WriteAllText(
-        $smokeSource,
-        "function main() returns Int:`n  return 1 + 2`nend function`n",
-        $utf8NoBom
-    )
+    # Smoke 1 (app-host path): the scalar component shape sico-app run drives
+    # today via `wasmtime --invoke main()`. The only main shape the current
+    # language still emits is Unit/Bool (bare `main() returns Int` and
+    # unchecked `+` are E2001 since RFC-0044).
+    $scalarProgram = @'
+function main() returns Bool:
+  return I64.equal(I64.literal(1), I64.literal(1))
+end function
+'@
+    [IO.File]::WriteAllText($smokeSource, ($scalarProgram -replace "`n", "`r`n") + "`r`n", $utf8NoBom)
+    # Smoke 2 (script path): script-v0 shape with checked I64 arithmetic,
+    # executed through sico run / sico-runner.
+    $scriptProgram = @'
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match I64.checked_add(I64.literal(1), I64.literal(2)):
+    case ok(sum):
+      return ok(ScriptOutput(stdout: sico.text.encode(sico.i64.to_text(sum)), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case error(_):
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+  end match
+end function
+'@
+    [IO.File]::WriteAllText($scriptSmokeSource, ($scriptProgram -replace "`n", "`r`n") + "`r`n", $utf8NoBom)
 
     $sico = Join-Path $releaseBin 'sico.exe'
     $sicoApp = Join-Path $releaseBin 'sico-app.exe'
-    Invoke-Checked -Executable $sico -Arguments @('build', '-o', $smokeComponent, $smokeSource) -Description 'compile release smoke program'
+    Invoke-Checked -Executable $sico -Arguments @('build', '-o', $smokeComponent, $smokeSource) -Description 'compile scalar smoke program'
     Invoke-Checked -Executable $sicoApp -Arguments @(
         'pack', '--app-id', 'dev.sico.release-smoke', '--app-version', $Version,
         '-o', $smokePackage, $smokeComponent
-    ) -Description 'package release smoke program'
+    ) -Description 'package scalar smoke program'
     $smokeOutput = @(& $sicoApp run --allow-unsigned-dev --runtime $resolvedRuntime $smokePackage)
     $smokeExitCode = $LASTEXITCODE
     $smokeResult = ($smokeOutput -join "`n").Trim()
-    if ($smokeExitCode -ne 0 -or $smokeResult -cne '3') {
-        throw "Release smoke failed: exit=$smokeExitCode output='$smokeResult'"
+    if ($smokeExitCode -ne 0 -or $smokeResult -cne 'true') {
+        throw "Release scalar smoke failed: exit=$smokeExitCode output='$smokeResult'"
     }
-    Write-Host '==> release smoke result: 3'
+    Write-Host '==> release smoke (app-host scalar) result: true'
+
+    $scriptOutput = @(& $sico run $scriptSmokeSource)
+    $scriptExitCode = $LASTEXITCODE
+    $scriptResult = ($scriptOutput -join "`n").Trim()
+    if ($scriptExitCode -ne 0 -or $scriptResult -cne '3') {
+        throw "Release script smoke failed: exit=$scriptExitCode output='$scriptResult'"
+    }
+    Write-Host '==> release smoke (script checked-add) result: 3'
 
     if (-not $OutputRoot) {
         $OutputRoot = Join-Path $repositoryRoot 'dist'
@@ -348,10 +398,10 @@ try {
     $extractedSmokeOutput = @(& $extractedApp dev $smokeSource)
     $extractedSmokeExitCode = $LASTEXITCODE
     $extractedSmokeResult = ($extractedSmokeOutput -join "`n").Trim()
-    if ($extractedSmokeExitCode -ne 0 -or $extractedSmokeResult -cne '3') {
+    if ($extractedSmokeExitCode -ne 0 -or $extractedSmokeResult -cne 'true') {
         throw "Extracted SDK smoke failed: exit=$extractedSmokeExitCode output='$extractedSmokeResult'"
     }
-    Write-Host '==> extracted SDK smoke result: 3'
+    Write-Host '==> extracted SDK smoke result: true'
 
     & (Join-Path $PSScriptRoot 'internal/package-windows-installer.ps1') `
         -SdkArchive $sdkArchive `

@@ -45,10 +45,8 @@ const CASES: &[(&str, &str, &str, &str)] = &[
 ];
 
 fn compile_source(tag: u32) -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!(
-        "sico-step0138-solver-{}-{tag}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("sico-step0138-solver-{}-{tag}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("block-solver.sico");
     let component_path = directory.join("block-solver.component.wasm");

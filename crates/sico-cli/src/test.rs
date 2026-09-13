@@ -167,6 +167,14 @@ pub fn run_test(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn W
                 continue;
             }
         };
+        let Ok(package_args) = crate::run::package_runner_args(&assembled, &mut Vec::new()) else {
+            failed += 1;
+            let _ = writeln!(
+                stdout,
+                "FAIL {name} (package components need the source cache)"
+            );
+            continue;
+        };
         if crate::run::component_imports_streams(&component) {
             failed += 1;
             let _ = writeln!(
@@ -175,7 +183,7 @@ pub fn run_test(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn W
             );
             continue;
         }
-        match execute_test(&runner, &component, &manifest) {
+        match execute_test(&runner, &component, &package_args, &manifest) {
             Ok(()) => {
                 passed += 1;
                 let _ = writeln!(stdout, "PASS {name}");
@@ -204,8 +212,17 @@ fn collect_sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn execute_test(runner: &Path, component: &Path, manifest: &TestManifest) -> Result<(), String> {
-    let mut child = ProcessCommand::new(runner)
+fn execute_test(
+    runner: &Path,
+    component: &Path,
+    package_args: &[String],
+    manifest: &TestManifest,
+) -> Result<(), String> {
+    let mut command = ProcessCommand::new(runner);
+    for argument in package_args {
+        command.arg(argument);
+    }
+    let mut child = command
         .arg(component)
         .arg("--")
         .args(&manifest.args)

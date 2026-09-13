@@ -21,10 +21,8 @@ const CHUNK: usize = 4096;
 const LINE_LEN: usize = 63;
 
 fn compile_source(tag: u32) -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!(
-        "sico-step0139-stream-{}-{tag}",
-        std::process::id()
-    ));
+    let directory =
+        std::env::temp_dir().join(format!("sico-step0139-stream-{}-{tag}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("stream-transform.sico");
     let component_path = directory.join("stream-transform.component.wasm");
@@ -57,7 +55,7 @@ fn run_child(component: &[u8], stdin: Vec<u8>) -> (i32, Vec<u8>, Vec<u8>) {
         std::process::id()
     ));
     std::fs::write(&component_path, component).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_sico-runner"))
+    let child = Command::new(env!("CARGO_BIN_EXE_sico-runner"))
         .arg(&component_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

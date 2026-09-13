@@ -1,0 +1,79 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+// M18 pilot 2 — streaming data tool (M9/M11): chunked log sampler.
+// Reads stdin in bounded 4 KiB chunks; per chunk emits exactly one
+// classification line: chunk-<n>:error|info|clean. Memory stays bounded —
+// one chunk at a time, nothing accumulates. The chunk classification
+// contract: a chunk containing "ERROR" is `error` (highest precedence),
+// else a chunk containing "INFO" is `info`, else `clean`.
+// Non-UTF-8 input is a typed fail-closed error naming the chunk index.
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return pump(sico.stream.stdin(), sico.stream.stdout(), I64.literal(0))
+end function
+
+function pump(input: InputStream, out: OutputStream, index: I64) returns Result[ScriptOutput, ScriptError]:
+  let chunk = sico.stream.read(input, U64.literal(4096))
+  match chunk:
+    case ok(bytes):
+      match U64.equal(sico.bytes.length(bytes), U64.literal(0)):
+        case true:
+          return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+        case false:
+          match sico.bytes.is_utf8(bytes):
+            case false:
+              return fail(sico.text.concat("invalid UTF-8 in chunk ", sico.i64.to_text(index)))
+            case true:
+              match sico.stream.write(out, sico.text.encode(classify(index, sico.bytes.utf8_decode(bytes)))):
+                case ok(_):
+                  match I64.checked_add(index, I64.literal(1)):
+                    case ok(next):
+                      return pump(input, out, next)
+                    case error(_):
+                      return fail("chunk count overflow")
+                  end match
+                case error(message):
+                  return fail(message)
+              end match
+          end match
+      end match
+    case error(message):
+      return fail(message)
+  end match
+end function
+
+function classify(index: I64, chunk: Text) returns Text:
+  let name = sico.text.concat("chunk-", sico.i64.to_text(index))
+  if sico.text.contains(chunk, "ERROR"):
+    return sico.text.concat(name, ":error\n")
+  end if
+  if sico.text.contains(chunk, "INFO"):
+    return sico.text.concat(name, ":info\n")
+  end if
+  return sico.text.concat(name, ":clean\n")
+end function
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.DomainError, message: message))
+end function

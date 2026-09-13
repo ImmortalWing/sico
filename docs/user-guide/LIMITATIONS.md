@@ -1,6 +1,6 @@
 # 限制与平台状态
 
-`main` 当前版本为 `0.0.2-dev`，不是跨平台 production release。已发布的 `v0.0.1` 保持不变。
+`main` 当前版本为 `0.1.0`，不是跨平台 production release。已发布的 `v0.0.1` 保持不变。
 
 ## 当前平台状态
 

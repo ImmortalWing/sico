@@ -1,6 +1,6 @@
 # 语言基础与可运行子集
 
-Sico `main`（`0.0.2-dev`）使用 B Labeled Blocks 语法。语言前端已经能检查比 Runtime codegen 更丰富的类型和控制流，因此必须区分“检查通过”和“可以构建运行”。
+Sico `main`（`0.1.0`）使用 B Labeled Blocks 语法。语言前端已经能检查比 Runtime codegen 更丰富的类型和控制流，因此必须区分“检查通过”和“可以构建运行”。
 
 ## 源文件规则
 

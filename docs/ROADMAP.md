@@ -1,6 +1,6 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-04
+> - updated: 2026-09-13 (M18 portfolio + exit audit)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
 > - current phase: M12 complete (full GO per STEP-0127); M13 closed — live-model run measured and quality budgets met under ADR-0012 (STEP-0128); next mainline is M14 application-ready language
 > - phase context: M10/M11 complete; M12 retains secure HTTP/API automation scope; M13 AI tooling closure is a parallel support track; owner-approved future sequence is M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages and M18 representative applications/pilots; M7 public rollout and M6 mobile remain externally blocked
@@ -242,7 +242,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M15: Web platform and UI controls（planned, direction confirmed）
 
-状态：`in-progress / STEP-0142 kickoff 2026-09-07; RFC-0039 accepted 2026-09-08 (modules slice landed as STEP-0143: module/use executable end to end, E8001–E8011 link refusals; package resolution and user WIT are later slices); implementation per M15 plan §7`
+状态：`GO（7/7，STEP-0158 审计 + STEP-0162 关闭 gate 2/4）——前置轨完成（RFC-0039 全切片 + A6 修复）；洁净室消费者 9/9 byte-exact（入口条件 3 关闭）；web 宿主 STEP-0156（JS shim，Edge 152 跨宿主矩阵 5/5 byte-exact）；STEP-0162 RFC-0042 v0 渲染器 + UI 语料 8/8（hostile-text/url、FIFO 事件、rate/size 上限、ARIA——headless Edge 实测）``
 
 承载 [`DIRECTION.md`](../DIRECTION.md) §3.1 的前端目标与 §8.3 阶段 6/7。主要交付：Web 宿主形态 ADR（浏览器直跑 Component 与受控 webview 的证据化选择）、compiler-facing UI/WIT binding、控件/布局/事件/渲染/可访问性合同，以及 DOM、网络、存储和生命周期的标准宿主接口。M12 的 HTTP authority 必须复用；M14 计划 §3.3 的源码模块/package 解析与 compiler-facing user WIT 未随 M14 交付（STEP-0141 范围声明），M15 以前置工作轨先关闭该缺口；不建立浏览器专用语言语义。
 
@@ -254,7 +254,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M16: Native Automation Host（planned）
 
-状态：`planned / owner-approved 2026-09-04; plan refined 2026-09-07 (owner request); no step numbers reserved yet`
+状态：`GO（STEP-0159 出口审计：7/7 gate GO）——合同三件套 owner 接受（2026-09-10，A1 GDI-first）；STEP-0150 合成语料 15/15（contract-verified）；STEP-0155 Windows 真实路径闭环（fixture + GDI PrintWindow + SendInput，链式 digest 原始证据 docs/evidence/m16/，真实适配器语料 duplicate/stale/limit+1/drift + 句柄/RSS 预算全过）；E9xxx guest 编译面与 DAP 级取消矩阵为后续 RFC/STEP`
 
 为 AI 的观察—规划—执行—校验循环提供独立、显式授权的原生宿主能力。主要交付：scoped window/surface identity、窗口级截图、pointer/touch 输入、可选键盘输入、preview/commit 分离、操作后状态验证、速率/时间/区域限制、审计事件和紧急停止。capture authority 与 input authority 必须分离；默认不授予全桌面、后台键盘、剪贴板、凭据或任意进程控制。
 
@@ -266,7 +266,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M17: Vision and model package ecosystem（planned）
 
-状态：`planned / owner-approved 2026-09-04; plan refined 2026-09-07 (owner request); no step numbers reserved yet`
+状态：`NO-GO（整体；gate 1 已由 STEP-0166 翻转为 GO）——RFC-0041 已接受；M7 二进制承载实测 GO；RFC-0043 首批确定性 CV 包 image-vision@1 落地（grey8/threshold/occupancy/occupancy-mask，内容语料 5/5 字节级 + tetris 识别链 e2e 2/2 零补丁）；剩余：gate 2（加速 provider ADR）与 gate 4（model RFC）+ roster 后续包（template match/grid/contour）``
 
 把图像/视觉/推理作为 versioned package 与受限 provider 生态，而不是膨胀核心语言或隐式授予硬件权限。主要交付：稳定 Image/Pixel/Region 数据合同，颜色/缩放/模板/轮廓/网格等确定性基础包，可选原生加速 provider，模型/权重 digest 与 provenance，CPU/GPU/内存/时间预算，以及可重现的精度、回退和跨平台证据。
 
@@ -276,17 +276,53 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M17 Vision and model package ecosystem`](./plans/M17-vision-ml-ecosystem.md)。
 
-## M18: Representative AI applications and external pilots（planned）
+## M18: Representative AI applications and external pilots（planned; refined 2026-09-13）
 
-状态：`planned / owner-approved 2026-09-04; no step numbers reserved yet`
+状态：`GO（部分，STEP-0165 出口审计：组合 4/5 项 GO；external pilot 与 block-game 两项 NO-GO 诚实登记）——STEP-0164 交付 API agent / 流式工具 / Web/UI 应用 / 包消费者四类 pilot 证据`
 
-以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。俄罗斯方块消除案例是原生视觉自动化基准：离线求解器必须先在 M14 完全由 Sico 执行，再依次接入 M16 capture/input 与 M17 vision，最后验证 dry-run、单步提交、画面校验和安全停止。
+以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。俄罗斯方块消除案例是原生视觉自动化基准：离线求解器必须先在 M14 完全由 Sico 执行，再依次接入 M16 capture/input 与 M17 vision，最后验证 dry-run、单步提交、画面校验和安全停止。2026-09-13 新增：pilot 必须经 M19 release bundle 安装/升级，不得直接使用 target/ 工件。
 
-进入条件：M14 GO；每个 pilot 所依赖的平台里程碑已经 GO；外部发布、账号、设备或服务只在所有者提供明确 authority 后进入。内部洁净室应用不能冒充第三方采用。
+进入条件：M14 GO ✓（STEP-0141）；逐 pilot 平台前置——API（M12 GO）✓、流式（M9/M11 GO）✓、Web/UI（M15 7/7 GO）✓、原生视觉（M16 GO ✓ + M17 GO ✗ 为当前阻塞）；外部账号/设备/发布身份/凭据仅以 owner 明确授权进入。内部洁净室应用不能冒充第三方采用。
 
 退出条件：代表性应用无需修改 compiler/Runtime/Host 核心即可开发、测试、打包、授权、运行和更新；长时间运行、错误注入、性能、安全、AI 生成/修复和独立复现证据完整；每项产品/平台声明均能追溯到真实 runner 或外部参与者。
 
 执行计划：[`M18 representative AI applications and external pilots`](./plans/M18-ai-application-pilots.md)。
+
+## M19: Production engineering and release readiness（planned; 2026-09-13）
+
+状态：`GO（部分，STEP-0168 出口审计：gate 1/2/4/7 GO；gate 3 安装演练 scoped、gate 5/6 部分——均诚实登记）——run-ci.ps1 一命令 CI（9 步全绿）、可复现构建演练（双缓存目录字节相同，evidence/m19）、registry 演练（publish→discover→download→verify→immutability）；公网部署与 hosted-CI 保持 owner 门控`
+
+把已 GO 的里程碑变成可交付产品：CI 让每项声明可复现、版本化 release 产物与安装/升级、可部署的 registry origin、把所有 "no SLA" 变成实测预算、文档与真实行为一致。不新增用户可见功能。
+
+进入条件：M15–M17 出口审计显式（均已完成）✓；M18 内部 fixture 组合可无补丁运行（外部 pilot 不是入口条件）；编译器缺陷登记清零 ✓；registry 部署外部输入（域名/TLS/身份）保持 owner 门控——M19 只准备、不声明公网部署。
+
+退出条件：全新 clone 一次命令跑通全部验证器与双工作区测试（含浏览器矩阵步）；两次独立构建产出字节相同的 release bundle；干净 Windows 环境 install→run→upgrade→uninstall 带签名演练；私有 origin 端到端发布演练（公网仍 owner 门控）；全部 "no SLA" 预算入 CI 告警；文档审计通过；M0–M18 回归绿 + 显式出口审计。
+
+执行计划：[`M19 production engineering and release readiness`](./plans/M19-production-engineering.md)。
+
+## M20: Cross-platform runtime, language v1 and completion audit（planned; 2026-09-13）
+
+状态：`NO-GO（整体；STEP-0170 出口审计诚实登记）——语言 v1 第一批已落地（RFC-0044 中缀 == lowering，e2e byte-exact）；裸字面量类型决策记录（NUM-001 oracle 实证）；平台 parity/Android = owner 外部门控；§13 逐项审计表已发布（STEP-0170）`
+
+关闭 §13 完成标准中最后两个维度：(a) 平台广度——Desktop Host 的 macOS/Linux parity 证据与 Android（M6 顺延）重启路径；(b) 语言 v1——把 M14–M18 消费者实际需要的 proposed 面（for-loops、闭包、集合迭代等，逐项 RFC）升级为版本化、规范完整的语言发布；最后执行指向全路线图的 §13 完成审计。
+
+进入条件：M19 CI/release 绿；M18 组合无补丁运行；macOS/Linux runners 与 Android 授权设备为 owner 供给的外部输入（合同工作可先行，仅标 contract-verified）；语言面变更逐项带接受的 RFC（RFC-0033 门）。
+
+退出条件：语言 v1 冻结（语法/规范/语料/诊断一致 + 迁移说明）；声明的 macOS/Linux 版本 parity 语料绿；Android 按证据二选一（设备验证绿或显式顺延 + 外部门名称）；AI 工作流协议稳定且实测；§13 逐项审计发布（每项证据链接，未达项注明外部门或顺延）；M0–M19 回归绿。
+
+执行计划：[`M20 cross-platform runtime, language v1 and completion audit`](./plans/M20-platform-breadth-language-v1.md)。
+
+## M21: Developer experience, standard-library batch 2 and ecosystem activation（planned; 2026-09-13）
+
+状态：`planned / owner session directive（2026-09-13）；no step numbers reserved yet`
+
+把完成的语言/平台弧线转成"好用"：移除剩余的实测易用性税（byte/text 访问、排序/格式化 stdlib、checked 算术仪式）、诊断与 LSP 质量对齐主流工具、标准库自身作为包经 registry 发布（生态激活）。
+
+进入条件：M19 CI/发布工程绿 ✓（STEP-0168）；M18 组合 4/5 ✓；语言 v1 决策（裸字面量类型、for-loops、错误传播）以 RFC 落地为入口工作；live-model DX 测量仍 owner 凭据门控。
+
+退出条件：stdlib 第二批含内容断言语料（tetris 读取器的 ASCII-mask 绕过退役）；v1 第二批 RFC 落地；每个稳定诊断码有行动提示；LSP completion/hover 对 pilot 工作区演示；标准库作为包被 pilot 经 registry 消费；M0–M20 回归绿 + 显式出口审计。
+
+执行计划：[`M21 developer experience, standard-library batch 2 and ecosystem activation`](./plans/M21-developer-experience-and-stdlib.md)。
 
 ### M14–M18 dependency shape
 
@@ -303,7 +339,13 @@ M15 Web/UI        M16 Native Automation
                  M17 Vision/Model packages
        \                   /
         v                 v
-          M18 applications/pilots
+M18 applications/pilots
+          |
+          v
+M19 production engineering
+          |
+          v
+M20 cross-platform, language v1, completion audit
 ```
 
 ## Immediate dependency chain

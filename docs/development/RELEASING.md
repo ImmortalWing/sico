@@ -24,7 +24,7 @@ Sico 的 Windows Release 在已验证的本机环境中构建，不依赖 GitHub
 .\tools\release-windows.ps1
 ```
 
-若要发布 `v0.0.2-dev.1`，应先把 workspace 版本改为 `0.0.2-dev.1`，更新 `Cargo.lock`、完成测试并提交；不能只给发布脚本传一个不同版本。
+若要发布 `v0.1.0.1`，应先把 workspace 版本改为 `0.1.0.1`，更新 `Cargo.lock`、完成测试并提交；不能只给发布脚本传一个不同版本。
 
 ## 2. 生成 Release
 
@@ -77,7 +77,7 @@ dist/v<VERSION>/
 ## 3. 审核产物
 
 ```powershell
-$release = '.\dist\v0.0.2-dev'
+$release = '.\dist\v0.1.0'
 Get-Content "$release\release-manifest.json"
 Get-Content "$release\SHA256SUMS"
 Get-ChildItem $release
@@ -105,9 +105,9 @@ Get-Content "$release\SHA256SUMS" | ForEach-Object {
 产物审核通过后，对 manifest 中记录的当前 commit 创建 annotated tag：
 
 ```powershell
-git tag -a v0.0.2-dev -m "Sico v0.0.2-dev"
-git push github v0.0.2-dev
-git push origin v0.0.2-dev
+git tag -a v0.1.0 -m "Sico v0.1.0"
+git push github v0.1.0
+git push origin v0.1.0
 ```
 
 `github` 是 GitHub 远端，`origin` 是 GitCode 远端。两个远端的标签必须指向同一 commit。预发布标签不得移动；发现问题时发布更高版本。
@@ -117,19 +117,19 @@ git push origin v0.0.2-dev
 GitHub API 可用时，不需要 Actions：
 
 ```powershell
-gh release create v0.0.2-dev `
-  .\dist\v0.0.2-dev\sico-compiler-*.zip `
-  .\dist\v0.0.2-dev\sico-sdk-*.zip `
-  .\dist\v0.0.2-dev\sico-init-*.exe `
-  .\dist\v0.0.2-dev\sico-registry-origin-*.zip `
-  .\dist\v0.0.2-dev\registry-origin-manifest.json `
-  .\dist\v0.0.2-dev\SHA256SUMS `
-  .\dist\v0.0.2-dev\SBOM.spdx.json `
-  .\dist\v0.0.2-dev\release-manifest.json `
+gh release create v0.1.0 `
+  .\dist\v0.1.0\sico-compiler-*.zip `
+  .\dist\v0.1.0\sico-sdk-*.zip `
+  .\dist\v0.1.0\sico-init-*.exe `
+  .\dist\v0.1.0\sico-registry-origin-*.zip `
+  .\dist\v0.1.0\registry-origin-manifest.json `
+  .\dist\v0.1.0\SHA256SUMS `
+  .\dist\v0.1.0\SBOM.spdx.json `
+  .\dist\v0.1.0\release-manifest.json `
   --repo ImmortalWing/sico `
   --verify-tag `
   --prerelease `
-  --notes-file .\dist\v0.0.2-dev\RELEASE-NOTES.md
+  --notes-file .\dist\v0.1.0\RELEASE-NOTES.md
 ```
 
 GitHub API 不可用时，在网页创建 draft Release，选择已经推送的标签，上传 `SHA256SUMS` 列出的全部附件并粘贴 `RELEASE-NOTES.md`；检查完毕再发布。

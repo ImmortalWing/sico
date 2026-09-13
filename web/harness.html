@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Sico web host harness</title></head>
+<body>
+<div id="results">RUNNING</div>
+<script>
+
+// ADR-0014 substrate: canonical-ABI transport over the embedded core
+// module. Frozen layout: run(argsPtr,argsLen,stdinPtr,stdinLen) -> ptr
+// to 32-byte result area (tag u8 @0, payload @8); script-output 24B
+// (stdout.ptr/len @0/4, stderr @8/12, exit_code s64 @16); script-error
+// 12B (code u8 @0, message.ptr/len @4/8). All pointers into the single
+// guest linear memory; cabi_realloc grows; cabi_post_run frees.
+async function sicoScriptRun(coreBytes, args, stdin) {
+  const module = await WebAssembly.instantiate(coreBytes, {});
+  const e = module.instance.exports;
+  const memory = new DataView(e.memory.buffer);
+  const bytes = new Uint8Array(e.memory.buffer);
+  const realloc = (align, size) => e.cabi_realloc(0, 0, align, size);
+
+  // Lower arguments: array of (ptr,len) pairs + UTF-8 bytes each.
+  const encoder = new TextEncoder();
+  const encoded = args.map(a => encoder.encode(a));
+  const argsArrayPtr = realloc(4, encoded.length * 8);
+  encoded.forEach((bytes, i) => {
+    const ptr = realloc(4, bytes.length);
+    bytes.forEach((b, j) => { bytes0()[ptr + j] = b; });
+    memory.setUint32(argsArrayPtr + i * 8, ptr, true);
+    memory.setUint32(argsArrayPtr + i * 8 + 4, bytes.length, true);
+  });
+  function bytes0() { return new Uint8Array(e.memory.buffer); }
+
+  const stdinPtr = realloc(4, stdin.length);
+  new Uint8Array(e.memory.buffer).set(stdin, stdinPtr);
+
+  const resultPtr = e.run(argsArrayPtr, encoded.length, stdinPtr, stdin.length);
+  const tag = memory.getUint8(resultPtr);
+  let out;
+  if (tag === 0) {
+    const p = resultPtr + 8;
+    out = {
+      ok: true,
+      stdout: bytes.slice(memory.getUint32(p, true),
+                          memory.getUint32(p, true) + memory.getUint32(p + 4, true)),
+      stderr: bytes.slice(memory.getUint32(p + 8, true),
+                          memory.getUint32(p + 8, true) + memory.getUint32(p + 12, true)),
+      exit: Number(memory.getBigInt64(p + 16, true)),
+    };
+  } else {
+    const code = memory.getUint8(resultPtr + 8);
+    const msgPtr = memory.getUint32(resultPtr + 12, true);
+    const msgLen = memory.getUint32(resultPtr + 16, true);
+    // Strict UTF-8 fail-closed (frozen layout: Text validated at the lift).
+    const message = new TextDecoder("utf-8", { fatal: true }).decode(
+      bytes.slice(msgPtr, msgPtr + msgLen));
+    out = { ok: false, code, message, stdout: new Uint8Array(0), stderr: new Uint8Array(0), exit: -1 };
+  }
+  e.cabi_post_run(resultPtr);
+  return out;
+}
+
+</script>
+<script>
+const CORE_B64 = "AGFzbQEAAAABNAhgBH9/f38Bf2ABfwF/YAR/f39/AX9gAX8AYAJ/fwF/YAJ/fwJ/f2ACf38Cf39gAX4Cf38DCQgAAQIDBAUGBwUGAQGACIAIBgYBfwFBGAsHLwQGbWVtb3J5AgADcnVuAAAMY2FiaV9yZWFsbG9jAAINY2FiaV9wb3N0X3J1bgADCtsMCKQENAF/AX8BfwF/AX8BfwF/AX8BfwF/AX8BfgF/AX8BfwF/AX8BfwF/AX8BfgF/AX8BfwF/AX4BfwF/AX8BfwF/AX4BfwF/AX8BfwF/AX8BfwF/AX8BfwF/AX8BfwF/AX4BfwF/AX8BfwJ/QQAhNgJAA0AgNkEARgRAIAIhBCADIQUgBCAFEAQhBkF/ITYgNkF/RgRAQQEgBkEBRnEEQEEBITYLCyA2QX9GBEBBASAGQQBGcQRAQQIhNgsLIDZBf0YEQAALDAELIDZBAUYEQCACIQcgAyEIIAchCSAIIQogCSAKEAYhDCELIAsgDBAFIQ4hDSAOrSEPIA8QByERIRAgECESIBEhE0EAIRRBACEVIBQhFiAVIRdCACEYIBIhGSATIRogFiEbIBchHCAYIR1BACEeIBkhHyAaISAgGyEhIBwhIiAdISNBACEkQQAhJUEAISZBIBABITcgNyAeOgAAICAQASE4IDggHyAg/AoAACA3IDg2AgggNyAgNgIMICIQASE4IDggISAi/AoAACA3IDg2AhAgNyAiNgIUIDcgIzcDGCA3DwsgNkECRgRAQQAhJ0EAIShBGCEpICchKiAoISsgKSEsQQEhLUEAIS5BACEvQQAhMEEAITFCACEyICohMyArITQgLCE1QSAQASE3IDcgLToAACA3IDM6AAggNRABITggOCA0IDX8CgAAIDcgODYCDCA3IDU2AhAgNw8LAAsLAAsuAQJ/IwBBB2pBeHEhASABIABqIgIgAUkEQAALIAJBgICAIEsEQAALIAIkACABC0sBAn8jACACakF/akEAIAJrcSEEIAQgA2oiBSAESQRAAAsgBUGAgIAgSwRAAAsgBSQAIAAEQCAEIAAgASADIAEgA0kb/AoAAAsgBAsGAEEYJAALygMBBX9BASECAkADQCADIAFPDQEgACADai0AACEEAkAgBEGAAUkEQEEBIQYMAQsgBEHgAXFBwAFGBEAgBEHCAUkEQEEAIQIMBAsgA0EBaiABTwRAQQAhAgwECyAAIANqLQABQcABcUGAAUcEQEEAIQIMBAtBAiEGDAELIARB8AFxQeABRgRAIANBAmogAU8EQEEAIQIMBAsgACADai0AASEFIAVBwAFxQYABRwRAQQAhAgwECyAEQeABRgRAIAVBoAFJBEBBACECDAQLCyAEQe0BRgRAIAVBoAFPBEBBACECDAQLCyAAIANqLQACQcABcUGAAUcEQEEAIQIMBAtBAyEGDAELIARB+AFxQfABRgRAIARB9AFLBEBBACECDAQLIANBA2ogAU8EQEEAIQIMBAsgACADai0AASEFIAVBwAFxQYABRwRAQQAhAgwECyAEQfABRgRAIAVBkAFJBEBBACECDAQLCyAEQfQBRgRAIAVBkAFPBEBBACECDAQLCyAAIANqLQACQcABcUGAAUcEQEEAIQIMBAsgACADai0AA0HAAXFBgAFHBEBBACECDAQLQQQhBgwBC0EAIQIMAgsgAyAGaiEDDAALCyACC/kBAQd/AkADQCADIAFPDQEgACADai0AACIIQSBGIAhBCU8gCEENTXFyRQRAIAdFBEAgAkEBaiECQQEhBwsFQQAhBwsgA0EBaiEDDAALCyACQQN0EAEhBEEAIQNBACEHAkADQCADIAFPDQEgACADai0AACIIQSBGIAhBCU8gCEENTXFyBEAgBwRAIAQgBUEDdGogACAGajYCACAEIAVBA3RqIAMgBms2AgQgBUEBaiEFQQAhBwsFIAdFBEAgAyEGQQEhBwsLIANBAWohAwwACwsgB0UEQCAEIAVBA3RqIAAgBmo2AgAgBCAFQQN0aiABIAZrNgIECyAEIAILeQEDfyABIQMCQANAIAIgA08NASAAIAJqLQAAIgRBIEYgBEEJTyAEQQ1NcXJFDQEgAkEBaiECDAALCwJAA0AgAyACTQ0BIAAgA2pBf2otAAAiBEEgRiAEQQlPIARBDU1xckUNASADQX9qIQMMAAsLIAAgAmogAyACawtwAgR/AX5BGBABIQEgAFAEQCABQTA6AAAgAUEBDwtBGCECIAAhBQJAA0AgBVANASACQX9qIQIgASACaiAFQgqCp0EwajoAACAFQgqAIQUMAAsLQRggAmshAyADEAEhBCAEIAEgAmogA/wKAAAgBCADCwseAQBBAAsYc3RkaW4gaXMgbm90IHZhbGlkIFVURi04";
+const CASES = [
+  { name: "two-words", args: [], stdin: new TextEncoder().encode("alpha beta") },
+  { name: "trim-and-punct", args: [], stdin: new TextEncoder().encode("  one, two; three.  ") },
+  { name: "empty", args: [], stdin: new TextEncoder().encode("") },
+  { name: "one-word", args: [], stdin: new TextEncoder().encode("solo") },
+  { name: "utf8", args: [], stdin: new TextEncoder().encode(" café roi ") },
+];
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+(async () => {
+  const results = [];
+  try {
+    const core = b64ToBytes(CORE_B64);
+    for (const c of CASES) {
+      const out = await sicoScriptRun(core, c.args, c.stdin);
+      results.push({
+        name: c.name,
+        exit: out.exit,
+        stdoutHex: Array.from(out.stdout).map(b => b.toString(16).padStart(2, "0")).join(""),
+        stdoutText: new TextDecoder().decode(out.stdout),
+      });
+    }
+  } catch (error) {
+    document.getElementById("results").textContent =
+      "HARNESS-ERROR " + String(error);
+    return;
+  }
+  document.getElementById("results").textContent =
+    "HARNESS-RESULTS " + JSON.stringify(results);
+})();
+</script>
+</body>
+</html>

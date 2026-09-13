@@ -1,0 +1,6 @@
+{
+  "schema": "sico:source-lock:v0",
+  "packages": [
+    {"name":"image_vision","version":1,"path":"pkgs/image_vision.sapp","sha256":"b12210d1f2ee52a6285331776e5a6646e113a07726e0250b41b5758977edcd1b"}
+  ]
+}

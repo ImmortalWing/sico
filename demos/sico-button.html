@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sico 按钮演示</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #e0e0e0;
+    }
+    #show-btn {
+      padding: 14px 40px;
+      font-size: 18px;
+      border: none;
+      border-radius: 8px;
+      background: #4f6ef7;
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    #show-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(79, 110, 247, 0.4);
+    }
+    #show-btn:active {
+      transform: translateY(0);
+    }
+    #output {
+      font-size: 32px;
+      font-weight: bold;
+      letter-spacing: 2px;
+      min-height: 44px;
+      color: #7ea0ff;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+    #output.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <button id="show-btn">点击显示文字</button>
+  <div id="output"></div>
+
+  <script>
+    const btn = document.getElementById('show-btn');
+    const output = document.getElementById('output');
+    btn.addEventListener('click', () => {
+      output.textContent = 'Sico 网页';
+      output.classList.add('visible');
+    });
+  </script>
+</body>
+</html>

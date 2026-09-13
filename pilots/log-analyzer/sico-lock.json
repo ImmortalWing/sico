@@ -1,0 +1,7 @@
+{
+  "schema": "sico:source-lock:v0",
+  "packages": [
+    {"name":"csv","version":1,"path":"pkgs/csv.sapp","sha256":"201ef7a20044a2e8583069e4b2e366ddc526bac550556f6e3bbc700592093f20"},
+    {"name":"table_stats","version":1,"path":"pkgs/table_stats.sapp","sha256":"9e0669f6d5a038db39c735380d52a6d7579d4363f07e552e7ccf3ce5be24a0eb"}
+  ]
+}

@@ -9,11 +9,13 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Component as PathComponent, Path, PathBuf},
-    process::{Command, ExitStatus},
+    process::{Command, ExitStatus, Stdio},
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use sico_package::{AuthorizedPackage, TrustStatus, sha256_hex};
+use sico_package::{
+    AuthorizedPackage, SCRIPT_ARGS_CAPABILITY, SCRIPT_STDIO_CAPABILITY, TrustStatus, sha256_hex,
+};
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
@@ -294,7 +296,14 @@ pub fn wasi_arguments(
 ) -> Result<Vec<String>, StorageError> {
     let granted = &package.granted_capabilities;
     let mut arguments = vec!["-S".to_owned(), "cli=n".to_owned()];
-    if granted.contains("clock.read") || granted.contains("random.read") {
+    if granted.contains("clock.read")
+        || granted.contains("random.read")
+        || granted.contains(SCRIPT_ARGS_CAPABILITY)
+        || granted.contains(SCRIPT_STDIO_CAPABILITY)
+    {
+        // Script entries execute as wasi:cli command components: the
+        // composed command imports the environment/stdin/stdout/stderr/exit
+        // interfaces, so the script capabilities require the CLI world.
         "cli=y".clone_into(&mut arguments[1]);
     }
     if granted.contains("storage.read-write") {
@@ -405,7 +414,16 @@ pub fn run_authorized_package(
     for argument in wasi_arguments(package, storage).map_err(PackageRuntimeError::Storage)? {
         command.arg(argument);
     }
-    command.arg("--invoke").arg("main()").arg(&path);
+    if package.trusted.package.manifest.script.is_some() {
+        // Script entry (v1 manifest): the component is a wasi:cli command
+        // exporting `run`; the runtime executes it directly and stdin
+        // feeds the ScriptInput channel. `--invoke` must stay
+        // scalar-only — a command component has no `main`.
+        command.stdin(Stdio::inherit());
+    } else {
+        command.arg("--invoke").arg("main()");
+    }
+    command.arg(&path);
     let result = command.output().map_err(PackageRuntimeError::Launch);
     let _ = fs::remove_file(path);
     let output = result?;

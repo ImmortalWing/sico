@@ -46,6 +46,10 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0038`](./RFC-0038-application-profile-v0.md) | accepted | 冻结 M14 应用 profile 支持矩阵（控制流/集合/位运算/checked 算术/源级 PRNG/http emission）与出口语料 |
 | [`RFC-0039`](./RFC-0039-source-modules-package-resolution-user-wit-v0.md) | accepted（部分实现） | 显式源码模块与 `use` 导入、M7 lock 包解析、user WIT 导入 v0 值域与 typed 拒绝类；模块切片已随 STEP-0143 落地，包解析/user WIT 为后续切片 |
 
-下一可用编号：`RFC-0040`。
+| [`RFC-0040`](./RFC-0040-native-automation-capabilities-v0.md) | accepted | Native Automation Host 能力面 v0（observe/capture/pointer/keyboard/audit/stop 六接口、preview/commit 令牌、审计流与紧急停止的 guest 不可见设计、E9xxx 拒绝语料规划）；2026-09-10 owner 接受（指令“完成M15-17”），威胁模型 F-1 判为声明式敏感区策略、F-2 判为 Host 本地按运行追加 JSONL |
+| [`RFC-0041`](./RFC-0041-image-data-contract-v0.md) | accepted | 可移植图像数据合同 v0（bitmap/region、步距/格式/方向、四项决策 D1–D4、构造 limit+1 错误分类与出口语料）；2026-09-10 owner 接受（D1–D4 如案通过，D4 初始上限 2^28 字节） |
+| [`RFC-0042`](./RFC-0042-web-ui-controls-v0.md) | accepted | Web UI 控件与事件合同 v0：封闭控件集+稳定 id、确定性 stack/flow/grid 布局、类型化 FIFO 事件、显式属性赋值、ARIA/焦点为合同字段、敌意内容语料规则；2026-09-10 owner 接受 |
+
+下一可用编号：`RFC-0042`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

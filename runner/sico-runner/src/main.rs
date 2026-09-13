@@ -51,6 +51,7 @@ fn run() -> i32 {
     let mut debug_map_path = None;
     let mut debug_identity_path = None;
     let mut cancel_request_path = None;
+    let mut package_paths = Vec::<std::path::PathBuf>::new();
     let mut args = std::env::args().skip(1);
     while let Some(argument) = args.next() {
         if passthrough {
@@ -77,6 +78,11 @@ fn run() -> i32 {
                 Ok(ms) if (5..=1000).contains(&ms) => watch_poll_ms = ms,
                 _ => return diagnostic(json, "cli", "--watch-poll-ms expects 5..=1000"),
             }
+        } else if argument == "--package" {
+            let Some(path) = args.next() else {
+                return diagnostic(json, "cli", "missing value after --package");
+            };
+            package_paths.push(std::path::PathBuf::from(path));
         } else if argument == "--cancel-after-ms" {
             let Some(value) = args.next() else {
                 return diagnostic(json, "cli", "missing value after --cancel-after-ms");
@@ -185,6 +191,16 @@ fn run() -> i32 {
             "watch v0 refuses a fixed debug identity across changing generations",
         );
     }
+    let mut packages = Vec::with_capacity(package_paths.len());
+    for path in &package_paths {
+        let bytes = match read_component(path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                return diagnostic(json, "cli", &format!("cannot read package: {error}"));
+            }
+        };
+        packages.push(sico_runner::PackageBinary { bytes });
+    }
     let component_path = PathBuf::from(component);
     let component = match read_component(&component_path) {
         Ok(bytes) => bytes,
@@ -209,7 +225,9 @@ fn run() -> i32 {
             Ok(bytes) => bytes,
             Err(error) => return diagnostic(json, "cli", &error),
         };
-        match runner.prepare_program_with_debug(&component, &map, &identity, &grants, &net) {
+        match runner.prepare_program_with_debug_packages(
+            &component, &map, &identity, &grants, &net, &packages,
+        ) {
             Ok(prepared) => Some(prepared),
             Err(outcome) => {
                 let observed = ObservedRun::from_outcome(outcome, "run-0", 0)
@@ -251,6 +269,7 @@ fn run() -> i32 {
             &input,
             &grants,
             &net,
+            &packages,
             json,
             watch_runs,
             Duration::from_millis(watch_poll_ms),
@@ -291,7 +310,7 @@ fn run() -> i32 {
         Ok(policy) => policy,
         Err(error) => return diagnostic(json, "cli", &error),
     };
-    let outcome = match runner.run_program_with_policy(
+    let outcome = match runner.run_program_with_policy_and_packages(
         &component,
         &input,
         &limits,
@@ -299,6 +318,7 @@ fn run() -> i32 {
         &grants,
         &net,
         &http_policy,
+        &packages,
     ) {
         Ok(outcome) => outcome,
         Err(violation) => {
@@ -320,6 +340,7 @@ fn watch_program(
     input: &ScriptInput,
     grants: &FsGrants,
     net: &NetGrants,
+    packages: &[sico_runner::PackageBinary],
     json: bool,
     max_runs: Option<u32>,
     poll: Duration,
@@ -335,10 +356,11 @@ fn watch_program(
     if let Some(bridge) = cancel_bridge {
         bridge.publish(&session_cancel, "watch", 1);
     }
-    let mut prepared = match runner.prepare_program_with_net(&initial, grants, net) {
-        Ok(prepared) => prepared,
-        Err(outcome) => return report(json, &outcome),
-    };
+    let mut prepared =
+        match runner.prepare_program_with_net_packages(&initial, grants, net, packages) {
+            Ok(prepared) => prepared,
+            Err(outcome) => return report(json, &outcome),
+        };
     let mut accepted = initial;
     let mut pending: Option<(Vec<u8>, Instant)> = None;
     let mut generation = 1_u32;
@@ -386,7 +408,7 @@ fn watch_program(
         }
         let (candidate, _) = pending.take().expect("stable pending generation");
         accepted.clone_from(&candidate);
-        match runner.prepare_program_with_net(&candidate, grants, net) {
+        match runner.prepare_program_with_net_packages(&candidate, grants, net, packages) {
             Ok(next) => prepared = next,
             Err(outcome) => {
                 watch_event("generation-rejected", generation + 1, outcome.exit_code());

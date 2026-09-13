@@ -2,7 +2,7 @@
 
 Sico（Simple Coding）是一门面向 AI 理解、生成、检查和修复代码的编程语言。`main` 采用类似 OpenJDK 的模块化单仓库：语言编译器、应用 Runtime 和平台 Host 同仓开发，但具有独立依赖边界、命令和发布物。
 
-> - 当前开发版本：`0.0.2-dev`
+> - 当前开发版本：`0.1.0`
 > - 已归档版本：`v0.0.1`
 > - 当前 runtime-verified 平台：Windows x86_64 + Wasmtime 46.0.1
 > - Android、HarmonyOS/OpenHarmony 与 Linux 原生 Host 尚未完成运行时验证

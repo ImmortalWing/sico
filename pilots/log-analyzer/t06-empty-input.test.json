@@ -1,0 +1,1 @@
+{"stdin": "", "args": ["latency"], "expect_exit": 12, "expect_stdout": ""}

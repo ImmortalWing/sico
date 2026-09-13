@@ -83,7 +83,12 @@ pub const fn syntax_identity(kind: &ParseErrorKind) -> Option<DiagnosticIdentity
         ParseErrorKind::InvalidUseDeclaration => (
             "E1015",
             "SYNTAX_INVALID_USE_DECLARATION",
-            "a use declaration is exactly: use <module>.<item>",
+            "a use declaration is exactly: use <module>.<item> or use pkg <name> version <n> [expose <interface>]",
+        ),
+        ParseErrorKind::InvalidInterfaceVersion => (
+            "E1016",
+            "SYNTAX_INVALID_INTERFACE_VERSION",
+            "a versioned interface is exactly: interface <name> version <n>: with a positive integer <n>",
         ),
         _ => return None,
     };

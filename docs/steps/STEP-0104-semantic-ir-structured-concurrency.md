@@ -23,7 +23,7 @@ Verifiable results:
 - [`M11 plan`](../plans/M11-structured-concurrency-runtime.md) STEP-0104 deliverables and exit evidence.
 - [`ADR-0010`](../adr/ADR-0010-single-store-structured-concurrency.md): ownership graph, suspension/arena rules, affine resource rules, deterministic tie-breaking (§6.3), hard limits (1,024 tasks/children, scope nesting 64).
 - [`RFC-0004`](../rfc/RFC-0004-resource-async-mapping-v0.md): Task is language-internal; borrow must not escape across await; completion consumes handle; no unbounded stream collect.
-- [`RFC-0007`](../rfc/RFC-0007-prelude-contract-v0.md) / `semantics/prelude-v0.json`: Future/Task/Stream classes and the `collect_tasks`/`input` prelude entries.
+- [`RFC-0007`](../rfc/RFC-0007-m2-hir-name-prelude-contract-v0.md) / `semantics/prelude-v0.json`: Future/Task/Stream classes and the `collect_tasks`/`input` prelude entries.
 - [`RFC-0009`](../rfc/RFC-0009-core-lowering-evaluation-order-v0.md): strict left-to-right evaluate-once lowering.
 - [`RFC-0013`](../rfc/RFC-0013-async-backend-support-v0.md): backend async refusal boundary; no mock schedulers.
 - Current implementation audit (2026-07-29): spawn/await are erased in `crates/sico-ir/src/lower.rs:620-635`; `Operation::Await`/`StreamNext` are never emitted; `collect_tasks` is refused as a generic unknown call target; E5102 is depth-based, not scope-based; runner executes no tasks at all.

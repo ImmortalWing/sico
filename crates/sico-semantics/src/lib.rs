@@ -129,7 +129,7 @@ enum TypeDefinition {
         variants: Vec<VariantDefinition>,
     },
     Resource {
-        methods: BTreeMap<String, bool>,
+        methods: BTreeMap<String, ResourceMethod>,
     },
 }
 
@@ -176,7 +176,61 @@ struct Parameter {
 struct Model {
     types: BTreeMap<String, TypeDefinition>,
     functions: BTreeMap<String, FunctionDefinition>,
-    capabilities: BTreeMap<String, BTreeMap<String, Vec<Parameter>>>,
+    /// RFC-0039 §2.2 (STEP-0144): qualified `module.item` signatures of
+    /// the analyzed file's imports; consulted after local functions.
+    /// Package functions (STEP-0147) ride the same table under their
+    /// `<package>.<function>` qualified name.
+    imported_functions: BTreeMap<String, ImportedFunction>,
+    capabilities: BTreeMap<String, BTreeMap<String, CapabilityMethod>>,
+    /// RFC-0039 §2.4 (STEP-0147): user WIT interfaces declared in this
+    /// file, keyed by interface name.
+    interfaces: BTreeMap<String, ModelInterface>,
+}
+
+/// One user WIT interface's check-time shape (RFC-0039 §2.4, STEP-0147).
+/// A `None` version is the accepted version-less corpus form: registered
+/// and shape-parsed, with no boundary meaning in v0.
+#[derive(Clone, Debug, Default)]
+pub struct ModelInterface {
+    pub version: Option<u64>,
+    pub functions: BTreeMap<String, ImportedFunction>,
+}
+
+/// One resolved package's check-time surface (RFC-0039 §2.3/§2.4,
+/// STEP-0147): the exposed interface identity plus its qualified function
+/// signatures.
+#[derive(Clone, Debug)]
+pub struct PackageInterface {
+    pub package: String,
+    pub version: u64,
+    pub interface: String,
+    pub functions: BTreeMap<String, ImportedFunction>,
+}
+
+/// One resource method's check-time signature (RFC-0039 §2.2,
+/// STEP-0144).
+#[derive(Clone, Debug)]
+struct ResourceMethod {
+    parameters: Vec<Parameter>,
+    returns: Type,
+    consumes_self: bool,
+}
+
+/// One capability method's check-time signature (RFC-0039 §2.2,
+/// STEP-0144).
+#[derive(Clone, Debug)]
+struct CapabilityMethod {
+    parameters: Vec<Parameter>,
+    returns: Type,
+}
+
+/// One imported module function's check-time signature (RFC-0039 §2.2,
+/// STEP-0144).
+#[derive(Clone, Debug)]
+pub struct ImportedFunction {
+    pub parameters: Vec<Type>,
+    pub returns: Type,
+    pub is_async: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -198,9 +252,54 @@ struct Argument<'a> {
 ///
 /// Returns [`AnalyzeError`] when lexical/parser errors prevent HIR lowering.
 pub fn analyze(source: &SourceFile) -> Result<Analysis, AnalyzeError> {
+    analyze_with_modules(source, &BTreeMap::new())
+}
+
+/// RFC-0039 §2.2 (STEP-0144): analysis with the module-import surface
+/// injected, so qualified `module.item` calls resolve and type-check at
+/// check time. [`analyze`] is this with an empty surface.
+///
+/// # Errors
+///
+/// Same contract as [`analyze`].
+pub fn analyze_with_modules(
+    source: &SourceFile,
+    modules: &BTreeMap<String, BTreeMap<String, ImportedFunction>>,
+) -> Result<Analysis, AnalyzeError> {
+    analyze_with_interfaces(source, modules, &BTreeMap::new())
+}
+
+/// RFC-0039 §2.3/§2.4 (STEP-0147): analysis with the module-import surface
+/// and the resolved package surfaces injected. Package functions bind
+/// qualified `<package>.<function>` calls exactly like module imports;
+/// the interfaces the file declares are registered on the model and —
+/// when versioned — value-set checked.
+///
+/// # Errors
+///
+/// Same contract as [`analyze`].
+pub fn analyze_with_interfaces(
+    source: &SourceFile,
+    modules: &BTreeMap<String, BTreeMap<String, ImportedFunction>>,
+    packages: &BTreeMap<String, PackageInterface>,
+) -> Result<Analysis, AnalyzeError> {
     let module = lower(source).map_err(AnalyzeError::Lower)?;
-    let (model, mut facts) = build_model(&module);
     let mut diagnostics = Vec::new();
+    let (mut model, mut facts) = build_model(&module, &mut diagnostics);
+    for (module_name, functions) in modules {
+        for (name, imported) in functions {
+            model
+                .imported_functions
+                .insert(format!("{module_name}.{name}"), imported.clone());
+        }
+    }
+    for (package_name, package) in packages {
+        for (name, imported) in &package.functions {
+            model
+                .imported_functions
+                .insert(format!("{package_name}.{name}"), imported.clone());
+        }
+    }
     for function in model.functions.values() {
         analyze_function(function, &model, &mut diagnostics, &mut facts);
     }
@@ -209,9 +308,59 @@ pub fn analyze(source: &SourceFile) -> Result<Analysis, AnalyzeError> {
     Ok(Analysis { diagnostics, facts })
 }
 
-fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
+/// RFC-0039 §2.2 (STEP-0144): the top-level functions one module file
+/// exports, keyed by name, for qualified cross-module call resolution.
+/// The source must parse (the CLI link pass guarantees it); a failed
+/// lowering yields an empty surface.
+/// RFC-0039 §2.4 (STEP-0147): the user WIT interfaces one file declares,
+/// keyed by interface name, for package-expose validation. The source must
+/// parse (the CLI link pass guarantees it); a failed lowering yields an
+/// empty map.
+#[must_use]
+pub fn declared_interfaces(source: &SourceFile) -> BTreeMap<String, ModelInterface> {
+    let Ok(module) = lower(source) else {
+        return BTreeMap::new();
+    };
+    let (model, _facts) = build_model(&module, &mut Vec::new());
+    model
+        .interfaces
+        .into_iter()
+        .filter(|(_, interface)| interface.version.is_some())
+        .collect()
+}
+
+#[must_use]
+pub fn exported_functions(source: &SourceFile) -> BTreeMap<String, ImportedFunction> {
+    let Ok(module) = lower(source) else {
+        return BTreeMap::new();
+    };
+    module
+        .declarations
+        .iter()
+        .filter(|declaration| declaration.kind == DeclarationKind::Function)
+        .filter_map(|declaration| {
+            parse_function(declaration).map(|function| {
+                (
+                    function.name.clone(),
+                    ImportedFunction {
+                        parameters: function.parameters.iter().map(|p| p.ty.clone()).collect(),
+                        returns: function.returns.clone(),
+                        is_async: function.is_async,
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_lines)] // the model construction is one coherent table
+fn build_model(
+    module: &Module,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> (Model, Vec<SemanticFact>) {
     let mut model = Model::default();
     let mut facts = Vec::new();
+    let mut export_prefixed: Vec<(String, TextRange)> = Vec::new();
     for declaration in &module.declarations {
         match declaration.kind {
             DeclarationKind::Newtype => {
@@ -281,13 +430,74 @@ fn build_model(module: &Module) -> (Model, Vec<SemanticFact>) {
                 );
             }
             DeclarationKind::Function => {
+                // RFC-0039 §2.5 D1 (STEP-0147, implementation refinement):
+                // `export function` has no v0 meaning — the Script `run`
+                // export is the only export. The refusal fires only for
+                // script-profile programs (those defining the `main`
+                // entry); the M2-era boundary-style oracles use the same
+                // prefix without a `main` and stay accepted per corpus.
+                if declaration
+                    .lines
+                    .first()
+                    .and_then(|line| line.tokens.first())
+                    .is_some_and(|token| token.kind == TokenKind::Export)
+                {
+                    export_prefixed.push((declaration.name.clone(), declaration.range));
+                }
                 insert_function_definition(declaration, &mut model, &mut facts);
             }
-            // Interfaces stay outline-only (M5 design history). RFC-0039
-            // (STEP-0143): `module`/`use` carry no per-file semantics —
-            // the CLI module-link pass verifies them across the module
-            // set before compilation, so nothing is silently discarded.
-            DeclarationKind::Interface | DeclarationKind::Module | DeclarationKind::Use => {}
+            // RFC-0039 §2.4 (STEP-0147): interfaces are registered with
+            // their shape. A versioned interface is the boundary surface —
+            // its functions are value-set checked with typed refusals. The
+            // version-less corpus form is registered without a boundary
+            // meaning, replacing the former silent drop with a declared
+            // classification. `module`/`use` carry no per-file semantics —
+            // the CLI link pass verifies them across the assembled set.
+            DeclarationKind::Interface => {
+                let version = match &declaration.detail {
+                    sico_parser::DeclarationDetail::InterfaceVersion(version) => Some(*version),
+                    _ => None,
+                };
+                let mut functions = BTreeMap::new();
+                for (name, imported, line_range) in build_interface_functions(declaration) {
+                    if version.is_some()
+                        && let Some(offender) = interface_value_offender(&imported)
+                    {
+                        push_diagnostic(
+                            diagnostics,
+                            "E8017",
+                            "WIT_UNSUPPORTED_TYPE",
+                            format!(
+                                "interface {} function {name}: {offender} is outside the v0 user-WIT value set",
+                                declaration.name
+                            ),
+                            [],
+                            line_range,
+                        );
+                    }
+                    functions.insert(name, imported);
+                }
+                model.interfaces.insert(
+                    declaration.name.clone(),
+                    ModelInterface { version, functions },
+                );
+            }
+            DeclarationKind::Module | DeclarationKind::Use => {}
+        }
+    }
+    // D1 refusal, scoped to script-profile programs (those with `main`).
+    if model.functions.contains_key("main") {
+        for (name, range) in &export_prefixed {
+            push_diagnostic(
+                diagnostics,
+                "E8019",
+                "EXPORT_USER_INTERFACE",
+                format!(
+                    "function {name} carries an export prefix; user-interface exports are refused in v0"
+                ),
+                [],
+                *range,
+            );
         }
     }
     (model, facts)
@@ -339,7 +549,7 @@ fn push_type_fact(declaration: &sico_hir::Declaration, facts: &mut Vec<SemanticF
     });
 }
 
-fn build_resource_methods(declaration: &sico_hir::Declaration) -> BTreeMap<String, bool> {
+fn build_resource_methods(declaration: &sico_hir::Declaration) -> BTreeMap<String, ResourceMethod> {
     declaration
         .lines
         .iter()
@@ -354,14 +564,36 @@ fn build_resource_methods(declaration: &sico_hir::Declaration) -> BTreeMap<Strin
             let borrowed = line.tokens[left + 1..right]
                 .iter()
                 .any(|token| token.kind == TokenKind::Borrow);
-            Some((name, !borrowed))
+            // RFC-0039 section 2.2 (STEP-0144): methods carry parameters and
+            // return types so resource calls resolve fully at check time.
+            // The receiver (`self` / `borrow self`) is not a guest argument.
+            let parameters = split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                .into_iter()
+                .filter(|tokens| !tokens.is_empty())
+                .filter_map(parse_parameter)
+                .collect();
+            let returns = line
+                .tokens
+                .iter()
+                .position(|token| token.kind == TokenKind::Returns)
+                .map_or(Type::named("Unit"), |returns| {
+                    parse_type(&line.tokens[returns + 1..])
+                });
+            Some((
+                name,
+                ResourceMethod {
+                    parameters,
+                    returns,
+                    consumes_self: !borrowed,
+                },
+            ))
         })
         .collect()
 }
 
 fn build_capability_methods(
     declaration: &sico_hir::Declaration,
-) -> BTreeMap<String, Vec<Parameter>> {
+) -> BTreeMap<String, CapabilityMethod> {
     declaration
         .lines
         .iter()
@@ -378,9 +610,139 @@ fn build_capability_methods(
                 .filter(|tokens| !tokens.is_empty())
                 .filter_map(parse_parameter)
                 .collect();
-            Some((name, parameters))
+            // RFC-0039 section 2.2 (STEP-0144): methods carry their return
+            // type so capability calls resolve fully at check time.
+            let returns = line
+                .tokens
+                .iter()
+                .position(|token| token.kind == TokenKind::Returns)
+                .map_or(Type::named("Unit"), |returns| {
+                    parse_type(&line.tokens[returns + 1..])
+                });
+            Some((
+                name,
+                CapabilityMethod {
+                    parameters,
+                    returns,
+                },
+            ))
         })
         .collect()
+}
+
+/// RFC-0039 §2.4 (STEP-0147): parses one interface body's function
+/// signatures with their line ranges. Mirrors the capability-method shape:
+/// `function <name>(<params>) returns <type>`.
+fn build_interface_functions(
+    declaration: &sico_hir::Declaration,
+) -> Vec<(String, ImportedFunction, TextRange)> {
+    let mut result = Vec::new();
+    for line in &declaration.lines {
+        if line.kind != LineKind::FunctionSignature {
+            continue;
+        }
+        let Some(function_index) = line
+            .tokens
+            .iter()
+            .position(|token| token.kind == TokenKind::Function)
+        else {
+            continue;
+        };
+        let Some(name) = line
+            .tokens
+            .get(function_index + 1)
+            .map(|token| token.text.clone())
+        else {
+            continue;
+        };
+        let Some(left) = line
+            .tokens
+            .iter()
+            .position(|token| token.kind == TokenKind::LeftParen)
+        else {
+            continue;
+        };
+        let Some(right) = matching_close(&line.tokens, left) else {
+            continue;
+        };
+        let parameters: Vec<Type> =
+            split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                .into_iter()
+                .filter(|tokens| !tokens.is_empty())
+                .filter_map(parse_parameter)
+                .map(|parameter| parameter.ty)
+                .collect();
+        let returns = line
+            .tokens
+            .iter()
+            .position(|token| token.kind == TokenKind::Returns)
+            .map_or_else(
+                || Type::named("Unit"),
+                |returns| parse_type(&line.tokens[returns + 1..]),
+            );
+        let is_async = line.tokens[0].kind == TokenKind::Async;
+        result.push((
+            name,
+            ImportedFunction {
+                parameters,
+                returns,
+                is_async,
+            },
+            line.range,
+        ));
+    }
+    result
+}
+
+/// RFC-0039 §2.4 amendment A7 (STEP-0147): the v0 user-WIT value set is the
+/// flat subset — parameters and returns are scalars (`Bool`, `I64`, `U64`,
+/// `Text`, `Bytes`) or one level of `List[T]`/`Option[T]` over a scalar;
+/// returns may additionally be `Result[ok, error]` with `error` a scalar.
+/// Nested compositions, records/enums, fixed-width crossing of `Int`,
+/// floats, maps/sets, async, and resource-bearing shapes stay outside v0
+/// and are refused. Returns the offending type rendered, if any.
+fn interface_value_offender(imported: &ImportedFunction) -> Option<String> {
+    fn scalar(ty: &Type) -> bool {
+        matches!(
+            ty,
+            Type::Named(name)
+                if matches!(name.as_str(), "Bool" | "I64" | "U64" | "Text" | "Bytes")
+        )
+    }
+    fn level1(ty: &Type) -> bool {
+        scalar(ty)
+            || matches!(ty, Type::Generic { name, arguments }
+                if name == "List"
+                    && arguments.len() == 1
+                    && matches!(&arguments[0], Type::Named(unit) if unit == "Text"))
+    }
+    if imported.is_async {
+        return Some("async functions".to_owned());
+    }
+    for parameter in &imported.parameters {
+        if !level1(parameter) {
+            return Some(parameter.to_string());
+        }
+    }
+    let returns = &imported.returns;
+    if level1(returns) || matches!(returns, Type::Named(name) if name == "Unit") {
+        return None;
+    }
+    if let Type::Generic { name, arguments } = returns
+        && name == "Result"
+        && arguments.len() == 2
+    {
+        let [ok, error] = arguments.as_slice() else {
+            return Some(returns.to_string());
+        };
+        let ok_ok = level1(ok)
+            || matches!(ok, Type::Named(unit) if unit == "Unit")
+            || matches!(ok, Type::Named(unit) if unit == "Bool");
+        if ok_ok && scalar(error) {
+            return None;
+        }
+    }
+    Some(returns.to_string())
 }
 
 fn build_enum_variants(
@@ -649,19 +1011,10 @@ fn analyze_function(
                 }
             }
             LineKind::Expression => {
-                let value = infer_expression(&line.tokens, &locals, model, diagnostics);
-                if result_parts(&value.ty).is_some() {
-                    push_diagnostic(
-                        diagnostics,
-                        "E3104",
-                        "UNHANDLED_RESULT",
-                        "Result must be handled, returned, or propagated".to_owned(),
-                        [],
-                        line.range,
-                    );
-                }
+                check_expression_statement(&line.tokens, &locals, model, diagnostics, line.range);
             }
             LineKind::Match => {
+                infer_match_scrutinee(line, &locals, model, diagnostics);
                 check_match(line_index, function, model, diagnostics, facts);
             }
             LineKind::End => {
@@ -677,6 +1030,43 @@ fn analyze_function(
             }
             _ => {}
         }
+    }
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): infers a bare expression statement and
+/// enforces the affine result-handling rule.
+fn check_expression_statement(
+    tokens: &[HirToken],
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    range: TextRange,
+) {
+    let value = infer_expression(tokens, locals, model, diagnostics);
+    if result_parts(&value.ty).is_some() {
+        push_diagnostic(
+            diagnostics,
+            "E3104",
+            "UNHANDLED_RESULT",
+            "Result must be handled, returned, or propagated".to_owned(),
+            [],
+            range,
+        );
+    }
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): the match scrutinee is a normal
+/// expression -- route it through inference so its callees resolve and
+/// type-check at check time (If/While conditions already do).
+fn infer_match_scrutinee(
+    line: &Line,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    if line.tokens.len() >= 3 {
+        let scrutinee = &line.tokens[1..line.tokens.len() - 1];
+        infer_expression(scrutinee, locals, model, diagnostics);
     }
 }
 
@@ -737,8 +1127,10 @@ fn check_revision_calls(
         else {
             continue;
         };
-        if !matches!(parameters.first().map(|parameter| &parameter.ty), Some(Type::Named(name)) if name == "Revision")
-        {
+        if !matches!(
+            parameters.parameters.first().map(|parameter| &parameter.ty),
+            Some(Type::Named(name)) if name == "Revision"
+        ) {
             continue;
         }
         facts.push(flow_fact(
@@ -1173,7 +1565,10 @@ fn check_resource_use(
         ResourceStatus::Available => {
             let consuming = matches!(
                 model.types.get(type_name),
-                Some(TypeDefinition::Resource { methods }) if methods.get(&method) == Some(&true)
+                Some(TypeDefinition::Resource { methods })
+                    if methods
+                        .get(&method)
+                        .is_some_and(|method| method.consumes_self)
             );
             if consuming {
                 *status = ResourceStatus::Closed;
@@ -2219,6 +2614,157 @@ fn infer_expression(
     unknown(range)
 }
 
+/// RFC-0039 §2.2 (STEP-0144): resolves `receiver.method` when the receiver
+/// local is capability- or resource-typed, against the declared method
+/// surface. A Revision-headed capability method called without its head is
+/// the revision-guard surface: E7001 owns that diagnosis
+/// (`check_revision_calls`), so argument checking stands down (REV-101).
+/// Returns `Some` when the call resolved (with any diagnostics), `None`
+/// when the receiver is not a capability/resource.
+fn infer_capability_or_resource_method(
+    receiver_name: &str,
+    method: &str,
+    values: &[Value],
+    range: TextRange,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Value> {
+    let receiver = locals.get(receiver_name)?;
+    let Type::Named(type_name) = receiver else {
+        return None;
+    };
+    if let Some(cap_method) = model
+        .capabilities
+        .get(type_name)
+        .and_then(|methods| methods.get(method))
+    {
+        // Capability-typed parameters stay `Named` in semantics; the
+        // capability table is the authority for the method surface.
+        let revision_managed = cap_method.parameters.first().is_some_and(
+            |parameter| matches!(&parameter.ty, Type::Named(name) if name == "Revision"),
+        ) && values.len() + 1 == cap_method.parameters.len();
+        if !revision_managed {
+            for (parameter, value) in cap_method.parameters.iter().zip(values) {
+                require_type(&parameter.ty, value, diagnostics);
+            }
+        }
+        return Some(Value {
+            ty: cap_method.returns.clone(),
+            range,
+            integer: None,
+        });
+    }
+    if let Some(TypeDefinition::Resource { methods }) = model.types.get(type_name)
+        && let Some(resource_method) = methods.get(method)
+    {
+        // The affine `using`/move discipline is enforced by the
+        // resource-state facts; here only the method surface is resolved
+        // and type-checked.
+        for (parameter, value) in resource_method.parameters.iter().zip(values) {
+            require_type(&parameter.ty, value, diagnostics);
+        }
+        return Some(Value {
+            ty: resource_method.returns.clone(),
+            range,
+            integer: None,
+        });
+    }
+    None
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): the check-time value of a qualified
+/// imported call, with argument types enforced against the module surface.
+fn imported_call_value(
+    imported: &ImportedFunction,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    for (parameter, value) in imported.parameters.iter().zip(values) {
+        require_type(parameter, value, diagnostics);
+    }
+    Value {
+        ty: if imported.is_async {
+            Type::Generic {
+                name: "Future".to_owned(),
+                arguments: vec![imported.returns.clone()],
+            }
+        } else {
+            imported.returns.clone()
+        },
+        range,
+        integer: None,
+    }
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): the value of an enum variant call,
+/// with payload types enforced.
+fn variant_call_value(
+    enum_name: &str,
+    variant: &VariantDefinition,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    for (expected, value) in variant.payload.iter().zip(values) {
+        require_type(expected, value, diagnostics);
+    }
+    Value {
+        ty: Type::named(enum_name),
+        range,
+        integer: None,
+    }
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): checks a newtype/record constructor
+/// call against its declared shape; enum/resource names construct nothing.
+fn type_constructor_call(
+    callee: &str,
+    definition: &TypeDefinition,
+    arguments: &[Argument<'_>],
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    match definition {
+        TypeDefinition::Newtype { base } => {
+            if let Some(value) = values.first() {
+                require_type(base, value, diagnostics);
+            }
+        }
+        TypeDefinition::Record { fields, invariant } => {
+            check_record_constructor(
+                callee,
+                fields,
+                invariant.as_ref(),
+                arguments,
+                values,
+                range,
+                diagnostics,
+            );
+        }
+        TypeDefinition::Enum { .. } | TypeDefinition::Resource { .. } => {}
+    }
+}
+
+/// RFC-0039 section 2.2 (STEP-0144): the `Float64.from_int` conversion
+/// call, extracted from `infer_call` for clarity.
+fn float_from_int_call(
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    if let Some(value) = values.first() {
+        require_type(&Type::named("Int"), value, diagnostics);
+    }
+    Value {
+        ty: Type::named("Float64"),
+        range,
+        integer: None,
+    }
+}
+
 fn infer_call(
     tokens: &[HirToken],
     left: usize,
@@ -2227,10 +2773,17 @@ fn infer_call(
     diagnostics: &mut Vec<SemanticDiagnostic>,
 ) -> Value {
     let range = token_range(tokens);
-    let callee = tokens[..left]
+    // The M5 component-call prefix (`call receiver.method(args)`) lexes as
+    // a keyword; it is not part of the callee path.
+    let mut callee = tokens[..left]
         .iter()
         .map(|token| token.text.as_str())
         .collect::<String>();
+    if tokens[0].kind == TokenKind::Call
+        && let Some(stripped) = callee.strip_prefix("call").map(str::to_owned)
+    {
+        callee = stripped;
+    }
     let arguments = split_arguments(&tokens[left + 1..tokens.len() - 1]);
     let values: Vec<_> = arguments
         .iter()
@@ -2254,14 +2807,7 @@ fn infer_call(
     }
 
     if callee == "Float64.from_int" {
-        if let Some(value) = values.first() {
-            require_type(&Type::named("Int"), value, diagnostics);
-        }
-        return Value {
-            ty: Type::named("Float64"),
-            range,
-            integer: None,
-        };
+        return float_from_int_call(&values, range, diagnostics);
     }
     if let Some(function) = model.functions.get(&callee) {
         for (parameter, value) in function.parameters.iter().zip(&values) {
@@ -2280,44 +2826,62 @@ fn infer_call(
             integer: None,
         };
     }
+    if let Some(imported) = model.imported_functions.get(&callee) {
+        return imported_call_value(imported, &values, range, diagnostics);
+    }
     if let Some((enum_name, variant_name)) = callee.split_once('.')
         && let Some(variant) = enum_variant(model, enum_name, variant_name)
     {
-        for (expected, value) in variant.payload.iter().zip(&values) {
-            require_type(expected, value, diagnostics);
-        }
-        return Value {
-            ty: Type::named(enum_name),
-            range,
-            integer: None,
-        };
+        return variant_call_value(enum_name, variant, &values, range, diagnostics);
     }
     if let Some(definition) = model.types.get(&callee) {
-        match definition {
-            TypeDefinition::Newtype { base } => {
-                if let Some(value) = values.first() {
-                    require_type(base, value, diagnostics);
-                }
-            }
-            TypeDefinition::Record { fields, invariant } => {
-                check_record_constructor(
-                    &callee,
-                    fields,
-                    invariant.as_ref(),
-                    &arguments,
-                    &values,
-                    range,
-                    diagnostics,
-                );
-            }
-            TypeDefinition::Enum { .. } | TypeDefinition::Resource { .. } => {}
-        }
+        type_constructor_call(&callee, definition, &arguments, &values, range, diagnostics);
         return Value {
             ty: Type::named(callee),
             range,
             integer: None,
         };
     }
+    // RFC-0039 section 2.2 (STEP-0144): capability and resource method
+    // calls resolve against the declared surface instead of falling
+    // through as silent Unknowns.
+    if let Some((receiver_name, method)) = callee.split_once('.')
+        && let Some(resolved) = infer_capability_or_resource_method(
+            receiver_name,
+            method,
+            &values,
+            range,
+            locals,
+            model,
+            diagnostics,
+        )
+    {
+        return resolved;
+    }
+    // Declared tolerance (until the user-WIT slice, RFC-0039 section 2.4):
+    // the M5 component-call surface (call receiver.method(...) on
+    // Component[Interface] values) and the M9 stream-helper candidates
+    // (stream.collect/stream.next on Stream values) have no check-time
+    // model yet and keep the historical check-pass/build-refuse behavior.
+    if let Some((receiver_name, _)) = callee.split_once('.')
+        && matches!(
+            locals.get(receiver_name),
+            Some(Type::Generic { name, .. }) if matches!(name.as_str(), "Component" | "Stream")
+        )
+    {
+        return unknown(range);
+    }
+    // RFC-0039 section 2.2 (STEP-0144): check-time call-target resolution.
+    // An unbound callee is a typed diagnostic with the callee identity,
+    // never a silent Unknown that defers to the build backend.
+    push_diagnostic(
+        diagnostics,
+        "E2031",
+        "UNRESOLVED_CALL_TARGET",
+        format!("unresolved call target {callee}"),
+        [("callee", callee.as_str())],
+        range,
+    );
     unknown(range)
 }
 
@@ -2556,6 +3120,13 @@ fn infer_collection_call(
             numeric_result(named(value.as_deref()?)),
         ),
         "map.has" | "set.has" => (vec![map_type(value.as_deref()), key_type], named("Bool")),
+        // STEP-0144: set.add was previously never resolved by semantics (it
+        // slipped through the silent-Unknown fallback); the surface mirrors
+        // the IR registry: (set, key) -> set.
+        "set.add" => (
+            vec![map_type(value.as_deref()), key_type.clone()],
+            map_type(value.as_deref()),
+        ),
         "map.length" | "set.length" => (vec![map_type(value.as_deref())], named("U64")),
         "map.keys" | "set.to_list" => (
             vec![map_type(value.as_deref())],
@@ -2604,7 +3175,12 @@ fn parse_collection_suffix(callee: &str) -> Option<(&str, &str, Option<String>)>
         ("set.to_list", false),
     ];
     const ELEMENTS: &[&str] = &["Text", "Bytes", "Bool", "I64", "U64"];
-    let (path, suffix) = callee.split_once('[')?;
+    // STEP-0144: strip the `sico.` family prefix so the canonical
+    // collection intrinsics genuinely resolve at check time (previously
+    // they slipped through the silent-Unknown fallback and were only
+    // resolved by the IR's own parser at lowering).
+    let path = callee.strip_prefix("sico.")?;
+    let (path, suffix) = path.split_once('[')?;
     if !suffix.ends_with(']') {
         return None;
     }

@@ -10,7 +10,7 @@ use sico_source::{SourceFile, TextRange};
 
 mod lower;
 
-pub use lower::{CoreLowerError, ModuleImport, lower_core, lower_core_modules};
+pub use lower::{CoreLowerError, ModuleImport, PackageImport, lower_core, lower_core_modules};
 
 pub const SCHEMA: &str = "sico.ir.v0";
 pub const MAX_IR_DIAGNOSTICS: usize = 100;
@@ -99,6 +99,13 @@ pub struct Module {
     /// entirely and keep their exact previous serialization shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_scopes: Option<BTreeMap<FunctionId, Vec<TaskScope>>>,
+    /// RFC-0039 §2.4 (STEP-0147): user-WIT package-import signatures keyed
+    /// by the full import name `sico:user/<interface>@<version>.<function>`.
+    /// Consulted by the verifier after the fixed intrinsic table; empty for
+    /// programs without package imports, so frozen serializations are
+    /// byte-identical.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub import_signatures: BTreeMap<String, (Vec<Type>, Type)>,
 }
 
 impl Module {
@@ -110,6 +117,7 @@ impl Module {
             source_len,
             functions: Vec::new(),
             task_scopes: None,
+            import_signatures: BTreeMap::new(),
         }
     }
 }
@@ -739,11 +747,19 @@ impl<'a> Verifier<'a> {
                 }
             }
             Operation::Intrinsic { name, arguments } => {
-                let Some((parameters, result)) = intrinsic_signature(name) else {
+                // Fixed intrinsics first; RFC-0039 §2.4 user-WIT package
+                // imports (STEP-0147) resolve through the module's own
+                // import-signature table.
+                let fixed = intrinsic_signature(name);
+                let signature = match &fixed {
+                    Some((parameters, result)) => Some((parameters, result)),
+                    None => self.module.import_signatures.get(name).map(|(p, r)| (p, r)),
+                };
+                let Some((parameters, result)) = signature else {
                     self.error(path, VerifyErrorKind::UnknownTarget);
                     return;
                 };
-                if parameters.len() != arguments.len() || result != instruction.ty {
+                if parameters.len() != arguments.len() || *result != instruction.ty {
                     self.error(path, VerifyErrorKind::TypeMismatch);
                     return;
                 }
@@ -1369,10 +1385,32 @@ fn matching_fixed_operands<'a>(left: Option<&'a Type>, right: Option<&Type>) -> 
 /// never be consumed legally.
 const DETACHED_REGION: u64 = u64::MAX;
 
+/// RFC-0039 §2.4 (STEP-0147): source identifiers map to boundary
+/// kebab-case — `Csv` -> `csv`, `TableStats` -> `table-stats`,
+/// `parse_line` -> `parse-line`. Deterministic and injective: source
+/// names cannot contain dashes, so no two source names collide.
+#[must_use]
+pub fn boundary_kebab(name: &str) -> String {
+    let mut out = String::with_capacity(name.len() + 4);
+    for (index, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if index != 0 {
+                out.push('-');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else if ch == '_' {
+            out.push('-');
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 /// The closed, versioned Script standard-library intrinsic registry
 /// (STEP-0083). Every signature is pinned; unknown names are rejected.
-#[must_use]
 #[allow(clippy::too_many_lines)]
+#[must_use]
 pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
     let result_of = |ok: Type| Type::Result {
         ok: Box::new(ok),

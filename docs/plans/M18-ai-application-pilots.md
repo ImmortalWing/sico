@@ -1,6 +1,6 @@
 # M18 Representative AI applications and external pilots
 
-> Status: planned; owner-approved 2026-09-04; no STEP numbers reserved
+> Status: planned; owner-approved 2026-09-04; refined 2026-09-13 at owner directive "规划M18-M20" (entry-gate statuses measured, dependency on M19 added); no STEP numbers reserved
 
 ## 1. Objective
 
@@ -8,10 +8,14 @@ Validate Sico through independently reproducible applications rather than infras
 
 ## 2. Entry gate
 
-- M14 is GO.
-- Each pilot's required platform milestone is GO.
-- External accounts, devices, publishing identities and credentials are supplied explicitly by their owner.
-- Internal clean-room fixtures and external adoption remain separate evidence classes.
+| # | Condition | Status (measured 2026-09-13) |
+|---|---|---|
+| 1 | M14 is GO | **satisfied** — STEP-0141 (gate 7 live-model re-measure remains a separate owner-gated follow-up) |
+| 2 | Each pilot's required platform milestone is GO | **partial, per pilot**: API agent (M12 full GO) ✓; streaming tool (M9/M11 GO) ✓; Web/UI app (M15 7/7 GO per STEP-0158+0162) ✓; native visual automation (M16 7/7 GO ✓ **and M17 GO ✗ — the block-game path waits for M17**) |
+| 3 | External accounts, devices, publishing identities and credentials are supplied explicitly by their owner | remains an external gate per pilot |
+| 4 | Internal clean-room fixtures and external adoption remain separate evidence classes | standing rule |
+| 5 | Release bundle install/upgrade path exists | **new (2026-09-13)** — pilots must install via the M19 release bundle, not raw target/ artifacts; M19 §3.2 gates this |
+
 
 ## 3. Required portfolio
 
@@ -46,7 +50,14 @@ One class cannot be renamed as another. Reports must name the class, platform, r
 - Automating accounts, devices or third-party services without explicit owner authority.
 - Hiding unsupported platforms, manual steps, safety stops or residual risks.
 
-## 7. Exit gates
+## 7. Dependencies (added 2026-09-13)
+
+M19 production engineering interleaves: pilots install/upgrade through
+the M19 release bundle. The block-game acceptance path additionally
+requires M17 to reach GO (RFC-0043 implementation per STEP-0160's
+completion path).
+
+## 8. Exit gates
 
 1. Every portfolio application builds and runs without core patches.
 2. Security, fault, cancellation, update and long-run tests are reproducible.

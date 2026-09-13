@@ -1,0 +1,108 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+// M18 pilot 3 — Web/UI application (M15 + RFC-0042). Stateless component:
+// no args renders the all-logs view; one argument containing the JSON
+// event {"kind":"click","node_id":"filter-errors"} renders the errors-only
+// view. Output = the RFC-0042 v0 UI tree as JSON on stdout.
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match sico.list.get(input.arguments, U64.literal(0)):
+    case ok(event_json):
+      if sico.text.contains(event_json, "filter-errors"):
+        return view(true)
+      end if
+      return view(false)
+    case error(_):
+      return view(false)
+  end match
+end function
+
+function view(errors_only: Bool) returns Result[ScriptOutput, ScriptError]:
+  let lines = sico.text.split_lines("ERROR disk full\nINFO boot ok\nINFO user login")
+  if errors_only:
+    return render("Errors", sico.u64.to_text(error_count(lines, U64.literal(0), U64.literal(0))))
+  end if
+  return render("All logs", join_from(lines, U64.literal(0), " | "))
+end function
+
+// Counts ERROR lines (bounded, typed overflow).
+function error_count(lines: List[Text], index: U64, count: U64) returns U64:
+  if U64.less_than(index, sico.list.length(lines)):
+    match sico.list.get(lines, index):
+      case ok(line):
+        match sico.text.starts_with(line, "ERROR"):
+          case true:
+            match U64.checked_add(count, U64.literal(1)):
+              case ok(next_count):
+                match U64.checked_add(index, U64.literal(1)):
+                  case ok(next_index):
+                    return error_count(lines, next_index, next_count)
+                  case error(_):
+                    return count
+                end match
+              case error(_):
+                return count
+            end match
+          case false:
+            match U64.checked_add(index, U64.literal(1)):
+              case ok(next_index):
+                return error_count(lines, next_index, count)
+              case error(_):
+                return count
+            end match
+        end match
+      case error(_):
+        return count
+    end match
+  end if
+  return count
+end function
+
+// Joins lines[index..] with the separator (typed index arithmetic).
+function join_from(lines: List[Text], index: U64, sep: Text) returns Text:
+  if U64.less_than(index, sico.list.length(lines)):
+    match sico.list.get(lines, index):
+      case ok(line):
+        match U64.checked_add(index, U64.literal(1)):
+          case ok(next):
+            return sico.text.concat(line, sico.text.concat(sep, join_from(lines, next, sep)))
+          case error(_):
+            return ""
+        end match
+      case error(_):
+        return ""
+    end match
+  end if
+  return ""
+end function
+
+function render(title: Text, shown: Text) returns Result[ScriptOutput, ScriptError]:
+  let title_json = sico.text.concat(sico.text.concat("{\"widget\":\"text\",\"id\":\"title\",\"properties\":{\"text\":\"", title), "\"}},")
+  let fe = "{\"widget\":\"button\",\"id\":\"filter-errors\",\"properties\":{\"text\":\"Only errors\"}},"
+  let fa = "{\"widget\":\"button\",\"id\":\"filter-all\",\"properties\":{\"text\":\"All logs\"}},"
+  let filter_json = sico.text.concat(fe, fa)
+  let entries_json = sico.text.concat("{\"widget\":\"text\",\"id\":\"entries\",\"properties\":{\"text\":\"", sico.text.concat(shown, "\"}}"))
+  let tree = sico.text.concat(sico.text.concat("{\"widget\":\"container\",\"id\":\"root\",\"layout\":\"stack\",\"children\":[", title_json), sico.text.concat(filter_json, sico.text.concat(entries_json, "]}")))
+  return ok(ScriptOutput(stdout: sico.text.encode(tree), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

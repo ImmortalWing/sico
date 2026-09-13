@@ -3,7 +3,7 @@
 > - 更新时间：2026-07-19
 > - 仓库：`.`（仓库根目录，相对路径）
 > - 分支：`main`
-> - 当前开发版本：`0.0.2-dev`；已发布归档：`v0.0.1`
+> - 当前开发版本：`0.1.0`；已发布归档：`v0.0.1`
 > - 当前已配置远端：`origin=https://gitcode.com/ImmortalWings/sico.git`；本工作区未配置独立 `github` remote
 > - 交接基线：以包含本文件的当前 `git HEAD` 为准
 > - 开发归档：`codex/archive-v0.0.1-development-history` 为历史归档分支；当前推送目标仅为已配置的 `origin`

@@ -1,0 +1,1 @@
+{"stdin": "route,zone\na,eu\nb,eu\nc,us\n", "args": ["zone"], "expect_exit": 10, "expect_stdout": ""}

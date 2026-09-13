@@ -1,0 +1,175 @@
+module app
+
+use parse.fields
+use parse.column_index
+use parse.empty_fields
+
+
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+interface Csv version 1:
+  function parse_line(line: Text) returns Result[List[Text], Text]
+end interface
+
+use pkg csv version 1 expose Csv
+
+interface TableStats version 1:
+  function aggregate(values: List[Text], op: Text) returns Result[List[Text], Text]
+end interface
+
+use pkg table_stats version 1 expose TableStats
+
+function run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let size = sico.bytes.length(input.stdin)
+  if U64.less_than(U64.literal(1048576), size):
+    return fail(I64.literal(13), "input exceeds the 1 MiB bound")
+  end if
+  if U64.equal(size, U64.literal(0)):
+    return fail(I64.literal(12), "empty input")
+  end if
+  let document = sico.bytes.utf8_decode(input.stdin)
+  let lines = sico.text.split_lines(document)
+  if U64.equal(sico.list.length(lines), U64.literal(0)):
+    return fail(I64.literal(12), "empty input")
+  end if
+  match sico.list.get(input.arguments, U64.literal(0)):
+    case ok(column):
+      return analyze(column, lines)
+    case error(_):
+      return fail(I64.literal(11), "missing column argument")
+  end match
+end function
+
+function analyze(column: Text, lines: List[Text]) returns Result[ScriptOutput, ScriptError]:
+  match sico.list.get(lines, U64.literal(0)):
+    case ok(header_line):
+      match parse.fields(header_line):
+        case ok(header):
+          match parse.column_index(header, column):
+            case ok(position):
+              return collect(column, lines, position)
+            case error(_):
+              return fail(I64.literal(11), "unknown column")
+          end match
+        case error(reason):
+          return fail(I64.literal(10), sico.text.concat("malformed header row: ", reason))
+      end match
+    case error(_):
+      return fail(I64.literal(12), "empty input")
+  end match
+end function
+
+function collect(column: Text, lines: List[Text], position: U64) returns Result[ScriptOutput, ScriptError]:
+  return gather(column, lines, position)
+end function
+
+function gather(column: Text, lines: List[Text], position: U64) returns Result[ScriptOutput, ScriptError]:
+  let values = parse.empty_fields()
+  let total = sico.list.length(lines)
+  let index = U64.literal(1)
+  while U64.less_than(index, total):
+    match sico.list.get(lines, index):
+      case ok(line):
+        match parse.fields(line):
+          case ok(row):
+            match sico.list.get(row, position):
+              case ok(field):
+                set values = sico.list.append(values, field)
+              case error(_):
+                return fail(I64.literal(10), sico.text.concat("malformed row at index ", sico.text.concat(sico.u64.to_text(index), " (missing field)")))
+            end match
+          case error(reason):
+            return fail(I64.literal(10), sico.text.concat(sico.text.concat("malformed row at index ", sico.u64.to_text(index)), sico.text.concat(": ", reason)))
+        end match
+      case error(_):
+        return fail(I64.literal(10), "unreadable row")
+    end match
+    match U64.checked_add(index, U64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return fail(I64.literal(10), "row count overflow")
+    end match
+  end while
+  return summarize_all(column, values)
+end function
+
+function one(values: List[Text], op: Text) returns Result[Text, Text]:
+  match table_stats.aggregate(values, op):
+    case ok(numbers):
+      match sico.list.get(numbers, U64.literal(0)):
+        case ok(value):
+          return ok(value)
+        case error(_):
+          return error("aggregate result shape")
+      end match
+    case error(reason):
+      return error(reason)
+  end match
+end function
+
+function summarize_all(column: Text, values: List[Text]) returns Result[ScriptOutput, ScriptError]:
+  match one(values, "count"):
+    case ok(count):
+      match one(values, "min"):
+        case ok(minimum):
+          match one(values, "max"):
+            case ok(maximum):
+              match one(values, "mean"):
+                case ok(mean):
+                  let header = sico.text.concat("column=", column)
+                  let count_line = sico.text.concat("\ncount=", count)
+                  let min_line = sico.text.concat("\nmin=", minimum)
+                  let max_line = sico.text.concat("\nmax=", maximum)
+                  let mean_line = sico.text.concat("\nmean_x1000=", mean)
+                  let report = sico.text.concat(sico.text.concat(sico.text.concat(header, count_line), sico.text.concat(min_line, max_line)), mean_line)
+                  return ok(ScriptOutput(stdout: sico.text.encode(report), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                case error(reason):
+                  return map_aggregate_error(reason)
+              end match
+            case error(reason):
+              return map_aggregate_error(reason)
+          end match
+        case error(reason):
+          return map_aggregate_error(reason)
+      end match
+    case error(reason):
+      return map_aggregate_error(reason)
+  end match
+end function
+
+function map_aggregate_error(reason: Text) returns Result[ScriptOutput, ScriptError]:
+  if sico.text.starts_with(reason, "malformed-number@"):
+    return fail(I64.literal(10), sico.text.concat("malformed row (bad number): ", reason))
+  end if
+  if sico.text.starts_with(reason, "overflow"):
+    return fail(I64.literal(10), "aggregate overflow")
+  end if
+  return fail(I64.literal(10), "aggregate failed")
+end function
+
+function fail(code: I64, message: Text) returns Result[ScriptOutput, ScriptError]:
+  let text = sico.text.concat(sico.text.concat("log-analyzer: ", message), "\n")
+  return ok(ScriptOutput(stdout: sico.text.encode(""), stderr: sico.text.encode(text), exit_code: code))
+end function

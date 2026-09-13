@@ -91,23 +91,10 @@ fn binary() -> &'static str {
     env!("CARGO_BIN_EXE_sico")
 }
 
-fn runner_exe() -> PathBuf {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../runner/sico-runner/target/debug/sico-runner.exe");
-    assert!(
-        path.is_file(),
-        "build the runner workspace first ({} missing)",
-        path.display()
-    );
-    path
-}
-
 fn run<const N: usize>(args: [&str; N]) -> Output {
     let mut command = Command::new(binary());
     command.args(args).stdin(Stdio::null());
-    if let Ok(runner) = std::env::var("SICO_RUNNER_CANDIDATE") {
-        command.env("SICO_RUNNER", runner);
-    } else {
+    if std::env::var_os("SICO_RUNNER").is_none() {
         let runner = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../runner/sico-runner/target/debug/sico-runner.exe");
         if runner.is_file() {
@@ -178,7 +165,7 @@ fn module_semantic_failure_is_attributed_to_the_module_file() {
     write(&dir.join("main.sico"), ENTRY);
     write(
         &dir.join("math_util.sico"),
-        "module math_util\n\nfunction twice(x: I64) returns Result[I64, NumericError]:\n  return \"boom\"\nend function\n",
+        "module math_util\n\nfunction twice(x: I64) returns I64:\n  return \"boom\"\nend function\n",
     );
     let output = run(["check", &dir.join("main.sico").display().to_string()]);
     assert_eq!(output.status.code(), Some(1));
@@ -309,15 +296,44 @@ fn stdin_module_use_fails_closed() {
 }
 
 #[test]
-fn checked_result_returning_function_is_typed_refused() {
-    // STEP-0143 defect record: a user function returning a checked
-    // fixed-width Result used to emit invalid WebAssembly (no frozen
-    // corpus ever exercised the seam). It is now a typed build refusal
-    // until the dedicated ABI-repair step lands.
+fn checked_result_returning_function_builds_and_runs() {
+    // STEP-0148 (RFC-0039 A6 repair): the seam that emitted invalid
+    // WebAssembly compiles and runs; the byte-exact corpus lives in
+    // tests/checked_result_seam.rs. This fixture pins the build gate.
     let dir = temp_root("checked-refusal");
     write(
         &dir.join("main.sico"),
-        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction twice(x: I64) returns Result[I64, NumericError]:\n  return I64.checked_mul(x, I64.literal(2))\nend function\n\nfunction main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: sico.text.encode(\"ok\"), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\nend function\n",
+        "record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function twice(x: I64) returns Result[I64, NumericError]:
+  return I64.checked_mul(x, I64.literal(2))
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return ok(ScriptOutput(stdout: sico.text.encode(\"ok\"), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))
+end function
+",
     );
     let output = run([
         "build",
@@ -325,10 +341,7 @@ fn checked_result_returning_function_is_typed_refused() {
         "script-v0",
         &dir.join("main.sico").display().to_string(),
     ]);
-    assert_eq!(output.status.code(), Some(2));
-    let err = stderr(&output);
-    assert!(err.contains("checked fixed-width Result"), "{}", err);
-    assert!(err.contains("recorded defect"), "{}", err);
+    assert_eq!(output.status.code(), Some(0));
 }
 
 #[test]
@@ -341,4 +354,67 @@ fn malformed_use_declaration_is_e1015() {
     let output = run(["check", &dir.join("main.sico").display().to_string()]);
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("E1015"), "{}", stderr(&output));
+}
+
+#[test]
+fn unresolved_call_targets_are_check_time_e2031() {
+    // RFC-0039 §2.2 (STEP-0144): an unbound callee is a typed check
+    // diagnostic, not a silent pass that defers to the build backend.
+    let dir = temp_root("e2031-bare");
+    write(
+        &dir.join("main.sico"),
+        "function main() returns I64:
+  return missing(1)
+end function
+",
+    );
+    let output = run(["check", &dir.join("main.sico").display().to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    let err = stderr(&output);
+    assert!(err.contains("E2031"), "{}", err);
+    assert!(err.contains("missing"), "{}", err);
+}
+
+#[test]
+fn unimported_qualified_reference_is_check_time_e2031() {
+    let dir = temp_root("e2031-unimported");
+    // The entry references math_util without a `use` edge; the module file
+    // exists, so this is a resolution failure, not a missing file.
+    let entry = ENTRY.replace(
+        "use math_util.twice
+",
+        "",
+    );
+    write(&dir.join("main.sico"), &entry);
+    write(&dir.join("math_util.sico"), MATH_OK);
+    let output = run(["check", &dir.join("main.sico").display().to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    let err = stderr(&output);
+    assert!(err.contains("E2031"), "{}", err);
+    assert!(err.contains("math_util.twice"), "{}", err);
+}
+
+#[test]
+fn imported_calls_type_check_arguments() {
+    let dir = temp_root("import-types");
+    write(&dir.join("main.sico"), ENTRY);
+    write(
+        &dir.join("math_util.sico"),
+        "module math_util
+
+function twice(x: I64) returns I64:
+  return x
+end function
+",
+    );
+    // ENTRY passes I64.literal(21): fine. A Text argument must be rejected
+    // at check time with the module signature in play.
+    let bad = ENTRY.replace("I64.literal(21)", "\"text\"");
+    let dir_bad = temp_root("import-types-bad");
+    write(&dir_bad.join("main.sico"), &bad);
+    write(&dir_bad.join("math_util.sico"), MATH_OK);
+    let output = run(["check", &dir_bad.join("main.sico").display().to_string()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("E2001"), "{}", stderr(&output));
+    let _ = dir; // happy-path twin covered by modules_check_build_run_and_test
 }

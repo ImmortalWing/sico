@@ -182,14 +182,14 @@ mod tests {
     fn parts(source: &[u8]) -> CacheKeyParts<'_> {
         CacheKeyParts {
             compiler_digest: &[1; 32],
-            compiler_build_id: "0.0.2-dev",
+            compiler_build_id: "0.1.0",
             semantics_id: "sico.ir.v0",
             script_wit_version: "sico:script@0.1.0",
             adapter_digest: &[2; 32],
             source,
             module_sources: &[],
             app_id: "sico",
-            app_version: "0.0.2-dev",
+            app_version: "0.1.0",
             profile_id: "script-v0",
             manifest_schema: "sico.sapp.manifest.v1",
             codegen_options: &[],

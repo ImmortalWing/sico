@@ -29,6 +29,9 @@ wasmparser.workspace = true
 
 [dev-dependencies]
 sico-observability = { path = "../sico-observability" }
+sico-codegen-wasm = { path = "../sico-codegen-wasm" }
+sico-package = { path = "../sico-package" }
+sha2.workspace = true
 
 [lints]
 workspace = true

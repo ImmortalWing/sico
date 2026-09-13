@@ -1,0 +1,29 @@
+[package]
+name = "sico-automation-fixture"
+description = "Deterministic Windows fixture app for the M16 real-path evidence (M16 plan §5.4)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
+] }
+
+[[bin]]
+name = "sico-automation-fixture"
+path = "src/main.rs"
+
+# The fixture and the adapter are the two architecture-sanctioned homes of
+# platform FFI (ADR-0013 §5); every unsafe block is documented in-source.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

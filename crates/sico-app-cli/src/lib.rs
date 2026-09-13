@@ -441,12 +441,19 @@ fn run_package(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Wr
         Err(exit) => return exit,
     };
     let runtime = runtime_command(matches.get_one::<String>("runtime"));
+    let script_entry = authorized.trusted.package.manifest.script.is_some();
     match run_authorized_package(&runtime, &authorized, storage.as_ref(), &limits) {
         Ok(output) => {
             if stdout.write_all(&output.stdout).is_err()
                 || stderr.write_all(&output.stderr).is_err()
             {
                 return EXIT_TOOL_ERROR;
+            }
+            if script_entry {
+                // A script entry's nonzero exit is the guest's own mapped
+                // Script result (RFC-0029 exit semantics), not a Runtime
+                // fault: propagate it verbatim.
+                return output.status.code().unwrap_or(EXIT_RUNTIME_FAULT);
             }
             match output.fault {
                 None if output.status.success() => EXIT_SUCCESS,

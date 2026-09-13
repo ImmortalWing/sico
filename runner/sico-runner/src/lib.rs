@@ -16,6 +16,7 @@ pub mod scheduler;
 pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
 use scheduler::{ReadinessClass, RunIdentity, SchedulerCore, TerminalKind};
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::io::{Read as _, Write as _};
@@ -33,6 +34,7 @@ use sico_observability::{
     parse_cancel_request, resolve_engine_frame, validate_runtime_fault, verify_debug_artifacts,
 };
 use wasmparser::{Parser, Payload};
+use wasmtime::component::types::ComponentItem;
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
 use wasmtime::{Config, Engine, ResourceLimiter, Store, UpdateDeadline};
 
@@ -1133,6 +1135,12 @@ struct RunState {
     /// Per-Store `http@0.2.0` state (RFC-0037): engine, pool and
     /// abandonment flag; dies with the Store.
     http2: crate::http2::Http2State,
+    /// RFC-0039 §2.4 (STEP-0147): per-Store package instances; indexes are
+    /// captured by the bridge closures at link time.
+    package_instances: Vec<wasmtime::component::Instance>,
+    /// The prepared package count: the limiter's instance/memory ceilings
+    /// widen by exactly this amount, bounded at prepare time.
+    package_instances_capacity: usize,
 }
 
 /// Bounded worker channels behind the stream host calls (STEP-0088): every
@@ -1321,8 +1329,9 @@ impl ResourceLimiter for RunState {
     }
 
     fn instances(&self) -> usize {
-        // Program core plus the STEP-0083 fs transport module.
-        2
+        // Program core, the STEP-0083 fs transport module, and one
+        // instantiation per RFC-0039 §2.3 package (STEP-0147).
+        2 + self.package_instances_capacity
     }
 
     fn tables(&self) -> usize {
@@ -1330,7 +1339,8 @@ impl ResourceLimiter for RunState {
     }
 
     fn memories(&self) -> usize {
-        1
+        // The program's single memory plus one per pure package component.
+        1 + self.package_instances_capacity
     }
 }
 
@@ -1360,6 +1370,30 @@ pub struct PreparedProgram {
     /// HTTP 0.2.0 policy frozen into this generation (RFC-0037 §3/§6);
     /// callers must prepare a new generation to change trust or secrets.
     http_policy: HttpPolicy,
+    /// RFC-0039 §2.3/§2.4 (STEP-0147): pure package components available to
+    /// this generation, matched against `sico:user/...` guest imports.
+    packages: Vec<PreparedPackage>,
+}
+
+/// One prepared package component (RFC-0039 §2.4, STEP-0147): a compiled
+/// pure component plus the exported `sico:user/<interface>@<version>`
+/// instance identities with per-function arities for fail-closed link checks.
+/// Exported `sico:user/<instance>` functions of one prepared package:
+/// instance identity → function name → (param, result) arity pair.
+type PackageExports = BTreeMap<String, BTreeMap<String, (usize, usize)>>;
+
+struct PreparedPackage {
+    component: Component,
+    functions: PackageExports,
+}
+
+/// One raw package component handed to preparation (RFC-0039 §2.3,
+/// STEP-0147). The bytes must be a signed-and-verified package's inner
+/// component; verification is the caller's (CLI) responsibility and the
+/// runner re-checks purity and shape fail-closed.
+#[derive(Clone, Debug)]
+pub struct PackageBinary {
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1508,7 +1542,94 @@ impl Runner {
         fs: &FsGrants,
         net: &NetGrants,
     ) -> Result<PreparedProgram, RunOutcome> {
-        self.prepare_program_inner(component, fs, net, None, &HttpPolicy::default())
+        self.prepare_program_inner(component, fs, net, None, &HttpPolicy::default(), &[])
+    }
+
+    /// Debug-enabled variant of [`Runner::prepare_program_with_packages`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`RunOutcome::Launch`]/`Incompatible` failure.
+    pub fn prepare_program_with_debug_packages(
+        &self,
+        component: &[u8],
+        debug_map: &[u8],
+        debug_identity: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        packages: &[PackageBinary],
+    ) -> Result<PreparedProgram, RunOutcome> {
+        let (map, _) = verify_debug_artifacts(component, debug_map, debug_identity)
+            .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
+        let core_base = embedded_guest_core_base(component)
+            .ok_or_else(|| RunOutcome::Incompatible("debug guest core is missing".into()))?;
+        self.prepare_program_inner(
+            component,
+            fs,
+            net,
+            Some((Arc::new(map), core_base)),
+            &HttpPolicy::default(),
+            packages,
+        )
+    }
+
+    /// Compiles and links a Program with RFC-0039 §2.3 package components
+    /// (STEP-0147). Package bytes must already be signature-verified and
+    /// export-validated (CLI responsibility); the runner re-checks purity
+    /// and shape fail-closed at link time.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`RunOutcome::Launch`]/`Incompatible` failure.
+    pub fn prepare_program_with_packages(
+        &self,
+        component: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        packages: &[PackageBinary],
+    ) -> Result<PreparedProgram, RunOutcome> {
+        self.prepare_program_inner(component, fs, net, None, &HttpPolicy::default(), packages)
+    }
+
+    /// [`Runner::run_program_with_policy`] with RFC-0039 §2.3 packages
+    /// (STEP-0147): the packages join preparation, so the run links its
+    /// `sico:user/...` imports against the caller-verified components.
+    ///
+    /// # Errors
+    ///
+    /// Returns input violations; launch/compatibility failures surface as
+    /// typed [`RunOutcome`] values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn run_program_with_policy_and_packages(
+        &self,
+        component: &[u8],
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+        fs: &FsGrants,
+        net: &NetGrants,
+        policy: &HttpPolicy,
+        packages: &[PackageBinary],
+    ) -> Result<RunOutcome, InputViolation> {
+        match self.prepare_program_inner(component, fs, net, None, policy, packages) {
+            Ok(prepared) => prepared.run(input, limits, cancel),
+            Err(outcome) => Ok(outcome),
+        }
+    }
+
+    /// [`Runner::prepare_program_with_net`] with RFC-0039 §2.3 packages.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed [`RunOutcome::Launch`]/`Incompatible` failure.
+    pub fn prepare_program_with_net_packages(
+        &self,
+        component: &[u8],
+        fs: &FsGrants,
+        net: &NetGrants,
+        packages: &[PackageBinary],
+    ) -> Result<PreparedProgram, RunOutcome> {
+        self.prepare_program_inner(component, fs, net, None, &HttpPolicy::default(), packages)
     }
 
     /// Compiles and links a Program with an explicit HTTP 0.2.0 policy
@@ -1524,7 +1645,7 @@ impl Runner {
         net: &NetGrants,
         policy: &HttpPolicy,
     ) -> Result<PreparedProgram, RunOutcome> {
-        self.prepare_program_inner(component, fs, net, None, policy)
+        self.prepare_program_inner(component, fs, net, None, policy, &[])
     }
 
     /// Compiles and links a debuggable Program with an explicit HTTP 0.2.0
@@ -1547,7 +1668,14 @@ impl Runner {
             .map_err(|_| RunOutcome::Incompatible("debug artifact identity mismatch".into()))?;
         let core_base = embedded_guest_core_base(component)
             .ok_or_else(|| RunOutcome::Incompatible("debug guest core is missing".into()))?;
-        self.prepare_program_inner(component, fs, net, Some((Arc::new(map), core_base)), policy)
+        self.prepare_program_inner(
+            component,
+            fs,
+            net,
+            Some((Arc::new(map), core_base)),
+            policy,
+            &[],
+        )
     }
 
     /// Compiles and links a Program only after the Component, map and identity
@@ -1577,6 +1705,7 @@ impl Runner {
         net: &NetGrants,
         debug: Option<(Arc<DebugMap>, u64)>,
         policy: &HttpPolicy,
+        packages: &[PackageBinary],
     ) -> Result<PreparedProgram, RunOutcome> {
         let component = match self.compile_cached(component) {
             Ok(component) => component,
@@ -1586,6 +1715,10 @@ impl Runner {
             .component_type()
             .imports(&self.engine)
             .any(|(name, _)| name == "sico:script/streams@0.1.0");
+        let prepared_packages = packages
+            .iter()
+            .map(|package| self.prepare_package(&package.bytes))
+            .collect::<Result<Vec<_>, RunOutcome>>()?;
         let mut linker = Linker::new(&self.engine);
         if let Err(error) = link_fs(&mut linker, fs) {
             return Err(RunOutcome::Launch(format!("fs host setup failed: {error}")));
@@ -1605,6 +1738,7 @@ impl Runner {
                 "http@0.2.0 host setup failed: {error}"
             )));
         }
+        link_packages(&mut linker, &component, &prepared_packages)?;
         Ok(PreparedProgram {
             runner: self.clone(),
             component,
@@ -1613,6 +1747,64 @@ impl Runner {
             debug_map: debug.as_ref().map(|(map, _)| map.clone()),
             debug_core_base: debug.map(|(_, base)| base),
             http_policy: policy.clone(),
+            packages: prepared_packages,
+        })
+    }
+
+    /// Compiles one package component and freezes its exported
+    /// `sico:user/...` instance identities with per-function arities
+    /// (RFC-0039 §2.4, STEP-0147). Packages must be pure: any import of
+    /// its own is a typed launch failure — an import can only narrow, and
+    /// a package has no grants to narrow from.
+    pub fn prepare_program_inner_probe(
+        &self,
+        component: &[u8],
+    ) -> Result<PackageExports, RunOutcome> {
+        let package = self.prepare_package(component)?;
+        Ok(package.functions)
+    }
+
+    fn prepare_package(&self, bytes: &[u8]) -> Result<PreparedPackage, RunOutcome> {
+        let component = self
+            .compile_cached(bytes)
+            .map_err(|error| RunOutcome::Incompatible(format!("package: {error:#}")))?;
+        let ty = component.component_type();
+        if ty.imports(&self.engine).next().is_some() {
+            return Err(RunOutcome::Launch(
+                "package component must not import (v0 packages are pure)".into(),
+            ));
+        }
+        let mut functions = BTreeMap::new();
+        for (name, item) in ty.exports(&self.engine) {
+            let item = item.ty;
+            let Some(name) = name.strip_prefix("sico:user/") else {
+                return Err(RunOutcome::Launch(format!(
+                    "package export {name} is outside the sico:user namespace"
+                )));
+            };
+            let ComponentItem::ComponentInstance(instance) = item else {
+                return Err(RunOutcome::Launch(format!(
+                    "package export sico:user/{name} must be an instance"
+                )));
+            };
+            let mut entry = BTreeMap::new();
+            for (function_name, function_item) in instance.exports(&self.engine) {
+                let function_item = function_item.ty;
+                let ComponentItem::ComponentFunc(function) = function_item else {
+                    return Err(RunOutcome::Launch(format!(
+                        "package export sico:user/{name}.{function_name} must be a function"
+                    )));
+                };
+                entry.insert(
+                    function_name.to_owned(),
+                    (function.params().len(), function.results().len()),
+                );
+            }
+            functions.insert(format!("sico:user/{name}"), entry);
+        }
+        Ok(PreparedPackage {
+            component,
+            functions,
         })
     }
 
@@ -1634,8 +1826,146 @@ impl Runner {
     }
 }
 
+/// Registers dynamic bridges for every guest `sico:user/<interface>@<version>`
+/// import (RFC-0039 §2.4, STEP-0147). Each bridged function forwards
+/// dynamically typed `Val`s to the matching package instance's export in
+/// the same Store. Fail-closed: an import without a package, a function
+/// the package does not export, or an arity mismatch is a typed launch
+/// failure — the CLI's structural validation is never silently relaxed.
+fn link_packages(
+    linker: &mut Linker<RunState>,
+    component: &Component,
+    packages: &[PreparedPackage],
+) -> Result<(), RunOutcome> {
+    let engine = linker.engine().clone();
+    // Collect the guest's user-WIT import surface as owned data so the
+    // type borrows die before the linker registration below.
+    struct NeededImport {
+        name: String,
+        functions: Vec<(String, usize, usize)>,
+    }
+    let mut needed = Vec::new();
+    for (name, item) in component.component_type().imports(&engine) {
+        if !name.starts_with("sico:user/") {
+            continue;
+        }
+        let ComponentItem::ComponentInstance(instance_type) = item.ty else {
+            return Err(RunOutcome::Launch(format!(
+                "guest import {name} must be an instance"
+            )));
+        };
+        let mut functions = Vec::new();
+        for (function_name, function_item) in instance_type.exports(&engine) {
+            let ComponentItem::ComponentFunc(function_type) = function_item.ty else {
+                return Err(RunOutcome::Launch(format!(
+                    "guest import {name}.{function_name} must be a function"
+                )));
+            };
+            functions.push((
+                function_name.to_owned(),
+                function_type.params().len(),
+                function_type.results().len(),
+            ));
+        }
+        needed.push(NeededImport {
+            name: name.to_owned(),
+            functions,
+        });
+    }
+    for import in &needed {
+        let instance_name = &import.name;
+        let package_exports = packages
+            .iter()
+            .find(|package| package.functions.contains_key(instance_name))
+            .ok_or_else(|| {
+                RunOutcome::Launch(format!(
+                    "guest imports {instance_name} but no prepared package exports it"
+                ))
+            })?
+            .functions
+            .get(instance_name)
+            .expect("package matched by its exported identity");
+        let instance_slot = packages
+            .iter()
+            .position(|package| package.functions.contains_key(instance_name))
+            .unwrap_or(0);
+        let mut linker_instance = linker
+            .instance(instance_name)
+            .map_err(|error| RunOutcome::Launch(format!("package bridge instance: {error}")))?;
+        for (function_name, guest_params, guest_results) in &import.functions {
+            let Some(&(params, results)) = package_exports.get(function_name) else {
+                return Err(RunOutcome::Launch(format!(
+                    "package does not export {instance_name}.{function_name}"
+                )));
+            };
+            if guest_params != &params || guest_results != &results {
+                return Err(RunOutcome::Launch(format!(
+                    "package export {instance_name}.{function_name} arity mismatch"
+                )));
+            }
+            let bridge_name = function_name.clone();
+            let bridge_identity = instance_name.clone();
+            linker_instance
+                .func_new(function_name, move |mut caller, _ty, params, results| {
+                    let instance = caller.data_mut().package_instances[instance_slot];
+                    // The package groups its functions under the exported
+                    // interface instance; resolve identity, then function.
+                    let Some(instance_index) =
+                        instance.get_export_index(&mut caller, None, &bridge_identity)
+                    else {
+                        return Err(wasmtime::Error::msg(format!(
+                            "package instance vanished: {bridge_identity}"
+                        )));
+                    };
+                    let Some(func_index) = instance.get_export_index(
+                        &mut caller,
+                        Some(&instance_index),
+                        bridge_name.as_str(),
+                    ) else {
+                        return Err(wasmtime::Error::msg(format!(
+                            "package function vanished: {bridge_name}"
+                        )));
+                    };
+                    let Some(func) = instance.get_func(&mut caller, func_index) else {
+                        return Err(wasmtime::Error::msg(format!(
+                            "package function vanished: {bridge_name}"
+                        )));
+                    };
+                    func.call(&mut caller, params, results)
+                })
+                .map_err(|error| {
+                    RunOutcome::Launch(format!(
+                        "package bridge {instance_name}.{function_name}: {error}"
+                    ))
+                })?;
+        }
+    }
+    Ok(())
+}
+
 impl PreparedProgram {
-    /// True when this generation owns the streaming stdin channel.
+    /// True when this generation owns the streaming stdin channel.    /// Instantiates every prepared package into the run's Store (pure
+    /// components: an empty linker). Instances die with the Store.
+    fn instantiate_packages(
+        &self,
+        store: &mut Store<RunState>,
+    ) -> Result<Vec<wasmtime::component::Instance>, RunOutcome> {
+        // The limiter widens by exactly the prepared package count before
+        // the first package instantiation consumes its instance/memory.
+        store.data_mut().package_instances_capacity = self.packages.len();
+        let mut instances = Vec::with_capacity(self.packages.len());
+        for package in &self.packages {
+            let linker = Linker::new(&self.runner.engine);
+            let instance = linker
+                .instantiate(&mut *store, &package.component)
+                .map_err(|error| {
+                    RunOutcome::Launch(format!("package instantiation failed: {error}"))
+                })?;
+            instances.push(instance);
+        }
+        Ok(instances)
+    }
+
     #[must_use]
     pub fn imports_streams(&self) -> bool {
         self.streams_component
@@ -1733,12 +2063,18 @@ impl PreparedProgram {
                     generation_id,
                 }),
                 http2: crate::http2::Http2State::new(&self.http_policy),
+                package_instances: Vec::new(),
+                package_instances_capacity: self.packages.len(),
             },
         );
         store.limiter(|state| state);
         store.set_fuel(limits.fuel).map_err(|_| {
             DebugStartError::Runtime(RunOutcome::Launch("fuel configuration failed".into()))
         })?;
+        let package_instances = self
+            .instantiate_packages(&mut store)
+            .map_err(DebugStartError::Runtime)?;
+        store.data_mut().package_instances = package_instances;
         let instance = self
             .linker
             .instantiate(&mut store, &self.component)
@@ -1802,42 +2138,42 @@ impl PreparedProgram {
             .name("sico-guest-debug".to_owned())
             .stack_size(GUEST_WORKER_STACK_BYTES)
             .spawn(move || {
-            let done = Arc::new(AtomicBool::new(false));
-            let watchdog_done = done.clone();
-            let watchdog = std::thread::spawn(move || {
-                for _ in 0..timeout_ticks.saturating_add(1) {
-                    std::thread::sleep(TICK);
-                    engine.increment_epoch();
-                    if watchdog_done.load(Ordering::Relaxed) {
-                        break;
+                let done = Arc::new(AtomicBool::new(false));
+                let watchdog_done = done.clone();
+                let watchdog = std::thread::spawn(move || {
+                    for _ in 0..timeout_ticks.saturating_add(1) {
+                        std::thread::sleep(TICK);
+                        engine.increment_epoch();
+                        if watchdog_done.load(Ordering::Relaxed) {
+                            break;
+                        }
                     }
+                });
+                let mut results = [Val::Result(Ok(None))];
+                let mut execution =
+                    match runtime_block_on(run.call_async(&mut store, &params, &mut results)) {
+                        Ok(()) => Execution::without_frames(read_result(&results[0])),
+                        Err(error) => Execution {
+                            outcome: classify_error(&store, &error),
+                            frames: engine_frames(&error),
+                            cancellation_source: None,
+                        },
+                    };
+                let decision = arbiter.commit(execution.outcome);
+                execution.outcome = decision.outcome;
+                execution.cancellation_source = decision
+                    .cancellation_source
+                    .or_else(|| cancel_for_result.requested_source());
+                // Same teardown discipline as the plain run path (STEP-0108):
+                // the debug session cannot strand tasks or operations.
+                let terminal = scheduler_terminal(&execution.outcome);
+                if let Err(message) = settle_scheduler(store.data_mut(), terminal) {
+                    execution.outcome = RunOutcome::Launch(message);
                 }
-            });
-            let mut results = [Val::Result(Ok(None))];
-            let mut execution =
-                match runtime_block_on(run.call_async(&mut store, &params, &mut results)) {
-                    Ok(()) => Execution::without_frames(read_result(&results[0])),
-                    Err(error) => Execution {
-                        outcome: classify_error(&store, &error),
-                        frames: engine_frames(&error),
-                        cancellation_source: None,
-                    },
-                };
-            let decision = arbiter.commit(execution.outcome);
-            execution.outcome = decision.outcome;
-            execution.cancellation_source = decision
-                .cancellation_source
-                .or_else(|| cancel_for_result.requested_source());
-            // Same teardown discipline as the plain run path (STEP-0108):
-            // the debug session cannot strand tasks or operations.
-            let terminal = scheduler_terminal(&execution.outcome);
-            if let Err(message) = settle_scheduler(store.data_mut(), terminal) {
-                execution.outcome = RunOutcome::Launch(message);
-            }
-            done.store(true, Ordering::Relaxed);
-            let _ = watchdog.join();
-            drop(binding);
-            let _ = sender.send(execution);
+                done.store(true, Ordering::Relaxed);
+                let _ = watchdog.join();
+                drop(binding);
+                let _ = sender.send(execution);
             })
             .expect("debug guest worker spawns");
         Ok(RuntimeDebugSession {
@@ -1937,6 +2273,8 @@ impl PreparedProgram {
                 io: spawn_io_workers(),
                 scheduler: SchedulerCore::new(identity),
                 http2: crate::http2::Http2State::new(&self.http_policy),
+                package_instances: Vec::new(),
+                package_instances_capacity: self.packages.len(),
             },
         );
         store.limiter(|state| state);
@@ -1991,7 +2329,14 @@ impl PreparedProgram {
                 .name("sico-guest".to_owned())
                 .stack_size(GUEST_WORKER_STACK_BYTES)
                 .spawn_scoped(scope, move || {
-                    let execution = match self.linker.instantiate(&mut store, &self.component) {
+                    let execution = match self
+                        .instantiate_packages(&mut store)
+                        .map_err(|outcome| wasmtime::Error::msg(format!("{outcome:?}")))
+                        .map(|instances| {
+                            store.data_mut().package_instances = instances;
+                        })
+                        .and_then(|()| self.linker.instantiate(&mut store, &self.component))
+                    {
                         Ok(instance) => match instance.get_func(&mut store, "run") {
                             Some(run) => self.invoke(&mut store, &run, input, limits),
                             None => Execution::without_frames(RunOutcome::Incompatible(
@@ -3664,6 +4009,8 @@ mod tests {
                     run_id: "debug-probe".to_owned(),
                     generation_id: 1,
                 }),
+                package_instances: Vec::new(),
+                package_instances_capacity: 0,
             },
         );
         let instance = prepared

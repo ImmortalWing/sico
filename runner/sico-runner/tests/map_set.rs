@@ -121,17 +121,15 @@ fn unregistered_collection_instantiation_fails_closed() {
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("map-get-text.sico");
     std::fs::write(&source_path, &broken).unwrap();
-    let component_path = directory.join("out.wasm");
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    // STEP-0144: the off-surface instantiation is now refused at CHECK time
+    // (E2031 unresolved-call-target) instead of deferring to the build
+    // backend's "unsupported call target" refusal.
     let exit = sico_cli::run(
         [
             std::ffi::OsString::from("sico"),
-            std::ffi::OsString::from("build"),
-            std::ffi::OsString::from("--profile"),
-            std::ffi::OsString::from("script-v0"),
-            std::ffi::OsString::from("--output"),
-            component_path.as_os_str().to_owned(),
+            std::ffi::OsString::from("check"),
             source_path.as_os_str().to_owned(),
         ],
         &mut std::io::empty(),
@@ -139,10 +137,10 @@ fn unregistered_collection_instantiation_fails_closed() {
         &mut stderr,
     );
     std::fs::remove_dir_all(directory).unwrap();
-    assert_ne!(exit, 0, "map.get[Text,Text] must fail closed at build");
+    assert_ne!(exit, 0, "map.get[Text,Text] must fail closed at check");
     assert!(
-        String::from_utf8_lossy(&stderr)
-            .contains("unsupported call target sico.map.get[Text,Text]"),
+        String::from_utf8_lossy(&stderr).contains("E2031")
+            && String::from_utf8_lossy(&stderr).contains("sico.map.get[Text,Text]"),
         "typed refusal expected: {}",
         String::from_utf8_lossy(&stderr)
     );

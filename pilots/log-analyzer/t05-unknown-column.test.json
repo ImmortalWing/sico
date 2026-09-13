@@ -1,0 +1,1 @@
+{"stdin": "route,latency,ok\nalpha,120,true\nbeta,300,false\ngamma,80,true\n", "args": ["nosuch"], "expect_exit": 11, "expect_stdout": ""}

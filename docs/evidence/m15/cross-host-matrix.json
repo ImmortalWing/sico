@@ -1,0 +1,20 @@
+{
+  "schema": "sico.m15.cross-host-matrix.v0",
+  "date": "2026-09-11",
+  "substrate": "ADR-0014: JS canonical-ABI shim over the embedded core module",
+  "browser": {
+    "engine": "Microsoft Edge (Chromium)",
+    "version": "see edge-version.txt",
+    "mode": "headless=new --dump-dom (real engine JS execution)"
+  },
+  "component": "tests/end-to-end/script-word-count.sico (pure Script profile business component)",
+  "guest_core_module": "web/guest.wordcount.core.wasm",
+  "cases": [
+    {"name": "two-words",     "stdin": "alpha beta",             "native_hex": "32", "web_hex": "32", "match": true},
+    {"name": "trim-and-punct","stdin": "  one, two; three.  ",   "native_hex": "33", "web_hex": "33", "match": true},
+    {"name": "empty",         "stdin": "",                       "native_hex": "30", "web_hex": "30", "match": true},
+    {"name": "one-word",      "stdin": "solo",                   "native_hex": "31", "web_hex": "31", "match": true},
+    {"name": "utf8",          "stdin": " café roi ",             "native_hex": "32", "web_hex": "32", "match": true}
+  ],
+  "all_match": true
+}

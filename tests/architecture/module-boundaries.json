@@ -38,7 +38,9 @@
     "host": [
       "sico-host-core",
       "sico-desktop-host",
-      "sico-mobile-host-core"
+      "sico-mobile-host-core",
+      "sico-automation-host",
+      "sico-automation-fixture"
     ],
     "ecosystem": [
       "sico-ecosystem",

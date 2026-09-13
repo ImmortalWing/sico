@@ -176,7 +176,8 @@ pub fn run_run(
     // module files contribute to the identity; link failures surface here.
     let assembled = match crate::modules::assemble_from_bytes(&name, &source) {
         Ok(assembled) => assembled,
-        Err(crate::modules::AssembleError::Frontend(source, parsed)) => {
+        Err(crate::modules::AssembleError::Frontend(failure)) => {
+            let crate::modules::FrontendFailure { source, parsed } = *failure;
             return crate::emit_frontend_failure(&source, &parsed, json, stdout, stderr);
         }
         Err(crate::modules::AssembleError::Diagnostics(lines)) => {
@@ -197,6 +198,10 @@ pub fn run_run(
     let component_path = match identity.cached_component_assembled(&assembled, json, stdout, stderr)
     {
         Ok(path) => path,
+        Err(exit) => return exit,
+    };
+    let package_args = match package_runner_args(&assembled, stderr) {
+        Ok(args) => args,
         Err(exit) => return exit,
     };
     // RFC-0030 mixing rule: when the compiled component imports the streams
@@ -232,6 +237,7 @@ pub fn run_run(
     execute_runner(
         &component_path,
         &provider_flags,
+        &package_args,
         &arguments,
         &guest_stdin,
         streams_component,
@@ -525,7 +531,17 @@ pub fn run_eval(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn W
         Ok(path) => path,
         Err(exit) => return exit,
     };
-    execute_runner(&component_path, &[], &[], &[], false, json, stdout, stderr)
+    execute_runner(
+        &component_path,
+        &[],
+        &[],
+        &[],
+        &[],
+        false,
+        json,
+        stdout,
+        stderr,
+    )
 }
 
 /// Evaluates a compile-time constant `Int` expression through the scalar
@@ -780,9 +796,44 @@ fn compile_eval_component(value: i64, stderr: &mut dyn Write) -> Result<Vec<u8>,
 }
 
 #[allow(clippy::too_many_arguments)]
+/// RFC-0039 §2.3 (STEP-0147): stores every resolved package's verified
+/// component bytes in the source cache under their content digest and
+/// returns the `--package <path>` runner arguments. Content addressing
+/// deduplicates identical package components across programs.
+pub(crate) fn package_runner_args(
+    assembled: &crate::modules::Assembled,
+    stderr: &mut dyn Write,
+) -> Result<Vec<String>, i32> {
+    use sha2::{Digest, Sha256};
+    let mut args = Vec::new();
+    if assembled.packages.is_empty() {
+        return Ok(args);
+    }
+    let Some(cache) = crate::cache::SourceCache::open() else {
+        let _ = writeln!(stderr, "sico: package components need the source cache");
+        return Err(crate::run::EXIT_TOOL_ERROR);
+    };
+    for package in &assembled.packages {
+        let key: [u8; 32] = Sha256::digest(&package.component).into();
+        match cache.put(&key, &package.component) {
+            Ok(path) => {
+                args.push("--package".to_owned());
+                args.push(path.display().to_string());
+            }
+            Err(error) => {
+                let _ = writeln!(stderr, "sico: cannot cache package component: {error:?}");
+                return Err(crate::run::EXIT_TOOL_ERROR);
+            }
+        }
+    }
+    Ok(args)
+}
+
+#[allow(clippy::too_many_arguments)] // the runner hand-off is one flat contract
 fn execute_runner(
     component: &std::path::Path,
     provider_flags: &[String],
+    package_args: &[String],
     arguments: &[String],
     guest_stdin: &[u8],
     streams_component: bool,
@@ -800,6 +851,9 @@ fn execute_runner(
     };
     let mut command = ProcessCommand::new(runner);
     command.args(provider_flags);
+    for argument in package_args {
+        command.arg(argument);
+    }
     command.arg(component);
     if !arguments.is_empty() {
         command.arg("--");

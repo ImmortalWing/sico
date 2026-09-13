@@ -1,0 +1,1 @@
+{"stdin": "", "args": [], "expect_exit": 0, "expect_stdout": "eq|len|sum"}
