@@ -39,7 +39,7 @@ fn compile_parser() -> Vec<u8> {
 }
 
 #[test]
-fn sico_parser_counts_declarations_over_token_stream() {
+fn sico_parser_extracts_function_names() {
     let component = compile_parser();
     let runner = Runner::new().expect("runner builds");
     let prepared = runner
@@ -58,12 +58,13 @@ fn sico_parser_counts_declarations_over_token_stream() {
     {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-            // The probe source has `function` twice (the keyword and `end
-            // function`), `end` once, `record` zero.
+            // STEP-0193: the parser now extracts function names (the
+            // first lowering-level shape): the probe's `function main`
+            // yields `fn:main;`.
             assert_eq!(
                 output.stdout,
-                b"function=2 end=1 record=0".to_vec(),
-                "parser counts drifted"
+                b"fn:main;".to_vec(),
+                "parser summary drifted"
             );
         }
         other => panic!("expected guest output, got {other:?}"),

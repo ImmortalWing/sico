@@ -120,11 +120,49 @@ function count_word(words: List[Text], target: Text) returns U64:
   return count
 end function
 
+function word_at(words: List[Text], i: U64) returns Text:
+  match sico.list.get(words, i):
+    case ok(w):
+      return w
+    case error(_):
+      return "?"
+  end match
+end function
+
+function summarize(words: List[Text]) returns Text:
+  let n = sico.list.length(words)
+  let i = U64.literal(0)
+  let summary = ""
+  while U64.less_than(i, n):
+    match sico.list.get(words, i):
+      case ok(w):
+        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("function")):
+          match U64.checked_add(i, U64.literal(1)):
+            case ok(name_idx):
+              if U64.less_than(name_idx, n):
+                let fname = word_at(words, name_idx)
+                let ret = word_at(words, U64.literal(0))
+                set summary = sico.text.concat(summary, sico.text.concat("fn:", sico.text.concat(fname, ";")))
+              end if
+            case error(_):
+              return summary
+          end match
+        end if
+        match U64.checked_add(i, U64.literal(1)):
+          case ok(next):
+            set i = next
+          case error(_):
+            return summary
+        end match
+      case error(_):
+        return summary
+    end match
+  end while
+  return summary
+end function
+
 function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
   let words = lex_words(input.stdin)
-  let fns = count_word(words, "function")
-  let ends = count_word(words, "end")
-  let recs = count_word(words, "record")
-  let out = sico.text.format("function={0} end={1} record={2}", sico.list.append(sico.list.append(sico.list.append(sico.text.split_lines(""), sico.u64.to_text(fns)), sico.u64.to_text(ends)), sico.u64.to_text(recs)))
+  let out = summarize(words)
   return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
 end function
