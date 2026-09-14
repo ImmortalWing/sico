@@ -58,12 +58,11 @@ fn sico_parser_extracts_function_names() {
     {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-            // STEP-0193: the parser now extracts function names (the
-            // first lowering-level shape): the probe's `function main`
-            // yields `fn:main;`.
+            // STEP-0194: the parser extracts function name + param count
+            // (the IR-signature shape): `function main()` yields `fn:main/0`.
             assert_eq!(
                 output.stdout,
-                b"fn:main;".to_vec(),
+                b"fn:main/0".to_vec(),
                 "parser summary drifted"
             );
         }

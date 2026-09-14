@@ -129,6 +129,46 @@ function word_at(words: List[Text], i: U64) returns Text:
   end match
 end function
 
+function count_params(words: List[Text], from_idx: U64) returns U64:
+  let n = sico.list.length(words)
+  let i = from_idx
+  let depth = I64.literal(0)
+  let commas = U64.literal(0)
+  let seen_open = I64.literal(0)
+  while U64.less_than(i, n):
+    match sico.list.get(words, i):
+      case ok(w):
+        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("returns")):
+          if I64.equal(seen_open, I64.literal(1)):
+            return commas
+          end if
+        end if
+        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("(")):
+          set seen_open = I64.literal(1)
+        end if
+        if sico.bytes.equal(sico.text.encode(w), sico.text.encode(",")):
+          if I64.equal(seen_open, I64.literal(1)):
+            match U64.checked_add(commas, U64.literal(1)):
+              case ok(next):
+                set commas = next
+              case error(_):
+                return commas
+            end match
+          end if
+        end if
+        match U64.checked_add(i, U64.literal(1)):
+          case ok(next):
+            set i = next
+          case error(_):
+            return commas
+        end match
+      case error(_):
+        return commas
+    end match
+  end while
+  return commas
+end function
+
 function summarize(words: List[Text]) returns Text:
   let n = sico.list.length(words)
   let i = U64.literal(0)
@@ -141,8 +181,8 @@ function summarize(words: List[Text]) returns Text:
             case ok(name_idx):
               if U64.less_than(name_idx, n):
                 let fname = word_at(words, name_idx)
-                let ret = word_at(words, U64.literal(0))
-                set summary = sico.text.concat(summary, sico.text.concat("fn:", sico.text.concat(fname, ";")))
+                let params = count_params(words, name_idx)
+                set summary = sico.text.concat(summary, sico.text.concat("fn:", sico.text.concat(fname, sico.text.concat("/", sico.u64.to_text(params)))))
               end if
             case error(_):
               return summary
