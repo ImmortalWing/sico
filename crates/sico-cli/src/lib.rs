@@ -24,7 +24,7 @@ use sico_codegen_wasm::{
     CodegenError, DebugArtifact, DebugBuildInput, compile_component, compile_component_with_debug,
     compile_script_program_with_debug,
 };
-use sico_diagnostics::{render_syntax_json, render_syntax_text, syntax_identity};
+use sico_diagnostics::{action_hint, render_syntax_json, render_syntax_text, syntax_identity};
 use sico_format::format as canonical_format;
 use sico_ir::{CoreLowerError, Module, Type, lower_core, lower_core_modules};
 use sico_parser::{DeclarationKind, Parse, parse};
@@ -79,6 +79,7 @@ where
         Some(("repl", command)) => repl::run_repl(command, stdin, stdout, stderr),
         Some(("test", command)) => test::run_test(command, stdout, stderr),
         Some(("eval", command)) => run::run_eval(command, stdout, stderr),
+        Some(("explain", command)) => run_explain(command, stdout, stderr),
         _ => EXIT_TOOL_ERROR,
     }
 }
@@ -136,6 +137,16 @@ fn command() -> Command {
         .subcommand(run::watch_command())
         .subcommand(repl::repl_command())
         .subcommand(run::eval_command())
+        .subcommand(
+            Command::new("explain")
+                .about("Print the action hint for one diagnostic code")
+                .arg(
+                    Arg::new("code")
+                        .value_name("CODE")
+                        .help("A stable diagnostic code such as E1013")
+                        .required(true),
+                ),
+        )
 }
 
 fn build_command() -> Command {
@@ -908,6 +919,16 @@ fn run_check(
         return emit_semantic_result(source, analysis, json_output, stdout, stderr);
     }
     emit_semantic_result(&assembled.entry, &set.entry, json_output, stdout, stderr)
+}
+
+fn run_explain(matches: &ArgMatches, stdout: &mut dyn Write, stderr: &mut dyn Write) -> i32 {
+    let code = matches.get_one::<String>("code").unwrap();
+    let Some(hint) = action_hint(code) else {
+        let _ = writeln!(stderr, "sico: no action hint registered for {code}");
+        return EXIT_DIAGNOSTIC;
+    };
+    let _ = writeln!(stdout, "{code}: {}", hint.hint);
+    EXIT_SUCCESS
 }
 
 fn run_format(

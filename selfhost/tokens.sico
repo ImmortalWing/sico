@@ -1,0 +1,100 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function is_ident_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(95)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(65)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(91)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(97)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(123)):
+    return true
+  end if
+  return false
+end function
+
+function lex_tokens(src: Bytes) returns Text:
+  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))
+  let index = U64.literal(0)
+  let words = sico.text.split_lines("")
+  let offsets = sico.list.empty[I64]()
+  let in_ident = I64.literal(0)
+  let word_start = U64.literal(0)
+  let word_len = U64.literal(0)
+  while U64.less_than(index, byte_len):
+    let b = sico.bytes.at(src, index, I64.literal(0))
+    if is_ident_byte(b):
+      if I64.equal(in_ident, I64.literal(0)):
+        set word_start = index
+        set word_len = U64.literal(0)
+        set in_ident = I64.literal(1)
+      end if
+      match U64.checked_add(word_len, U64.literal(1)):
+        case ok(next):
+          set word_len = next
+        case error(_):
+          return "overflow"
+      end match
+    else:
+      if I64.equal(in_ident, I64.literal(1)):
+        let captured_start = word_start
+        let captured_len = word_len
+        match sico.bytes.slice(src, captured_start, captured_len):
+          case ok(slice_bytes):
+            set words = sico.list.append(words, sico.bytes.utf8_decode(slice_bytes))
+            set offsets = sico.list.append[I64](offsets, I64.literal(0))
+          case error(_):
+            return "slice-error"
+        end match
+      end if
+      set in_ident = I64.literal(0)
+    end if
+    match U64.checked_add(index, U64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return "overflow"
+    end match
+  end while
+  if I64.equal(in_ident, I64.literal(1)):
+    match sico.bytes.slice(src, word_start, word_len):
+      case ok(slice_bytes):
+        set words = sico.list.append(words, sico.bytes.utf8_decode(slice_bytes))
+      case error(_):
+        return "slice-error"
+    end match
+  end if
+  return sico.text.join(words, ",")
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = lex_tokens(input.stdin)
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

@@ -312,17 +312,33 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M20 cross-platform runtime, language v1 and completion audit`](./plans/M20-platform-breadth-language-v1.md)。
 
-## M21: Developer experience, standard-library batch 2 and ecosystem activation（planned; 2026-09-13）
+## M21: Developer experience, standard-library batch 2 and ecosystem activation（GO; 2026-09-14）
 
-状态：`planned / owner session directive（2026-09-13）；no step numbers reserved yet`
+状态：`GO per STEP-0177 exit audit（6/6 门）；owner session directive（2026-09-13）驱动`
 
 把完成的语言/平台弧线转成"好用"：移除剩余的实测易用性税（byte/text 访问、排序/格式化 stdlib、checked 算术仪式）、诊断与 LSP 质量对齐主流工具、标准库自身作为包经 registry 发布（生态激活）。
 
 进入条件：M19 CI/发布工程绿 ✓（STEP-0168）；M18 组合 4/5 ✓；语言 v1 决策（裸字面量类型、for-loops、错误传播）以 RFC 落地为入口工作；live-model DX 测量仍 owner 凭据门控。
 
-退出条件：stdlib 第二批含内容断言语料（tetris 读取器的 ASCII-mask 绕过退役）；v1 第二批 RFC 落地；每个稳定诊断码有行动提示；LSP completion/hover 对 pilot 工作区演示；标准库作为包被 pilot 经 registry 消费；M0–M20 回归绿 + 显式出口审计。
+进展：§3.1 stdlib batch 2 已落地（STEP-0174 / RFC-0045）；§3.2 v1 batch 2 已落地（STEP-0175/0176 / RFC-0046：for-loops、错误传播、裸字面量决策记录、List[I64]/[U64] 标量家族含排序比较器）——M22 自举入口随之关闭；§3.3 DX 质量已落地（STEP-0177：16 码行动提示 catalog + sico explain CLI + LSP completion/hover 9/9）；stdlib 包 registry 消费证据绿（rehearsal + packages_resolve）。
+
+退出条件（STEP-0177 审计 **GO 6/6**）：stdlib 第二批含内容断言语料 ✓；v1 第二批 RFC 落地 ✓；每个稳定诊断码有行动提示 ✓；LSP completion/hover 对 pilot 工作区演示 ✓；标准库作为包被 pilot 经 registry 消费 ✓；M0–M20 回归绿 + 显式出口审计 ✓。两项外部门控（AI 修复重测 owner 凭据、独立作者消费者招募）诚实登记，不构成 M21 失败。
 
 执行计划：[`M21 developer experience, standard-library batch 2 and ecosystem activation`](./plans/M21-developer-experience-and-stdlib.md)。
+
+## M22: Compiler self-host track（entry satisfied; 2026-09-14）
+
+状态：`entry satisfied 2026-09-14（STEP-0175 关闭入口条件 3/4）/ owner session directive（2026-09-14「规划自举里程碑」）；S1–S7 无预留 STEP；自举架构 ADR 仍为 S6 前置`
+
+把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
+
+进入条件：M19 绿 ✓；RFC-0011 字节级差分 oracle 已存在 ✓；byte/text 访问 + 集合扩展（STEP-0174 / RFC-0045）与 v1 batch 2 决策（STEP-0175 / RFC-0046：for-loops、错误传播、裸字面量决策、List[I64]/[U64]）已接受并落地 ✓（2026-09-14）；自举架构 ADR 在 S6（自举闭环）进入前接受，不阻塞 S1。
+
+已记录的后续语言摩擦（v1 batch 3 候选：中缀比较/逻辑运算符、表达式位置条件、裸字面量 AI 噪音复称）见 [`M22 计划 §8`](./plans/M22-compiler-self-host.md)。
+
+退出条件：L1 差分逐字节 + 幂等；L2 语料产物逐字节等于 Rust 输出；自举闭环（A≡B、语料复验、M7 打包、runner 实测）；自编译 wall-time/fuel 预算实测登记（吞吐回归如实登记，无 SLA 主张）；双实现登记（Rust 保持 oracle）；M0–M21 回归绿 + 显式出口审计。
+
+执行计划：[`M22 compiler self-host track`](./plans/M22-compiler-self-host.md)。
 
 ### M14–M18 dependency shape
 

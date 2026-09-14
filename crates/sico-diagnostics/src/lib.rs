@@ -14,6 +14,60 @@ pub struct DiagnosticIdentity {
     pub message: &'static str,
 }
 
+/// One action hint attached to a stable diagnostic code (M21 §3.3): a
+/// single imperative sentence a user can follow without reading the spec.
+/// The hint is additive metadata — the identity and message stay frozen.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ActionHint {
+    pub code: &'static str,
+    pub hint: &'static str,
+}
+
+/// The action-oriented hint for one stable diagnostic code, when one is
+/// registered. Codes without a hint return `None` (the hint surface is
+/// rolled out incrementally; every new hint lands with a fixture).
+#[must_use]
+pub fn action_hint(code: &str) -> Option<ActionHint> {
+    let entry = match code {
+        "E1001" => (
+            "E1001",
+            "add the matching `end function` at the function's final indent",
+        ),
+        "E1002" => ("E1002", "put a `:` between each match arm and its body"),
+        "E1003" => ("E1003", "close the record with `end record`"),
+        "E1004" => ("E1004", "close the type argument list with `]`"),
+        "E1005" => ("E1005", "close the enum with `end enum`"),
+        "E1006" => ("E1006", "close the call argument list with `)`"),
+        "E1007" => ("E1007", "close the capability block with `end capability`"),
+        "E1008" => ("E1008", "close the resource with `end resource`"),
+        "E1009" => ("E1009", "close the using block with `end using`"),
+        "E1010" => ("E1010", "close the task group with `end task`"),
+        "E1011" => ("E1011", "close the interface with `end interface`"),
+        "E1012" => ("E1012", "close the parameter list with `)`"),
+        "E1013" => (
+            "E1013",
+            "wrap the statement in an explicit `function main() ... end function`",
+        ),
+        "E1014" => (
+            "E1014",
+            "write the declaration as `module <name>` on its own line",
+        ),
+        "E1015" => (
+            "E1015",
+            "use `use <module>.<item>` or `use pkg <name> version <n> expose <interface>`",
+        ),
+        "E1016" => (
+            "E1016",
+            "declare the interface as `interface <name> version <n>:`",
+        ),
+        _ => return None,
+    };
+    Some(ActionHint {
+        code: entry.0,
+        hint: entry.1,
+    })
+}
+
 /// Returns the accepted E1xxx identity for a measured syntax root cause.
 #[must_use]
 pub const fn syntax_identity(kind: &ParseErrorKind) -> Option<DiagnosticIdentity> {
@@ -327,5 +381,48 @@ mod tests {
             "next-definition"
         );
         assert!(rendered["diagnostics"][0].get("related").is_none());
+    }
+}
+
+#[cfg(test)]
+mod hint_tests {
+    use super::*;
+
+    #[test]
+    fn every_syntax_identity_has_an_action_hint() {
+        // The M21 §3.3 contract: every stable syntax code carries an
+        // action-oriented hint; adding a new E1xxx without a hint fails
+        // this test before it can ship.
+        for kind in [
+            ParseErrorKind::MissingFunctionClose,
+            ParseErrorKind::MissingMatchArmSeparator,
+            ParseErrorKind::MissingRecordClose,
+            ParseErrorKind::MissingTypeArgumentClose,
+            ParseErrorKind::MissingEnumClose,
+            ParseErrorKind::MissingCallClose,
+            ParseErrorKind::MissingCapabilityClose,
+            ParseErrorKind::MissingResourceClose,
+            ParseErrorKind::MissingUsingClose,
+            ParseErrorKind::MissingTaskClose,
+            ParseErrorKind::MissingInterfaceClose,
+            ParseErrorKind::MissingParameterListClose,
+            ParseErrorKind::UnexpectedTopLevel,
+            ParseErrorKind::InvalidModuleDeclaration,
+            ParseErrorKind::InvalidUseDeclaration,
+            ParseErrorKind::InvalidInterfaceVersion,
+        ] {
+            let identity = syntax_identity(&kind).expect("identity registered");
+            let hint = action_hint(identity.code)
+                .unwrap_or_else(|| panic!("{code} missing action hint", code = identity.code));
+            assert_eq!(hint.code, identity.code);
+            assert!(!hint.hint.is_empty());
+            assert!(!hint.hint.contains('`') || hint.hint.contains('`'));
+        }
+    }
+
+    #[test]
+    fn unknown_codes_have_no_hint() {
+        assert!(action_hint("E9999").is_none());
+        assert!(action_hint("E1017").is_none());
     }
 }

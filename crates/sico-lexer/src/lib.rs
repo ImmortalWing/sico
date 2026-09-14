@@ -87,6 +87,10 @@ pub enum TokenKind {
     // RFC-0039 module keywords (STEP-0143). Appended for the same reason.
     Module,
     Use,
+    // RFC-0046 language v1 batch 2 (STEP-0175). Appended for the same reason.
+    For,
+    In,
+    QuestionMark,
 }
 
 impl TokenKind {
@@ -380,6 +384,8 @@ fn keyword(word: &str) -> TokenKind {
         "while" => TokenKind::While,
         "module" => TokenKind::Module,
         "use" => TokenKind::Use,
+        "for" => TokenKind::For,
+        "in" => TokenKind::In,
         "spawn" => TokenKind::Spawn,
         "task" => TokenKind::Task,
         "try" => TokenKind::Try,
@@ -408,6 +414,7 @@ fn punctuation(rest: &str) -> Option<(TokenKind, usize)> {
         b'+' => (TokenKind::Plus, 1),
         b'-' => (TokenKind::Minus, 1),
         b'=' => (TokenKind::Equal, 1),
+        b'?' => (TokenKind::QuestionMark, 1),
         _ => return None,
     })
 }

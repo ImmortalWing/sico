@@ -948,6 +948,71 @@ fn analyze_function(
                 let condition = infer_expression(condition_tokens, &locals, model, diagnostics);
                 require_type(&Type::named("Bool"), &condition, diagnostics);
             }
+            LineKind::For => {
+                // RFC-0046 (STEP-0175): the executable iterable set is
+                // `List[Text|I64|U64]` values plus `Map[K,V]`/`Set[K]`
+                // (iterating first-insertion key order); the loop variable
+                // binds the element/key type until the region closes.
+                let in_position = line
+                    .tokens
+                    .iter()
+                    .position(|token| token.kind == TokenKind::In);
+                let Some(in_position) = in_position else {
+                    continue;
+                };
+                let subject = infer_expression(
+                    &line.tokens[in_position + 1..line.tokens.len().saturating_sub(1)],
+                    &locals,
+                    model,
+                    diagnostics,
+                );
+                let executable_element = |ty: &Type| {
+                    matches!(
+                        ty,
+                        Type::Named(name) if matches!(name.as_str(), "Text" | "I64" | "U64")
+                    )
+                };
+                let binding_ty = match &subject.ty {
+                    Type::Generic { name, arguments }
+                        if name == "List"
+                            && arguments.len() == 1
+                            && executable_element(&arguments[0]) =>
+                    {
+                        arguments[0].clone()
+                    }
+                    Type::Generic { name, arguments }
+                        if name == "Map"
+                            && arguments.len() == 2
+                            && matches!(&arguments[0], Type::Named(key) if key == "Text") =>
+                    {
+                        arguments[0].clone()
+                    }
+                    Type::Generic { name, arguments }
+                        if name == "Set"
+                            && arguments.len() == 1
+                            && matches!(&arguments[0], Type::Named(key) if key == "Text") =>
+                    {
+                        arguments[0].clone()
+                    }
+                    _ => {
+                        push_diagnostic(
+                            diagnostics,
+                            "E2001",
+                            "TYPE_MISMATCH",
+                            "for-loop subject must be an executable iterable (List[Text|I64|U64], Map, Set)".to_owned(),
+                            [],
+                            subject.range,
+                        );
+                        continue;
+                    }
+                };
+                if let Some(name) = line.tokens.get(1) {
+                    locals.insert(name.text.clone(), binding_ty);
+                    for scope in &mut open_scopes {
+                        scope.1.push(name.text.clone());
+                    }
+                }
+            }
             LineKind::Set => {
                 let Some(equal) = line
                     .tokens
@@ -966,6 +1031,12 @@ fn analyze_function(
                 }
             }
             LineKind::Let if line.tokens.len() >= 4 => {
+                let propagates = line.tokens[3].kind == TokenKind::Try
+                    || (line
+                        .tokens
+                        .last()
+                        .is_some_and(|token| token.kind == TokenKind::QuestionMark)
+                        && line.tokens.len() >= 5);
                 let value = if line.tokens[3].kind == TokenKind::Try {
                     infer_try(
                         &line.tokens[4..],
@@ -974,9 +1045,20 @@ fn analyze_function(
                         model,
                         diagnostics,
                     )
+                } else if propagates {
+                    infer_propagate(
+                        &line.tokens[3..line.tokens.len() - 1],
+                        &function.returns,
+                        &locals,
+                        model,
+                        diagnostics,
+                    )
                 } else {
                     infer_expression(&line.tokens[3..], &locals, model, diagnostics)
                 };
+                // RFC-0046 D2: a propagating `let` yields the ok payload
+                // (numeric in both supported forms), never the Result
+                // shape itself.
                 locals.insert(line.tokens[1].text.clone(), value.ty.clone());
                 for scope in &mut open_scopes {
                     scope.1.push(line.tokens[1].text.clone());
@@ -2077,6 +2159,87 @@ fn boundary_call(line: &Line) -> Option<BoundaryCall> {
     })
 }
 
+/// RFC-0046 D2: `let x = expr?` typing. The source must be
+/// `Result[U, NumericError]` and the enclosing function must return
+/// `Result[T, NumericError]`: the lowering desugars to a match whose error
+/// arm forwards the `NumericError` payload verbatim, so both error types are
+/// frozen to `NumericError` (E3101 family, same identity as `infer_try`).
+fn infer_propagate(
+    tokens: &[HirToken],
+    target_return: &Type,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    let source = infer_expression(tokens, locals, model, diagnostics);
+    let Some((ok_type, source_error)) = result_parts(&source.ty) else {
+        return unknown(source.range);
+    };
+    let numeric_error = Type::named("NumericError");
+    if !types_compatible(source_error, &numeric_error) {
+        let source_name = source_error.to_string();
+        push_diagnostic(
+            diagnostics,
+            "E3101",
+            "ERROR_TYPE_MISMATCH",
+            format!("cannot propagate {source_name} as NumericError"),
+            [
+                ("source_error", source_name.as_str()),
+                ("target_error", "NumericError"),
+            ],
+            source.range,
+        );
+    }
+    let Some((target_ok, target_error)) = result_parts(target_return) else {
+        push_diagnostic(
+            diagnostics,
+            "E3101",
+            "ERROR_TYPE_MISMATCH",
+            "? is only valid in a function returning Result[T, NumericError]".to_owned(),
+            [
+                ("expected", "Result[T, NumericError]"),
+                ("found", "non-Result return"),
+            ],
+            source.range,
+        );
+        return unknown(source.range);
+    };
+    if !types_compatible(target_error, &numeric_error) {
+        let target_name = target_error.to_string();
+        push_diagnostic(
+            diagnostics,
+            "E3101",
+            "ERROR_TYPE_MISMATCH",
+            format!("cannot propagate NumericError as {target_name}"),
+            [
+                ("source_error", "NumericError"),
+                ("target_error", target_name.as_str()),
+            ],
+            source.range,
+        );
+    }
+    if !types_compatible(ok_type, target_ok) {
+        let source_name = ok_type.to_string();
+        let target_name = target_ok.to_string();
+        push_diagnostic(
+            diagnostics,
+            "E3101",
+            "ERROR_TYPE_MISMATCH",
+            format!("cannot propagate {source_name} as {target_name}"),
+            [
+                ("source_ok", source_name.as_str()),
+                ("target_ok", target_name.as_str()),
+            ],
+            source.range,
+        );
+    }
+    Value {
+        ty: ok_type.clone(),
+        range: source.range,
+        integer: None,
+    }
+}
+
 fn infer_try(
     tokens: &[HirToken],
     target_return: &Type,
@@ -3087,6 +3250,7 @@ fn infer_collection_call(
     let numeric_result = |ok: Type| generic("Result", vec![ok, named("NumericError")]);
     let (operation, key, value) = parse_collection_suffix(callee)?;
     let key_type = named(key);
+    let list_of = |element: Type| generic("List", vec![element]);
     let map_type = |value: Option<&str>| match value {
         Some(value) => generic("Map", vec![key_type.clone(), named(value)]),
         None => generic("Set", vec![key_type.clone()]),
@@ -3132,6 +3296,22 @@ fn infer_collection_call(
             vec![map_type(value.as_deref())],
             generic("List", vec![key_type]),
         ),
+        "map.values" => (
+            vec![map_type(value.as_deref())],
+            generic("List", vec![named(value.as_deref()?)]),
+        ),
+        // RFC-0046 D4 (STEP-0175): numeric list monomorphs. The element is
+        // the single suffix element; `List[Text]` keeps the frozen plain
+        // `sico.list.*` names and is not accepted in bracket spelling.
+        "list.length" => (vec![list_of(named(key))], named("U64")),
+        "list.get" => (
+            vec![list_of(named(key)), named("U64")],
+            numeric_result(named(key)),
+        ),
+        "list.append" => (vec![list_of(named(key)), named(key)], list_of(named(key))),
+        "list.sort" => (vec![list_of(named(key))], list_of(named(key))),
+        "list.min" | "list.max" => (vec![list_of(named(key)), named(key)], named(key)),
+        "list.empty" => (Vec::new(), list_of(named(key))),
         _ => return None,
     };
     if parameters.len() != values.len() {
@@ -3168,11 +3348,20 @@ fn parse_collection_suffix(callee: &str) -> Option<(&str, &str, Option<String>)>
         ("map.has", true),
         ("map.length", true),
         ("map.keys", true),
+        ("map.values", true),
         ("set.empty", false),
         ("set.add", false),
         ("set.has", false),
         ("set.length", false),
         ("set.to_list", false),
+        // RFC-0046 D4 (STEP-0175): numeric list monomorphs, one element.
+        ("list.empty", false),
+        ("list.length", false),
+        ("list.get", false),
+        ("list.append", false),
+        ("list.sort", false),
+        ("list.min", false),
+        ("list.max", false),
     ];
     const ELEMENTS: &[&str] = &["Text", "Bytes", "Bool", "I64", "U64"];
     // STEP-0144: strip the `sico.` family prefix so the canonical
@@ -3204,12 +3393,21 @@ fn parse_collection_suffix(callee: &str) -> Option<(&str, &str, Option<String>)>
     }
     // v0 executable surface: `map.get` materializes only the fixed-width
     // `Result[I64|U64, NumericError]` local layout; traversal helpers
-    // (`map.keys`/`set.to_list`) materialize only `List[Text]`. Everything
-    // else returns `None` so the call falls to the unknown-callee diagnostic
-    // instead of an undeclared check/build gap.
+    // (`map.keys`/`set.to_list`) materialize only `List[Text]`;
+    // `map.values` materializes `List[V]` for the executable list element
+    // set (RFC-0046 D4 adds `List[I64]`/`List[U64]`, keyed `Text` maps only
+    // — no frozen corpus builds other keyed maps); numeric list monomorphs
+    // carry `I64`/`U64`. Everything else returns `None` so the call falls
+    // to the unknown-callee diagnostic instead of an undeclared
+    // check/build gap.
     let executable = match path {
         "map.get" => matches!(value.as_deref(), Some("I64" | "U64")),
         "map.keys" | "set.to_list" => key == "Text",
+        "map.values" => key == "Text" && matches!(value.as_deref(), Some("Text" | "I64" | "U64")),
+        "list.length" | "list.get" | "list.append" | "list.sort" | "list.min" | "list.max" => {
+            matches!(key, "I64" | "U64")
+        }
+        "list.empty" => matches!(key, "I64" | "U64"),
         _ => true,
     };
     if !executable {
@@ -3248,10 +3446,10 @@ fn infer_stdlib_call(
         "sico.bytes.is_utf8" => (vec![named("Bytes")], named("Bool")),
         "sico.bytes.utf8_decode" => (vec![named("Bytes")], named("Text")),
         "sico.text.encode" => (vec![named("Text")], named("Bytes")),
-        "sico.text.length" => (vec![named("Text")], named("U64")),
+        "sico.text.length" | "sico.text.leading_spaces" => (vec![named("Text")], named("U64")),
         "sico.text.concat" | "sico.json.get" => (vec![named("Text"), named("Text")], named("Text")),
         "sico.text.trim" | "sico.json.quote" => (vec![named("Text")], named("Text")),
-        "sico.text.contains" | "sico.text.starts_with" => {
+        "sico.text.contains" | "sico.text.starts_with" | "sico.text.ends_with" => {
             (vec![named("Text"), named("Text")], named("Bool"))
         }
         "sico.text.split_lines" | "sico.text.split_words" => (vec![named("Text")], list_text()),
@@ -3259,7 +3457,9 @@ fn infer_stdlib_call(
             vec![named("Text"), named("Text"), named("Text")],
             named("Text"),
         ),
-        "sico.text.join" => (vec![list_text(), named("Text")], named("Text")),
+        "sico.text.join" | "sico.list.min" | "sico.list.max" => {
+            (vec![list_text(), named("Text")], named("Text"))
+        }
         "sico.json.is_valid" => (vec![named("Text")], named("Bool")),
 
         "sico.json.has" => (vec![named("Text"), named("Text")], named("Bool")),
@@ -3270,6 +3470,19 @@ fn infer_stdlib_call(
             numeric_result(named("Text")),
         ),
         "sico.list.append" => (vec![list_text(), named("Text")], list_text()),
+        // RFC-0045 stdlib batch 2 (STEP-0174).
+        "sico.bytes.at" => (
+            vec![named("Bytes"), named("U64"), named("I64")],
+            named("I64"),
+        ),
+        "sico.bytes.equal" => (vec![named("Bytes"), named("Bytes")], named("Bool")),
+        "sico.text.compare" => (vec![named("Text"), named("Text")], named("I64")),
+        "sico.text.char_at" => (
+            vec![named("Text"), named("U64")],
+            numeric_result(named("Text")),
+        ),
+        "sico.text.format" => (vec![named("Text"), list_text()], named("Text")),
+        "sico.list.sort" => (vec![list_text()], list_text()),
         "sico.u64.to_text" => (vec![named("U64")], named("Text")),
         "sico.i64.to_text" => (vec![named("I64")], named("Text")),
         "sico.fs.read" => (

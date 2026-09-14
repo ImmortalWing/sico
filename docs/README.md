@@ -27,6 +27,7 @@
 - [M19 生产工程与发布就绪计划](./plans/M19-production-engineering.md)
 - [M20 跨平台 Runtime、语言 v1 与完成审计计划](./plans/M20-platform-breadth-language-v1.md)
 - [M21 开发者体验、标准库第二批与生态激活计划](./plans/M21-developer-experience-and-stdlib.md)
+- [M22 编译器自举轨道计划](./plans/M22-compiler-self-host.md)
 - [M9 exit audit](./reports/m9-exit-audit-v0.md)
 - [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)

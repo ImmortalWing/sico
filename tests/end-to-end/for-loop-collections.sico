@@ -1,0 +1,48 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = ""
+  let m0 = sico.map.put[Text,I64](sico.map.empty[Text,I64](), "a", I64.literal(1))
+  let m1 = sico.map.put[Text,I64](m0, "b", I64.literal(2))
+  let m2 = sico.map.put[Text,I64](m1, "c", I64.literal(3))
+  let m3 = sico.map.put[Text,I64](m2, "d", I64.literal(4))
+  for k in m3:
+    if sico.bytes.equal(sico.text.encode(k), sico.text.encode("b")):
+      continue
+    end if
+    if sico.bytes.equal(sico.text.encode(k), sico.text.encode("d")):
+      break
+    end if
+    set out = sico.text.concat(out, k)
+  end for
+  set out = sico.text.concat(out, "\n")
+  let s0 = sico.set.add[Text](sico.set.empty[Text](), "x")
+  let s1 = sico.set.add[Text](s0, "y")
+  let s2 = sico.set.add[Text](s1, "z")
+  for k in s2:
+    set out = sico.text.concat(out, k)
+  end for
+  set out = sico.text.concat(out, "\n")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

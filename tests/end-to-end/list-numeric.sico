@@ -1,0 +1,70 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = ""
+  let m0 = sico.map.put[Text,I64](sico.map.empty[Text,I64](), "b", I64.literal(3))
+  let m1 = sico.map.put[Text,I64](m0, "a", I64.literal(1))
+  let m2 = sico.map.put[Text,I64](m1, "c", I64.literal(2))
+  let values = sico.map.values[Text,I64](m2)
+  set out = sico.text.concat(out, sico.text.concat("len=", sico.u64.to_text(sico.list.length[I64](values))))
+  set out = sico.text.concat(out, "\n")
+  let grown = sico.list.append[I64](values, I64.literal(-7))
+  let sorted = sico.list.sort[I64](grown)
+  match sico.list.get[I64](sorted, U64.literal(0)):
+    case ok(first):
+      set out = sico.text.concat(out, sico.text.concat("first=", sico.i64.to_text(first)))
+    case error(_):
+      set out = sico.text.concat(out, "first=ERR")
+  end match
+  set out = sico.text.concat(out, "\n")
+  set out = sico.text.concat(out, sico.text.concat("min=", sico.i64.to_text(sico.list.min[I64](sorted, I64.literal(0)))))
+  set out = sico.text.concat(out, sico.text.concat(" max=", sico.i64.to_text(sico.list.max[I64](sorted, I64.literal(0)))))
+  set out = sico.text.concat(out, "\n")
+  let total = I64.literal(0)
+  for v in sorted:
+    set out = sico.text.concat(out, sico.text.concat(sico.i64.to_text(v), ","))
+    match I64.checked_add(total, v):
+      case ok(next):
+        set total = next
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end for
+  set out = sico.text.concat(out, "\n")
+  set out = sico.text.concat(out, sico.text.concat("sum=", sico.i64.to_text(total)))
+  set out = sico.text.concat(out, "\n")
+  let u0 = sico.map.put[Text,U64](sico.map.empty[Text,U64](), "big", U64.literal(18446744073709551615))
+  let u1 = sico.map.put[Text,U64](u0, "one", U64.literal(1))
+  let usorted = sico.list.sort[U64](sico.map.values[Text,U64](u1))
+  set out = sico.text.concat(out, sico.text.concat("ulen=", sico.u64.to_text(sico.list.length[U64](usorted))))
+  set out = sico.text.concat(out, sico.text.concat(" umin=", sico.u64.to_text(sico.list.min[U64](usorted, U64.literal(0)))))
+  match sico.list.get[U64](usorted, U64.literal(1)):
+    case ok(top):
+      set out = sico.text.concat(out, sico.text.concat(" umax=", sico.u64.to_text(top)))
+    case error(_):
+      set out = sico.text.concat(out, " umax=ERR")
+  end match
+  set out = sico.text.concat(out, "\n")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

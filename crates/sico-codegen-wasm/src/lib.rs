@@ -528,6 +528,19 @@ fn helper_dependencies(name: &str) -> &'static [&'static str] {
             "sico.json.find",
         ],
         "sico.json.quote" => &["sico.json.quote"],
+        // RFC-0045 stdlib batch 2 (STEP-0174). `list.sort`/`min`/`max`
+        // share the `sico.text.compare` helper via cross-helper calls.
+        "sico.bytes.equal" => &["sico.bytes.equal"],
+        "sico.text.compare" => &["sico.text.compare"],
+        "sico.text.char_at" => &["sico.text.char_loc"],
+        "sico.text.format" => &["sico.text.format"],
+        "sico.text.ends_with" => &["sico.text.ends_with"],
+        // STEP-0179: the leading-whitespace scan is emitted inline; it
+        // registers no helper.
+        "sico.text.leading_spaces" => &[],
+        "sico.list.sort" => &["sico.list.sort", "sico.text.compare"],
+        "sico.list.min" => &["sico.list.min", "sico.text.compare"],
+        "sico.list.max" => &["sico.list.max", "sico.text.compare"],
         _ => INTRINSIC_HELPERS
             .iter()
             .find(|helper| **helper == name)
@@ -550,7 +563,9 @@ const INTRINSIC_HELPERS: &[&str] = &[
     "sico.text.split_lines",
     "sico.text.split_words",
     "sico.text.contains",
+    "sico.text.ends_with",
     "sico.text.length",
+    "sico.text.leading_spaces",
     "sico.text.starts_with",
     "sico.text.trim",
     "sico.u64.to_text",
@@ -2033,10 +2048,18 @@ fn inferred_local_layout(
                 layout
                     .fields
                     .insert("ok".to_owned(), (1..=ok_flat.len()).collect());
-                layout.fields.insert(
-                    "error".to_owned(),
-                    (1 + ok_flat.len()..1 + ok_flat.len() + error_flat.len()).collect(),
-                );
+                // The packed fixed-width `Result[I64|U64, NumericError]`
+                // local is two slots (tag + one shared payload), so the
+                // error discriminant has no third slot to map: omit the
+                // field and let a `Project error` fail closed with the
+                // unknown-field refusal instead of panicking on an
+                // out-of-range index (the A6 seam, STEP-0175).
+                let error_end = 1 + ok_flat.len() + error_flat.len();
+                if error_end <= layout.types.len() {
+                    layout
+                        .fields
+                        .insert("error".to_owned(), (1 + ok_flat.len()..error_end).collect());
+                }
                 if let Some(ok_record) = record_fields(abi, ok) {
                     for field in &ok_record.fields {
                         layout.fields.insert(
@@ -4372,6 +4395,51 @@ fn emit_intrinsic(
             body.instruction(&Instruction::Call(helper("sico.bytes.utf8_decode")?));
             body.instruction(&Instruction::LocalSet(*value));
         }
+        "sico.text.leading_spaces" => {
+            let [value] = result else {
+                return Err(unsupported(&function.name, "leading_spaces result layout"));
+            };
+            let [source_pointer, source_length] = pair(0)?;
+            // Scan for the first non-space/tab byte; the result is the
+            // count as one i64 U64 slot. No push-local priming: the loop
+            // counter lives entirely in the scan.
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::LocalSet(4));
+            body.instruction(&Instruction::Block(BlockType::Empty));
+            body.instruction(&Instruction::Loop(BlockType::Empty));
+            body.instruction(&Instruction::LocalGet(4));
+            body.instruction(&Instruction::LocalGet(source_length));
+            body.instruction(&Instruction::I32GeU);
+            body.instruction(&Instruction::BrIf(1));
+            body.instruction(&Instruction::LocalGet(source_pointer));
+            body.instruction(&Instruction::LocalGet(4));
+            body.instruction(&Instruction::I32Add);
+            body.instruction(&Instruction::I32Load8U(MemArg {
+                offset: 0,
+                align: 0,
+                memory_index: 0,
+            }));
+            body.instruction(&Instruction::LocalSet(5));
+            body.instruction(&Instruction::LocalGet(5));
+            body.instruction(&Instruction::I32Const(32));
+            body.instruction(&Instruction::I32Eq);
+            body.instruction(&Instruction::LocalGet(5));
+            body.instruction(&Instruction::I32Const(9));
+            body.instruction(&Instruction::I32Eq);
+            body.instruction(&Instruction::I32Or);
+            body.instruction(&Instruction::I32Eqz);
+            body.instruction(&Instruction::BrIf(1));
+            body.instruction(&Instruction::LocalGet(4));
+            body.instruction(&Instruction::I32Const(1));
+            body.instruction(&Instruction::I32Add);
+            body.instruction(&Instruction::LocalSet(4));
+            body.instruction(&Instruction::Br(0));
+            body.instruction(&Instruction::End);
+            body.instruction(&Instruction::End);
+            body.instruction(&Instruction::LocalGet(4));
+            body.instruction(&Instruction::I64ExtendI32U);
+            body.instruction(&Instruction::LocalSet(*value));
+        }
         "sico.text.join" => {
             let [pointer, length] = result else {
                 return Err(unsupported(&function.name, "join result layout"));
@@ -4408,7 +4476,7 @@ fn emit_intrinsic(
             body.instruction(&Instruction::LocalSet(*length));
             body.instruction(&Instruction::LocalSet(*pointer));
         }
-        "sico.text.contains" | "sico.text.starts_with" => {
+        "sico.text.contains" | "sico.text.starts_with" | "sico.text.ends_with" => {
             let [value] = result else {
                 return Err(unsupported(&function.name, "text predicate result layout"));
             };
@@ -4618,6 +4686,145 @@ fn emit_intrinsic(
             body.instruction(&Instruction::LocalSet(*length));
             body.instruction(&Instruction::LocalSet(*pointer));
         }
+        "sico.bytes.at" => {
+            let [value] = result else {
+                return Err(unsupported(&function.name, "bytes.at result layout"));
+            };
+            let [source, len] = pair(0)?;
+            let index = scalar(1)?;
+            let fallback = scalar(2)?;
+            // Total function (RFC-0045 D1 amendment): the byte at `index`,
+            // or the explicit fallback when out of range. Proven single-slot
+            // If/Else shape.
+            body.instruction(&Instruction::LocalGet(index));
+            body.instruction(&Instruction::LocalGet(len));
+            body.instruction(&Instruction::I64ExtendI32U);
+            body.instruction(&Instruction::I64LtU);
+            body.instruction(&Instruction::If(BlockType::Empty));
+            body.instruction(&Instruction::LocalGet(source));
+            body.instruction(&Instruction::LocalGet(index));
+            body.instruction(&Instruction::I32WrapI64);
+            body.instruction(&Instruction::I32Add);
+            body.instruction(&Instruction::I32Load8U(MemArg {
+                offset: 0,
+                align: 0,
+                memory_index: 0,
+            }));
+            body.instruction(&Instruction::I64ExtendI32U);
+            body.instruction(&Instruction::LocalSet(*value));
+            body.instruction(&Instruction::Else);
+            body.instruction(&Instruction::LocalGet(fallback));
+            body.instruction(&Instruction::LocalSet(*value));
+            body.instruction(&Instruction::End);
+        }
+        "sico.bytes.equal" => {
+            let [value] = result else {
+                return Err(unsupported(&function.name, "bytes.equal result layout"));
+            };
+            let [a_pointer, a_length] = pair(0)?;
+            let [b_pointer, b_length] = pair(1)?;
+            body.instruction(&Instruction::LocalGet(a_pointer));
+            body.instruction(&Instruction::LocalGet(a_length));
+            body.instruction(&Instruction::LocalGet(b_pointer));
+            body.instruction(&Instruction::LocalGet(b_length));
+            body.instruction(&Instruction::Call(helper("sico.bytes.equal")?));
+            body.instruction(&Instruction::LocalSet(*value));
+        }
+        "sico.text.compare" => {
+            let [order] = result else {
+                return Err(unsupported(&function.name, "text.compare result layout"));
+            };
+            let [a_pointer, a_length] = pair(0)?;
+            let [b_pointer, b_length] = pair(1)?;
+            body.instruction(&Instruction::LocalGet(a_pointer));
+            body.instruction(&Instruction::LocalGet(a_length));
+            body.instruction(&Instruction::LocalGet(b_pointer));
+            body.instruction(&Instruction::LocalGet(b_length));
+            body.instruction(&Instruction::Call(helper("sico.text.compare")?));
+            body.instruction(&Instruction::LocalSet(*order));
+        }
+        "sico.text.char_at" => {
+            let [tag, pointer, length, error_tag] = result else {
+                return Err(unsupported(&function.name, "text.char_at result layout"));
+            };
+            let [source, len] = pair(0)?;
+            let index = scalar(1)?;
+            let overflow = context
+                .variant_tags
+                .get(&function.name, "NumericError.overflow")?;
+            body.instruction(&Instruction::LocalGet(index));
+            body.instruction(&Instruction::I64Const(0x1_0000_0000));
+            body.instruction(&Instruction::I64GeU);
+            body.instruction(&Instruction::If(BlockType::Empty));
+            emit_numeric_error(body, result, overflow);
+            body.instruction(&Instruction::Else);
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::LocalSet(*tag));
+            body.instruction(&Instruction::LocalGet(source));
+            body.instruction(&Instruction::LocalGet(len));
+            body.instruction(&Instruction::LocalGet(index));
+            body.instruction(&Instruction::I32WrapI64);
+            body.instruction(&Instruction::Call(helper("sico.text.char_loc")?));
+            // helper returns (offset, char_len); char_len == 0 is the
+            // out-of-range sentinel. The Text result pointer is the source
+            // base plus the char's byte offset.
+            body.instruction(&Instruction::LocalSet(*length));
+            body.instruction(&Instruction::LocalSet(*pointer));
+            body.instruction(&Instruction::LocalGet(*pointer));
+            body.instruction(&Instruction::LocalGet(source));
+            body.instruction(&Instruction::I32Add);
+            body.instruction(&Instruction::LocalSet(*pointer));
+            body.instruction(&Instruction::LocalGet(*length));
+            body.instruction(&Instruction::I32Eqz);
+            body.instruction(&Instruction::If(BlockType::Empty));
+            body.instruction(&Instruction::I32Const(1));
+            body.instruction(&Instruction::LocalSet(*tag));
+            body.instruction(&Instruction::I32Const(0));
+            body.instruction(&Instruction::LocalSet(*pointer));
+            body.instruction(&Instruction::I32Const(overflow));
+            body.instruction(&Instruction::LocalSet(*error_tag));
+            body.instruction(&Instruction::End);
+            body.instruction(&Instruction::End);
+        }
+        "sico.text.format" => {
+            let [pointer, length] = result else {
+                return Err(unsupported(&function.name, "text.format result layout"));
+            };
+            let [template_pointer, template_length] = pair(0)?;
+            let [table, count] = pair(1)?;
+            body.instruction(&Instruction::LocalGet(template_pointer));
+            body.instruction(&Instruction::LocalGet(template_length));
+            body.instruction(&Instruction::LocalGet(table));
+            body.instruction(&Instruction::LocalGet(count));
+            body.instruction(&Instruction::Call(helper("sico.text.format")?));
+            body.instruction(&Instruction::LocalSet(*length));
+            body.instruction(&Instruction::LocalSet(*pointer));
+        }
+        "sico.list.sort" => {
+            let [pointer, length] = result else {
+                return Err(unsupported(&function.name, "list.sort result layout"));
+            };
+            let [table, count] = pair(0)?;
+            body.instruction(&Instruction::LocalGet(table));
+            body.instruction(&Instruction::LocalGet(count));
+            body.instruction(&Instruction::Call(helper("sico.list.sort")?));
+            body.instruction(&Instruction::LocalSet(*length));
+            body.instruction(&Instruction::LocalSet(*pointer));
+        }
+        "sico.list.min" | "sico.list.max" => {
+            let [pointer, length] = result else {
+                return Err(unsupported(&function.name, "list extremum result layout"));
+            };
+            let [table, count] = pair(0)?;
+            let [default_pointer, default_length] = pair(1)?;
+            body.instruction(&Instruction::LocalGet(table));
+            body.instruction(&Instruction::LocalGet(count));
+            body.instruction(&Instruction::LocalGet(default_pointer));
+            body.instruction(&Instruction::LocalGet(default_length));
+            body.instruction(&Instruction::Call(helper(name)?));
+            body.instruction(&Instruction::LocalSet(*length));
+            body.instruction(&Instruction::LocalSet(*pointer));
+        }
         "sico.u64.to_text" | "sico.i64.to_text" => {
             let [pointer, length] = result else {
                 return Err(unsupported(&function.name, "to_text result layout"));
@@ -4671,7 +4878,8 @@ fn emit_collection_call(
         sico_ir::collection_intrinsic(name),
         Some(sico_ir::CollectionIntrinsic {
             operation: sico_ir::CollectionOperation::MapLength
-                | sico_ir::CollectionOperation::SetLength,
+                | sico_ir::CollectionOperation::SetLength
+                | sico_ir::CollectionOperation::ListLength,
             ..
         })
     ) {

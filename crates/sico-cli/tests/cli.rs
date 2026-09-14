@@ -530,6 +530,24 @@ fn repl_replays_resets_and_exports_bounded_cells() {
 }
 
 #[test]
+fn explain_reports_action_hints_for_stable_codes() {
+    // M21 §3.3: `sico explain <code>` surfaces the action-oriented hint
+    // for a stable diagnostic code; unknown codes are a typed diagnostic.
+    let output = run(["explain", "E1013"], None);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("E1013"));
+    assert!(stdout(&output).contains("function main"));
+
+    let output = run(["explain", "E1001"], None);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("end function"));
+
+    let output = run(["explain", "E9999"], None);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(stderr(&output).contains("no action hint registered"));
+}
+
+#[test]
 fn usage_io_and_unimplemented_commands_are_tool_errors() {
     let output = run::<0>([], None);
     assert_eq!(output.status.code(), Some(2));

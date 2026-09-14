@@ -1,0 +1,57 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function half_twice(value: I64) returns Result[I64, NumericError]:
+  let half = I64.checked_div(value, I64.literal(2))?
+  return I64.checked_mul(half, I64.literal(2))
+end function
+
+function reciprocal(value: I64) returns Result[I64, NumericError]:
+  return I64.checked_div(I64.literal(1), value)
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = ""
+  match half_twice(I64.literal(9)):
+    case ok(v):
+      set out = sico.text.concat(out, sico.text.concat("half=", sico.i64.to_text(v)))
+    case error(_):
+      set out = sico.text.concat(out, "half=ERR")
+  end match
+  set out = sico.text.concat(out, "\n")
+  match reciprocal(I64.literal(4)):
+    case ok(v):
+      set out = sico.text.concat(out, sico.text.concat("inv=", sico.i64.to_text(v)))
+    case error(_):
+      set out = sico.text.concat(out, "inv=ERR")
+  end match
+  set out = sico.text.concat(out, "\n")
+  match reciprocal(I64.literal(0)):
+    case ok(_):
+      set out = sico.text.concat(out, "div0=BAD")
+    case error(_):
+      set out = sico.text.concat(out, "div0=caught")
+  end match
+  set out = sico.text.concat(out, "\n")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

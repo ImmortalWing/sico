@@ -118,6 +118,7 @@ pub enum LineKind {
     If,
     Else,
     While,
+    For,
     Break,
     Continue,
     Set,
@@ -315,6 +316,7 @@ fn classify_line(header: bool, tokens: &[HirToken]) -> LineKind {
         Some(TokenKind::Match) => LineKind::Match,
         Some(TokenKind::If) => LineKind::If,
         Some(TokenKind::While) => LineKind::While,
+        Some(TokenKind::For) => LineKind::For,
         Some(TokenKind::Break) => LineKind::Break,
         Some(TokenKind::Continue) => LineKind::Continue,
         Some(TokenKind::Set) => LineKind::Set,
@@ -342,6 +344,7 @@ fn opens_block(tokens: &[HirToken]) -> bool {
                     | TokenKind::Match
                     | TokenKind::If
                     | TokenKind::While
+                    | TokenKind::For
                     | TokenKind::Using
                     | TokenKind::Task
             )

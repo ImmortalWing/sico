@@ -14,23 +14,32 @@ pub(crate) fn helper_signature(name: &str) -> (Vec<ValType>, Vec<ValType>) {
     }
     let i32s = |count: usize| vec![ValType::I32; count];
     match name {
-        "sico.bytes.concat" | "sico.text.concat" | "sico.list.append" | "sico.text.join" => {
+        "sico.bytes.concat" | "sico.text.concat" | "sico.list.append" | "sico.text.join"
+        | "sico.json.find" | "sico.text.format" | "sico.list.min" | "sico.list.max" => {
             (i32s(4), i32s(2))
         }
-        "sico.json.find" => (i32s(4), i32s(2)),
         "sico.json.number"
         | "sico.json.ws"
         | "sico.json.string"
         | "sico.bytes.utf8_decode"
-        | "sico.text.length" => (i32s(2), i32s(1)),
+        | "sico.text.length"
+        | "sico.text.leading_spaces" => (i32s(2), i32s(1)),
         "sico.json.quote"
         | "sico.text.split_lines"
         | "sico.text.split_words"
-        | "sico.text.trim" => (i32s(2), i32s(2)),
+        | "sico.text.trim"
+        | "sico.list.sort" => (i32s(2), i32s(2)),
         "sico.json.scan" => (vec![ValType::I32, ValType::I32, ValType::I32], i32s(1)),
 
-        "sico.text.contains" | "sico.text.starts_with" => (i32s(4), i32s(1)),
+        "sico.text.contains"
+        | "sico.text.starts_with"
+        | "sico.text.ends_with"
+        | "sico.bytes.equal" => (i32s(4), i32s(1)),
         "sico.u64.to_text" | "sico.i64.to_text" => (vec![ValType::I64], i32s(2)),
+
+        // RFC-0045 stdlib batch 2 (STEP-0174).
+        "sico.text.compare" => (i32s(4), vec![ValType::I64]),
+        "sico.text.char_loc" => (i32s(3), i32s(2)),
 
         _ => unreachable!("helper signatures exist for every helper name"),
     }
@@ -62,6 +71,14 @@ pub(crate) fn emit_helper(
     if let Some(intrinsic) = sico_ir::collection_intrinsic(name) {
         return emit_collection_helper(intrinsic, alloc);
     }
+    // `list.min`/`list.max` share one body shape with a boolean flip, so
+    // they are dispatched here instead of as duplicate match arms.
+    if name == "sico.list.min" {
+        return emit_list_extreme(helpers, true);
+    }
+    if name == "sico.list.max" {
+        return emit_list_extreme(helpers, false);
+    }
     match name {
         "sico.bytes.concat" | "sico.text.concat" => emit_concat(alloc),
         "sico.bytes.utf8_decode" => emit_utf8_validate(),
@@ -69,6 +86,7 @@ pub(crate) fn emit_helper(
         "sico.text.trim" => emit_trim(),
         "sico.text.contains" => emit_contains(),
         "sico.text.starts_with" => emit_starts_with(),
+        "sico.text.ends_with" => emit_ends_with(),
         "sico.u64.to_text" => emit_u64_to_text(alloc),
         "sico.i64.to_text" => emit_i64_to_text(alloc),
         "sico.list.append" => emit_list_append(alloc),
@@ -81,6 +99,11 @@ pub(crate) fn emit_helper(
         "sico.text.join" => emit_join(alloc),
         "sico.text.split_lines" => emit_split_lines(alloc),
         "sico.text.split_words" => emit_split_words(alloc),
+        "sico.bytes.equal" => emit_bytes_equal(),
+        "sico.text.compare" => emit_text_compare(),
+        "sico.text.char_loc" => emit_char_loc(),
+        "sico.text.format" => emit_format(alloc),
+        "sico.list.sort" => emit_list_sort(alloc, helpers),
         _ => unreachable!("helpers exist for every helper name"),
     }
 }
@@ -692,8 +715,8 @@ fn emit_split_words(alloc: u32) -> Function {
         Instruction::End,
         Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(3),
         Instruction::Br(0), Instruction::End, Instruction::End,
-        // final token
-        Instruction::LocalGet(7), Instruction::I32Eqz,
+        // final token (write when the input ended inside a token)
+        Instruction::LocalGet(7),
         Instruction::If(BlockType::Empty),
         Instruction::LocalGet(4), Instruction::LocalGet(5), Instruction::I32Const(3),
         Instruction::I32Shl, Instruction::I32Add,
@@ -750,7 +773,8 @@ fn collection_is_pair(element: CollectionElement) -> bool {
 /// Core signature of one monomorphized collection helper.
 fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>, Vec<ValType>) {
     use CollectionOperation::{
-        MapEmpty, MapGet, MapHas, MapKeys, MapLength, MapPut, SetAdd, SetEmpty, SetHas, SetLength,
+        ListAppend, ListEmpty, ListGet, ListLength, ListMax, ListMin, ListSort, MapEmpty, MapGet,
+        MapHas, MapKeys, MapLength, MapPut, MapValues, SetAdd, SetEmpty, SetHas, SetLength,
         SetToList,
     };
     let key_params = || {
@@ -761,7 +785,7 @@ fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>,
         }
     };
     match intrinsic.operation {
-        MapEmpty | SetEmpty => (vec![], vec![ValType::I32, ValType::I32]),
+        MapEmpty | SetEmpty | ListEmpty => (vec![], vec![ValType::I32, ValType::I32]),
         MapPut => {
             let mut params = vec![ValType::I32, ValType::I32];
             params.extend(key_params());
@@ -784,9 +808,24 @@ fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>,
             params.extend(key_params());
             (params, vec![ValType::I32])
         }
-        MapLength | SetLength | MapKeys | SetToList => (
+        MapLength | SetLength | MapKeys | MapValues | SetToList | ListLength | ListSort => (
             vec![ValType::I32, ValType::I32],
             vec![ValType::I32, ValType::I32],
+        ),
+        // RFC-0046 D4 numeric list monomorphs: a list is the same
+        // `(table i32, count i32)` pair regardless of element; scalar
+        // elements ride one i64 slot.
+        ListGet => (
+            vec![ValType::I32, ValType::I32, ValType::I64],
+            vec![ValType::I32, ValType::I64],
+        ),
+        ListAppend => (
+            vec![ValType::I32, ValType::I32, ValType::I64],
+            vec![ValType::I32, ValType::I32],
+        ),
+        ListMin | ListMax => (
+            vec![ValType::I32, ValType::I32, ValType::I64],
+            vec![ValType::I64],
         ),
         SetAdd => {
             let mut params = vec![ValType::I32, ValType::I32];
@@ -801,14 +840,31 @@ fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>,
 /// `map.put`; scratch locals start after the widest parameter list (slot 6).
 fn emit_collection_helper(intrinsic: CollectionIntrinsic, alloc: u32) -> Function {
     match intrinsic.operation {
-        CollectionOperation::MapEmpty | CollectionOperation::SetEmpty => emit_collection_empty(),
+        CollectionOperation::MapEmpty
+        | CollectionOperation::SetEmpty
+        | CollectionOperation::ListEmpty => emit_collection_empty(),
         CollectionOperation::MapPut => emit_map_put(intrinsic, alloc),
         CollectionOperation::MapGet => emit_map_get(intrinsic),
         CollectionOperation::MapHas | CollectionOperation::SetHas => emit_map_has(intrinsic),
         CollectionOperation::SetAdd => emit_set_add(intrinsic, alloc),
-        CollectionOperation::MapLength | CollectionOperation::SetLength => emit_collection_length(),
+        CollectionOperation::MapLength
+        | CollectionOperation::SetLength
+        | CollectionOperation::ListLength => emit_collection_length(),
         CollectionOperation::MapKeys => emit_map_keys(alloc),
+        CollectionOperation::MapValues => emit_map_values(alloc),
         CollectionOperation::SetToList => emit_set_to_list(),
+        // RFC-0046 D4 (STEP-0175): numeric list monomorphs.
+        CollectionOperation::ListGet => emit_list_get_scalar(),
+        CollectionOperation::ListAppend => emit_list_append_scalar(alloc),
+        CollectionOperation::ListSort => {
+            emit_list_sort_scalar(alloc, intrinsic.key == CollectionElement::I64)
+        }
+        CollectionOperation::ListMin => {
+            emit_list_extreme_scalar(true, intrinsic.key == CollectionElement::I64)
+        }
+        CollectionOperation::ListMax => {
+            emit_list_extreme_scalar(false, intrinsic.key == CollectionElement::I64)
+        }
     }
 }
 
@@ -1159,6 +1215,42 @@ fn emit_map_keys(alloc: u32) -> Function {
     body
 }
 
+/// `(out_table, out_count) = values(table, count)`: mirrors `keys`, but
+/// copies the value slot (entries offset +8). The copy is two 32-bit loads
+/// and stores, which is byte-identical for both slot widths: a `Text` value
+/// slot is a `(ptr, len)` pair, a fixed-width value slot is one little-endian
+/// 8-byte scalar — and the RFC-0046 D4 numeric list tables stride the same
+/// 8-byte slots, so `map.values[Text,I64]` needs no separate emitter.
+fn emit_map_values(alloc: u32) -> Function {
+    let mut body = Function::new(vec![(2, ValType::I32)]);
+    // locals: i(2), new(3); entries stride 16, list slots stride 8.
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::Call(alloc), Instruction::LocalSet(3),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(3), Instruction::LocalGet(2), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(0), Instruction::LocalGet(2), Instruction::I32Const(4),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+        Instruction::I32Load(mem(0, 2)),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(3), Instruction::LocalGet(2), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(0), Instruction::LocalGet(2), Instruction::I32Const(4),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Const(8), Instruction::I32Add,
+        Instruction::I32Load(mem(4, 2)),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(2), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(2),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
 /// `(out_table, out_count) = to_list(table, count)`: a set entry IS one
 /// 8-byte key slot, so the entries table already has the `List[Text]`
 /// layout and the pair is returned unchanged — zero-copy is exact, not an
@@ -1168,6 +1260,633 @@ fn emit_set_to_list() -> Function {
     let mut body = Function::new(vec![]);
     ops!(body;
         Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+// ---------------------------------------------------------------------------
+// RFC-0045 stdlib batch 2 (STEP-0174).
+// ---------------------------------------------------------------------------
+
+/// `(equal) = bytes.equal(a, a_len, b, b_len)`: length gate then a byte loop.
+fn emit_bytes_equal() -> Function {
+    let mut body = Function::new(vec![(1, ValType::I32)]);
+    // local: i(4)
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::LocalGet(3), Instruction::I32Ne,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(0), Instruction::Return,
+        Instruction::End,
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(4), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty), Instruction::I32Const(1), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(0), Instruction::LocalGet(4), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::I32Ne,
+        Instruction::If(BlockType::Empty), Instruction::I32Const(0), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(4), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(4),
+        Instruction::Br(0), Instruction::End, Instruction::Unreachable, Instruction::End,
+    );
+    body
+}
+
+/// `(order) = text.compare(a, a_len, b, b_len)`: byte-order lexicographic,
+/// `-1`/`0`/`+1` as i64. Shared by `list.sort`/`min`/`max` via cross-helper
+/// calls, so its registration is forced through `helper_dependencies`.
+fn emit_text_compare() -> Function {
+    let mut body = Function::new(vec![(2, ValType::I32), (1, ValType::I64)]);
+    // locals: min_len(4), i(5). Label depths from the loop body:
+    // 0 = Loop (continue), 1 = Block (done).
+    ops!(body;
+        // min_len = min(a_len, b_len)
+        Instruction::LocalGet(1), Instruction::LocalGet(3),
+        Instruction::LocalGet(1), Instruction::LocalGet(3), Instruction::I32LeU,
+        Instruction::Select,
+        Instruction::LocalSet(4),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(5), Instruction::LocalGet(4), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0), Instruction::LocalGet(5), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::LocalGet(2), Instruction::LocalGet(5), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::I32LtU,
+        Instruction::If(BlockType::Empty), Instruction::I64Const(-1), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(0), Instruction::LocalGet(5), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::LocalGet(2), Instruction::LocalGet(5), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::I32GtU,
+        Instruction::If(BlockType::Empty), Instruction::I64Const(1), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(5), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(5),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        // equal prefix: the shorter text sorts first
+        Instruction::LocalGet(1), Instruction::LocalGet(3), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty), Instruction::I64Const(-1), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(1), Instruction::LocalGet(3), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty), Instruction::I64Const(1), Instruction::Return, Instruction::End,
+        Instruction::I64Const(0), Instruction::End,
+    );
+    body
+}
+
+/// `(offset, char_len) = text.char_loc(ptr, len, char_index)`; `char_len`
+/// 0 is the out-of-range sentinel (`Text` chars are never zero bytes).
+/// Text values are canonically valid UTF-8 in-language, so lead-byte
+/// classification needs no continuation validation here.
+fn emit_char_loc() -> Function {
+    let mut body = Function::new(vec![(4, ValType::I32)]);
+    // locals: offset(3), count(4), byte(5), advance(6)
+    let decode_advance = |body: &mut Function| {
+        // byte in local 5; writes the advance into local 6.
+        ops!(body;
+            Instruction::LocalGet(5), Instruction::I32Const(0x80), Instruction::I32LtU,
+            Instruction::If(BlockType::Empty),
+            Instruction::I32Const(1), Instruction::LocalSet(6),
+            Instruction::Else,
+            Instruction::LocalGet(5), Instruction::I32Const(0xE0), Instruction::I32LtU,
+            Instruction::If(BlockType::Empty),
+            Instruction::I32Const(2), Instruction::LocalSet(6),
+            Instruction::Else,
+            Instruction::LocalGet(5), Instruction::I32Const(0xF0), Instruction::I32LtU,
+            Instruction::If(BlockType::Empty),
+            Instruction::I32Const(3), Instruction::LocalSet(6),
+            Instruction::Else,
+            Instruction::I32Const(4), Instruction::LocalSet(6),
+            Instruction::End, Instruction::End, Instruction::End,
+        );
+    };
+    ops!(body;
+        Instruction::I32Const(0), Instruction::LocalSet(3),
+        Instruction::I32Const(0), Instruction::LocalSet(4),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        // exhausted: index is beyond the char count
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(0), Instruction::I32Const(0), Instruction::Return,
+        Instruction::End,
+        // boundary reached: report (offset, char_len at offset)
+        Instruction::LocalGet(4), Instruction::LocalGet(2), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::LocalGet(3), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)), Instruction::LocalSet(5),
+    );
+    decode_advance(&mut body);
+    ops!(body;
+        Instruction::LocalGet(3), Instruction::LocalGet(6), Instruction::Return,
+        Instruction::End,
+        // advance to the next boundary
+        Instruction::LocalGet(0), Instruction::LocalGet(3), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)), Instruction::LocalSet(5),
+    );
+    decode_advance(&mut body);
+    ops!(body;
+        Instruction::LocalGet(3), Instruction::LocalGet(6), Instruction::I32Add,
+        Instruction::LocalSet(3),
+        Instruction::LocalGet(4), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(4),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::Unreachable, Instruction::End,
+    );
+    body
+}
+
+/// `(out, written) = text.format(template, template_len, args, arg_count)`:
+/// `{N}` inserts args[N]; `{{`/`}}` are literal-brace escapes; any other
+/// brace sequence — unknown index, garbage, unterminated — is copied
+/// verbatim (RFC-0045 D3, specified deterministic behavior).
+///
+/// Single pass into an upper-bound allocation (`template_len` plus every
+/// argument length; placeholders never emit more than their argument, and
+/// escapes never emit more than their two source bytes). The bounded arena
+/// is reclaimed per call, so the slack costs address space only.
+#[allow(clippy::too_many_lines)]
+fn emit_format(alloc: u32) -> Function {
+    let mut body = Function::new(vec![(10, ValType::I32)]);
+    // params: template(0), template_len(1), args table(2), arg count(3)
+    // locals: out(4), bound(5), i(6), j(7), n(8), byte(9), arg_ptr(10),
+    //         arg_len(11), dst(12), seen_digit(13)
+    //
+    // Scan label depths: directly in the loop body 0 = Loop (continue),
+    // 1 = Block (done); inside the brace-classification If 0 = If,
+    // 1 = Loop, 2 = Block.
+    ops!(body;
+        // bound = template_len + sum of argument lengths
+        Instruction::LocalGet(1), Instruction::LocalSet(5),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::LocalGet(3), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(5),
+        Instruction::LocalGet(2), Instruction::LocalGet(7), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::I32Add, Instruction::LocalSet(5),
+        Instruction::LocalGet(7), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(7),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(5), Instruction::Call(alloc), Instruction::LocalSet(4),
+        Instruction::LocalGet(4), Instruction::LocalSet(12),
+        Instruction::I32Const(0), Instruction::LocalSet(6),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(6), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)), Instruction::LocalSet(9),
+        // opening brace?
+        Instruction::LocalGet(9), Instruction::I32Const(123), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        // peek t[i+1] guarded: one i32 leaves each arm
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::If(BlockType::Result(ValType::I32)),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::I32Const(1),
+        Instruction::I32Add, Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::Else,
+        Instruction::I32Const(0),
+        Instruction::End,
+        Instruction::LocalSet(8),
+        // `{{` escape
+        Instruction::LocalGet(8), Instruction::I32Const(123), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(12), Instruction::I32Const(123), Instruction::I32Store8(mem(0, 0)),
+        Instruction::LocalGet(12), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(12),
+        Instruction::LocalGet(6), Instruction::I32Const(2), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(2),
+        Instruction::End,
+        // `{N}` placeholder parse: branch-free verdict into local 13
+        Instruction::I32Const(0), Instruction::LocalSet(8),
+        Instruction::I32Const(0), Instruction::LocalSet(13),
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(7),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0), Instruction::LocalGet(7), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)), Instruction::LocalSet(9),
+        Instruction::LocalGet(9), Instruction::I32Const(48), Instruction::I32LtU,
+        Instruction::LocalGet(9), Instruction::I32Const(57), Instruction::I32GtU,
+        Instruction::I32Or,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(8), Instruction::I32Const(100_000), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(-1), Instruction::LocalSet(8),
+        Instruction::Br(2),
+        Instruction::End,
+        Instruction::LocalGet(8), Instruction::I32Const(10), Instruction::I32Mul,
+        Instruction::LocalGet(9), Instruction::I32Const(48), Instruction::I32Sub,
+        Instruction::I32Add, Instruction::LocalSet(8),
+        Instruction::I32Const(1), Instruction::LocalSet(13),
+        Instruction::LocalGet(7), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(7),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(13),
+        Instruction::LocalGet(7), Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::I32And,
+        Instruction::LocalGet(0), Instruction::LocalGet(7), Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)), Instruction::I32Const(125), Instruction::I32Eq,
+        Instruction::I32And,
+        Instruction::LocalGet(8), Instruction::I32Const(-1), Instruction::I32Ne,
+        Instruction::I32And,
+        Instruction::LocalGet(8), Instruction::LocalGet(3), Instruction::I32LtU,
+        Instruction::I32And,
+        Instruction::LocalSet(13),
+        Instruction::LocalGet(13),
+        Instruction::If(BlockType::Empty),
+        // copy the referenced argument
+        Instruction::LocalGet(2), Instruction::LocalGet(8), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(10),
+        Instruction::LocalGet(2), Instruction::LocalGet(8), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(11),
+        Instruction::LocalGet(12), Instruction::LocalGet(10), Instruction::LocalGet(11),
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(12), Instruction::LocalGet(11), Instruction::I32Add,
+        Instruction::LocalSet(12),
+        Instruction::LocalGet(7), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(2),
+        Instruction::End,
+        // verbatim `{`
+        Instruction::LocalGet(12), Instruction::I32Const(123), Instruction::I32Store8(mem(0, 0)),
+        Instruction::LocalGet(12), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(12),
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(1),
+        Instruction::End,
+        // closing brace escape?
+        Instruction::LocalGet(9), Instruction::I32Const(125), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalGet(1), Instruction::I32LtU,
+        Instruction::If(BlockType::Result(ValType::I32)),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::I32Const(1),
+        Instruction::I32Add, Instruction::I32Add,
+        Instruction::I32Load8U(mem(0, 0)),
+        Instruction::Else,
+        Instruction::I32Const(0),
+        Instruction::End,
+        Instruction::LocalSet(8),
+        Instruction::LocalGet(8), Instruction::I32Const(125), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(12), Instruction::I32Const(125), Instruction::I32Store8(mem(0, 0)),
+        Instruction::LocalGet(12), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(12),
+        Instruction::LocalGet(6), Instruction::I32Const(2), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(2),
+        Instruction::End,
+        Instruction::End,
+        // plain literal byte
+        Instruction::LocalGet(12), Instruction::LocalGet(9), Instruction::I32Store8(mem(0, 0)),
+        Instruction::LocalGet(12), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(12),
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        // (out, written) — written is the true emitted length
+        Instruction::LocalGet(4), Instruction::LocalGet(12), Instruction::LocalGet(4),
+        Instruction::I32Sub, Instruction::End,
+    );
+    body
+}
+/// `(table, count) = list.sort(table, count)`: stable insertion sort into a
+/// fresh table, byte-order ascending via the shared `sico.text.compare`
+/// helper (registered through `helper_dependencies`).
+#[allow(clippy::too_many_lines)]
+fn emit_list_sort(alloc: u32, helpers: &std::collections::BTreeMap<&'static str, u32>) -> Function {
+    let compare = helpers["sico.text.compare"];
+    let mut body = Function::new(vec![(9, ValType::I32), (1, ValType::I64)]);
+    // params: table(0), count(1)
+    // i32 locals: new(2), i(3), j(4), key_ptr(5), key_len(6), prev_ptr(7),
+    //             prev_len(8), tmp_ptr(9), tmp_len(10)
+    // i64 local: order(11)
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::Call(alloc), Instruction::LocalSet(2),
+        Instruction::LocalGet(2), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(1), Instruction::I32Const(2), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::Return,
+        Instruction::End,
+        Instruction::I32Const(1), Instruction::LocalSet(3),
+        // outer: for i in 1..count
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(2), Instruction::LocalGet(3), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(5),
+        Instruction::LocalGet(2), Instruction::LocalGet(3), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(6),
+        Instruction::LocalGet(3), Instruction::LocalSet(4),
+        // inner: shift larger predecessors right
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(4), Instruction::I32Eqz,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(1),
+        Instruction::I32Sub, Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(7),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(1),
+        Instruction::I32Sub, Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(8),
+        Instruction::LocalGet(7), Instruction::LocalGet(8),
+        Instruction::LocalGet(5), Instruction::LocalGet(6),
+        Instruction::Call(compare),
+        Instruction::LocalSet(11),
+        // order > 0 -> shift; otherwise the insertion point is found
+        Instruction::LocalGet(11), Instruction::I64Const(0), Instruction::I64GtS,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(9),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(10),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(7), Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(8), Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(4), Instruction::I32Const(-1), Instruction::I32Add,
+        Instruction::LocalSet(4),
+        // continue the inner scan: from inside the If the inner Loop is
+        // depth 1 (the If itself is depth 0)
+        Instruction::Br(1),
+        Instruction::End,
+        Instruction::Br(1),
+        Instruction::End, Instruction::End,
+        // slot[j] = key
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(5), Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(6), Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(3),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+/// `(ptr, len) = list.min|max(table, count, default_ptr, default_len)`:
+/// the extreme element, or the default when the list is empty. Total
+/// function by RFC-0045 D2 — no error ceremony.
+fn emit_list_extreme(
+    helpers: &std::collections::BTreeMap<&'static str, u32>,
+    is_min: bool,
+) -> Function {
+    let compare = helpers["sico.text.compare"];
+    let mut body = Function::new(vec![(5, ValType::I32), (1, ValType::I64)]);
+    // params: table(0), count(1), default_ptr(2), default_len(3)
+    // locals: best_ptr(4), best_len(5), i(6), cur_ptr(7), cur_len(8); order(9 i64)
+    ops!(body;
+        // empty list: return the default argument
+        Instruction::LocalGet(1), Instruction::I32Eqz,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(3), Instruction::Return,
+        Instruction::End,
+        Instruction::LocalGet(0), Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(4),
+        Instruction::LocalGet(0), Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(5),
+        Instruction::I32Const(1), Instruction::LocalSet(6),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(6), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(7),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(8),
+        Instruction::LocalGet(4), Instruction::LocalGet(5),
+        Instruction::LocalGet(7), Instruction::LocalGet(8),
+        Instruction::Call(compare),
+        Instruction::LocalSet(9),
+        // min: replace the best when order > 0; max: when order < 0
+    );
+    if is_min {
+        ops!(body;
+            Instruction::LocalGet(9), Instruction::I64Const(0), Instruction::I64GtS,
+        );
+    } else {
+        ops!(body;
+            Instruction::LocalGet(9), Instruction::I64Const(0), Instruction::I64LtS,
+        );
+    }
+    ops!(body;
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::LocalSet(4),
+        Instruction::LocalGet(8), Instruction::LocalSet(5),
+        Instruction::End,
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(6),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(4), Instruction::LocalGet(5), Instruction::End,
+    );
+    body
+}
+
+// ---------------------------------------------------------------------------
+// RFC-0046 D4 numeric list monomorphs (STEP-0175). A `List[I64]`/`List[U64]`
+// table strides 8 bytes per slot holding the little-endian value itself —
+// the same slot width map/set scalar entries use, so `map.values[Text,I64]`
+// copies are byte-layout-identical. Ordering comparisons are signed for
+// `I64`, unsigned for `U64` (numeric order, matching `I64.less_than`).
+// ---------------------------------------------------------------------------
+
+/// `(tag, value) = list.get(table, count, index)`: the packed two-slot
+/// `Result[I64|U64, NumericError]` shape (tag 0 + payload, or tag 1 + 0).
+fn emit_list_get_scalar() -> Function {
+    let mut body = Function::new(vec![(1, ValType::I32), (1, ValType::I64)]);
+    // params: table(0), count(1), index(2 i64); locals: tag(3), value(4)
+    ops!(body;
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::I64ExtendI32U,
+        Instruction::I64GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(1), Instruction::LocalSet(3),
+        Instruction::I64Const(0), Instruction::LocalSet(4),
+        Instruction::Else,
+        Instruction::I32Const(0), Instruction::LocalSet(3),
+        Instruction::LocalGet(0), Instruction::LocalGet(2), Instruction::I32WrapI64,
+        Instruction::I32Const(3), Instruction::I32Shl, Instruction::I32Add,
+        Instruction::I64Load(mem(0, 3)), Instruction::LocalSet(4),
+        Instruction::End,
+        Instruction::LocalGet(3), Instruction::LocalGet(4), Instruction::End,
+    );
+    body
+}
+
+/// `(table, count) = list.append(table, count, value)`: copy-on-write into a
+/// fresh `(count + 1) * 8` table, like the Text pair-slot version.
+fn emit_list_append_scalar(alloc: u32) -> Function {
+    let mut body = Function::new(vec![(1, ValType::I32)]);
+    // params: table(0), count(1), value(2 i64); local: new(3)
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::I32Const(3), Instruction::I32Shl, Instruction::Call(alloc), Instruction::LocalSet(3),
+        Instruction::LocalGet(3), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(2), Instruction::I64Store(mem(0, 3)),
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::End,
+    );
+    body
+}
+
+/// `(table, count) = list.sort(table, count)`: stable insertion sort into a
+/// fresh table, numeric ascending (signed for I64, unsigned for U64).
+#[allow(clippy::too_many_lines)]
+fn emit_list_sort_scalar(alloc: u32, signed: bool) -> Function {
+    let gt = if signed {
+        Instruction::I64GtS
+    } else {
+        Instruction::I64GtU
+    };
+    let mut body = Function::new(vec![(3, ValType::I32), (2, ValType::I64)]);
+    // params: table(0), count(1)
+    // i32 locals: new(2), i(3), j(4); i64 locals: key(5), prev(6)
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::Call(alloc), Instruction::LocalSet(2),
+        Instruction::LocalGet(2), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(1), Instruction::I32Const(2), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::Return,
+        Instruction::End,
+        Instruction::I32Const(1), Instruction::LocalSet(3),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(2), Instruction::LocalGet(3), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I64Load(mem(0, 3)),
+        Instruction::LocalSet(5),
+        Instruction::LocalGet(3), Instruction::LocalSet(4),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(4), Instruction::I32Eqz,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(1),
+        Instruction::I32Sub, Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Add, Instruction::I64Load(mem(0, 3)),
+        Instruction::LocalSet(6),
+        Instruction::LocalGet(6), Instruction::LocalGet(5),
+    );
+    ops!(body; gt);
+    ops!(body;
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(6), Instruction::I64Store(mem(0, 3)),
+        Instruction::LocalGet(4), Instruction::I32Const(-1), Instruction::I32Add,
+        Instruction::LocalSet(4),
+        // continue the inner scan: from inside the If the inner Loop is
+        // depth 1 (the If itself is depth 0)
+        Instruction::Br(1),
+        Instruction::End,
+        Instruction::Br(1),
+        Instruction::End, Instruction::End,
+        Instruction::LocalGet(2), Instruction::LocalGet(4), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(5), Instruction::I64Store(mem(0, 3)),
+        Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(3),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+/// `value = list.min|max(table, count, default)`: the extreme element, or
+/// the default when the list is empty (same total-function shape as the
+/// Text version, RFC-0045 D2).
+fn emit_list_extreme_scalar(is_min: bool, signed: bool) -> Function {
+    let replace = match (is_min, signed) {
+        (true, true) => Instruction::I64LtS,
+        (true, false) => Instruction::I64LtU,
+        (false, true) => Instruction::I64GtS,
+        (false, false) => Instruction::I64GtU,
+    };
+    let mut body = Function::new(vec![(1, ValType::I32), (2, ValType::I64)]);
+    // params: table(0), count(1), default(2 i64)
+    // locals: i(3 i32), best(4 i64), cur(5 i64)
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Eqz,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(2), Instruction::Return,
+        Instruction::End,
+        Instruction::LocalGet(0), Instruction::I64Load(mem(0, 3)),
+        Instruction::LocalSet(4),
+        Instruction::I32Const(1), Instruction::LocalSet(3),
+        Instruction::Block(BlockType::Empty),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(0), Instruction::LocalGet(3), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::I64Load(mem(0, 3)),
+        Instruction::LocalSet(5),
+        Instruction::LocalGet(5), Instruction::LocalGet(4),
+    );
+    ops!(body; replace);
+    ops!(body;
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(5), Instruction::LocalSet(4),
+        Instruction::End,
+        Instruction::LocalGet(3), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(3),
+        Instruction::Br(0), Instruction::End, Instruction::End,
+        Instruction::LocalGet(4), Instruction::End,
+    );
+    body
+}
+
+/// Suffix comparison: `needle_len > hay_len` -> 0; else compare from the end.
+/// Mirrors `emit_starts_with` with the cursor walking backwards.
+fn emit_ends_with() -> Function {
+    let mut body = Function::new(vec![(2, ValType::I32)]);
+    // params: hay(0), hay_len(1), needle(2), needle_len(3)
+    // locals: hay_off(4) = hay_len - needle_len, i(5) = 0
+    ops!(body;
+        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty), Instruction::I32Const(0), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(1), Instruction::LocalGet(3), Instruction::I32Sub, Instruction::LocalSet(4),
+        Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(5), Instruction::LocalGet(3), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty), Instruction::I32Const(1), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(0), Instruction::LocalGet(4), Instruction::I32Add, Instruction::LocalGet(5), Instruction::I32Add, Instruction::I32Load8U(mem(0, 0)),
+        Instruction::LocalGet(2), Instruction::LocalGet(5), Instruction::I32Add, Instruction::I32Load8U(mem(0, 0)),
+        Instruction::I32Ne,
+        Instruction::If(BlockType::Empty), Instruction::I32Const(0), Instruction::Return, Instruction::End,
+        Instruction::LocalGet(5), Instruction::I32Const(1), Instruction::I32Add, Instruction::LocalSet(5),
+        Instruction::Br(0), Instruction::End, Instruction::Unreachable, Instruction::End,
     );
     body
 }

@@ -1421,6 +1421,11 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         "Float64.from_int" => (vec![Type::Int], Type::Float64),
         "sico.bytes.length" => (vec![Type::Bytes], Type::U64),
         "sico.bytes.concat" => (vec![Type::Bytes, Type::Bytes], Type::Bytes),
+        "sico.bytes.at" => (vec![Type::Bytes, Type::U64, Type::I64], Type::I64),
+        "sico.bytes.equal" => (vec![Type::Bytes, Type::Bytes], Type::Bool),
+        "sico.text.compare" => (vec![Type::String, Type::String], Type::I64),
+        "sico.text.char_at" => (vec![Type::String, Type::U64], result_of(Type::String)),
+        "sico.text.format" => (vec![Type::String, list_of(Type::String)], Type::String),
         "sico.bytes.slice" => (
             vec![Type::Bytes, Type::U64, Type::U64],
             result_of(Type::Bytes),
@@ -1428,10 +1433,10 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         "sico.bytes.is_utf8" => (vec![Type::Bytes], Type::Bool),
         "sico.bytes.utf8_decode" => (vec![Type::Bytes], Type::String),
         "sico.text.encode" => (vec![Type::String], Type::Bytes),
-        "sico.text.length" => (vec![Type::String], Type::U64),
+        "sico.text.length" | "sico.text.leading_spaces" => (vec![Type::String], Type::U64),
         "sico.text.concat" | "sico.json.get" => (vec![Type::String, Type::String], Type::String),
         "sico.text.trim" | "sico.json.quote" => (vec![Type::String], Type::String),
-        "sico.text.contains" | "sico.text.starts_with" => {
+        "sico.text.contains" | "sico.text.starts_with" | "sico.text.ends_with" => {
             (vec![Type::String, Type::String], Type::Bool)
         }
         "sico.text.split_lines" | "sico.text.split_words" => {
@@ -1444,6 +1449,10 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         "sico.json.has" => (vec![Type::String, Type::String], Type::Bool),
 
         "sico.list.length" => (vec![list_of(Type::String)], Type::U64),
+        "sico.list.sort" => (vec![list_of(Type::String)], list_of(Type::String)),
+        "sico.list.min" | "sico.list.max" => {
+            (vec![list_of(Type::String), Type::String], Type::String)
+        }
         "sico.list.get" => (
             vec![list_of(Type::String), Type::U64],
             result_of(Type::String),
@@ -1602,11 +1611,22 @@ pub enum CollectionOperation {
     MapHas,
     MapLength,
     MapKeys,
+    MapValues,
     SetEmpty,
     SetAdd,
     SetHas,
     SetLength,
     SetToList,
+    // RFC-0046 D4 (STEP-0175): numeric list monomorphs. The element rides
+    // in `key`; `value` stays `None`. `Text` lists keep the frozen plain
+    // `sico.list.*` spelling and are not part of this registry.
+    ListEmpty,
+    ListLength,
+    ListGet,
+    ListAppend,
+    ListSort,
+    ListMin,
+    ListMax,
 }
 
 impl CollectionOperation {
@@ -1618,11 +1638,19 @@ impl CollectionOperation {
             ("map", "has") => Some(Self::MapHas),
             ("map", "length") => Some(Self::MapLength),
             ("map", "keys") => Some(Self::MapKeys),
+            ("map", "values") => Some(Self::MapValues),
             ("set", "empty") => Some(Self::SetEmpty),
             ("set", "add") => Some(Self::SetAdd),
             ("set", "has") => Some(Self::SetHas),
             ("set", "length") => Some(Self::SetLength),
             ("set", "to_list") => Some(Self::SetToList),
+            ("list", "empty") => Some(Self::ListEmpty),
+            ("list", "length") => Some(Self::ListLength),
+            ("list", "get") => Some(Self::ListGet),
+            ("list", "append") => Some(Self::ListAppend),
+            ("list", "sort") => Some(Self::ListSort),
+            ("list", "min") => Some(Self::ListMin),
+            ("list", "max") => Some(Self::ListMax),
             _ => None,
         }
     }
@@ -1634,23 +1662,36 @@ impl CollectionOperation {
             | Self::MapGet
             | Self::MapHas
             | Self::MapLength
-            | Self::MapKeys => "map",
+            | Self::MapKeys
+            | Self::MapValues => "map",
             Self::SetEmpty | Self::SetAdd | Self::SetHas | Self::SetLength | Self::SetToList => {
                 "set"
             }
+            Self::ListEmpty
+            | Self::ListLength
+            | Self::ListGet
+            | Self::ListAppend
+            | Self::ListSort
+            | Self::ListMin
+            | Self::ListMax => "list",
         }
     }
 
     fn operation(self) -> &'static str {
         match self {
             Self::MapPut => "put",
-            Self::MapGet => "get",
+            Self::MapGet | Self::ListGet => "get",
             Self::MapKeys => "keys",
+            Self::MapValues => "values",
             Self::SetAdd => "add",
             Self::SetToList => "to_list",
-            Self::MapEmpty | Self::SetEmpty => "empty",
+            Self::MapEmpty | Self::SetEmpty | Self::ListEmpty => "empty",
             Self::MapHas | Self::SetHas => "has",
-            Self::MapLength | Self::SetLength => "length",
+            Self::MapLength | Self::SetLength | Self::ListLength => "length",
+            Self::ListAppend => "append",
+            Self::ListSort => "sort",
+            Self::ListMin => "min",
+            Self::ListMax => "max",
         }
     }
 }
@@ -1685,12 +1726,20 @@ pub fn collection_intrinsic(name: &str) -> Option<CollectionIntrinsic> {
         | CollectionOperation::MapGet
         | CollectionOperation::MapHas
         | CollectionOperation::MapLength
-        | CollectionOperation::MapKeys => Some(CollectionElement::parse(elements.next()?)?),
+        | CollectionOperation::MapKeys
+        | CollectionOperation::MapValues => Some(CollectionElement::parse(elements.next()?)?),
         CollectionOperation::SetEmpty
         | CollectionOperation::SetAdd
         | CollectionOperation::SetHas
         | CollectionOperation::SetLength
-        | CollectionOperation::SetToList => None,
+        | CollectionOperation::SetToList
+        | CollectionOperation::ListEmpty
+        | CollectionOperation::ListLength
+        | CollectionOperation::ListGet
+        | CollectionOperation::ListAppend
+        | CollectionOperation::ListSort
+        | CollectionOperation::ListMin
+        | CollectionOperation::ListMax => None,
     };
     if elements.next().is_some() {
         return None;
@@ -1700,6 +1749,25 @@ pub fn collection_intrinsic(name: &str) -> Option<CollectionIntrinsic> {
     // Script profile can materialize today (M14 STEP-0131 matrix row).
     if operation == CollectionOperation::MapGet
         && !matches!(value, Some(CollectionElement::I64 | CollectionElement::U64))
+    {
+        return None;
+    }
+    // `sico.map.values` yields a `List[V]`; the executable list element set
+    // is `Text` (frozen plain `sico.list.*` surface) plus the RFC-0046 D4
+    // numeric extension, so every other instantiation is a typed refusal.
+    if operation == CollectionOperation::MapValues
+        && !matches!(
+            value,
+            Some(CollectionElement::Text | CollectionElement::I64 | CollectionElement::U64)
+        )
+    {
+        return None;
+    }
+    // Numeric list monomorphs are the only executable bracket-spelled list
+    // operations; `List[Text]` keeps the plain names and every other
+    // element (`Bytes`/`Bool`) has no executable list type yet.
+    if operation.family() == "list"
+        && !matches!(key, CollectionElement::I64 | CollectionElement::U64)
     {
         return None;
     }
@@ -1738,6 +1806,31 @@ fn collection_signature(
     value: Option<CollectionElement>,
 ) -> (Vec<Type>, Type) {
     let key_type = key.to_type();
+    // RFC-0046 D4 numeric list monomorphs: the element rides in `key` and
+    // the operand/result shapes are the `List[E]`-typed list family.
+    if operation.family() == "list" {
+        let list_of = Type::List(Box::new(key_type.clone()));
+        let result_of = |ok: Type| Type::Result {
+            ok: Box::new(ok),
+            error: Box::new(Type::Named(NUMERIC_ERROR_TYPE.to_owned())),
+        };
+        return match operation {
+            CollectionOperation::ListEmpty => (Vec::new(), list_of.clone()),
+            CollectionOperation::ListLength => (vec![list_of.clone()], Type::U64),
+            CollectionOperation::ListGet => (
+                vec![list_of.clone(), Type::U64],
+                result_of(key_type.clone()),
+            ),
+            CollectionOperation::ListAppend => {
+                (vec![list_of.clone(), key_type.clone()], list_of.clone())
+            }
+            CollectionOperation::ListSort => (vec![list_of.clone()], list_of),
+            CollectionOperation::ListMin | CollectionOperation::ListMax => {
+                (vec![list_of.clone(), key_type.clone()], key_type)
+            }
+            _ => unreachable!("list family operation"),
+        };
+    }
     let map_of = |element: Option<CollectionElement>| match operation.family() {
         "map" => Type::Map {
             key: Box::new(key_type.clone()),
@@ -1778,7 +1871,20 @@ fn collection_signature(
         CollectionOperation::MapKeys | CollectionOperation::SetToList => {
             (vec![map_of(value)], Type::List(Box::new(key_type.clone())))
         }
+        CollectionOperation::MapValues => (
+            vec![map_of(value)],
+            Type::List(Box::new(
+                value.expect("map.values carries a value").to_type(),
+            )),
+        ),
         CollectionOperation::SetAdd => (vec![map_of(value), key_type.clone()], map_of(value)),
+        CollectionOperation::ListEmpty
+        | CollectionOperation::ListLength
+        | CollectionOperation::ListGet
+        | CollectionOperation::ListAppend
+        | CollectionOperation::ListSort
+        | CollectionOperation::ListMin
+        | CollectionOperation::ListMax => unreachable!("list family signature"),
     }
 }
 

@@ -1,0 +1,44 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let l0 = sico.list.empty[I64]()
+  let l1 = sico.list.append[I64](l0, I64.literal(-5))
+  let l2 = sico.list.append[I64](l1, I64.literal(3))
+  let l3 = sico.list.append[I64](l2, I64.literal(-1))
+  let sorted = sico.list.sort[I64](l3)
+  match sico.list.get[I64](sorted, U64.literal(0)):
+    case ok(min_v):
+      match sico.list.get[I64](sorted, U64.literal(2)):
+        case ok(max_v):
+          let min2 = sico.list.min[I64](l3, I64.literal(0))
+          let max2 = sico.list.max[I64](l3, I64.literal(0))
+          let text = sico.text.concat(sico.i64.to_text(min_v), sico.text.concat(",", sico.text.concat(sico.i64.to_text(max_v), sico.text.concat(",", sico.text.concat(sico.i64.to_text(min2), sico.i64.to_text(max2))))))
+          return ok(ScriptOutput(stdout: sico.text.encode(text), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+        case error(_):
+          return error(ScriptError(code: ScriptErrorCode.DomainError, message: "max_v"))
+      end match
+    case error(_):
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "min_v"))
+  end match
+end function

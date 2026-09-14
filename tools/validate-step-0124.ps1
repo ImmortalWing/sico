@@ -14,7 +14,8 @@ $plans = @(
     'M18-ai-application-pilots.md',
     'M19-production-engineering.md',
     'M20-platform-breadth-language-v1.md',
-    'M21-developer-experience-and-stdlib.md'
+    'M21-developer-experience-and-stdlib.md',
+    'M22-compiler-self-host.md'
 )
 foreach ($plan in $plans) {
     $path = Join-Path $root "docs\plans\$plan"
@@ -35,7 +36,8 @@ $headings = @(
     '## M18: Representative AI applications and external pilots',
     '## M19: Production engineering and release readiness',
     '## M20: Cross-platform runtime, language v1 and completion audit',
-    '## M21: Developer experience, standard-library batch 2 and ecosystem activation'
+    '## M21: Developer experience, standard-library batch 2 and ecosystem activation',
+    '## M22: Compiler self-host track'
 )
 $previous = -1
 foreach ($heading in $headings) {
@@ -89,4 +91,4 @@ foreach ($step in $roadmapSteps) {
     }
 }
 
-Write-Output 'STEP_0124_OK milestones=M14-M21 steps=unreserved layers=language,web-ui,native-automation,vision-model,applications,production-engineering,platform-breadth-language-v1'
+Write-Output 'STEP_0124_OK milestones=M14-M22 steps=unreserved layers=language,web-ui,native-automation,vision-model,applications,production-engineering,platform-breadth-language-v1,compiler-self-host'

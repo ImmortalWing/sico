@@ -1,0 +1,79 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let bytes = sico.text.encode("abc")
+  let out = ""
+  set out = sico.text.concat(out, sico.text.concat("at1=", sico.i64.to_text(sico.bytes.at(bytes, U64.literal(1), I64.literal(-7)))))
+  set out = sico.text.concat(out, "\n")
+  set out = sico.text.concat(out, sico.text.concat("at9=", sico.i64.to_text(sico.bytes.at(bytes, U64.literal(9), I64.literal(-1)))))
+  set out = sico.text.concat(out, "\n")
+  if sico.bytes.equal(bytes, sico.text.encode("abc")):
+    set out = sico.text.concat(out, "eq=true\n")
+  else:
+    set out = sico.text.concat(out, "eq=BAD\n")
+  end if
+  if sico.bytes.equal(bytes, sico.text.encode("abd")):
+    set out = sico.text.concat(out, "eq2=BAD\n")
+  else:
+    set out = sico.text.concat(out, "eq2=false\n")
+  end if
+  set out = sico.text.concat(out, "cmp=")
+  set out = sico.text.concat(out, sico.i64.to_text(sico.text.compare("apple", "banana")))
+  set out = sico.text.concat(out, sico.i64.to_text(sico.text.compare("b", "b")))
+  set out = sico.text.concat(out, sico.i64.to_text(sico.text.compare("b", "a")))
+  set out = sico.text.concat(out, "\n")
+  match sico.text.char_at("héllo", U64.literal(1)):
+    case ok(ch):
+      set out = sico.text.concat(out, sico.text.concat("char1=", ch))
+    case error(_):
+      set out = sico.text.concat(out, "char1=ERR")
+  end match
+  set out = sico.text.concat(out, "\n")
+  match sico.text.char_at("héllo", U64.literal(9)):
+    case ok(_):
+      set out = sico.text.concat(out, "char9=BAD\n")
+    case error(_):
+      set out = sico.text.concat(out, "char9=err\n")
+  end match
+  let args = sico.list.append(sico.list.append(sico.list.append(sico.text.split_lines(""), "a"), "b"), "c")
+  set out = sico.text.concat(out, sico.text.concat("fmt=", sico.text.format("x={0} y={1} {{ {2} {5} }}", args)))
+  set out = sico.text.concat(out, "\n")
+  let words = sico.text.split_words("banana apple cherry")
+  let sorted = sico.list.sort(words)
+  set out = sico.text.concat(out, sico.text.concat("sort=", sico.text.join(sorted, " ")))
+  set out = sico.text.concat(out, "\n")
+  set out = sico.text.concat(out, sico.text.concat("min=", sico.list.min(words, "none")))
+  set out = sico.text.concat(out, sico.text.concat(" max=", sico.list.max(words, "none")))
+  set out = sico.text.concat(out, "\n")
+  let empty = sico.text.split_lines("")
+  set out = sico.text.concat(out, sico.text.concat("minempty=", sico.list.min(empty, "none")))
+  set out = sico.text.concat(out, sico.text.concat(" sortempty=", sico.u64.to_text(sico.list.length(sico.list.sort(empty)))))
+  set out = sico.text.concat(out, "\n")
+  let m0 = sico.map.empty[Text,Text]()
+  let m1 = sico.map.put[Text,Text](m0, "k1", "v1")
+  let m2 = sico.map.put[Text,Text](m1, "k2", "v2")
+  set out = sico.text.concat(out, sico.text.concat("values=", sico.text.join(sico.map.values[Text,Text](m2), ",")))
+  set out = sico.text.concat(out, "\n")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

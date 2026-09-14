@@ -1,8 +1,8 @@
 {
   "schema": "sico.application-profile.v0",
-  "step": "STEP-0131..0170",
-  "rfc": "RFC-0038;RFC-0039",
-  "updated": "2026-09-13",
+  "step": "STEP-0131..0175",
+  "rfc": "RFC-0038;RFC-0039;RFC-0045;RFC-0046",
+  "updated": "2026-09-14",
   "profile": "script-v0",
   "matrix": {
     "executable": {
@@ -77,7 +77,7 @@
         "check": true,
         "build": true,
         "run": true,
-        "notes": "text/bytes/json/fs/http@0.1.0/streams"
+        "notes": "42 registered + RFC-0045 batch-2 additions; count re-measured at STEP-0174"
       },
       "http-0-2-0-guest-visible": {
         "check": true,
@@ -160,6 +160,63 @@
         "rfc": "RFC-0044",
         "semantics": "infix `left == right` in if conditions lowers to EqualFixed for same-width I64/U64 operands; mixed-width or non-fixed operands keep the typed refusal",
         "notes": "bare integer literals remain unbounded Int (NUM-001 oracle unchanged) — the bare-literal typing decision is recorded as the v1 open question in RFC-0044"
+      },
+      "stdlib-batch-2-byte-text": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "RFC-0045 (STEP-0174): bytes.at (total-function fallback, D1), bytes.equal, text.compare (byte order), text.char_at (char-indexed, overflow-tagged Result[Text, NumericError]), text.format ({N} indexed, {{ }} escapes, verbatim pass-through D3)"
+      },
+      "stdlib-batch-2-collections": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "RFC-0045 (STEP-0174): list.sort (stable byte-order), list.min/max (default argument on empty, D2), map.values[Text,Text] (insertion order); map.values[Text,I64|U64] unlocked by RFC-0046 D4 (STEP-0175); map.values other value elements refused (List[Bool]/List[Bytes] not executable); map.entries refused (pair records proposed)"
+      },
+      "for-loops-iterables": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0175",
+        "rfc": "RFC-0046",
+        "semantics": "`for x in expr` over List[Text|I64|U64], Map[Text,V] keys and Set[Text] in first-insertion order; break/continue route through the increment block; the loop variable is a loop-scoped cell",
+        "notes": "e2e for-loop-words.sico + for-loop-collections.sico byte-exact through the real runner"
+      },
+      "error-propagation-question-mark": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0175",
+        "rfc": "RFC-0046",
+        "semantics": "`let x = expr?` desugars to the match shape (ok binds x, error returns the source Result verbatim); valid only in functions returning Result[T, NumericError] (E3101 otherwise)",
+        "notes": "e2e error-propagation.sico: happy path, chained `?`, and division-by-zero propagation byte-exact; `try expr` stays check-time only"
+      },
+      "list-numeric-elements": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0175",
+        "rfc": "RFC-0046",
+        "semantics": "List[I64]/List[U64] as 8-byte-slot tables; monomorphs sico.list.length/get/append/sort/min/max[I64|U64]; signed (I64) vs unsigned (U64) numeric ordering; map.values[Text,I64|U64] unlocked (RFC-0045 D4)",
+        "notes": "e2e list-numeric.sico byte-exact incl. u64::MAX unsigned sort; sort/min/max Text variants' branch-depth defect found and fixed here"
+      },
+      "list-i64-u64-family": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "RFC-0046 D4 (STEP-0176): sico.list.empty[I64]/[U64] + append/get/length/sort/min/max bracket monomorphs; signed (I64) and unsigned (U64) ordering comparators; for-loop binds scalar elements and accumulates"
+      },
+      "for-loops": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "RFC-0046 (STEP-0175): for x in expr over List[Text] and List[I64]; per-iteration binding via list.get desugar; break/continue supported"
+      },
+      "error-propagation": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "notes": "RFC-0046 D2 (STEP-0175): let y = expr? desugars to match/return forwarding the NumericError payload (E3101 family)"
       }
     },
     "refused": {
@@ -268,6 +325,27 @@
         "refusal": "E8021 package component with its own imports (v0 packages are pure, zero authority)",
         "step": "STEP-0147",
         "rfc": "RFC-0039 §2.4"
+      },
+      "for-over-text-subject": {
+        "check": true,
+        "build": true,
+        "refusal": "E2001 TYPE_MISMATCH at check: for-loop subject must be an executable iterable (Text iteration composes via text.length/char_at; text.chars queued for batch 3)",
+        "step": "STEP-0175",
+        "rfc": "RFC-0046"
+      },
+      "question-mark-non-numeric-error-function": {
+        "check": true,
+        "build": true,
+        "refusal": "E3101 ERROR_TYPE_MISMATCH at check: `?` freezes both error types to NumericError and the enclosing function must return Result[T, NumericError]",
+        "step": "STEP-0175",
+        "rfc": "RFC-0046"
+      },
+      "list-bool-elements": {
+        "check": true,
+        "build": true,
+        "refusal": "E2031 unresolved-call-target at check: List[Bool]/List[Bytes] are not executable types; bracket list monomorphs accept I64/U64 only",
+        "step": "STEP-0175",
+        "rfc": "RFC-0046"
       }
     },
     "proposed": {
@@ -294,6 +372,11 @@
     "modules-module": "tests/end-to-end/modules-report/math_util.sico",
     "modules-test-fixture": "tests/end-to-end/modules-report/main.test.json",
     "packages-fixture-dir": "tests/end-to-end/packages-log-analyzer",
-    "packages-refusal-corpus": "crates/sico-cli/tests/packages_command.rs"
+    "packages-refusal-corpus": "crates/sico-cli/tests/packages_command.rs",
+    "language-batch2-runner-test": "runner/sico-runner/tests/language_batch2.rs",
+    "for-loops-fixture": "tests/end-to-end/for-loop-words.sico",
+    "for-collections-fixture": "tests/end-to-end/for-loop-collections.sico",
+    "error-propagation-fixture": "tests/end-to-end/error-propagation.sico",
+    "list-numeric-fixture": "tests/end-to-end/list-numeric.sico"
   }
 }

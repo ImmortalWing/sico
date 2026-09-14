@@ -1,0 +1,102 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function normalize_line(line: Text) returns Text:
+  let trimmed = sico.text.trim(line)
+  if U64.equal(sico.text.length(trimmed), U64.literal(0)):
+    return trimmed
+  end if
+  let indent = sico.text.leading_spaces(line)
+  let half = U64.literal(0)
+  let rest = indent
+  match U64.checked_sub(rest, U64.literal(2)):
+    case error(_):
+      return trimmed
+    case ok(r1):
+      set half = U64.literal(1)
+      set rest = r1
+  end match
+  match U64.checked_sub(rest, U64.literal(2)):
+    case error(_):
+      return emit_indent(half, trimmed)
+    case ok(r2):
+      set half = U64.literal(2)
+      set rest = r2
+  end match
+  match U64.checked_sub(rest, U64.literal(2)):
+    case error(_):
+      return emit_indent(half, trimmed)
+    case ok(r3):
+      set half = U64.literal(3)
+      set rest = r3
+  end match
+  match U64.checked_sub(rest, U64.literal(2)):
+    case error(_):
+      return emit_indent(half, trimmed)
+    case ok(_r4):
+      set half = U64.literal(4)
+  end match
+  return emit_indent(half, trimmed)
+end function
+
+function emit_indent(half: U64, trimmed: Text) returns Text:
+  if U64.equal(half, U64.literal(1)):
+    return sico.text.concat("  ", trimmed)
+  end if
+  if U64.equal(half, U64.literal(2)):
+    return sico.text.concat("  ", trimmed)
+  end if
+  if U64.equal(half, U64.literal(3)):
+    return sico.text.concat("      ", trimmed)
+  end if
+  return sico.text.concat("        ", trimmed)
+end function
+
+function normalize_source(src: Text) returns Text:
+  let lines = sico.text.split_lines(src)
+  let count = sico.list.length(lines)
+  let result = ""
+  let index = U64.literal(0)
+  while U64.less_than(index, count):
+    match sico.list.get(lines, index):
+      case ok(line):
+        let normalized = normalize_line(line)
+        set result = sico.text.concat(result, sico.text.concat(normalized, "\n"))
+        match U64.checked_add(index, U64.literal(1)):
+          case ok(next):
+            set index = next
+          case error(_):
+            return result
+        end match
+      case error(_):
+        return result
+    end match
+  end while
+  return result
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let text = sico.bytes.utf8_decode(input.stdin)
+  let normalized = normalize_source(text)
+  return ok(ScriptOutput(stdout: sico.text.encode(normalized), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

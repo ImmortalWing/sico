@@ -22,13 +22,13 @@ if (-not (Test-Path $runnerTest)) { throw "runner test missing: $runnerTest" }
 
 # STEP-0143 (RFC-0039): the module-slice fixtures must exist and the
 # modules entry must declare the executable check/build/run triple.
-if ($json.step -notmatch '01(4[3-9]|7[0])$') {
+if ($json.step -notmatch '01(4[3-9]|7[0-5])$') {
     throw "matrix step does not include the modules slice: $($json.step)"
 }
 
 # STEP-0147 (RFC-0039 section 2.3/2.4): the package/user-WIT slice must be
 # executable end to end and the refusal corpus must exist.
-if ($json.step -notmatch '0147|0170') {
+if ($json.step -notmatch '0147|017[0-5]') {
     throw "matrix step does not include the packages slice: $($json.step)"
 }
 $packages = $json.matrix.executable.'packages-user-wit'
@@ -47,6 +47,27 @@ if (-not (Test-Path $refusalCorpus)) { throw "packages refusal corpus missing: $
 foreach ($member in 'modules-fixture', 'modules-module', 'modules-test-fixture') {
     $path = Join-Path $repo $json.'exit-corpus'.$member
     if (-not (Test-Path $path)) { throw "modules fixture missing: $path" }
+}
+
+# STEP-0175 (RFC-0046): the language v1 batch-2 corpus must exist and the
+# executable entries must declare the check/build/run triple.
+$batch2 = $json.matrix.executable.'for-loops-iterables'
+if (-not $batch2) { throw 'for-loops-iterables matrix entry missing' }
+if (-not ($batch2.check -and $batch2.build -and $batch2.run)) {
+    throw 'for-loops-iterables must be executable end to end'
+}
+foreach ($member in 'for-loops-iterables', 'error-propagation-question-mark',
+    'list-numeric-elements') {
+    if (-not $json.matrix.executable.$member) { throw "executable matrix entry missing: $member" }
+}
+foreach ($member in 'for-over-text-subject',
+    'question-mark-non-numeric-error-function', 'list-bool-elements') {
+    if (-not $json.matrix.refused.$member) { throw "refused matrix entry missing: $member" }
+}
+foreach ($member in 'language-batch2-runner-test', 'for-loops-fixture',
+    'for-collections-fixture', 'error-propagation-fixture', 'list-numeric-fixture') {
+    $path = Join-Path $repo $json.'exit-corpus'.$member
+    if (-not (Test-Path $path)) { throw "batch-2 fixture missing: $path" }
 }
 $modules = $json.matrix.executable.'source-modules-use'
 if (-not $modules) { throw 'source-modules-use matrix entry missing' }
@@ -94,6 +115,22 @@ fn canonical_map_set_instantiations_resolve() {
     assert!(!resolves("sico.nonsense[Text]"));
     assert!(resolves("sico.map.put[Text,I64]"));
     assert!(resolves("sico.set.to_list[Text]"));
+    // STEP-0175 (RFC-0046 D4): numeric list monomorphs resolve for the
+    // executable elements and stay closed for everything else.
+    for element in ["I64", "U64"] {
+        assert!(resolves(&format!("sico.list.length[{element}]")));
+        assert!(resolves(&format!("sico.list.get[{element}]")));
+        assert!(resolves(&format!("sico.list.append[{element}]")));
+        assert!(resolves(&format!("sico.list.sort[{element}]")));
+        assert!(resolves(&format!("sico.list.min[{element}]")));
+        assert!(resolves(&format!("sico.list.max[{element}]")));
+    }
+    assert!(!resolves("sico.list.sort[Text]"));
+    assert!(!resolves("sico.list.get[Bool]"));
+    assert!(!resolves("sico.list.sort[Bool]"));
+    assert!(resolves("sico.map.values[Text,I64]"));
+    assert!(resolves("sico.map.values[Text,U64]"));
+    assert!(!resolves("sico.map.values[Text,Bool]"));
     // traversal helpers materialize List[Text] only (check-time restriction
     // in sico-semantics; the IR registry itself accepts any key element)
     assert!(resolves("sico.map.keys[Text,I64]"));

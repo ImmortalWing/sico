@@ -595,7 +595,14 @@ impl ScriptAbi {
                     sico_ir::Type::Task(inner) | sico_ir::Type::Future(inner) => inner.as_ref(),
                     other => other,
                 };
-                (element == &sico_ir::Type::String).then(|| vec![Flat::I32, Flat::I32])
+                // A list value is the `(table, count)` pair for every
+                // executable element; numeric tables stride one 8-byte
+                // little-endian slot per element (RFC-0046 D4).
+                matches!(
+                    element,
+                    sico_ir::Type::String | sico_ir::Type::I64 | sico_ir::Type::U64
+                )
+                .then(|| vec![Flat::I32, Flat::I32])
             }
             // `sico.list.get`/`sico.map.get[K,I64]` results as spill cells:
             // tag, ok payload (ptr/len), and the numeric error tag. The

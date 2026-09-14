@@ -1,0 +1,37 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let l0 = sico.list.empty[I64]()
+  let l1 = sico.list.append[I64](l0, I64.literal(42))
+  let l2 = sico.list.append[I64](l1, I64.literal(7))
+  let out = ""
+  match sico.list.get[I64](l2, U64.literal(0)):
+    case ok(first):
+      let count = sico.list.length[I64](l2)
+      set out = sico.text.concat(sico.i64.to_text(first), sico.text.concat("/", sico.u64.to_text(count)))
+    case error(_):
+      set out = "get-err"
+  end match
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

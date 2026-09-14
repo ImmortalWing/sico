@@ -628,8 +628,23 @@ fn lower_function(
     let has_general_control = declaration.lines.iter().skip(1).any(|line| {
         matches!(
             line.kind,
-            LineKind::While | LineKind::Break | LineKind::Continue | LineKind::Set | LineKind::Else
+            LineKind::While
+                | LineKind::For
+                | LineKind::Break
+                | LineKind::Continue
+                | LineKind::Set
+                | LineKind::Else
         )
+    }) || declaration.lines.iter().skip(1).any(|line| {
+        // RFC-0046 D2: `let x = e?` desugars to the match/return shape
+        // (control flow even in an otherwise straight body). The keyword
+        // `try expr` stays on the straight path (Try op via the expression
+        // builder) so the STEP-0148 frozen shapes are unchanged.
+        line.kind == LineKind::Let
+            && line
+                .tokens
+                .last()
+                .is_some_and(|token| token.kind == TokenKind::QuestionMark)
     });
     let blocks = if let Some(index) = if_index {
         if is_revision_if_shape(declaration, index) {
@@ -866,8 +881,24 @@ impl GeneralLowering<'_, '_> {
                     let equal = position(&line.tokens, TokenKind::Equal)
                         .ok_or_else(|| unsupported_error("let without value", line.range))?;
                     let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+                    let value_tokens = &line.tokens[equal + 1..];
+                    // RFC-0046 D2: `let x = expr?` desugars to the match
+                    // shape (ok binds x, error returns the payload verbatim),
+                    // not a value-level unwrap.
+                    if value_tokens
+                        .last()
+                        .is_some_and(|token| token.kind == TokenKind::QuestionMark)
+                    {
+                        self.lower_propagating_let(
+                            name,
+                            &value_tokens[..value_tokens.len() - 1],
+                            line.range,
+                        )?;
+                        index += 1;
+                        continue;
+                    }
                     let (value, ty) = self.builder.expression(
-                        &line.tokens[equal + 1..],
+                        value_tokens,
                         None,
                         &mut self.blocks[self.current.expect("current")].instructions,
                     )?;
@@ -1062,6 +1093,330 @@ impl GeneralLowering<'_, '_> {
                     self.builder.bindings = snapshot;
                     self.nested -= 1;
                     self.loop_stack.pop();
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(header).expect("block bound"),
+                    )));
+                    self.set_current(after);
+                    index = close.end_index;
+                }
+                LineKind::For => {
+                    // RFC-0046 (STEP-0175): `for x in expr:` desugars to the
+                    // general CFG — subject spill cell, U64 index cell, and a
+                    // while over `index < list.length` whose body binds the
+                    // element through `list.get`. The bounds predicate makes
+                    // the fetch statically in-range, so the ok projection
+                    // needs no dispatcher; values crossing blocks travel
+                    // through cells (IR values are block-scoped), and every
+                    // block is created immediately before its content is
+                    // emitted (the verifier's sequential value-id rule).
+                    let depth = line.depth;
+                    let binding = line.tokens.get(1).map_or("", |t| t.text.as_str());
+                    if binding.is_empty()
+                        || line.tokens.get(2).is_none_or(|t| t.kind != TokenKind::In)
+                    {
+                        return Err(unsupported_error("for loop header", line.range));
+                    }
+                    let subject_tokens =
+                        strip_outer_parens(&line.tokens[3..line.tokens.len().saturating_sub(1)]);
+                    self.ensure_current(line.range);
+                    let entry = self.current.expect("current");
+                    let (subject_value, subject_ty) = self.builder.expression(
+                        subject_tokens,
+                        None,
+                        &mut self.blocks[entry].instructions,
+                    )?;
+                    let (subject_value, element_ty) = match &subject_ty {
+                        Type::List(element) => (subject_value, (**element).clone()),
+                        // RFC-0046 §2: `Map[K,V]`/`Set[K]` subjects iterate the
+                        // first-insertion key order — the desugar materializes
+                        // the key list up front and runs the ordinary list
+                        // loop over it. Only `Text`-keyed traversal is
+                        // executable (the frozen `map.keys`/`set.to_list`
+                        // surface); the check phase diagnoses other keys.
+                        Type::Map { key, value } => {
+                            let Some(spelling) = collection_element_spelling(key) else {
+                                return Err(unsupported_error(
+                                    "for over a map with non-executable keys",
+                                    line.range,
+                                ));
+                            };
+                            if spelling != "Text" {
+                                return Err(unsupported_error(
+                                    "for over a map with non-Text keys",
+                                    line.range,
+                                ));
+                            }
+                            let name = crate::collection_intrinsic_name(
+                                crate::CollectionOperation::MapKeys,
+                                crate::CollectionElement::Text,
+                                Some(collection_element_of(value)?),
+                            );
+                            let keys_ty = Type::List(Box::new((**key).clone()));
+                            let keys = self.builder.emit(
+                                keys_ty.clone(),
+                                Operation::Intrinsic {
+                                    name,
+                                    arguments: vec![subject_value],
+                                },
+                                line.range,
+                                &mut self.blocks[entry].instructions,
+                            );
+                            (keys, (**key).clone())
+                        }
+                        Type::Set(key) => {
+                            if **key != Type::String {
+                                return Err(unsupported_error(
+                                    "for over a set with non-Text keys",
+                                    line.range,
+                                ));
+                            }
+                            let name = crate::collection_intrinsic_name(
+                                crate::CollectionOperation::SetToList,
+                                crate::CollectionElement::Text,
+                                None,
+                            );
+                            let keys_ty = Type::List(Box::new((**key).clone()));
+                            let keys = self.builder.emit(
+                                keys_ty,
+                                Operation::Intrinsic {
+                                    name,
+                                    arguments: vec![subject_value],
+                                },
+                                line.range,
+                                &mut self.blocks[entry].instructions,
+                            );
+                            (keys, (**key).clone())
+                        }
+                        _ => {
+                            return Err(unsupported_error(
+                                "for over a non-iterable subject",
+                                line.range,
+                            ));
+                        }
+                    };
+                    let subject_ty = Type::List(Box::new(element_ty.clone()));
+                    // `Text` lists keep the frozen plain intrinsic names;
+                    // numeric lists use the RFC-0046 D4 bracket monomorphs.
+                    let (length_name, get_name) = match element_ty {
+                        Type::String => ("sico.list.length".to_owned(), "sico.list.get".to_owned()),
+                        Type::I64 => (
+                            "sico.list.length[I64]".to_owned(),
+                            "sico.list.get[I64]".to_owned(),
+                        ),
+                        Type::U64 => (
+                            "sico.list.length[U64]".to_owned(),
+                            "sico.list.get[U64]".to_owned(),
+                        ),
+                        _ => {
+                            return Err(unsupported_error(
+                                "for over a list with a non-executable element",
+                                line.range,
+                            ));
+                        }
+                    };
+                    if self.builder.cells.contains_key(binding) {
+                        return Err(unsupported_error("cell redeclared", line.range));
+                    }
+                    let fresh_cell = |builder: &mut FunctionBuilder, name: &str, ty: &Type| {
+                        let local = u32::try_from(builder.locals.len())
+                            .map_err(|_| unsupported_error("local limit", line.range))?;
+                        builder.locals.push(Local {
+                            name: name.to_owned(),
+                            ty: ty.clone(),
+                            range: source_range(line.range),
+                        });
+                        builder.cells.insert(name.to_owned(), (local, ty.clone()));
+                        Ok(local)
+                    };
+                    let subject_cell = fresh_cell(self.builder, "#for-subject", &subject_ty)?;
+                    let index_cell = fresh_cell(self.builder, "#for-index", &Type::U64)?;
+                    let x_cell = fresh_cell(self.builder, binding, &element_ty)?;
+                    // entry: spill the subject and zero the index
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal {
+                            local: subject_cell,
+                            value: subject_value,
+                        },
+                        line.range,
+                        &mut self.blocks[entry].instructions,
+                    );
+                    let zero = self.builder.emit(
+                        Type::U64,
+                        Operation::ConstU64(0),
+                        line.range,
+                        &mut self.blocks[entry].instructions,
+                    );
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal {
+                            local: index_cell,
+                            value: zero,
+                        },
+                        line.range,
+                        &mut self.blocks[entry].instructions,
+                    );
+                    // header: index < list.length(subject)
+                    let header = self.new_block(line.range);
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(header).expect("block bound"),
+                    )));
+                    self.set_current(header);
+                    let subject_read = self.builder.emit(
+                        subject_ty.clone(),
+                        Operation::ReadLocal {
+                            local: subject_cell,
+                        },
+                        line.range,
+                        &mut self.blocks[header].instructions,
+                    );
+                    let len = self.builder.emit(
+                        Type::U64,
+                        Operation::Intrinsic {
+                            name: length_name.clone(),
+                            arguments: vec![subject_read],
+                        },
+                        line.range,
+                        &mut self.blocks[header].instructions,
+                    );
+                    let index_read = self.builder.emit(
+                        Type::U64,
+                        Operation::ReadLocal { local: index_cell },
+                        line.range,
+                        &mut self.blocks[header].instructions,
+                    );
+                    let condition = self.builder.emit(
+                        Type::Bool,
+                        Operation::LessFixed {
+                            left: index_read,
+                            right: len,
+                        },
+                        line.range,
+                        &mut self.blocks[header].instructions,
+                    );
+                    let body_entry = self.new_block(line.range);
+                    let after = self.new_block(line.range);
+                    self.blocks[header].terminator = Some(Terminator::Branch {
+                        condition,
+                        then_block: BlockId(u32::try_from(body_entry).expect("block bound")),
+                        else_block: BlockId(u32::try_from(after).expect("block bound")),
+                    });
+                    // body: fetch the element (statically in-range) and bind it
+                    self.set_current(body_entry);
+                    let subject_body_read = self.builder.emit(
+                        subject_ty.clone(),
+                        Operation::ReadLocal {
+                            local: subject_cell,
+                        },
+                        line.range,
+                        &mut self.blocks[body_entry].instructions,
+                    );
+                    let index_body_read = self.builder.emit(
+                        Type::U64,
+                        Operation::ReadLocal { local: index_cell },
+                        line.range,
+                        &mut self.blocks[body_entry].instructions,
+                    );
+                    let fetched = self.builder.emit(
+                        Type::Result {
+                            ok: Box::new(element_ty.clone()),
+                            error: Box::new(Type::Named(crate::NUMERIC_ERROR_TYPE.to_owned())),
+                        },
+                        Operation::Intrinsic {
+                            name: get_name,
+                            arguments: vec![subject_body_read, index_body_read],
+                        },
+                        line.range,
+                        &mut self.blocks[body_entry].instructions,
+                    );
+                    let element = self.builder.emit(
+                        element_ty.clone(),
+                        Operation::Project {
+                            base: fetched,
+                            field: "ok".to_owned(),
+                        },
+                        line.range,
+                        &mut self.blocks[body_entry].instructions,
+                    );
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal {
+                            local: x_cell,
+                            value: element,
+                        },
+                        line.range,
+                        &mut self.blocks[body_entry].instructions,
+                    );
+                    // run the body with break/continue routed to the loop.
+                    // `continue` targets the increment block (RFC-0046 §2:
+                    // like `while`, the next iteration re-checks the
+                    // condition — but only after the index advanced, or the
+                    // loop spins on the same element forever).
+                    let inc_entry = self.new_block(line.range);
+                    self.loop_stack.push(LoopFrame {
+                        header: inc_entry,
+                        after,
+                    });
+                    self.nested += 1;
+                    let close = find_region_close(lines, index + 1, end, depth, false, line.range)?;
+                    let snapshot = self.builder.bindings.clone();
+                    self.run(lines, index + 1, close.end_index)?;
+                    self.builder.bindings = snapshot;
+                    // The per-iteration binding is loop-scoped (RFC-0046 D1):
+                    // a later loop may reuse the name, so its cell must not
+                    // outlive the region.
+                    self.builder.cells.remove(binding);
+                    self.nested -= 1;
+                    self.loop_stack.pop();
+                    self.seal_current(Terminator::Jump(BlockId(
+                        u32::try_from(inc_entry).expect("block bound"),
+                    )));
+                    // increment: index = checked_add(index, 1); the overflow
+                    // arm is statically impossible (index < length <= u32),
+                    // so the ok projection is direct.
+                    self.set_current(inc_entry);
+                    let index_inc_read = self.builder.emit(
+                        Type::U64,
+                        Operation::ReadLocal { local: index_cell },
+                        line.range,
+                        &mut self.blocks[inc_entry].instructions,
+                    );
+                    let one = self.builder.emit(
+                        Type::U64,
+                        Operation::ConstU64(1),
+                        line.range,
+                        &mut self.blocks[inc_entry].instructions,
+                    );
+                    let bumped = self.builder.emit(
+                        Type::Result {
+                            ok: Box::new(Type::U64),
+                            error: Box::new(Type::Named("NumericError".to_owned())),
+                        },
+                        Operation::CheckedAdd {
+                            left: index_inc_read,
+                            right: one,
+                        },
+                        line.range,
+                        &mut self.blocks[inc_entry].instructions,
+                    );
+                    let next = self.builder.emit(
+                        Type::U64,
+                        Operation::Project {
+                            base: bumped,
+                            field: "ok".to_owned(),
+                        },
+                        line.range,
+                        &mut self.blocks[inc_entry].instructions,
+                    );
+                    self.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal {
+                            local: index_cell,
+                            value: next,
+                        },
+                        line.range,
+                        &mut self.blocks[inc_entry].instructions,
+                    );
                     self.seal_current(Terminator::Jump(BlockId(
                         u32::try_from(header).expect("block bound"),
                     )));
@@ -1451,6 +1806,160 @@ impl GeneralLowering<'_, '_> {
         }
         Ok(())
     }
+
+    /// RFC-0046 D2: `let x = expr?` in the general CFG. The source Result
+    /// spills into a cell; a `match` terminator routes ok (payload binds the
+    /// `x` cell, control continues) and error (the `NumericError` payload is
+    /// forwarded verbatim through the function's own Result and the block
+    /// returns). There is no value-level unwrap operation: the error path is
+    /// control flow, exactly the frozen `match` shape.
+    #[allow(clippy::too_many_lines)]
+    fn lower_propagating_let(
+        &mut self,
+        name: &str,
+        expr_tokens: &[HirToken],
+        range: TextRange,
+    ) -> Result<(), CoreLowerError> {
+        if self.using_resource.is_some() {
+            return unsupported("? inside using scope", range);
+        }
+        if name.is_empty() || self.builder.cells.contains_key(name) {
+            return unsupported("cell redeclared", range);
+        }
+        let entry = self.current.expect("current");
+        let (source, source_ty) =
+            self.builder
+                .expression(expr_tokens, None, &mut self.blocks[entry].instructions)?;
+        let Type::Result { ok, error } = source_ty.clone() else {
+            return unsupported("? on non-Result", range);
+        };
+        if *error != Type::Named(crate::NUMERIC_ERROR_TYPE.to_owned()) {
+            return unsupported("? on a non-NumericError Result", range);
+        }
+        let local = u32::try_from(self.builder.locals.len())
+            .map_err(|_| unsupported_error("local limit", range))?;
+        self.builder.locals.push(Local {
+            name: format!("#letq{local}"),
+            ty: source_ty.clone(),
+            range: source_range(range),
+        });
+        self.builder.emit(
+            Type::Unit,
+            Operation::WriteLocal {
+                local,
+                value: source,
+            },
+            range,
+            &mut self.blocks[entry].instructions,
+        );
+        let x_local = u32::try_from(self.builder.locals.len())
+            .map_err(|_| unsupported_error("local limit", range))?;
+        self.builder.locals.push(Local {
+            name: name.to_owned(),
+            ty: (*ok).clone(),
+            range: source_range(range),
+        });
+        self.builder
+            .cells
+            .insert(name.to_owned(), (x_local, (*ok).clone()));
+        let ok_block = self.new_block(range);
+        let err_block = self.new_block(range);
+        let continue_block = self.new_block(range);
+        self.blocks[entry].terminator = Some(Terminator::Match {
+            values: vec![source],
+            arms: vec![
+                MatchArm {
+                    patterns: vec![Pattern::Variant {
+                        name: "ok".to_owned(),
+                        payload: Vec::new(),
+                    }],
+                    target: BlockId(u32::try_from(ok_block).expect("block bound")),
+                    range: source_range(range),
+                },
+                MatchArm {
+                    patterns: vec![Pattern::Variant {
+                        name: "error".to_owned(),
+                        payload: Vec::new(),
+                    }],
+                    target: BlockId(u32::try_from(err_block).expect("block bound")),
+                    range: source_range(range),
+                },
+            ],
+        });
+        // ok arm: bind the payload and continue after the let.
+        self.set_current(ok_block);
+        let read = self.builder.emit(
+            source_ty.clone(),
+            Operation::ReadLocal { local },
+            range,
+            &mut self.blocks[ok_block].instructions,
+        );
+        let payload = self.builder.emit(
+            (*ok).clone(),
+            Operation::Project {
+                base: read,
+                field: "ok".to_owned(),
+            },
+            range,
+            &mut self.blocks[ok_block].instructions,
+        );
+        self.builder.emit(
+            Type::Unit,
+            Operation::WriteLocal {
+                local: x_local,
+                value: payload,
+            },
+            range,
+            &mut self.blocks[ok_block].instructions,
+        );
+        self.seal_current(Terminator::Jump(BlockId(
+            u32::try_from(continue_block).expect("block bound"),
+        )));
+        // error arm: forward the source Result verbatim (tag, payload and
+        // NumericError discriminant intact) and return. The check phase
+        // freezes the source type to the function's own
+        // `Result[T, NumericError]`, so the spilled cell IS the return
+        // value — no re-encoding through the packed-Result payload
+        // projection (the A6 fixed-width seam stays unexercised).
+        self.set_current(err_block);
+        let read = self.builder.emit(
+            source_ty,
+            Operation::ReadLocal { local },
+            range,
+            &mut self.blocks[err_block].instructions,
+        );
+        self.seal_current(Terminator::Return(Some(read)));
+        self.set_current(continue_block);
+        Ok(())
+    }
+}
+
+/// Canonical collection element spelling for one executable IR type.
+fn collection_element_spelling(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::String => Some("Text"),
+        Type::Bytes => Some("Bytes"),
+        Type::Bool => Some("Bool"),
+        Type::I64 => Some("I64"),
+        Type::U64 => Some("U64"),
+        _ => None,
+    }
+}
+
+/// Collection registry element for one IR type (typed refusal when the
+/// type is outside the closed element set).
+fn collection_element_of(ty: &Type) -> Result<crate::CollectionElement, CoreLowerError> {
+    match ty {
+        Type::String => Ok(crate::CollectionElement::Text),
+        Type::Bytes => Ok(crate::CollectionElement::Bytes),
+        Type::Bool => Ok(crate::CollectionElement::Bool),
+        Type::I64 => Ok(crate::CollectionElement::I64),
+        Type::U64 => Ok(crate::CollectionElement::U64),
+        _ => Err(unsupported_error(
+            "collection element type",
+            TextRange::default(),
+        )),
+    }
 }
 
 /// Lowers one function body through the general structured CFG path.
@@ -1636,6 +2145,7 @@ fn lower_straight_line(
             LineKind::If
             | LineKind::Else
             | LineKind::While
+            | LineKind::For
             | LineKind::Break
             | LineKind::Continue
             | LineKind::Set => return unsupported("nested if control flow", line.range),
@@ -2012,6 +2522,16 @@ impl FunctionBuilder<'_> {
                 }
                 _ => Ok((value, ty)),
             };
+        }
+        // RFC-0046 D2: a trailing `?` is only valid in a let binding, where
+        // the line-level desugar (`lower_propagating_let`) turns it into the
+        // match/return shape before expressions are built. Any other position
+        // is a typed refusal (the check phase diagnoses it first).
+        if tokens
+            .last()
+            .is_some_and(|token| token.kind == TokenKind::QuestionMark)
+        {
+            return unsupported("? outside a let binding", token_range(tokens));
         }
         if tokens
             .first()
