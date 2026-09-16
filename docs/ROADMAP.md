@@ -1,9 +1,9 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-13 (M18 portfolio + exit audit)
+> - updated: 2026-09-17 (owner directive 「继续完成sico，M22-M25」: M22 S6 in progress; M23–M25 registered — language v1 batch 3, vision closure + block-game pilot, release v1.0 completion audit)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M12 complete (full GO per STEP-0127); M13 closed — live-model run measured and quality budgets met under ADR-0012 (STEP-0128); next mainline is M14 application-ready language
-> - phase context: M10/M11 complete; M12 retains secure HTTP/API automation scope; M13 AI tooling closure is a parallel support track; owner-approved future sequence is M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages and M18 representative applications/pilots; M7 public rollout and M6 mobile remain externally blocked
+> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（block-game 待 M24）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 S6 in progress；主线 = M22 自举闭环，随后 M23→M24→M25
+> - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
 
@@ -302,7 +302,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M20: Cross-platform runtime, language v1 and completion audit（planned; 2026-09-13）
 
-状态：`NO-GO（整体；STEP-0170 出口审计诚实登记）——语言 v1 第一批已落地（RFC-0044 中缀 == lowering，e2e byte-exact）；裸字面量类型决策记录（NUM-001 oracle 实证）；平台 parity/Android = owner 外部门控；§13 逐项审计表已发布（STEP-0170）`
+状态：`NO-GO（整体；STEP-0170 出口审计诚实登记）——语言 v1 第一批已落地（RFC-0044 中缀 == lowering，e2e byte-exact）；裸字面量类型决策记录（NUM-001 oracle 实证）；平台 parity/Android = owner 外部门控；§13 逐项审计表已发布（STEP-0170）。2026-09-17 owner 指令接续：本里程碑的语言 v1 余项由 M23 接续，§13 完成审计与 v1.0 产品结论由 M25 接续；平台广度外部输入（macOS/Linux runners、Android 授权设备）不变，按 M25 出口条件如实声明`
 
 关闭 §13 完成标准中最后两个维度：(a) 平台广度——Desktop Host 的 macOS/Linux parity 证据与 Android（M6 顺延）重启路径；(b) 语言 v1——把 M14–M18 消费者实际需要的 proposed 面（for-loops、闭包、集合迭代等，逐项 RFC）升级为版本化、规范完整的语言发布；最后执行指向全路线图的 §13 完成审计。
 
@@ -340,7 +340,43 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M22 compiler self-host track`](./plans/M22-compiler-self-host.md)。
 
-### M14–M18 dependency shape
+## M23: Language v1 batch 3 — expression ergonomics（planned; 2026-09-17）
+
+状态：`planned / owner session directive（2026-09-17「继续完成sico，M22-M25」）；M22 计划 §8 记录的语言摩擦升格为本里程碑；no step numbers reserved yet；RFC/合同起草可与 M22 S6/S7 并行，实现等 M22 S7 出口审计`
+
+关闭 RFC-0044/0045/0046 已实测但未移除的语言表面摩擦，逐项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断）：中缀比较/逻辑运算符（最小封闭算符集由 RFC 决定；实测消费者 = selfhost 源码本身的仪式密度）、表达式位置条件（`let x = if/match …`，记录在案的最大结构性冗余税）、裸字面量复称（按 RFC-0046 D3 记录的复测政策，先测后议、不改语法不做承诺）、`text.chars`（RFC-0046 §2 排队项，按消费者证据决定）。
+
+进入条件：M22 S7 出口审计显式（语言面churn 不得打断自举闭环中段）；逐项 RFC 接受；每项有实测消费者证据。
+
+退出条件：每个接受项 e2e byte-exact 语料（含 limit+1 typed 拒绝）；格式化幂等 + 冻结快照 append-only；支持矩阵行与校验器扩展、未声明 check/build/run 缺口保持为零；稳定诊断码与行动提示扩展；self-host 前端 re-baseline 登记（消费新表面或声明不相交子集）；M0–M22 回归绿 + 显式出口审计。AI 噪音下降主张只能来自 owner 凭据的 live-model 重测。
+
+执行计划：[`M23 Language v1 batch 3 — expression ergonomics`](./plans/M23-language-v1-batch-3.md)。
+
+## M24: Vision closure and block-game pilot（planned; 2026-09-17）
+
+状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 block-game gate——俄罗斯方块案例在真实 Windows 窗口上以 M14 Sico 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop；no step numbers reserved yet`
+
+这是 案例项目 README 冻结的验收链最后两环：M14 纯 Sico 离线求解器 ✓（STEP-0138）→ M16 capture/input ✓（M16 GO）→ M17 vision（本里程碑）→ M18 完整应用试点 block-game gate（本里程碑）。pilot 证据运行使用 owner 明确指定的目标窗口，授权遵循 M16 capability 合同（scoped、可撤销、绝不全桌面）。
+
+进入条件：M16 GO ✓；M17 gate 1 GO ✓；M18 组合 4/5 ✓（block-game 即登记的 NO-GO）；逐包/逐 gate RFC 先接受再实现；pilot 执行授权由 owner 显式给出。
+
+退出条件：M17 gate 2（容差内一致 + provider 故障隔离）与 gate 4（digest 绑定加载、预算 limit+1 typed、推理中取消、恶意资产拒绝、provider 崩溃隔离）GO；roster 包确定性语料 byte-exact 且消费者经 M7 registry 路径安装；block-game pilot 真实窗口语料绿 + 错误注入（误识别/窗口漂移/重复画面/超时/取消/权限撤销）全部 fail closed + 急停实测 + 长时运行采样；证据标签严格分级；M0–M23 回归绿 + 显式出口审计。
+
+执行计划：[`M24 Vision closure and block-game pilot`](./plans/M24-vision-closure-block-game-pilot.md)。本里程碑不提供验证码/认证/反作弊绕过、隐藏监控、全桌面捕获或凭据/进程控制；macOS/Linux/Android 不产生无原生证据的声明。
+
+## M25: Release v1.0 — platform breadth, completion audit and product exit（planned; 2026-09-17）
+
+状态：`planned / owner session directive（2026-09-17）；no step numbers reserved yet`
+
+以 AGENT_GOAL §13 为准发布版本化 v1.0 产品结论：语言 v1 freeze（batch 1–3 纳入版本化发布：规范/语料/诊断/格式化互洽 + 迁移说明）；§13 逐项审计以 M21–M24 全证据链重发（每项 GO 或显式 deferred + 外部门名称）；M19 残余 gate 在输入允许处收口（全范围签名安装演练、registry 对 v1.0 bundle 的发布演练——公网 rollout 仍 owner 门控，不作声明）；平台广度按 owner 实际提供的 runner 声明（无 runner 处 contract-verified；Android 按 M20 两路出口记录）；v1.0 release bundle 经 M19 管线可复现（两次独立构建字节相同）。
+
+进入条件：M23 出口审计显式；M24 block-game gate 显式（关闭或诚实 deferred + 外部门名称）；M19 CI 绿且对 release candidate 现行；生产/外部项的 owner 输入已提供或显式声明 deferred。
+
+退出条件：§13 逐项审计发布（每项证据链接、总结论 `complete` 或 `complete-with-deferrals`，绝不暗示成功）；语言 v1 freeze 快照重跑全冻结语料 byte-exact；v1.0 bundle 两次干净构建字节相同 + 干净 Windows 主机 install/run/upgrade/uninstall 签名演练；平台矩阵诚实（无标签洗白）；双实现登记与 AI 工作流状态记录；M0–M24 一命令回归绿 + 文档审计通过；按 §13 发出产品退出结论与残余清单。
+
+执行计划：[`M25 Release v1.0 — platform breadth, completion audit and product exit`](./plans/M25-release-v1-completion.md)。
+
+### M14–M25 dependency shape
 
 ```text
 M12 full GO + M13 closure
@@ -362,6 +398,15 @@ M19 production engineering
           |
           v
 M20 cross-platform, language v1, completion audit
+          |
+          v
+M21 DX/stdlib batch 2  →  M22 compiler self-host (S6/S7)
+          |                        |
+          v                        v
+   M23 language v1 batch 3   M24 vision closure + block-game pilot
+          \                        /
+           v                      v
+        M25 release v1.0 completion audit
 ```
 
 ## Immediate dependency chain

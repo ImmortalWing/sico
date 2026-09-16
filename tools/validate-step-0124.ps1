@@ -15,7 +15,10 @@ $plans = @(
     'M19-production-engineering.md',
     'M20-platform-breadth-language-v1.md',
     'M21-developer-experience-and-stdlib.md',
-    'M22-compiler-self-host.md'
+    'M22-compiler-self-host.md',
+    'M23-language-v1-batch-3.md',
+    'M24-vision-closure-block-game-pilot.md',
+    'M25-release-v1-completion.md'
 )
 foreach ($plan in $plans) {
     $path = Join-Path $root "docs\plans\$plan"
@@ -37,7 +40,10 @@ $headings = @(
     '## M19: Production engineering and release readiness',
     '## M20: Cross-platform runtime, language v1 and completion audit',
     '## M21: Developer experience, standard-library batch 2 and ecosystem activation',
-    '## M22: Compiler self-host track'
+    '## M22: Compiler self-host track',
+    '## M23: Language v1 batch 3 — expression ergonomics',
+    '## M24: Vision closure and block-game pilot',
+    '## M25: Release v1.0 — platform breadth, completion audit and product exit'
 )
 $previous = -1
 foreach ($heading in $headings) {
@@ -50,7 +56,10 @@ foreach ($needle in @(
         'M14 application-ready language',
         'M16 Native Automation',
         'M17 Vision/Model packages',
-        '俄罗斯方块离线求解器'
+        '俄罗斯方块离线求解器',
+        'M23 language v1 batch 3',
+        'M24 vision closure + block-game pilot',
+        'M25 release v1.0 completion audit'
     )) {
     if ($roadmap -notlike "*$needle*") { throw "roadmap invariant missing: $needle" }
 }
@@ -91,4 +100,4 @@ foreach ($step in $roadmapSteps) {
     }
 }
 
-Write-Output 'STEP_0124_OK milestones=M14-M22 steps=unreserved layers=language,web-ui,native-automation,vision-model,applications,production-engineering,platform-breadth-language-v1,compiler-self-host'
+Write-Output 'STEP_0124_OK milestones=M14-M25 steps=unreserved layers=language,web-ui,native-automation,vision-model,applications,production-engineering,platform-breadth-language-v1,compiler-self-host,language-v1-batch-3,vision-closure-block-game,release-v1-completion'
