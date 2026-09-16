@@ -25,6 +25,12 @@ function is_ident_byte(b: I64) returns Bool:
   if I64.equal(b, I64.literal(95)):
     return true
   end if
+  if I64.less_than(b, I64.literal(48)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(58)):
+    return true
+  end if
   if I64.less_than(b, I64.literal(65)):
     return false
   end if
@@ -38,6 +44,39 @@ function is_ident_byte(b: I64) returns Bool:
     return true
   end if
   return false
+end function
+
+function is_punct_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(40)):
+    return true
+  end if
+  if I64.equal(b, I64.literal(41)):
+    return true
+  end if
+  if I64.equal(b, I64.literal(44)):
+    return true
+  end if
+  if I64.equal(b, I64.literal(58)):
+    return true
+  end if
+  if I64.equal(b, I64.literal(91)):
+    return true
+  end if
+  if I64.equal(b, I64.literal(93)):
+    return true
+  end if
+  return false
+end function
+
+function is_word(w: Text, target: Text) returns Bool:
+  return sico.bytes.equal(sico.text.encode(w), sico.text.encode(target))
+end function
+
+function is_declaration_start(prev: Text) returns Bool:
+  if is_word(prev, "end"):
+    return false
+  end if
+  return true
 end function
 
 function lex_words(src: Bytes) returns List[Text]:
@@ -71,8 +110,16 @@ function lex_words(src: Bytes) returns List[Text]:
           case error(_):
             return sico.text.split_lines("ERR-slice")
         end match
+        set in_ident = I64.literal(0)
       end if
-      set in_ident = I64.literal(0)
+      if is_punct_byte(b):
+        match sico.bytes.slice(src, index, U64.literal(1)):
+          case ok(punct_bytes):
+            set words = sico.list.append(words, sico.bytes.utf8_decode(punct_bytes))
+          case error(_):
+            return sico.text.split_lines("ERR-slice")
+        end match
+      end if
     end if
     match U64.checked_add(index, U64.literal(1)):
       case ok(next):
@@ -92,34 +139,6 @@ function lex_words(src: Bytes) returns List[Text]:
   return words
 end function
 
-function count_word(words: List[Text], target: Text) returns U64:
-  let count = U64.literal(0)
-  let n = sico.list.length(words)
-  let i = U64.literal(0)
-  while U64.less_than(i, n):
-    match sico.list.get(words, i):
-      case ok(w):
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode(target)):
-          match U64.checked_add(count, U64.literal(1)):
-            case ok(next):
-              set count = next
-            case error(_):
-              return count
-          end match
-        end if
-        match U64.checked_add(i, U64.literal(1)):
-          case ok(next):
-            set i = next
-          case error(_):
-            return count
-        end match
-      case error(_):
-        return count
-    end match
-  end while
-  return count
-end function
-
 function word_at(words: List[Text], i: U64) returns Text:
   match sico.list.get(words, i):
     case ok(w):
@@ -132,28 +151,40 @@ end function
 function count_params(words: List[Text], from_idx: U64) returns U64:
   let n = sico.list.length(words)
   let i = from_idx
-  let depth = I64.literal(0)
-  let commas = U64.literal(0)
   let seen_open = I64.literal(0)
+  let commas = U64.literal(0)
+  let seen_any = I64.literal(0)
   while U64.less_than(i, n):
     match sico.list.get(words, i):
       case ok(w):
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("returns")):
-          if I64.equal(seen_open, I64.literal(1)):
-            return commas
-          end if
-        end if
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("(")):
+        if is_word(w, "("):
           set seen_open = I64.literal(1)
-        end if
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode(",")):
-          if I64.equal(seen_open, I64.literal(1)):
-            match U64.checked_add(commas, U64.literal(1)):
-              case ok(next):
-                set commas = next
-              case error(_):
-                return commas
-            end match
+        else:
+          if is_word(w, ")"):
+            if I64.equal(seen_open, I64.literal(1)):
+              if I64.equal(seen_any, I64.literal(1)):
+                match U64.checked_add(commas, U64.literal(1)):
+                  case ok(params):
+                    return params
+                  case error(_):
+                    return commas
+                end match
+              end if
+              return commas
+            end if
+          else:
+            if I64.equal(seen_open, I64.literal(1)):
+              if is_word(w, ","):
+                match U64.checked_add(commas, U64.literal(1)):
+                  case ok(next):
+                    set commas = next
+                  case error(_):
+                    return commas
+                end match
+              else:
+                set seen_any = I64.literal(1)
+              end if
+            end if
           end if
         end if
         match U64.checked_add(i, U64.literal(1)):
@@ -173,21 +204,25 @@ function summarize(words: List[Text]) returns Text:
   let n = sico.list.length(words)
   let i = U64.literal(0)
   let summary = ""
+  let prev = ""
   while U64.less_than(i, n):
     match sico.list.get(words, i):
       case ok(w):
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("function")):
-          match U64.checked_add(i, U64.literal(1)):
-            case ok(name_idx):
-              if U64.less_than(name_idx, n):
-                let fname = word_at(words, name_idx)
-                let params = count_params(words, name_idx)
-                set summary = sico.text.concat(summary, sico.text.concat("fn:", sico.text.concat(fname, sico.text.concat("/", sico.u64.to_text(params)))))
-              end if
-            case error(_):
-              return summary
-          end match
+        if is_word(w, "function"):
+          if is_declaration_start(prev):
+            match U64.checked_add(i, U64.literal(1)):
+              case ok(name_idx):
+                if U64.less_than(name_idx, n):
+                  let fname = word_at(words, name_idx)
+                  let params = count_params(words, name_idx)
+                  set summary = sico.text.concat(summary, sico.text.concat("fn:", sico.text.concat(fname, sico.text.concat("/", sico.text.concat(sico.u64.to_text(params), ";")))))
+                end if
+              case error(_):
+                return summary
+            end match
+          end if
         end if
+        set prev = w
         match U64.checked_add(i, U64.literal(1)):
           case ok(next):
             set i = next

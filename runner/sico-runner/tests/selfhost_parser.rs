@@ -1,14 +1,14 @@
-//! M22 S5 (STEP-0192): the Sico-written parser consumes the token stream
-//! (struct-of-arrays `List[Text]` words from STEP-0191) and counts
-//! declaration keywords — the first parser-level shape over the token
-//! stream.
+//! M22 S6 (STEP-0195): the Sico-written parser extracts exact IR
+//! signatures — the token stream now carries punctuation, the arity walk
+//! counts the parameter list by depth (0 for `()`, commas+1 otherwise),
+//! and `end function` is recognized as a terminator, not a declaration.
 
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
 
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
-const INPUT: &[u8] = b"function main() returns Int:\n  return 42\nend function\n";
+const INPUT: &[u8] = b"function main() returns Int:\n  return 42\nend function\n\nfunction add(a: I64, b: I64) returns I64:\n  return a\nend function\n";
 
 fn compile_parser() -> Vec<u8> {
     let directory = std::env::temp_dir().join(format!("sico-step0192-parser-{}", std::process::id()));
@@ -58,11 +58,12 @@ fn sico_parser_extracts_function_names() {
     {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-            // STEP-0194: the parser extracts function name + param count
-            // (the IR-signature shape): `function main()` yields `fn:main/0`.
+            // STEP-0195: exact IR signatures — `function main()` yields
+            // `fn:main/0`, and the two-parameter `function add(a: I64,
+            // b: I64)` yields `fn:add/2`; entries are `;`-separated.
             assert_eq!(
                 output.stdout,
-                b"fn:main/0".to_vec(),
+                b"fn:main/0;fn:add/2;".to_vec(),
                 "parser summary drifted"
             );
         }
