@@ -29,6 +29,8 @@ not a defect in the token stream or the name extraction (both byte-exact).
 ## 3. Residuals
 
 - Fix the arity walk to count `(`…`)` parameters correctly (comma+1 when
-  the list is non-empty); then the IR signature is exact.
+  the list is non-empty); then the IR signature is exact. — **closed by
+  STEP-0195** (`fn:add/2`); mechanism corrected: commas are not in the
+  punctuation-free word stream at all, arity = `name: Type` word pairs.
 - The full typed IR (expression trees, blocks) and the Rust-verifier
   differential are the remaining S6 slices toward the bootstrap closure.

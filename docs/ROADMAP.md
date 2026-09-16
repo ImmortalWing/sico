@@ -328,7 +328,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（entry satisfied; 2026-09-14）
 
-状态：`entry satisfied 2026-09-14（STEP-0175 关闭入口条件 3/4）/ owner session directive（2026-09-14「规划自举里程碑」）；S1–S7 无预留 STEP；自举架构 ADR 仍为 S6 前置`
+状态：`entry satisfied 2026-09-14（STEP-0175 关闭入口条件 3/4）/ owner session directive（2026-09-14「规划自举里程碑」）；S1–S5 已落地（STEP-0178–0192，2026-09-14：L1 formatter/checker 差分绿、L2 lexer/parser/token 流 byte-exact）；S6 进行中（STEP-0193–0195：parser 提取函数名+参数 arity，`fn:name/arity` 精确）；自举架构 ADR 仍为 S6 闭环前置`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 

@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14); S1 (L1 formatter) may start once the owner opens implementation; bootstrap architecture ADR still required before S6; owner session directive (2026-09-14, 「规划自举里程碑」); no STEP numbers reserved for S1–S7
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14); S1–S5 landed (STEP-0178–0192, 2026-09-14); S6 in progress (STEP-0193–0195: parser → IR-signature shape, `fn:name/arity` exact); bootstrap architecture ADR (entry condition 5) still open and required before the S6 closure; owner session directive (2026-09-14, 「规划自举里程碑」); no STEP numbers reserved beyond STEP-0195 — each was allocated only when its entry gate was satisfied
 
 ## 1. Objective
 

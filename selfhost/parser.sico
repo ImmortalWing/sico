@@ -131,42 +131,43 @@ end function
 
 function count_params(words: List[Text], from_idx: U64) returns U64:
   let n = sico.list.length(words)
-  let i = from_idx
-  let depth = I64.literal(0)
-  let commas = U64.literal(0)
-  let seen_open = I64.literal(0)
+  let i = U64.literal(0)
+  match U64.checked_add(from_idx, U64.literal(1)):
+    case ok(next):
+      set i = next
+    case error(_):
+      return U64.literal(0)
+  end match
+  let arity = U64.literal(0)
+  let pending = I64.literal(0)
   while U64.less_than(i, n):
     match sico.list.get(words, i):
       case ok(w):
         if sico.bytes.equal(sico.text.encode(w), sico.text.encode("returns")):
-          if I64.equal(seen_open, I64.literal(1)):
-            return commas
-          end if
+          return arity
         end if
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode("(")):
-          set seen_open = I64.literal(1)
-        end if
-        if sico.bytes.equal(sico.text.encode(w), sico.text.encode(",")):
-          if I64.equal(seen_open, I64.literal(1)):
-            match U64.checked_add(commas, U64.literal(1)):
-              case ok(next):
-                set commas = next
-              case error(_):
-                return commas
-            end match
-          end if
+        if I64.equal(pending, I64.literal(0)):
+          set pending = I64.literal(1)
+        else:
+          set pending = I64.literal(0)
+          match U64.checked_add(arity, U64.literal(1)):
+            case ok(next):
+              set arity = next
+            case error(_):
+              return arity
+          end match
         end if
         match U64.checked_add(i, U64.literal(1)):
           case ok(next):
             set i = next
           case error(_):
-            return commas
+            return arity
         end match
       case error(_):
-        return commas
+        return arity
     end match
   end while
-  return commas
+  return arity
 end function
 
 function summarize(words: List[Text]) returns Text:

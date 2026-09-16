@@ -9,9 +9,11 @@ use sico_runner::{
 
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
 const INPUT: &[u8] = b"function main() returns Int:\n  return 42\nend function\n";
+const INPUT_TWO_PARAMS: &[u8] =
+    b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n";
 
-fn compile_parser() -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!("sico-step0192-parser-{}", std::process::id()));
+fn compile_parser(tag: &str) -> Vec<u8> {
+    let directory = std::env::temp_dir().join(format!("sico-step0192-parser-{tag}-{}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("parser.sico");
     let component_path = directory.join("parser.component.wasm");
@@ -38,9 +40,8 @@ fn compile_parser() -> Vec<u8> {
     component
 }
 
-#[test]
-fn sico_parser_extracts_function_names() {
-    let component = compile_parser();
+fn run_parser(tag: &str, input: &[u8]) -> Vec<u8> {
+    let component = compile_parser(tag);
     let runner = Runner::new().expect("runner builds");
     let prepared = runner
         .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
@@ -48,7 +49,7 @@ fn sico_parser_extracts_function_names() {
     match prepared
         .run(
             &ScriptInput {
-                stdin: INPUT.to_vec(),
+                stdin: input.to_vec(),
                 ..ScriptInput::default()
             },
             &RunnerLimits::default(),
@@ -58,14 +59,31 @@ fn sico_parser_extracts_function_names() {
     {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-            // STEP-0194: the parser extracts function name + param count
-            // (the IR-signature shape): `function main()` yields `fn:main/0`.
-            assert_eq!(
-                output.stdout,
-                b"fn:main/0".to_vec(),
-                "parser summary drifted"
-            );
+            output.stdout
         }
         other => panic!("expected guest output, got {other:?}"),
     }
+}
+
+#[test]
+fn sico_parser_extracts_function_names() {
+    // STEP-0194: the parser extracts function name + param count
+    // (the IR-signature shape): `function main()` yields `fn:main/0`.
+    assert_eq!(
+        run_parser("main0", INPUT),
+        b"fn:main/0".to_vec(),
+        "parser summary drifted"
+    );
+}
+
+#[test]
+fn sico_parser_counts_parameters() {
+    // STEP-0195: the arity walk counts the full parameter list; the
+    // punctuation-free word stream carries each `name: Type` parameter as
+    // two words, so `function add(a: I64, b: I64)` yields `fn:add/2`.
+    assert_eq!(
+        run_parser("add2", INPUT_TWO_PARAMS),
+        b"fn:add/2".to_vec(),
+        "param count drifted"
+    );
 }
