@@ -1171,13 +1171,24 @@ function call_arguments(words: List[Text], from_idx: U64, end_idx: U64, caller_n
     end if
     let call_argument_name = word_at(words, call_argument_idx)
     let call_argument_kind = ""
+    let call_argument_width = U64.literal(1)
     let call_argument_value = binding_parameter_index(words, caller_name_idx, call_argument_name)
     if U64.less_than(call_argument_value, caller_param_count):
       set call_argument_kind = binding_parameter_kind(words, caller_name_idx, call_argument_name)
     else:
       set call_argument_kind = constant_argument_kind(call_argument_name)
       if U64.equal(sico.text.length(call_argument_kind), U64.literal(0)):
-        return "ERR:E-SH-IR-CALL-ARGUMENT"
+        set call_argument_kind = fixed_literal_argument(words, call_argument_idx)
+        if sico.text.starts_with(call_argument_kind, "ERR:"):
+          return call_argument_kind
+        end if
+        if U64.equal(sico.text.length(call_argument_kind), U64.literal(0)):
+          return "ERR:E-SH-IR-CALL-ARGUMENT"
+        end if
+        set call_argument_width = U64.literal(6)
+        if is_word(word_at(words, next_index(next_index(next_index(next_index(call_argument_idx, end_idx), end_idx), end_idx), end_idx)), "-"):
+          set call_argument_width = U64.literal(7)
+        end if
       end if
       match U64.checked_add(caller_param_count, call_constant_count):
         case ok(constant_result):
@@ -1197,7 +1208,13 @@ function call_arguments(words: List[Text], from_idx: U64, end_idx: U64, caller_n
       set call_arguments_json = sico.text.concat(call_arguments_json, ",")
     end if
     set call_arguments_json = sico.text.concat(call_arguments_json, sico.u64.to_text(call_argument_value))
-    let call_separator_idx = next_index(call_argument_idx, end_idx)
+    let call_separator_idx = call_argument_idx
+    match U64.checked_add(call_argument_idx, call_argument_width):
+      case ok(after_argument):
+        set call_separator_idx = after_argument
+      case error(_):
+        return "ERR:E-SH-IR-CALL-SHAPE"
+    end match
     let call_next_position = next_index(call_argument_position, call_argument_position)
     if is_word(word_at(words, call_separator_idx), ","):
       set call_argument_idx = next_index(call_separator_idx, end_idx)
@@ -1234,6 +1251,88 @@ function constant_argument_kind(atom: Text) returns Text:
   return ""
 end function
 
+function fixed_literal_argument(words: List[Text], atom_idx: U64) returns Text:
+  let det_words_len = sico.list.length(words)
+  let det_dot_idx = next_index(atom_idx, det_words_len)
+  let det_name_idx = next_index(det_dot_idx, det_words_len)
+  let det_open_idx = next_index(det_name_idx, det_words_len)
+  let det_sign_idx = next_index(det_open_idx, det_words_len)
+  let det_kind = ""
+  if is_word(word_at(words, atom_idx), "I64"):
+    set det_kind = "i64"
+  else:
+    if is_word(word_at(words, atom_idx), "U64"):
+      set det_kind = "u64"
+    end if
+  end if
+  if U64.equal(sico.text.length(det_kind), U64.literal(0)):
+    return ""
+  end if
+  if is_word(word_at(words, det_dot_idx), "."):
+    let det_dot_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  if is_word(word_at(words, det_name_idx), "literal"):
+    let det_name_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  if is_word(word_at(words, det_open_idx), "("):
+    let det_open_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  if is_word(word_at(words, det_sign_idx), "-"):
+    if is_word(det_kind, "u64"):
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let det_magnitude_idx = next_index(det_sign_idx, det_words_len)
+    let det_negative_close_idx = next_index(det_magnitude_idx, det_words_len)
+    if is_canonical_magnitude(word_at(words, det_magnitude_idx)):
+      let det_negative_mag_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    if is_word(word_at(words, det_negative_close_idx), ")"):
+      let det_close_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    if decimal_at_most(word_at(words, det_magnitude_idx), "9223372036854775808"):
+      let det_range_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-I64-RANGE"
+    end if
+    return det_kind
+  end if
+  if is_canonical_magnitude(word_at(words, det_sign_idx)):
+    let det_mag_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let det_close_idx = next_index(det_sign_idx, det_words_len)
+  if is_word(word_at(words, det_close_idx), ")"):
+    let det_positive_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  if is_word(det_kind, "i64"):
+    if decimal_at_most(word_at(words, det_sign_idx), "9223372036854775807"):
+      let det_i64_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-I64-RANGE"
+    end if
+  else:
+    if decimal_at_most(word_at(words, det_sign_idx), "18446744073709551615"):
+      let det_u64_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-U64-RANGE"
+    end if
+  end if
+  return det_kind
+end function
+
 function constant_argument_count(words: List[Text], from_idx: U64, end_idx: U64, caller_name_idx: U64) returns U64:
   let count_words_len = sico.list.length(words)
   let caller_param_count = count_params(words, caller_name_idx)
@@ -1245,16 +1344,36 @@ function constant_argument_count(words: List[Text], from_idx: U64, end_idx: U64,
   end if
   while U64.less_than(count_argument_idx, end_idx):
     let count_atom = word_at(words, count_argument_idx)
+    let count_width = U64.literal(1)
     if U64.less_than(binding_parameter_index(words, caller_name_idx, count_atom), caller_param_count):
       let count_binding_skipped = I64.literal(1)
     else:
       if U64.less_than(U64.literal(0), sico.text.length(constant_argument_kind(count_atom))):
         set constant_count = next_index(constant_count, constant_count)
+      else:
+        let count_literal_kind = fixed_literal_argument(words, count_argument_idx)
+        if is_word(count_literal_kind, "i64"):
+          set constant_count = next_index(constant_count, constant_count)
+          set count_width = U64.literal(6)
+          if is_word(word_at(words, next_index(next_index(next_index(next_index(count_argument_idx, count_words_len), count_words_len), count_words_len), count_words_len)), "-"):
+            set count_width = U64.literal(7)
+          end if
+        else:
+          if is_word(count_literal_kind, "u64"):
+            set constant_count = next_index(constant_count, constant_count)
+            set count_width = U64.literal(6)
+          end if
+        end if
       end if
     end if
-    let count_separator_idx = next_index(count_argument_idx, end_idx)
-    if is_word(word_at(words, count_separator_idx), ","):
-      set count_argument_idx = next_index(count_separator_idx, count_words_len)
+    match U64.checked_add(count_argument_idx, count_width):
+      case ok(next_argument_idx):
+        set count_argument_idx = next_argument_idx
+      case error(_):
+        set count_argument_idx = end_idx
+    end match
+    if is_word(word_at(words, count_argument_idx), ","):
+      set count_argument_idx = next_index(count_argument_idx, count_words_len)
     else:
       set count_argument_idx = end_idx
     end if
@@ -1282,6 +1401,7 @@ function constant_argument_instructions(words: List[Text], src: Bytes, from_idx:
   end if
   while U64.less_than(emit_argument_idx, end_idx):
     let emit_atom = word_at(words, emit_argument_idx)
+    let emit_width = U64.literal(1)
     let atom_offset = find_text_from(src, emit_atom, search_cursor)
     let atom_end = atom_offset
     match U64.checked_add(atom_offset, sico.bytes.length(sico.text.encode(emit_atom))):
@@ -1323,11 +1443,81 @@ function constant_argument_instructions(words: List[Text], src: Bytes, from_idx:
         set emit_json = sico.text.concat(emit_json, sico.u64.to_text(atom_end))
         set emit_json = sico.text.concat(emit_json, "}}")
         set emit_result = next_index(emit_result, emit_result)
+      else:
+        let emit_literal_kind = fixed_literal_argument(words, emit_argument_idx)
+        if is_word(emit_literal_kind, "i64"):
+          set emit_width = U64.literal(6)
+        else:
+          if is_word(emit_literal_kind, "u64"):
+            set emit_width = U64.literal(6)
+          end if
+        end if
+        if U64.equal(emit_width, U64.literal(6)):
+          let emit_is_negative = is_word(word_at(words, next_index(next_index(next_index(next_index(emit_argument_idx, emit_words_len), emit_words_len), emit_words_len), emit_words_len)), "-")
+          if emit_is_negative:
+            set emit_width = U64.literal(7)
+          end if
+          let paren_offset = find_text_from(src, "(", search_cursor)
+          let first_offset = paren_offset
+          match U64.checked_add(paren_offset, U64.literal(1)):
+            case ok(after_open):
+              set first_offset = after_open
+            case error(_):
+              return ""
+          end match
+          let digits_word = ""
+          let digits_offset = first_offset
+          if emit_is_negative:
+            match U64.checked_add(first_offset, U64.literal(1)):
+              case ok(after_sign):
+                set digits_offset = after_sign
+              case error(_):
+                return ""
+            end match
+            set digits_word = word_at(words, next_index(next_index(next_index(next_index(next_index(emit_argument_idx, emit_words_len), emit_words_len), emit_words_len), emit_words_len), emit_words_len))
+          else:
+            set digits_word = word_at(words, next_index(next_index(next_index(next_index(emit_argument_idx, emit_words_len), emit_words_len), emit_words_len), emit_words_len))
+          end if
+          let digits_end = digits_offset
+          match U64.checked_add(digits_offset, sico.bytes.length(sico.text.encode(digits_word))):
+            case ok(after_digits):
+              set digits_end = after_digits
+            case error(_):
+              return ""
+          end match
+          set search_cursor = digits_end
+          let emit_data = digits_word
+          if emit_is_negative:
+            set emit_data = sico.text.concat("-", digits_word)
+          end if
+          if U64.less_than(U64.literal(0), sico.text.length(emit_json)):
+            set emit_json = sico.text.concat(emit_json, ",")
+          end if
+          set emit_json = sico.text.concat(emit_json, "{\"result\":")
+          set emit_json = sico.text.concat(emit_json, sico.u64.to_text(emit_result))
+          set emit_json = sico.text.concat(emit_json, ",\"ty\":{\"kind\":\"")
+          set emit_json = sico.text.concat(emit_json, emit_literal_kind)
+          set emit_json = sico.text.concat(emit_json, "\"},\"operation\":{\"op\":\"const_")
+          set emit_json = sico.text.concat(emit_json, emit_literal_kind)
+          set emit_json = sico.text.concat(emit_json, "\",\"data\":")
+          set emit_json = sico.text.concat(emit_json, emit_data)
+          set emit_json = sico.text.concat(emit_json, "},\"range\":{\"start\":")
+          set emit_json = sico.text.concat(emit_json, sico.u64.to_text(first_offset))
+          set emit_json = sico.text.concat(emit_json, ",\"end\":")
+          set emit_json = sico.text.concat(emit_json, sico.u64.to_text(digits_end))
+          set emit_json = sico.text.concat(emit_json, "}}")
+          set emit_result = next_index(emit_result, emit_result)
+        end if
       end if
     end if
-    let emit_separator_idx = next_index(emit_argument_idx, end_idx)
-    if is_word(word_at(words, emit_separator_idx), ","):
-      set emit_argument_idx = next_index(emit_separator_idx, emit_words_len)
+    match U64.checked_add(emit_argument_idx, emit_width):
+      case ok(next_emit_idx):
+        set emit_argument_idx = next_emit_idx
+      case error(_):
+        set emit_argument_idx = end_idx
+    end match
+    if is_word(word_at(words, emit_argument_idx), ","):
+      set emit_argument_idx = next_index(emit_argument_idx, emit_words_len)
     else:
       set emit_argument_idx = end_idx
     end if

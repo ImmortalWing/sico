@@ -1,6 +1,6 @@
-//! M22 S6 (STEP-0209): the Sico-written frontend lowers fixed-width
-//! bit and shift operations (I64/U64 bit_and/bit_or/bit_xor/shl/shr)
-//! to Rust-identical direct IR operations with typed operand checks.
+//! M22 S6 (STEP-0210): the Sico-written frontend lowers fixed-width
+//! literal call arguments (I64/U64.literal forms, including negatives)
+//! to Rust-identical const instructions with digits-span ranges.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -212,6 +212,18 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function lower(a: U64, b: U64) returns U64:\n  return U64.shr(a, b)\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main(v: I64) returns I64:\n  return add(v, I64.literal(2))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main() returns I64:\n  return add(I64.literal(1), I64.literal(-5))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function bits(a: U64, b: U64) returns U64:\n  return a\nend function\n\nfunction main(v: U64) returns U64:\n  return bits(v, U64.literal(7))\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -389,6 +401,14 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         (
             b"function lonely(a: I64) returns I64:\n  return I64.bit_and(a, ghost)\nend function\n".as_slice(),
             "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main(v: I64) returns I64:\n  return add(v, I64.literal(9223372036854775808))\nend function\n".as_slice(),
+            "ERR:E-SH-IR-I64-RANGE",
+        ),
+        (
+            b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main(v: I64) returns I64:\n  return add(v, 3)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
         ),
     ] {
         let rust_source = SourceFile::from_text(
