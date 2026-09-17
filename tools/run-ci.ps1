@@ -14,6 +14,20 @@ if (-not (Test-Path $cargo)) { throw 'cargo not found' }
 $env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 $env:SICO_TEST_WASMTIME = & (Join-Path $repo 'tools\ensure-wasmtime.ps1')
 
+# Fresh-host prerequisites (STEP-0196). The GNU toolchain's dlltool lives
+# in the repo-local MSYS2 binutils directory (the same candidate
+# tools/validate-step-0034.ps1 resolves); the console-control fixtures
+# need a stdlib python.exe; and packages_resolve.rs falls back to the
+# runner debug exe, so the runner workspace must be built before the
+# workspace test step on a fresh clone.
+$binutils = Join-Path $repo 'target\tooling\msys2-binutils\mingw64\bin'
+if (Test-Path -LiteralPath $binutils -PathType Container) {
+    $env:Path = "$binutils;$env:Path"
+}
+$env:SICO_PYTHON = & (Join-Path $repo 'tools\ensure-python.ps1')
+$pythonDir = Split-Path -Parent $env:SICO_PYTHON
+$env:Path = "$pythonDir;$env:Path"
+
 $failures = New-Object System.Collections.Generic.List[string]
 function Invoke-Step([string]$name, [scriptblock]$body) {
     Write-Host "=== CI: $name" -ForegroundColor Cyan
@@ -33,6 +47,7 @@ if (-not $Fast) {
     Invoke-Step 'clippy (workspace)' { & $cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings; $LASTEXITCODE }
     Invoke-Step 'clippy (runner)' { & $cargo clippy --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --all-targets -- -D warnings; $LASTEXITCODE }
 }
+Invoke-Step 'build (runner debug)' { & $cargo build --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml; $LASTEXITCODE }
 Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --all-targets --all-features; $LASTEXITCODE }
 # The runner suite's RSS/handle budget asserts measure the *process-wide*
 # metrics of the test binary; under the default threaded harness, sibling
@@ -41,7 +56,7 @@ Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --
 # serially; the budget constants themselves are unchanged.
 Invoke-Step 'test (runner)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1; $LASTEXITCODE }
 Invoke-Step 'module boundaries' { & powershell -ExecutionPolicy Bypass -File tools\validate-module-boundaries.ps1; $LASTEXITCODE }
-Invoke-Step 'planning contract (M14-M21)' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0124.ps1; $LASTEXITCODE }
+Invoke-Step 'planning contract (M14-M25)' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0124.ps1; $LASTEXITCODE }
 Invoke-Step 'application-profile matrix' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0131.ps1; $LASTEXITCODE }
 Invoke-Step 'cross-host matrix + UI corpus' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0156.ps1; $LASTEXITCODE }
 Invoke-Step 'whitespace (git diff --check)' { git diff --check; $LASTEXITCODE }

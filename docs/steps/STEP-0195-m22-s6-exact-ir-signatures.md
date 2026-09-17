@@ -84,3 +84,11 @@ recorded the same environment sensitivity with isolated re-runs green.
   source; the bootstrap architecture ADR is the plan-level prerequisite.
 - Selfhost index note: `docs/steps/README.md`'s table stopped at
   STEP-0130 (pre-existing); STATUS.md remains the live tracker.
+
+## 7. Correction (STEP-0196)
+
+The console-control failures in §5 were caused by the missing `python`
+fixture dependency, not the non-TTY harness — both tests pass in this
+harness once Python 3.12.10 is available. All three fresh-host gaps
+(binutils PATH, Python prerequisite, runner build order) are repaired
+in STEP-0196 (`tools/ensure-python.ps1`, `tools/run-ci.ps1`).
