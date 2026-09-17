@@ -1335,6 +1335,103 @@ function constant_argument_instructions(words: List[Text], src: Bytes, from_idx:
   return emit_json
 end function
 
+function fixed_op_name(word: Text) returns Text:
+  if is_word(word, "bit_and"):
+    return "bit_and"
+  end if
+  if is_word(word, "bit_or"):
+    return "bit_or"
+  end if
+  if is_word(word, "bit_xor"):
+    return "bit_xor"
+  end if
+  if is_word(word, "shl"):
+    return "shl"
+  end if
+  if is_word(word, "shr"):
+    return "shr"
+  end if
+  return ""
+end function
+
+function fixed_operation_operand_check(words: List[Text], from_idx: U64, end_idx: U64, caller_name_idx: U64, receiver_kind: Text) returns Text:
+  let check_words_len = sico.list.length(words)
+  let caller_param_count = count_params(words, caller_name_idx)
+  let check_open_idx = next_index(next_index(next_index(from_idx, check_words_len), check_words_len), check_words_len)
+  if is_word(word_at(words, check_open_idx), "("):
+    let check_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let first_idx = next_index(check_open_idx, check_words_len)
+  let comma_idx = next_index(first_idx, check_words_len)
+  let second_idx = next_index(comma_idx, check_words_len)
+  let close_idx = next_index(second_idx, check_words_len)
+  let after_close_idx = next_index(close_idx, check_words_len)
+  if U64.equal(after_close_idx, end_idx):
+    let check_shape_two_operands = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  if is_word(word_at(words, close_idx), ")"):
+    let check_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  if is_word(word_at(words, comma_idx), ","):
+    let check_comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let first_atom = word_at(words, first_idx)
+  let first_id = binding_parameter_index(words, caller_name_idx, first_atom)
+  if U64.less_than(first_id, caller_param_count):
+    let check_first_found = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  if is_word(binding_parameter_kind(words, caller_name_idx, first_atom), receiver_kind):
+    let check_first_kind = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let second_atom = word_at(words, second_idx)
+  let second_id = binding_parameter_index(words, caller_name_idx, second_atom)
+  if U64.less_than(second_id, caller_param_count):
+    let check_second_found = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  if is_word(binding_parameter_kind(words, caller_name_idx, second_atom), receiver_kind):
+    let check_second_kind = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  return ""
+end function
+
+function fixed_operation_operand_id(words: List[Text], from_idx: U64, end_idx: U64, caller_name_idx: U64, position: U64) returns U64:
+  let id_words_len = sico.list.length(words)
+  let id_open_idx = next_index(next_index(next_index(from_idx, id_words_len), id_words_len), id_words_len)
+  let id_atom_idx = id_words_len
+  if U64.equal(position, U64.literal(0)):
+    match U64.checked_add(id_open_idx, U64.literal(1)):
+      case ok(first_atom_idx):
+        set id_atom_idx = first_atom_idx
+      case error(_):
+        return id_words_len
+    end match
+  else:
+    match U64.checked_add(id_open_idx, U64.literal(3)):
+      case ok(second_atom_idx):
+        set id_atom_idx = second_atom_idx
+      case error(_):
+        return id_words_len
+    end match
+  end if
+  return binding_parameter_index(words, caller_name_idx, word_at(words, id_atom_idx))
+end function
+
 function return_expression_end(src: Bytes, start_idx: U64) returns U64:
   let expression_source_len = sico.bytes.length(src)
   let expression_scan_idx = start_idx
@@ -1426,6 +1523,9 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
         let call_target_idx = n
         let call_constant_count = U64.literal(0)
         let call_constants_json = ""
+        let fixed_op_name_value = ""
+        let fixed_op_left = n
+        let fixed_op_right = n
         let binding_value = n
         let body_i = body_from
         while U64.less_than(body_i, body_end_word):
@@ -1508,6 +1608,37 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           set call_constant_count = constant_argument_count(words, start, finish, name_idx)
           set call_constants_json = constant_argument_instructions(words, src, start, finish, name_idx, parameter_count, return_expression_start(src, fn_start))
         else:
+          let op_name = fixed_op_name(word_at(words, next_index(next_index(start, finish), finish)))
+          let op_receiver_kind = ""
+          if is_word(word_at(words, start), "I64"):
+            set op_receiver_kind = "i64"
+          else:
+            if is_word(word_at(words, start), "U64"):
+              set op_receiver_kind = "u64"
+            end if
+          end if
+          let is_fixed_op = false
+          if is_word(word_at(words, next_index(start, finish)), "."):
+            if U64.less_than(U64.literal(0), sico.text.length(op_name)):
+              if U64.less_than(U64.literal(0), sico.text.length(op_receiver_kind)):
+                if is_word(word_at(words, next_index(next_index(next_index(start, finish), finish), finish)), "("):
+                  set is_fixed_op = true
+                end if
+              end if
+            end if
+          end if
+          if is_fixed_op:
+            let operand_check = fixed_operation_operand_check(words, start, finish, name_idx, op_receiver_kind)
+            if sico.text.starts_with(operand_check, "ERR:"):
+              return operand_check
+            end if
+            set fixed_op_name_value = op_name
+            set fixed_op_left = fixed_operation_operand_id(words, start, finish, name_idx, U64.literal(0))
+            set fixed_op_right = fixed_operation_operand_id(words, start, finish, name_idx, U64.literal(1))
+            set expression_kind = "fixed_op"
+            set expression_type = op_receiver_kind
+            set call_range = I64.literal(1)
+          else:
         let fixed_call_name_idx = start
         let fixed_dot_idx = next_index(fixed_call_name_idx, finish)
         let fixed_literal_name_idx = next_index(fixed_dot_idx, finish)
@@ -1603,8 +1734,9 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           end if
         end if
         end if
+        end if
       end if
-            set body_i = finish
+      set body_i = finish
           else:
             set body_i = next_index(body_i, n)
           end if
@@ -1744,8 +1876,43 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
                       set instructions_json = sico.text.concat(instructions_json, ",\"end\":")
                       set instructions_json = sico.text.concat(instructions_json, range_end_text)
                       set instructions_json = sico.text.concat(instructions_json, "}}]")
+                  else:
+                    if is_word(expression_kind, "fixed_op"):
+                      set instructions_json = "[{\"result\":"
+                      set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(result_value))
+                      set instructions_json = sico.text.concat(instructions_json, ",\"ty\":{\"kind\":\"")
+                      set instructions_json = sico.text.concat(instructions_json, expression_type)
+                      set instructions_json = sico.text.concat(instructions_json, "\"},\"operation\":{\"op\":\"")
+                      set instructions_json = sico.text.concat(instructions_json, fixed_op_name_value)
+                      set instructions_json = sico.text.concat(instructions_json, "\",\"data\":")
+                      if is_word(fixed_op_name_value, "shl"):
+                        set instructions_json = sico.text.concat(instructions_json, "{\"value\":")
+                      else:
+                        if is_word(fixed_op_name_value, "shr"):
+                          set instructions_json = sico.text.concat(instructions_json, "{\"value\":")
+                        else:
+                          set instructions_json = sico.text.concat(instructions_json, "{\"left\":")
+                        end if
+                      end if
+                      set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(fixed_op_left))
+                      if is_word(fixed_op_name_value, "shl"):
+                        set instructions_json = sico.text.concat(instructions_json, ",\"amount\":")
+                      else:
+                        if is_word(fixed_op_name_value, "shr"):
+                          set instructions_json = sico.text.concat(instructions_json, ",\"amount\":")
+                        else:
+                          set instructions_json = sico.text.concat(instructions_json, ",\"right\":")
+                        end if
+                      end if
+                      set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(fixed_op_right))
+                      set instructions_json = sico.text.concat(instructions_json, "}},\"range\":{\"start\":")
+                      set instructions_json = sico.text.concat(instructions_json, range_start_text)
+                      set instructions_json = sico.text.concat(instructions_json, ",\"end\":")
+                      set instructions_json = sico.text.concat(instructions_json, range_end_text)
+                      set instructions_json = sico.text.concat(instructions_json, "}}]")
                     else:
                       return "ERR:E-SH-IR-EXPRESSION-KIND"
+                    end if
                     end if
                   end if
                 end if

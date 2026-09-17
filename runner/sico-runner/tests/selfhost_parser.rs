@@ -1,6 +1,6 @@
-//! M22 S6 (STEP-0208): the Sico-written frontend lowers constant call
-//! arguments (int/bool/string atoms alongside parameter references) to
-//! Rust-identical typed IR with source-ordered const instructions.
+//! M22 S6 (STEP-0209): the Sico-written frontend lowers fixed-width
+//! bit and shift operations (I64/U64 bit_and/bit_or/bit_xor/shl/shr)
+//! to Rust-identical direct IR operations with typed operand checks.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -192,6 +192,26 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function label(text: Text) returns Text:\n  return text\nend function\n\nfunction main() returns Text:\n  return label(\"hi\\n\")\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function bits(a: I64, b: I64) returns I64:\n  return I64.bit_and(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function combine(a: I64, b: I64) returns I64:\n  return I64.bit_or(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function mix(a: I64, b: I64) returns I64:\n  return I64.bit_xor(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function raise(a: U64, b: U64) returns U64:\n  return U64.shl(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function lower(a: U64, b: U64) returns U64:\n  return U64.shr(a, b)\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -356,6 +376,18 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         ),
         (
             b"function one(value: Int) returns Int:\n  return value\nend function\n\nfunction main() returns Int:\n  return one(01)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            b"function bad(a: I64, b: Int) returns I64:\n  return I64.bit_and(a, b)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function extra(a: I64, b: I64) returns I64:\n  return I64.bit_and(a, b, a)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-ARITY",
+        ),
+        (
+            b"function lonely(a: I64) returns I64:\n  return I64.bit_and(a, ghost)\nend function\n".as_slice(),
             "ERR:E-SH-IR-CALL-ARGUMENT",
         ),
     ] {
