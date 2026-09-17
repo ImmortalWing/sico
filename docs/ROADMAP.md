@@ -328,17 +328,53 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（entry satisfied; 2026-09-14）
 
-状态：`entry satisfied 2026-09-14（STEP-0175 关闭入口条件 3/4）/ owner session directive（2026-09-14「规划自举里程碑」）；S1–S5 已落地（STEP-0178–0192，2026-09-14：L1 formatter/checker 差分绿、L2 lexer/parser/token 流 byte-exact）；S6 进行中（STEP-0193–0195：parser 提取函数名+参数 arity，`fn:name/arity` 精确）；自举架构 ADR 仍为 S6 闭环前置`
+状态：`NO-GO / 实现中（STEP-0201：215-source corpus + strict bundle；STEP-0202：lossless lexer 215/215；STEP-0203/0206：accepted ModuleAst shape + declaration metadata 99/99；STEP-0204/0205：S1 formatter 215/215 关闭；STEP-0207：Script build oracle 37 accept/178 refuse且 Component 可复现；STEP-0208：lossless lexer + declaration parser 已链接进真实 modular compiler Component 并在自身 3 源码上对齐 Rust；S2 checker 与 expression/statement/refusal AST 仍开放）；STEP-0197 canonical typed-IR 与 STEP-0199 固定 Core Wasm byte seam 仍仅为 partial；guest 全语料 IR/artifact parity、自编译 A=B=C、M7 打包、预算与出口审计尚未关闭`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 
-进入条件：M19 绿 ✓；RFC-0011 字节级差分 oracle 已存在 ✓；byte/text 访问 + 集合扩展（STEP-0174 / RFC-0045）与 v1 batch 2 决策（STEP-0175 / RFC-0046：for-loops、错误传播、裸字面量决策、List[I64]/[U64]）已接受并落地 ✓（2026-09-14）；自举架构 ADR 在 S6（自举闭环）进入前接受，不阻塞 S1。
+进入条件：M19 绿 ✓；RFC-0011 字节级差分 oracle 已存在 ✓；byte/text 访问 + 集合扩展（STEP-0174 / RFC-0045）与 v1 batch 2 决策（STEP-0175 / RFC-0046：for-loops、错误传播、裸字面量决策、List[I64]/[U64]）已接受并落地 ✓（2026-09-14）；自举架构 ADR-0015 已接受 ✓（STEP-0196，2026-09-16）。
 
 已记录的后续语言摩擦（v1 batch 3 候选：中缀比较/逻辑运算符、表达式位置条件、裸字面量 AI 噪音复称）见 [`M22 计划 §8`](./plans/M22-compiler-self-host.md)。
 
 退出条件：L1 差分逐字节 + 幂等；L2 语料产物逐字节等于 Rust 输出；自举闭环（A≡B、语料复验、M7 打包、runner 实测）；自编译 wall-time/fuel 预算实测登记（吞吐回归如实登记，无 SLA 主张）；双实现登记（Rust 保持 oracle）；M0–M21 回归绿 + 显式出口审计。
 
 执行计划：[`M22 compiler self-host track`](./plans/M22-compiler-self-host.md)。
+
+## M23: Vision/model runtime and native AI-loop closure（planned; 2026-09-16）
+
+状态：`planned（STEP-0198）；M22 GO 后才进入；无实现 STEP 预留`
+
+承接 M17 尚未关闭的确定性 CV roster、加速 provider ADR 与 model RFC，并完成 M18 原生视觉应用缺口。Windows v0 必须把 M16 capture/input、M17 deterministic recognition 与 M14 Sico solver 组合为 observe → plan → preview → execute-one → verify/stop 的真实闭环；模型路径显式、预算化、provenance-bound，不能隐式替代确定性路径。
+
+进入条件：M22 A=B=C 自举 GO；M16/M17 既有证据回归绿；owner 提供或明确拒绝加速 SDK/runtime、模型资产与 live credentials。缺失外部输入只允许合同准备，不产生支持声明。
+
+退出条件：CV 固定/恶意语料、加速等价与隔离、模型加载/推理/取消/耗尽、Windows block-game 单步安全闭环、release-bundle 消费和 M0–M22 回归全部有执行证据，并发布明确 GO/NO-GO 审计。
+
+执行计划：[`M23 vision/model native-loop closure`](./plans/M23-vision-model-native-loop-closure.md)。
+
+## M24: Product 1.0 and external-evidence closure（planned; 2026-09-16）
+
+状态：`planned（STEP-0198）；M23 GO 且外部输入到位后才进入；无实现 STEP 预留`
+
+把内部完成度转成可支持的 Sico 1.0：冻结语言/工具链合同，关闭或明确顺延 Windows/Linux/macOS/Android 平台证据，执行签名安装/升级/恢复与 production registry 演练，引入至少两个独立消费者，获授权时重跑 live-model 预算，并对 AGENT_GOAL §13 发出最终逐项审计。
+
+进入条件：M22/M23 GO；M19 release/registry 与一键 CI 绿；owner 提供每个要声明的平台 runner/device、production domain/TLS/identity、外部 pilot 与 live-model credential。仓库工作不得制造这些输入。
+
+退出条件：1.0 check/build/run matrix、native platform support matrix、可复现签名 release、clean-machine lifecycle、production 或显式 non-production verdict、两个独立消费者、live-model GO/NO-GO 与 M0–M23 回归全部可追溯，最终审计给出 Sico 1.0 GO/NO-GO。
+
+执行计划：[`M24 product 1.0 external evidence`](./plans/M24-product-1-0-external-evidence.md)。
+
+### M22-M24 dependency shape
+
+```text
+M22 compiler bootstrap GO
+          |
+          v
+M23 vision/model + native AI loop GO
+          |
+          v
+M24 product 1.0 + external evidence audit
+```
 
 ### M14–M18 dependency shape
 

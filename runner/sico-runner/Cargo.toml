@@ -22,7 +22,11 @@ wasmparser = "=0.253.0"
 sico-package = { path = "../../crates/sico-package" }
 sico-app-cli = { path = "../../crates/sico-app-cli" }
 sico-cli = { path = "../../crates/sico-cli" }
+sico-format = { path = "../../crates/sico-format" }
 sico-ir = { path = "../../crates/sico-ir" }
+sico-lexer = { path = "../../crates/sico-lexer" }
+sico-parser = { path = "../../crates/sico-parser" }
+sico-source = { path = "../../crates/sico-source" }
 wasm-encoder = "=0.253.0"
 
 [workspace]

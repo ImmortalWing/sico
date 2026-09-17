@@ -1,0 +1,2891 @@
+{
+  "schema": "sico.m22.corpus.v0",
+  "roots": [
+    "semantic-cases",
+    "syntax-candidates",
+    "tests/end-to-end"
+  ],
+  "entry_count": 215,
+  "entries": [
+    {
+      "path": "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
+      "bytes": 372,
+      "source_sha256": "ac9824f0a1e18396c199ee53c38c60add8cabace96ce8b522778621181bf9fa3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "13c0d2025d2ca8260b4d0cd1d606fbda169ad17bd4f57e60234637d200e0cf6b"
+    },
+    {
+      "path": "semantic-cases/affine-resources/invalid/use-after-close.sico",
+      "bytes": 307,
+      "source_sha256": "f0a581ab5249ddbb9795a9d787db59e8aaefe70c3dac2fe0e64d990edf2461e6",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "885a43f71a3adb8c1e6dbfe62f99dff58f11a74cfff90b4bf95a6753d0e0d1be"
+    },
+    {
+      "path": "semantic-cases/affine-resources/invalid/use-after-move.sico",
+      "bytes": 240,
+      "source_sha256": "d2acd9cf1cf8c6c713c8d24bc76c1f481c5d1cb9e22566ae515ec205c30564bc",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "268d06f383d1b724bda006a045c45bd406d31f94128ce8f8b48f8432ce07c060"
+    },
+    {
+      "path": "semantic-cases/affine-resources/valid/close-once.sico",
+      "bytes": 182,
+      "source_sha256": "a1e898ae6123c444b17e4a0ee18ded16d1df298b10a6d0cc5d81c50523fb48dd",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "000e47cb6dbbeb04a476de38a1537979beb315f497420dd1e506ba4eb4bf353d"
+    },
+    {
+      "path": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "bytes": 298,
+      "source_sha256": "c980e27c6f5ca0897e455b85c86d5d519afbd7958170365c794019a58231d56c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "9a6543023b5743d2797ab30a893291162da4c6d129826b8991a30858e669d33d"
+    },
+    {
+      "path": "semantic-cases/component-call/invalid/trap-as-domain-error.sico",
+      "bytes": 389,
+      "source_sha256": "14114d113c86818e1a6d7db0876612d5cc297d1d7e3430829a89ef863a42fca3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a68ed9e3bdabc0e030e405a8678683fb57d7680c0e1465480b8ba23056b47826"
+    },
+    {
+      "path": "semantic-cases/component-call/invalid/version-as-type.sico",
+      "bytes": 323,
+      "source_sha256": "65cf25ddf7bd253868cb05e5338cb2821bbbca83807cdc07477fd826ea14ce87",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "f10e98a40f872c22baacc33bd18e63d7429fa053cc4ea83f476985305822b238"
+    },
+    {
+      "path": "semantic-cases/component-call/valid/separated-call-outcome.sico",
+      "bytes": 368,
+      "source_sha256": "ac2666acd84caacd437ec8d3d0525725deb774657a5d6dc8641ad452828957f0",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "4413e9f5d32bd12a70c88353b65da4b58fa82b67b93c772e1f9534f939645cbb"
+    },
+    {
+      "path": "semantic-cases/component-call/valid/wit-safe-interface.sico",
+      "bytes": 183,
+      "source_sha256": "627e59202ba9d359956a6c256ca89cd151c638fa2d2aaa491ac404c1e1645917",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "92fbd9e3c8156f8c02ab00d19126ba0ad9564b23567e74e3c4b0724ebf69f79e"
+    },
+    {
+      "path": "semantic-cases/effects-capabilities/invalid/undeclared-capability.sico",
+      "bytes": 355,
+      "source_sha256": "39ede8057bc9c04f751526586a3f42b7945d53fd5e59ef2a4c42701b8b1200a7",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "509a6d62bacaf5b203cace836932d04c5bd4bdb501342ef88671699441980194"
+    },
+    {
+      "path": "semantic-cases/effects-capabilities/invalid/undeclared-effect.sico",
+      "bytes": 345,
+      "source_sha256": "97d583b102e6bb8fd42585f40fbdfbb21ae7a81026a0a0324ad4d46b6f737876",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "d4920c5656589228578e5cc5d5c739be890c41b974b1e471a7e1ae57c195300b"
+    },
+    {
+      "path": "semantic-cases/effects-capabilities/valid/explicit-boundary.sico",
+      "bytes": 335,
+      "source_sha256": "13b4bd3d9db04627724ce6d8082fc534943cf5ac22c16b3a0c26895af155f281",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "d61c4f12697c784a3d3fc451398ffa40de855b8851efa925ba8c5dd313c00a48"
+    },
+    {
+      "path": "semantic-cases/effects-capabilities/valid/pure-boundary.sico",
+      "bytes": 162,
+      "source_sha256": "167a246d3363d9c527f9f183d37f5901a952ade11b2c84adf4f9d9c6e805b87b",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "d6786f64128ee46517ada79793d2e5f6c28a4755bba3e685f370ddbc18517a10"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/invalid/missing-variant.sico",
+      "bytes": 246,
+      "source_sha256": "2ad90cdf95bea2353004d53755017153375aed9f78ba551a77f8e59be5e80ba3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "b9a073a62bb7f37df8cc1bb74acc29c6964bd812f3aeaad10ad69361a10c88a1"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/invalid/unreachable-branch.sico",
+      "bytes": 259,
+      "source_sha256": "69bbe07b4c6952f152fa7b7d087154e0f75770766ab0bce100c86d354a68134b",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0e8caf6e26e56fe09000d2893a2b0ecc1b33870bd683d5b0e8d8968fbd010d7c"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+      "bytes": 237,
+      "source_sha256": "d23ac6a1b50ca19a6188ac62c98fbcac2932b2b4c1401fa09319cf5f6442d5a8",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "327266482b5374cf8edeba084562012c8b6c3462e412ac2a2e9bb06885ac584c"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/invalid/wildcard-sealed-product.sico",
+      "bytes": 303,
+      "source_sha256": "05219aad46f99c485cb1ecdc668ad9c8310411e04fac94000976c177d120b17b",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "027836ab87990e262a15bdfafd4bb257582ce2ba385c52628648bd18c0d9e383"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/valid/all-product-cases.sico",
+      "bytes": 399,
+      "source_sha256": "0b2016e00bc81eaa29672804852cbd1eb47c3f3a0c626e5a782b84f30d498cc1",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "11c8bdde3a2f2d543518a23ce7b0feab19c523e342a97e5b8badf148382fe672"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/valid/all-variants.sico",
+      "bytes": 256,
+      "source_sha256": "be79981fd65fdbd1f4d332b7395f3893b83f44d9f7a21d5d039b7447315d7fc4",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1c33d90239414986f001366028667c71c0112fad843cce6869120c34863ca7f7"
+    },
+    {
+      "path": "semantic-cases/exhaustive-match/valid/ignore-payload.sico",
+      "bytes": 247,
+      "source_sha256": "614522a6a0148e5a854b58867366b29426df802f2ba1f0affa89329f6c8c2388",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a67ebe1321f524d1cad6c9206e30c5592e022811284f35d0be965bd83e772eea"
+    },
+    {
+      "path": "semantic-cases/future-task/invalid/await-twice.sico",
+      "bytes": 240,
+      "source_sha256": "66c2a3b41eafcdcc8e38a0a72b60f586286bc2d8000dc9bc4805cf8245870a6c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "b1d470b04e0f59bbfbbbf73b24496a3fa1e9ab00aadde3521cb34f6a58909a8b"
+    },
+    {
+      "path": "semantic-cases/future-task/invalid/detached-spawn.sico",
+      "bytes": 209,
+      "source_sha256": "dd4e84293c02b7757af06020a75bbf5272a917a72db33fa585e42c23c884cffb",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "4d448db285615381824928fa460065b12b200b266aa2be9948761e55fd055d9b"
+    },
+    {
+      "path": "semantic-cases/future-task/invalid/scope-nesting-limit.sico",
+      "bytes": 10162,
+      "source_sha256": "055eadb924c5bd60ca7ddd04019b8017ed2fc74c6421e26fa76d8a269b557e6e",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "b28a7b00b84974c73d9cfeadbd965a62c09e0eb2f4db7a4320d5cefb634f5119"
+    },
+    {
+      "path": "semantic-cases/future-task/invalid/task-escapes-scope.sico",
+      "bytes": 209,
+      "source_sha256": "e4d1837dffdc75393db36968df3ec599b3252812176cca9fcc72d1f83e6cc875",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "bdd57ecc3bdd0404e5f53ee9feb7992a42849335a6a0c60ad52b749eee025b35"
+    },
+    {
+      "path": "semantic-cases/future-task/invalid/uncollected-task.sico",
+      "bytes": 226,
+      "source_sha256": "cf34dedb3be7dca739a8a79174976b7ff2af44fadcac96f9cd0c05ea0488fa00",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "59f653e6496f59bb7432c56d3d4138c6701f446b3e45966e9573925f99944709"
+    },
+    {
+      "path": "semantic-cases/future-task/valid/await-once.sico",
+      "bytes": 205,
+      "source_sha256": "92033188b13fbcd46c1f6a952b6f4fd5133b3a45f2044b0af9eefe77720833d3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "c8fc6de7d7ee5d15c2fc2d9fd7ac044ef15493282ede6786d38323de1be35080"
+    },
+    {
+      "path": "semantic-cases/future-task/valid/structured-pair.sico",
+      "bytes": 327,
+      "source_sha256": "661440ce323330b14a1b8a584a286e833fe03aa16976c21296526858116ed13c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "15cd138ae079738570f52565d9c04b8af4244ebdb116067c9c2f2cef1c3bb5f2"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/invalid/invariant-violation.sico",
+      "bytes": 197,
+      "source_sha256": "3ed65efc4a21267d33677c6ddf9f6a10b8a022b3b85da14c095c7b8f136dbe34",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "4bf3985ea4571425b931f742feff95a5f090be75f728550bae6a083e522a0cfe"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/invalid/missing-field.sico",
+      "bytes": 180,
+      "source_sha256": "c473803c72769d379d63a8d361c8c7864fb5ff005d7f4b97084fc0943578c616",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "931f6f0917e375402e9fe198821867d222d7223a84e9e92d8f00bf907d23a2c0"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/invalid/nominal-confusion.sico",
+      "bytes": 250,
+      "source_sha256": "9dbfc37064698821107ca153a677ee76ddf3fae92caaa7d243a98d2490b9548c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "2467884e0dd9c7287cc0ef3b169c1f2c8084497ac2542ce0569429f53b799f01"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/invalid/structural-record-confusion.sico",
+      "bytes": 258,
+      "source_sha256": "47d295505b4ef85b5caabe97c2192add677645e47a71915e17fde2aad3185f57",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "7d649088f0c320106595c23004032bfddd03f288b9859e18cdab4b67a217a764"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/invalid/unknown-field.sico",
+      "bytes": 165,
+      "source_sha256": "b86864accfaa6a52050030e59a85d6b7cd2c924146c51e9fac203ce8dc5b4626",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "5da845b5ae6c387b61c8596a1cb0b29adb6150f67a8d70294ea00e373579e1f2"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/valid/complete-record.sico",
+      "bytes": 180,
+      "source_sha256": "bb36add74d94597cedbc190464e960f7362e3b5a98351a74796bd269a121d489",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "2ba37abfbec957d776d61375c274111992acad9e9fba7b56ae6cced93ae4aa09"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/valid/nominal-id.sico",
+      "bytes": 202,
+      "source_sha256": "99487921b51e4cc96d7bf91130d4413609eb264a66b0af3784fa0a3894966e0e",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "7b88507a57c3c33d103149203ebcee6c8d24a6381c59d75e2b9896fa5272fa00"
+    },
+    {
+      "path": "semantic-cases/nominal-invariants/valid/satisfied-invariant.sico",
+      "bytes": 176,
+      "source_sha256": "e41c96c9e027ec92fd9cf353939c4777dc09e4bad1e6be2619dd5228258fff5c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "201c73b91cdfecfdc31fecf1eb9c98bea988d3c1c97c301dbfdc8efa7bfa8ace"
+    },
+    {
+      "path": "semantic-cases/numbers-units/invalid/cross-currency.sico",
+      "bytes": 217,
+      "source_sha256": "f8e211325d4837e8b38ba53ad740762cdf95054beb148e66f9d285ae2cde3c70",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0c6806fee7987962a2fa615885bc2e1811090039538ac03ed085b2b7245fa226"
+    },
+    {
+      "path": "semantic-cases/numbers-units/invalid/implicit-int-to-float.sico",
+      "bytes": 132,
+      "source_sha256": "2f2d37fe9fff257d3b822d310ff38cf61b0da596bf6e42e0e516d1f115e261d2",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "102b2bfeae474292af13525e4333c495e45c389353667f7fecca50d82141e5d1"
+    },
+    {
+      "path": "semantic-cases/numbers-units/invalid/mixed-unit.sico",
+      "bytes": 232,
+      "source_sha256": "75a3f43e88c84549d7d977b0456abf55a6438143a20901df666bdae46f391853",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "dfb72072ee4b84ba0ed98cec417a1862af57ea0e94d2a3e2ff93057b873d52c8"
+    },
+    {
+      "path": "semantic-cases/numbers-units/invalid/text-as-int.sico",
+      "bytes": 107,
+      "source_sha256": "f76e0635397bec916c4f434c91619ee059aa81536ca8128af41f8e6a42106a87",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "ecdf5ebc429f23e7250bd1216c61ed832e60f40b9cbf9d88575aee6db9c96b13"
+    },
+    {
+      "path": "semantic-cases/numbers-units/valid/explicit-int-to-float.sico",
+      "bytes": 121,
+      "source_sha256": "c7eb25687ff95965e71e5db028d7883b32bf77d2eedcd84fcf4faad0f68fdd47",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "bcb2010c87d4e3b147d058c86371b9725843200f060b22bd65c440fbab3e711d"
+    },
+    {
+      "path": "semantic-cases/numbers-units/valid/int-arbitrary-precision.sico",
+      "bytes": 117,
+      "source_sha256": "4ee03eb37248db66d9159bfe1463f4dc34c5b81ce92c3270a7e3fbe363763f74",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "f820da9a7ec982232264651657302993cae10db8dd80997a8e5e4f068b62cc35"
+    },
+    {
+      "path": "semantic-cases/numbers-units/valid/typed-bytes.sico",
+      "bytes": 186,
+      "source_sha256": "7ef41d6ba82f246fffbc814db94f7414ad389333b58dc3bab27879c968b854c1",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "dc749c3421623fc9cfa9667f04dce5a365a96ed2ef3e870557fb51206bff96a8"
+    },
+    {
+      "path": "semantic-cases/numbers-units/valid/typed-currency.sico",
+      "bytes": 185,
+      "source_sha256": "5a512438cd3189975b2f8c3f2d4354a27e4a4aff0339793dd4ed1f0220ba779c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a366c36484c1cbf43a1063d62ccb5cbf2f8097c5018b461b0d8a63f761ed2b7a"
+    },
+    {
+      "path": "semantic-cases/result-mapping/invalid/catch-all-error-map.sico",
+      "bytes": 409,
+      "source_sha256": "823fed2c175781a31422312df5cd3532008e4f6a13521adb6a5efc9882179783",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "85a67f5204306eeca07dd024a69ab38ad35b6dd6efb9dd61d5ce8f5f39f7f688"
+    },
+    {
+      "path": "semantic-cases/result-mapping/invalid/error-type-mismatch.sico",
+      "bytes": 305,
+      "source_sha256": "273888f1c2d7c9d41c62f1678ec75750fa412a939a5a355332e23db2fe3ed3a0",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "cd936dc591e035a950475177f483e20f84334d581c1280d9391d938a341697d5"
+    },
+    {
+      "path": "semantic-cases/result-mapping/invalid/incomplete-error-map.sico",
+      "bytes": 413,
+      "source_sha256": "c8144f57838e356e2d89bc10478a4a91d3b20cb2e9136a3e7e7023368c432c4f",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "fb4921ca39eed7f3bcf72d7b0700e668b6965356d8115b98c6fe2f47b71a6cc1"
+    },
+    {
+      "path": "semantic-cases/result-mapping/invalid/unhandled-result.sico",
+      "bytes": 227,
+      "source_sha256": "0b8f4ceaf9e1939f5100dcc9409782b99181b78cd3779e741910058a2d2db5f8",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "28767c2acedb9a3ecef7cce4bcdd5fd1383891271425f71fe96711f375a546b3"
+    },
+    {
+      "path": "semantic-cases/result-mapping/valid/explicit-result-handle.sico",
+      "bytes": 300,
+      "source_sha256": "1f1c1b761676af3dd31da6f53f1d0ea3c28f8da657670d9464fe921cbe034f0c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1e4d9aa0a9d7557e4a999b3d6eb322ce3489bb54f8fae32314e40e4a3e8728c5"
+    },
+    {
+      "path": "semantic-cases/result-mapping/valid/same-error-try.sico",
+      "bytes": 308,
+      "source_sha256": "264a378e5c090b526d825e551cb362fda0cdc5ec5194175539c14b6c92d7fc0b",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "34b6713008a6e29ca493f959e5c017366aab46d200ea5ecf9c201deae406fa50"
+    },
+    {
+      "path": "semantic-cases/result-mapping/valid/total-error-map.sico",
+      "bytes": 449,
+      "source_sha256": "25efeb36dd9855535c4f4742cc3b51cb530a131a963543dce64fc94bc342d21c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "75cbba019efd1e285b58ec6f017456fa125ea9e9e2a73842b49583748993d3a6"
+    },
+    {
+      "path": "semantic-cases/revision/invalid/missing-commit-revision.sico",
+      "bytes": 422,
+      "source_sha256": "6b1c9f21f4e736b9c2a3f49bc83b6616eba7060f65a19fffe004406fbd123011",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "9791601a6b4c049308f54b076191ccf083c949e7dc08132931d51a69f2aad4b0"
+    },
+    {
+      "path": "semantic-cases/revision/invalid/unchecked-stale-result.sico",
+      "bytes": 330,
+      "source_sha256": "11aafc2eb7b1f6c338386009ce5a4720ee94a694f0f7e4e9c9dc0d84b389b7b2",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "af84a2097cb4460ad1ca33940fd727528b95af943adfcd347682028554cabbb8"
+    },
+    {
+      "path": "semantic-cases/revision/valid/stale-load-ignored.sico",
+      "bytes": 484,
+      "source_sha256": "66f0517ad70d8280ba8b16ab6f3729cafddc350a7b657317a5eb8a59866b1358",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "da9e682fdc4c118c1f04e66539bb1fe29d1e21ece969dfdf62a4d973f4de5010"
+    },
+    {
+      "path": "semantic-cases/revision/valid/versioned-commit.sico",
+      "bytes": 443,
+      "source_sha256": "81272242eb584daeb7ee896bd47409db24ef6640b74cdd878a14a0cd13f31e00",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "190f45c8a503834e9bc74979ae6a36355ce93f4537600b1874dfd419be373e2a"
+    },
+    {
+      "path": "semantic-cases/stream/invalid/missing-await.sico",
+      "bytes": 255,
+      "source_sha256": "74779a2c37bc217cf71db8222e0e136979dfecb7c3f0a670bc797e1e33da4edf",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a637f9fe2b086b78a026a9e0d9e1eaff4247fe7dde1d053114ed635399db9a83"
+    },
+    {
+      "path": "semantic-cases/stream/invalid/unbounded-collect.sico",
+      "bytes": 269,
+      "source_sha256": "97c97baa05d3e2ccc9b1d4ddd6823017345e8bf2439f10f52e7fb38c31032d27",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "8616870f87f37880eddd21d5048b555ce43cc8bca5e39901dc6412b14deb97b5"
+    },
+    {
+      "path": "semantic-cases/stream/valid/bounded-collect.sico",
+      "bytes": 255,
+      "source_sha256": "eea1eefa6f699beff13ef8501154403d1ebed0715bdf578667d03ec4a748a467",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0d6389e4b5e4acb6e7d480099008cfa5b0c374f1b14f1835abd006981f6465c4"
+    },
+    {
+      "path": "semantic-cases/stream/valid/pull-one.sico",
+      "bytes": 248,
+      "source_sha256": "6b32c204fb2ea628ab4e75586167d41672a0ed3e9db83de3f015a991f19f4d14",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "202d6ddb1ba47cda72881b3c69edf84eb84100e5219fb2e839d50ee8a17ae21f"
+    },
+    {
+      "path": "syntax-candidates/b/affine-resources/invalid/borrow-across-await.sico",
+      "bytes": 459,
+      "source_sha256": "c5020348c755d7750e86276a4a93d3e469ba441ff4e48faffb2f2afaba44603c",
+      "rust_format": "accepted",
+      "formatted_sha256": "c5020348c755d7750e86276a4a93d3e469ba441ff4e48faffb2f2afaba44603c",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5003"
+      ],
+      "diagnostic_sha256": "f4cffb7affc465de4aa3514a03389dc05176dc65fda49779f7afeffd578e440a"
+    },
+    {
+      "path": "syntax-candidates/b/affine-resources/invalid/use-after-close.sico",
+      "bytes": 384,
+      "source_sha256": "2455d62825595f14bd8e1e9922c2f3239498c4605ff4665bd8776c7e269f45f5",
+      "rust_format": "accepted",
+      "formatted_sha256": "2455d62825595f14bd8e1e9922c2f3239498c4605ff4665bd8776c7e269f45f5",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5002"
+      ],
+      "diagnostic_sha256": "891bff6b95b569f25c62cc6cb101f5bb73da0ee66848e44e376aafece3f4bd35"
+    },
+    {
+      "path": "syntax-candidates/b/affine-resources/invalid/use-after-move.sico",
+      "bytes": 295,
+      "source_sha256": "0688b3cc56b26676ce5a310a8ddfc24b025043956a0d73844020d3d1408c4630",
+      "rust_format": "accepted",
+      "formatted_sha256": "0688b3cc56b26676ce5a310a8ddfc24b025043956a0d73844020d3d1408c4630",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5001"
+      ],
+      "diagnostic_sha256": "6a8fc058b3417ce27be3fab6cf845517400b7fc1725c406468049754da159702"
+    },
+    {
+      "path": "syntax-candidates/b/affine-resources/valid/close-once.sico",
+      "bytes": 237,
+      "source_sha256": "056dc678156b97ebaba8ce7be5948bed2c02bf05595f5efdc3b3d99f20597d16",
+      "rust_format": "accepted",
+      "formatted_sha256": "056dc678156b97ebaba8ce7be5948bed2c02bf05595f5efdc3b3d99f20597d16",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/affine-resources/valid/scoped-cleanup.sico",
+      "bytes": 382,
+      "source_sha256": "9f17d2dcd670963f6fe3e53fa0cfe5047cc2a72df683beda788a64af1daff092",
+      "rust_format": "accepted",
+      "formatted_sha256": "9f17d2dcd670963f6fe3e53fa0cfe5047cc2a72df683beda788a64af1daff092",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/component-call/invalid/trap-as-domain-error.sico",
+      "bytes": 466,
+      "source_sha256": "d1c3495546be282a63af4a33037589d756ad727f28557129a73ac9dbe395eb4c",
+      "rust_format": "accepted",
+      "formatted_sha256": "d1c3495546be282a63af4a33037589d756ad727f28557129a73ac9dbe395eb4c",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E6002"
+      ],
+      "diagnostic_sha256": "a815053fd6938880dff1f761013a86c5fab06d74f2dd84970f8296eda777c19c"
+    },
+    {
+      "path": "syntax-candidates/b/component-call/invalid/version-as-type.sico",
+      "bytes": 389,
+      "source_sha256": "dfdadfcdccd6d68472c3756185cf6e1855fa952c51e65de5c0fea3385703797c",
+      "rust_format": "accepted",
+      "formatted_sha256": "dfdadfcdccd6d68472c3756185cf6e1855fa952c51e65de5c0fea3385703797c",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E6001"
+      ],
+      "diagnostic_sha256": "3690eab9b79ec2ace5f1b1bc9883fd745771326a2f64110282af69c8e350f92e"
+    },
+    {
+      "path": "syntax-candidates/b/component-call/valid/separated-call-outcome.sico",
+      "bytes": 445,
+      "source_sha256": "211cd39824f101add79d12eecbef6fa8924a41b2bba2d4e23877ea7197f70825",
+      "rust_format": "accepted",
+      "formatted_sha256": "211cd39824f101add79d12eecbef6fa8924a41b2bba2d4e23877ea7197f70825",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/component-call/valid/wit-safe-interface.sico",
+      "bytes": 229,
+      "source_sha256": "98a68b6dadbb4177b7c76be48244a1edc0775669208715d43bb77fcd9ff6f768",
+      "rust_format": "accepted",
+      "formatted_sha256": "98a68b6dadbb4177b7c76be48244a1edc0775669208715d43bb77fcd9ff6f768",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/effects-capabilities/invalid/undeclared-capability.sico",
+      "bytes": 429,
+      "source_sha256": "a1e1011b98c3682926e59d391925ac757f34421e9434b9cbc70bb21412639698",
+      "rust_format": "accepted",
+      "formatted_sha256": "a1e1011b98c3682926e59d391925ac757f34421e9434b9cbc70bb21412639698",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E4001"
+      ],
+      "diagnostic_sha256": "442cfe96ca5fa8728871355f99a95bf2dcab76f77d5126e6722296d83bd4cf6d"
+    },
+    {
+      "path": "syntax-candidates/b/effects-capabilities/invalid/undeclared-effect.sico",
+      "bytes": 419,
+      "source_sha256": "56403c2e529d49a569a524bf52736e85a383460264927e5903612630675cd8f2",
+      "rust_format": "accepted",
+      "formatted_sha256": "56403c2e529d49a569a524bf52736e85a383460264927e5903612630675cd8f2",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E4002"
+      ],
+      "diagnostic_sha256": "48ced058e8a6cda9e3321462768d6b0cd07b8026d1b3952871870ee7c1c41521"
+    },
+    {
+      "path": "syntax-candidates/b/effects-capabilities/valid/explicit-boundary.sico",
+      "bytes": 413,
+      "source_sha256": "1e6a250e5e5f6cca73676bc650aed66668aea23102b4cc52395a9908bbb04f13",
+      "rust_format": "accepted",
+      "formatted_sha256": "1e6a250e5e5f6cca73676bc650aed66668aea23102b4cc52395a9908bbb04f13",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/effects-capabilities/valid/pure-boundary.sico",
+      "bytes": 198,
+      "source_sha256": "bee7fd1491ac3ad8fc9e596bd748eae5932a9011585ff03e61650cb4ee780f17",
+      "rust_format": "accepted",
+      "formatted_sha256": "bee7fd1491ac3ad8fc9e596bd748eae5932a9011585ff03e61650cb4ee780f17",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/invalid/missing-variant.sico",
+      "bytes": 326,
+      "source_sha256": "0fcd5e63cc62427b5e3bc5920d7e27797732fa20d67e1aac002e8ab599a12783",
+      "rust_format": "accepted",
+      "formatted_sha256": "0fcd5e63cc62427b5e3bc5920d7e27797732fa20d67e1aac002e8ab599a12783",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3001"
+      ],
+      "diagnostic_sha256": "f8d524e31c7250671e82e379d2c95d2a67bffdc2d6835c908d9a1e37482c1440"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/invalid/unreachable-branch.sico",
+      "bytes": 343,
+      "source_sha256": "5d9d34eb0f410ccc1576f9a2d12b79384967f05ac0cae229618aecd26135314d",
+      "rust_format": "accepted",
+      "formatted_sha256": "5d9d34eb0f410ccc1576f9a2d12b79384967f05ac0cae229618aecd26135314d",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3003"
+      ],
+      "diagnostic_sha256": "789df945be65a3f979e32e71e361070c18303d365a919d87cdc87c47361498d1"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+      "bytes": 320,
+      "source_sha256": "75d3b729cdfa9294380c8f549f798559cda87b229809220b400d5d4b829b6030",
+      "rust_format": "accepted",
+      "formatted_sha256": "75d3b729cdfa9294380c8f549f798559cda87b229809220b400d5d4b829b6030",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3002"
+      ],
+      "diagnostic_sha256": "8cd3040074af30e169777fe0976464e5caea3aaee8eaa89e54315e1907d1a0fc"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-product.sico",
+      "bytes": 397,
+      "source_sha256": "bfec2c0801a2c8b0ad50675f9b588aa1efa3c6b094b1b4c2d2028a13255535c1",
+      "rust_format": "accepted",
+      "formatted_sha256": "bfec2c0801a2c8b0ad50675f9b588aa1efa3c6b094b1b4c2d2028a13255535c1",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3002"
+      ],
+      "diagnostic_sha256": "abd637ebf71fc42990708158d4f09e47690c807f082e7c5351de5c21bcd2ec8e"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/valid/all-product-cases.sico",
+      "bytes": 508,
+      "source_sha256": "3d52d687cf9651fd8235b76e7db80e64cda0c2e910b8aedbd0dd759cb5804bc1",
+      "rust_format": "accepted",
+      "formatted_sha256": "3d52d687cf9651fd8235b76e7db80e64cda0c2e910b8aedbd0dd759cb5804bc1",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/valid/all-variants.sico",
+      "bytes": 345,
+      "source_sha256": "ca58520cb126fad8f1699217fb1817e3f4d6d676aa21201ed251405c0019f938",
+      "rust_format": "accepted",
+      "formatted_sha256": "ca58520cb126fad8f1699217fb1817e3f4d6d676aa21201ed251405c0019f938",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/exhaustive-match/valid/ignore-payload.sico",
+      "bytes": 327,
+      "source_sha256": "0348babd287973f27fb6d2241ee6cb49786424667edc6e71741f4bab69e7e6ae",
+      "rust_format": "accepted",
+      "formatted_sha256": "0348babd287973f27fb6d2241ee6cb49786424667edc6e71741f4bab69e7e6ae",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/invalid/await-twice.sico",
+      "bytes": 295,
+      "source_sha256": "ec7a0129bc40d059a975a930f1bd1af5ef813d32a6d4cceea93f8bd1bb706528",
+      "rust_format": "accepted",
+      "formatted_sha256": "ec7a0129bc40d059a975a930f1bd1af5ef813d32a6d4cceea93f8bd1bb706528",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5101"
+      ],
+      "diagnostic_sha256": "fbdd19a98def372bdea721867c9a21c60bbd53ff8b4bb5ce9852704f7d5052f0"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/invalid/detached-spawn.sico",
+      "bytes": 264,
+      "source_sha256": "ac97be02a2b0f5a78ed12440eb24afa97b696e8f927df635fd1b7d7c5fa38b66",
+      "rust_format": "accepted",
+      "formatted_sha256": "ac97be02a2b0f5a78ed12440eb24afa97b696e8f927df635fd1b7d7c5fa38b66",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5104"
+      ],
+      "diagnostic_sha256": "05624d48220b46c1398da5553667138141ecb07c7fd1b65f43a42d57e8d2c0be"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/invalid/scope-nesting-limit.sico",
+      "bytes": 10607,
+      "source_sha256": "fed0cf29e071d98d02d833f860e4637618436392a31214e1334417076182091d",
+      "rust_format": "accepted",
+      "formatted_sha256": "fed0cf29e071d98d02d833f860e4637618436392a31214e1334417076182091d",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5105"
+      ],
+      "diagnostic_sha256": "46649c27fb6558aef7d4af62a50fbf5a767fc70f3632942ee24be64d1edef00c"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/invalid/task-escapes-scope.sico",
+      "bytes": 270,
+      "source_sha256": "989174268e2ae702256b760d66df862f57a17d86e303de4f56d393dd39a3d021",
+      "rust_format": "accepted",
+      "formatted_sha256": "989174268e2ae702256b760d66df862f57a17d86e303de4f56d393dd39a3d021",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5102"
+      ],
+      "diagnostic_sha256": "e4fe9ad1204d066510e6682e5c7ae9c9a974f1dc8904453e7690afecf9ddf9f6"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/invalid/uncollected-task.sico",
+      "bytes": 287,
+      "source_sha256": "ae287968a291f83a7e7d385ab4e22694dab32545feffab2f5744e8cdd350aee2",
+      "rust_format": "accepted",
+      "formatted_sha256": "ae287968a291f83a7e7d385ab4e22694dab32545feffab2f5744e8cdd350aee2",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5103"
+      ],
+      "diagnostic_sha256": "fcfa9e1cb4048f6714784d27885254b3541dbb2601cd7310dc8506a7e3db7bf4"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/valid/await-once.sico",
+      "bytes": 260,
+      "source_sha256": "0fe28bda5ae1811413f0b8a240635b85d87c2956fd142d716b12411cd05a847f",
+      "rust_format": "accepted",
+      "formatted_sha256": "0fe28bda5ae1811413f0b8a240635b85d87c2956fd142d716b12411cd05a847f",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/future-task/valid/structured-pair.sico",
+      "bytes": 388,
+      "source_sha256": "bd91a471a128f3b6a36b863b1eea8606977b5c93c61ea42298405e7adae9035a",
+      "rust_format": "accepted",
+      "formatted_sha256": "bd91a471a128f3b6a36b863b1eea8606977b5c93c61ea42298405e7adae9035a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico",
+      "bytes": 251,
+      "source_sha256": "04f1fae06008d0a42476501a97c99bfc01daf064c078d0a1328b800320cc6760",
+      "rust_format": "accepted",
+      "formatted_sha256": "04f1fae06008d0a42476501a97c99bfc01daf064c078d0a1328b800320cc6760",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2020"
+      ],
+      "diagnostic_sha256": "7d23e7c8439fd02c91e73fe5994105182f9913933ecdf829cf010fb0b337692f"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/invalid/missing-field.sico",
+      "bytes": 234,
+      "source_sha256": "80412c26555cf1cd5911a32289560a415336c2a83611d893cbcbe14f14a0768d",
+      "rust_format": "accepted",
+      "formatted_sha256": "80412c26555cf1cd5911a32289560a415336c2a83611d893cbcbe14f14a0768d",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2010"
+      ],
+      "diagnostic_sha256": "ac24323a7ee7f052982234d1528d1b1518a68869d099c58b6a731cff6325b9e1"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/invalid/nominal-confusion.sico",
+      "bytes": 311,
+      "source_sha256": "fe09d5defcbffea401932319d4755dde7f7eb7fa4acdf216bcde1b4c052ae6f6",
+      "rust_format": "accepted",
+      "formatted_sha256": "fe09d5defcbffea401932319d4755dde7f7eb7fa4acdf216bcde1b4c052ae6f6",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "5458bff92d9d751d29d0f69921994edc33363b4a9ec5530873e5ed2d078fca0c"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/invalid/structural-record-confusion.sico",
+      "bytes": 341,
+      "source_sha256": "62b5227631aa9cbecdbdccf3fc995e4e148d802d55ca6a3020a840282ad6658d",
+      "rust_format": "accepted",
+      "formatted_sha256": "62b5227631aa9cbecdbdccf3fc995e4e148d802d55ca6a3020a840282ad6658d",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "e5b891660c099a7925a587935e2f68190484f99eed19cb0979cdc561d7f1a2c7"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/invalid/unknown-field.sico",
+      "bytes": 213,
+      "source_sha256": "6775000902b45312a807fa1c06d54de073888191832b5f0162770004f669ad38",
+      "rust_format": "accepted",
+      "formatted_sha256": "6775000902b45312a807fa1c06d54de073888191832b5f0162770004f669ad38",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2011"
+      ],
+      "diagnostic_sha256": "f4cd70c49d9b5925e554d60e0f10ba85e1328a7918336e7f08728f4d8f813a5c"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/valid/complete-record.sico",
+      "bytes": 234,
+      "source_sha256": "dbcb7d3d33327bdeb9323410fbc4b0e5263b8985c876d16305421fcedaaab91b",
+      "rust_format": "accepted",
+      "formatted_sha256": "dbcb7d3d33327bdeb9323410fbc4b0e5263b8985c876d16305421fcedaaab91b",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/valid/nominal-id.sico",
+      "bytes": 260,
+      "source_sha256": "98fbbb520cd43fdd2b594c458cbdcafe857f2d3f010cd12398ea60ca532550d6",
+      "rust_format": "accepted",
+      "formatted_sha256": "98fbbb520cd43fdd2b594c458cbdcafe857f2d3f010cd12398ea60ca532550d6",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/nominal-invariants/valid/satisfied-invariant.sico",
+      "bytes": 230,
+      "source_sha256": "a26dfec90568a74fc54e5599aa9960df9304194c127c657574b84bcece8dd592",
+      "rust_format": "accepted",
+      "formatted_sha256": "a26dfec90568a74fc54e5599aa9960df9304194c127c657574b84bcece8dd592",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/invalid/cross-currency.sico",
+      "bytes": 278,
+      "source_sha256": "b2672a2eea2f80ab47c1b7edbd8614de8db79bd21141a9c40ec159106190060a",
+      "rust_format": "accepted",
+      "formatted_sha256": "b2672a2eea2f80ab47c1b7edbd8614de8db79bd21141a9c40ec159106190060a",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "8695f8dc8ea5d5ea52cbde0f828802fe36ef9609ada775e5e92feea3a04ddc35"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/invalid/implicit-int-to-float.sico",
+      "bytes": 166,
+      "source_sha256": "5ccbb22a4cbe911a7754613a86dd73f63153f128d7916fa3bc51f4faf0908c5a",
+      "rust_format": "accepted",
+      "formatted_sha256": "5ccbb22a4cbe911a7754613a86dd73f63153f128d7916fa3bc51f4faf0908c5a",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2002"
+      ],
+      "diagnostic_sha256": "e05c47d2de943e2d131be832eb9360e831cbfff37f5a45fd68fce73f64561915"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/invalid/mixed-unit.sico",
+      "bytes": 293,
+      "source_sha256": "1e190ecbc49df72e64732abb7d1151d29d04ba3769c29213686e2c9909959de7",
+      "rust_format": "accepted",
+      "formatted_sha256": "1e190ecbc49df72e64732abb7d1151d29d04ba3769c29213686e2c9909959de7",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "6a991518b1e31f09ccf18b497739ef1b6cd1972c12890ad6f47936d67ec712d1"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/invalid/text-as-int.sico",
+      "bytes": 141,
+      "source_sha256": "87cb2b7c81b798e5931b09c75b3dd3cb7cb39b1c0431de87f2dc1e25ff9f2dd0",
+      "rust_format": "accepted",
+      "formatted_sha256": "87cb2b7c81b798e5931b09c75b3dd3cb7cb39b1c0431de87f2dc1e25ff9f2dd0",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "7c0fcbdd66af62dbc4e50d542dc0935c19e5e2f5b84842576db97f91e7e99bb6"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/valid/explicit-int-to-float.sico",
+      "bytes": 155,
+      "source_sha256": "d658e878a593379ac3aa1c7f7c972869c950abaded763f9acda483bab85e3df0",
+      "rust_format": "accepted",
+      "formatted_sha256": "d658e878a593379ac3aa1c7f7c972869c950abaded763f9acda483bab85e3df0",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/valid/int-arbitrary-precision.sico",
+      "bytes": 151,
+      "source_sha256": "88cd906c8a72072cc3cdd01d65ac97756194498a97fd696bf2a3e038b55d79a3",
+      "rust_format": "accepted",
+      "formatted_sha256": "88cd906c8a72072cc3cdd01d65ac97756194498a97fd696bf2a3e038b55d79a3",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/valid/typed-bytes.sico",
+      "bytes": 244,
+      "source_sha256": "c2697ae0b66ac3fed9064ac7d50e5b7be8efdd4787f030db5baf4b9bc91591fd",
+      "rust_format": "accepted",
+      "formatted_sha256": "c2697ae0b66ac3fed9064ac7d50e5b7be8efdd4787f030db5baf4b9bc91591fd",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/numbers-units/valid/typed-currency.sico",
+      "bytes": 243,
+      "source_sha256": "286f0bf7fe13bd7bdd8a99a7d8f70773b6a21d0ac2f179c739205adb8f52c927",
+      "rust_format": "accepted",
+      "formatted_sha256": "286f0bf7fe13bd7bdd8a99a7d8f70773b6a21d0ac2f179c739205adb8f52c927",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/invalid/catch-all-error-map.sico",
+      "bytes": 587,
+      "source_sha256": "b96a64ca33f1e304b0338ef36281bc31e9b6b19fafc1b4f2f2475e60656b9ee3",
+      "rust_format": "accepted",
+      "formatted_sha256": "b27cd527baf0d6a0a7cd3fb75a3b220110a596ddea7cbb60e4be97e0b55590fd",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3103"
+      ],
+      "diagnostic_sha256": "b818a4df6c34d5187b343070ab781b54ccc774319fc84afb54e404a5668b46dc"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/invalid/error-type-mismatch.sico",
+      "bytes": 382,
+      "source_sha256": "3831c74a68f832041525fa2b2f31265dffce71990393a510d052f1c218e8b894",
+      "rust_format": "accepted",
+      "formatted_sha256": "3831c74a68f832041525fa2b2f31265dffce71990393a510d052f1c218e8b894",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3101"
+      ],
+      "diagnostic_sha256": "86d8abbb57fe110eaee9c8e3d890b9f9ceb223c8982373ccd1fffddb443e97ff"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/invalid/incomplete-error-map.sico",
+      "bytes": 573,
+      "source_sha256": "a540760aea4de2aacddec5817cf05a04faefbb8e7c3132669af677f55fa346af",
+      "rust_format": "accepted",
+      "formatted_sha256": "d232ffbb2bfadfbae619831b5b79bbe551e9c116e76074ec3cdf00c1b1b3b9b9",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3102"
+      ],
+      "diagnostic_sha256": "d9ae6075e2b3d2c58b1573de1d48d9d2b122144aa723e5fc339db17531f22108"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/invalid/unhandled-result.sico",
+      "bytes": 293,
+      "source_sha256": "0208ed8db960310ea735443611b646fceae7f9b164cd92f0308bf9b026e2a64f",
+      "rust_format": "accepted",
+      "formatted_sha256": "0208ed8db960310ea735443611b646fceae7f9b164cd92f0308bf9b026e2a64f",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E3104"
+      ],
+      "diagnostic_sha256": "3e761eccafe90d782a50994f01a59ac934d18e4644c22d88a229c5bf6759d3d0"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/valid/explicit-result-handle.sico",
+      "bytes": 391,
+      "source_sha256": "71893ef1aa6a6fd4242048b7dc88b5345e179bafba845f11a3b4eceb741cec02",
+      "rust_format": "accepted",
+      "formatted_sha256": "71893ef1aa6a6fd4242048b7dc88b5345e179bafba845f11a3b4eceb741cec02",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/valid/same-error-try.sico",
+      "bytes": 374,
+      "source_sha256": "9dee12a1d67f89576a0cca4988291377841b7603a4c10cd89edeccdf7f2155ef",
+      "rust_format": "accepted",
+      "formatted_sha256": "9dee12a1d67f89576a0cca4988291377841b7603a4c10cd89edeccdf7f2155ef",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/result-mapping/valid/total-error-map.sico",
+      "bytes": 630,
+      "source_sha256": "bb2e369cb6c69b2530257a4bb84536e7e7b13c71d6f0a7d940bf7657a2a2718e",
+      "rust_format": "accepted",
+      "formatted_sha256": "bb2e369cb6c69b2530257a4bb84536e7e7b13c71d6f0a7d940bf7657a2a2718e",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/revision/invalid/missing-commit-revision.sico",
+      "bytes": 503,
+      "source_sha256": "4fe16c6bddfa9829b9487a9bdb9b57b8213bd2202e53b3f35f24a6761779af44",
+      "rust_format": "accepted",
+      "formatted_sha256": "4fe16c6bddfa9829b9487a9bdb9b57b8213bd2202e53b3f35f24a6761779af44",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E7001"
+      ],
+      "diagnostic_sha256": "f403a594c131c524260763a7b9cb1b936a785197aef330c8a82c3afe991fe5ab"
+    },
+    {
+      "path": "syntax-candidates/b/revision/invalid/unchecked-stale-result.sico",
+      "bytes": 407,
+      "source_sha256": "ccb843af39b9a9a56fa0a7f2ba03d86c119b1a134d8902ae59bec45d1bad4baf",
+      "rust_format": "accepted",
+      "formatted_sha256": "ccb843af39b9a9a56fa0a7f2ba03d86c119b1a134d8902ae59bec45d1bad4baf",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E7002"
+      ],
+      "diagnostic_sha256": "e0e7e86ddaba80d02583d31ea1e336efae1fabd0860a7fdb2cc9a7cc7bd29a48"
+    },
+    {
+      "path": "syntax-candidates/b/revision/valid/stale-load-ignored.sico",
+      "bytes": 581,
+      "source_sha256": "d8b86c8804b2150c2305d35c49e7229c85ceb4f3723c70d1657e61dcb2054688",
+      "rust_format": "accepted",
+      "formatted_sha256": "d8b86c8804b2150c2305d35c49e7229c85ceb4f3723c70d1657e61dcb2054688",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/revision/valid/versioned-commit.sico",
+      "bytes": 524,
+      "source_sha256": "a153e82375b88f7eddcc03de86a3c6d936e9ac33a4d166ca2e0d330dd2c3daf9",
+      "rust_format": "accepted",
+      "formatted_sha256": "a153e82375b88f7eddcc03de86a3c6d936e9ac33a4d166ca2e0d330dd2c3daf9",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/stream/invalid/missing-await.sico",
+      "bytes": 307,
+      "source_sha256": "73e5aeaa60ccca59d4468c7b91d814d447d882ffaf94f147b7b82b947493d1d9",
+      "rust_format": "accepted",
+      "formatted_sha256": "73e5aeaa60ccca59d4468c7b91d814d447d882ffaf94f147b7b82b947493d1d9",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5202"
+      ],
+      "diagnostic_sha256": "2e94bfda231de0ca44e9f13b6a92e1d5db69ab8349e422f29142db610741232a"
+    },
+    {
+      "path": "syntax-candidates/b/stream/invalid/unbounded-collect.sico",
+      "bytes": 321,
+      "source_sha256": "3ba3844b52ee19d352295b302db8f05c4b9a572e50d33ee3ee65ca2af843756f",
+      "rust_format": "accepted",
+      "formatted_sha256": "3ba3844b52ee19d352295b302db8f05c4b9a572e50d33ee3ee65ca2af843756f",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E5201"
+      ],
+      "diagnostic_sha256": "acbe62c74a6af889b616fce17478abe02cc521ba4bb8dc7b5d41097dcc071fd8"
+    },
+    {
+      "path": "syntax-candidates/b/stream/valid/bounded-collect.sico",
+      "bytes": 307,
+      "source_sha256": "cb51a30a76230a3d0cb3b04d8a7e545752c52f84cbe614a44debfcf6670896b5",
+      "rust_format": "accepted",
+      "formatted_sha256": "cb51a30a76230a3d0cb3b04d8a7e545752c52f84cbe614a44debfcf6670896b5",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/stream/valid/pull-one.sico",
+      "bytes": 300,
+      "source_sha256": "24452ae66058616b07099a471d5888de54c6a07a6dfe25458e85197409166c00",
+      "rust_format": "accepted",
+      "formatted_sha256": "24452ae66058616b07099a471d5888de54c6a07a6dfe25458e85197409166c00",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/c/affine-resources/invalid/borrow-across-await.sico",
+      "bytes": 385,
+      "source_sha256": "1c4fff0f823278e90b6cd1c2d7479634007fd1a1625d82129cc7666a709e0f07",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "696e64a8548d8d1231f1b234441361518106da4c206d99f782b2c5cdd5821ea6"
+    },
+    {
+      "path": "syntax-candidates/c/affine-resources/invalid/use-after-close.sico",
+      "bytes": 321,
+      "source_sha256": "4b0585f19d3f4a196f5c61ac98e828b608463d1dff6f71845c1f6b4527e2ee9f",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "4f8f56cfd24e5979ba3b3ef4324e7a7e23186cbe4995c411f522ff08381d4390"
+    },
+    {
+      "path": "syntax-candidates/c/affine-resources/invalid/use-after-move.sico",
+      "bytes": 253,
+      "source_sha256": "6ed876bc2281f75770bdef5b1984f92eb1bd6ce80d5205ff68a0a94e129174e8",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "938c5675e27c82f6f01299de7965d0965ed3809a69bbe61aefc24c66284d5da4"
+    },
+    {
+      "path": "syntax-candidates/c/affine-resources/valid/close-once.sico",
+      "bytes": 195,
+      "source_sha256": "c1b042b4c144f0fefa01baf46fdbc6212a931203c68db50dcc770b376e658898",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "f0fa25faf7751f0ce8fda4f4c0f7e0baa65e1ff876998dd0e15f03ab30099851"
+    },
+    {
+      "path": "syntax-candidates/c/affine-resources/valid/scoped-cleanup.sico",
+      "bytes": 312,
+      "source_sha256": "297c5ac7a5d99b1776cea61a7a3fe791335dd307cf3cb39b162c30b3ba4c5666",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "c299005bde4ec40423b8d7497b5790cf2be199c5583ca9c79d78f69b1da6e060"
+    },
+    {
+      "path": "syntax-candidates/c/component-call/invalid/trap-as-domain-error.sico",
+      "bytes": 407,
+      "source_sha256": "213c07b57e3804d3470b9a1f44fc2103d72d90f73c7c89757c0ce6b9ab665d92",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "d43ad3b98734faebb4b3021d18b04645f346db24c642e1b0c47ad6d9fc549627"
+    },
+    {
+      "path": "syntax-candidates/c/component-call/invalid/version-as-type.sico",
+      "bytes": 340,
+      "source_sha256": "00034ca69c217f0762cc77da261ccc09b3248db4153985e222156adaddeb8dc7",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "77c16ba6c8db19e5b14e48543a799dc5b4254cceac2952ab3c5a1c21734aa697"
+    },
+    {
+      "path": "syntax-candidates/c/component-call/valid/separated-call-outcome.sico",
+      "bytes": 386,
+      "source_sha256": "3d3deaec930a5bc80b9ca70ad651514b10a46d0ecba1d6476b55a07992284cfd",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0ade62a785f38a4e7cdbdd3f1d86a4ad8736a51a07e2b286117257e2eeace886"
+    },
+    {
+      "path": "syntax-candidates/c/component-call/valid/wit-safe-interface.sico",
+      "bytes": 197,
+      "source_sha256": "9bde9bfd91d3a89c4d1028855a58fec7515509bdc37968f2ee7f4b6d0fedad82",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3c399edf7a9a9381c207d6541584904124fabe5af54f277b135d6f03083f775b"
+    },
+    {
+      "path": "syntax-candidates/c/effects-capabilities/invalid/undeclared-capability.sico",
+      "bytes": 369,
+      "source_sha256": "06a7e3810495f2a0f130a63bcd5b6222c8003c97c9e77bde388b32906df4c9bd",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a42bf0593138f63e99eea979f901eae102d4056fd8ff9889c276c961f4c76c58"
+    },
+    {
+      "path": "syntax-candidates/c/effects-capabilities/invalid/undeclared-effect.sico",
+      "bytes": 359,
+      "source_sha256": "70e61acabe1bd0dd9dc39f3aef7422b9d705d663766088a3d445b0530295934c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "2201a7a357029bb5449985b10f3d7941b4451e451dfe33281450426b9b56c638"
+    },
+    {
+      "path": "syntax-candidates/c/effects-capabilities/valid/explicit-boundary.sico",
+      "bytes": 353,
+      "source_sha256": "a512fa17e6a4486aad486b39b1d20d2304371348040825450605ca64ee2c16be",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "192297d22648d6fdd567e4a9d174ae6ccbf60240170dbf22ed186698d3bd9d3f"
+    },
+    {
+      "path": "syntax-candidates/c/effects-capabilities/valid/pure-boundary.sico",
+      "bytes": 171,
+      "source_sha256": "568045f238bd0e1e05e0d797bb6f0ccaa032f0a2b4bd73d0c1d0450898c863df",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "8c1a4b7bc1e45276409f4b9eb971ca458bc98df308099c182a89aa4a56e22aac"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/invalid/missing-variant.sico",
+      "bytes": 246,
+      "source_sha256": "19fcdefe78afb1d6dbb9dd68e9f8a879322953f95e69be999aec5a735a31d834",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "459781ca9b26cfd11882f346e1860dbc638c40d5673393cd860fcddce095c070"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/invalid/unreachable-branch.sico",
+      "bytes": 252,
+      "source_sha256": "520e81ecf4eff45d42eebb67b662ab6d22303f734300131d98e927342ec7df40",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3460e9af3ed669bf138e7dcb7626bc7bfef48a7a4de15249c8cf05c9188e3e43"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+      "bytes": 240,
+      "source_sha256": "6898486d777ef533eba97f209264b973fe73add72a671ddd44242c318b42c822",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "e76197a5b392a463dde985d536751ac54f60add0b9230319011410c1ae1bd448"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/invalid/wildcard-sealed-product.sico",
+      "bytes": 303,
+      "source_sha256": "adae7adec8c287350ef8dfecbea15efaa229f8bc3b085d06b7290394e66581e1",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1105217ceaf55f5f0d9631351ece1b0453642afc498aee3855d8c9c20301f67a"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/valid/all-product-cases.sico",
+      "bytes": 380,
+      "source_sha256": "3e9664ae1c62db8ac6ebbc56fddda568b79472d51a04d93bcf4358d8af9534c0",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a49819116a73c091f982063aca6bf5abb93c7a2fd01d1f8a97150339d0732571"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/valid/all-variants.sico",
+      "bytes": 248,
+      "source_sha256": "fdd873b2b1ad224337025be9ff946cbffc0f315e981b194e03da4641855b6748",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1108bfb0c8416bc1d879abe7349c8a94fc1affd7464acb8fa3e50788454e26c6"
+    },
+    {
+      "path": "syntax-candidates/c/exhaustive-match/valid/ignore-payload.sico",
+      "bytes": 258,
+      "source_sha256": "93b9a8778123ed1e62ad26459de81ea4f4c72a1ed1dd74b712d653a2535a0dcd",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "c98899c2368acfa56972a8982668252408da065a40ce49455c374165b4b273db"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/invalid/await-twice.sico",
+      "bytes": 253,
+      "source_sha256": "46152c71af3c45466da4b98f8a865f9b19ecf0291c9186cb0bf0779b57a18974",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "7c45408efcbc09e8b8bcc4499e96631c72301ecb865a3b229d962b4fb5c22722"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/invalid/detached-spawn.sico",
+      "bytes": 222,
+      "source_sha256": "fa56551ab1ababd6d8d50ac3aa71aff6e160e89fc72338700057bd17cc080c7e",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0d2b7ea3e8c1059c6430901b817e3cd35458d35784dd4d56a108e61bae8df5cc"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/invalid/scope-nesting-limit.sico",
+      "bytes": 10175,
+      "source_sha256": "989fb7415b20a01c853d7161492c5e43005be9a4f1b0242d55851d04a01e65c2",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "8e251ddb3650719e1611b265af7487437494e1db0b5b1f33511cb60acf4f1f6b"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/invalid/task-escapes-scope.sico",
+      "bytes": 222,
+      "source_sha256": "56692c4c5a13ef4cf54798d237da3e63a3b0fa3ce4a3b9c2af3607534b0ef265",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "56d61b89e0540c0847a4a2ab6daad95c0210069244dffe70e98b55e81695ed3b"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/invalid/uncollected-task.sico",
+      "bytes": 239,
+      "source_sha256": "05100960f2ac9c17f455a0f8422e7c46a1ecd0e4ca3d0640cdfc9230a9ff42a4",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "cdd562f3300015c91fbbadbe9403aedeb520d2b4d10b4f7f33405081f46109b1"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/valid/await-once.sico",
+      "bytes": 218,
+      "source_sha256": "f546fdbff6dd7b41a5e45899e8579ce0a2cb13528e3e048d34c8e3142af3ef86",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "85a26aa1071e4c0a1e9580b98f44a75ed5a5703557d40ae60f8331ffea2edc79"
+    },
+    {
+      "path": "syntax-candidates/c/future-task/valid/structured-pair.sico",
+      "bytes": 340,
+      "source_sha256": "27b3f87d03c7189eda78c4c3ffd039886016984be7039cb82aa1f3003a61d4f7",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "fca8108bfb367790cda6347aecec9cbbf22075089f0872d794c5bc1fa2c3d277"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/invalid/invariant-violation.sico",
+      "bytes": 214,
+      "source_sha256": "e4ebc40f21f8f8b0212be9cb256f5d77174fa5c4fe1d1b5dd48938527662ae30",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "2a2c007d5092d5d6f92c4751ec93f2b64bbff5ba9f815d900d2972b5f4d77c27"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/invalid/missing-field.sico",
+      "bytes": 195,
+      "source_sha256": "6517709ac56bacecfe7aef69135fde984353ce972ac99e899295f3cf1a8d5fce",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3e551bbc78428652f3f64d4c7aa24b6d1f7089d0124bd71f496bd7d05e9d7e2c"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/invalid/nominal-confusion.sico",
+      "bytes": 261,
+      "source_sha256": "51aaf00585a1feeac135ab7fc9e8f0017ea31bb052d2fb20ca4463e814f262cf",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3c9cd2d200b5321445a9d647fcde4ae88f27c143477c5e9b37ff9e52c4ae2f8c"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/invalid/structural-record-confusion.sico",
+      "bytes": 273,
+      "source_sha256": "96c58bb474b863353ec6c7b69cfd2848a905ff783cc3291af88bfd4bb359124d",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3f102a559f8651c01dd5f5d631bc69b352d328929b062d640f92fffe96b009ba"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/invalid/unknown-field.sico",
+      "bytes": 179,
+      "source_sha256": "2e53e96553ff75176c51e0203067b5213010f02d07efd89ea0ff2b33d69d3f7b",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "c149df826dc41464e46c454e92f93d0a4801c7e70082153d69e0d02387e7000a"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/valid/complete-record.sico",
+      "bytes": 195,
+      "source_sha256": "220598b2bcaf366263749482d84a1c44401afbdc7abc07c821dcbc8d4dc91583",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "ccec83f1aaa0189dbd1048bc7dd47a2239208331b57576528ab7d98f4f009381"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/valid/nominal-id.sico",
+      "bytes": 214,
+      "source_sha256": "ea133212e0263fef9c78ca28dc94e6306993f23574c737d92f89afa1143a9d1e",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "647a8edfb06d423d3da0eb0b3a5fa2dfc6d13a1bd741d560bac3eb6fda05c842"
+    },
+    {
+      "path": "syntax-candidates/c/nominal-invariants/valid/satisfied-invariant.sico",
+      "bytes": 193,
+      "source_sha256": "5f39717c42d10abb788d14db9903225e097497b6b746f140c9961ad4c80f1b73",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "e6216c20c0c7b90fff48d82a0f2de577ddbd749710b61f4355d29726effbf936"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/invalid/cross-currency.sico",
+      "bytes": 228,
+      "source_sha256": "094e01da1b60f77278cffa2664bb0b54bbe62ffcc4c7310d44940ab7bc7847aa",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0e1bf1a6aab5f594520b717c4b44670d62eeff1832cccaed70cb308864d4789c"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/invalid/implicit-int-to-float.sico",
+      "bytes": 145,
+      "source_sha256": "d8f736317a510ed548b6df5555e128cd4322c417912a3de1853fc76f730861c4",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "3ef7745c836f5e0eeff9f9d34eea7c6186da7024153033fce23c5a63ada1c401"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/invalid/mixed-unit.sico",
+      "bytes": 243,
+      "source_sha256": "988863bd593bff305020a4c9b7887147214856591884be106c27e7c3247c0519",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1b2f327ce0889ea3e5727bb35fbd7dbdf2a90ece92808cb13cd6c28f59b79d61"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/invalid/text-as-int.sico",
+      "bytes": 120,
+      "source_sha256": "50d0638c016a6fa155b27f2a4c102b4a208c1233a0dc22f95bb70c05837179f3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "84fcff8cd17bbb4b33a40ddd53f27d236b1bb79a1e21a5afd70b4c683cfac70a"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/valid/explicit-int-to-float.sico",
+      "bytes": 134,
+      "source_sha256": "f11540bb57187c8373d6c31d68895fb526fb145f03b8a179caf7c62ad7a0a163",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "830ab5e926bfe905bb3500e7dac69398cfbbfb4a9c8e25074265e1f8a177bec9"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/valid/int-arbitrary-precision.sico",
+      "bytes": 130,
+      "source_sha256": "183c1cb37cc7e149fe8762a417a13f502a929e30417835dfc37013441acbda44",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "f174f2b51408a90a6462875e224f75f0a05cab5064f8d0fcbcb5f67b1ce67545"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/valid/typed-bytes.sico",
+      "bytes": 198,
+      "source_sha256": "4098c99a022c10b4afba649499ee20806d7717256b604fe490cf2318bff5c646",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "c007dc6004cb6770b111eae82b45b1651756ab2193bcfa77d71a4d495b9ca090"
+    },
+    {
+      "path": "syntax-candidates/c/numbers-units/valid/typed-currency.sico",
+      "bytes": 197,
+      "source_sha256": "a58c93912552d4713d7f60eb28bb356dcd12386b057ef656095be85518ae62f3",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "a370068e725880dc048df3bb96380428c968dc2248d1a6fdd07fb18fa88ffb0c"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/invalid/catch-all-error-map.sico",
+      "bytes": 427,
+      "source_sha256": "d0e247ed5f6273cdf6bb0138e3291e321d9e0b1318ff02060782479166e64c28",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "add0e68d7e672797903a07c92f2b9e6ef81b18883f25d8daa00b10b1708e2c35"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/invalid/error-type-mismatch.sico",
+      "bytes": 308,
+      "source_sha256": "1d450eff234e4fc89e17e3ccf18eb198bcf5766c78fa9eb9f4ebd219b855010c",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "1a713ce6854e1356c5f0573694c857bbb68810de91d8d3d2ecd595e6b5dec26a"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/invalid/incomplete-error-map.sico",
+      "bytes": 433,
+      "source_sha256": "97b16118a4fee8e4d1931d3abbd683fdf3917b6972bdfea1baec27a0c3c2758f",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "35e067e7dc820c5d750da61a7f51bc24f73684f3bc17f7f38bf52ecfdbf4c4b7"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/invalid/unhandled-result.sico",
+      "bytes": 238,
+      "source_sha256": "5d4eef50cd5ef197f99b9b3f90c2e0c0bdbf8558f01d4b11171e3fccaf1dfe24",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "fb83932537852072db7f55a3f20bff192e408d3f61e26fea65ca72176c047d89"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/valid/explicit-result-handle.sico",
+      "bytes": 300,
+      "source_sha256": "76bf39e4d6ac5df92f930260f947f8ad79de7363ea8770f58db540c197fb06d2",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "9409ab8ceec2fbce85e3f688a42e8e06e58f5174ae3c54b7d1fba1fad6d06750"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/valid/same-error-try.sico",
+      "bytes": 313,
+      "source_sha256": "3bb1e4af816ee89d5d5a9c890403b6f9215a01fe313f8de405f7d8115a544688",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "0b955dab5fadfa6e669036fae9fc13774578253490ff28aa49097cb5535aec1f"
+    },
+    {
+      "path": "syntax-candidates/c/result-mapping/valid/total-error-map.sico",
+      "bytes": 468,
+      "source_sha256": "4ad29e54b43aa87a0f1da328df0830091351b9f0e2a79fda1783ac0fc4bbc304",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "f5eaca557e2df4cb0904e16a671d2cc89aa1f85065843a8ef382b037a8e796f7"
+    },
+    {
+      "path": "syntax-candidates/c/revision/invalid/missing-commit-revision.sico",
+      "bytes": 439,
+      "source_sha256": "7090f21308e2b7043d3e1af4dcc60a202ddd13842e47dba6235a2b9a97dfe2de",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "33e944f78223078047477cb6272c793afc7848ae336321ba46f6f5bdd5c57478"
+    },
+    {
+      "path": "syntax-candidates/c/revision/invalid/unchecked-stale-result.sico",
+      "bytes": 346,
+      "source_sha256": "2b02c6472b81c3c79632b5ec8bb0f975fda94ec5ce826c0a1e76d148d62f60b5",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "e5f1dff4e04ae32b1aa0f1a59eb02032af903cc2d3d07366969e70ea3500c3d8"
+    },
+    {
+      "path": "syntax-candidates/c/revision/valid/stale-load-ignored.sico",
+      "bytes": 502,
+      "source_sha256": "a570b50bd2fb8112dc9c8aeb2554754d682fa0e28a0a0d3f40d81c5122794a57",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "090cf3103027b46292949fc7b093b6f7593df82ef88d9b2c9860e78191489c31"
+    },
+    {
+      "path": "syntax-candidates/c/revision/valid/versioned-commit.sico",
+      "bytes": 460,
+      "source_sha256": "c93f7737ef964f80ef632b0d87295dc9e7363ad4a2dc002ff8da9268e47a2735",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "487e0909c711ddb2c4b77e6f8ecd66faf2851879c95893e08baf308b664e9d3d"
+    },
+    {
+      "path": "syntax-candidates/c/stream/invalid/missing-await.sico",
+      "bytes": 269,
+      "source_sha256": "42d7e77e71a834de03aeb12e7adcadd400bc79f2a9af4e3730883c3178cd1285",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "29a66de226a53a194b8133f3ed3c4468347e35b34d233eb65b9dda4619b7b70f"
+    },
+    {
+      "path": "syntax-candidates/c/stream/invalid/unbounded-collect.sico",
+      "bytes": 283,
+      "source_sha256": "3a8caa24683697cc8632a5787591aaaa216171929274a55cfa496f37a43e7896",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "5a1c26c7ef12326e4694ebe4a74c71effccef01980637b13420f2a804a926a41"
+    },
+    {
+      "path": "syntax-candidates/c/stream/valid/bounded-collect.sico",
+      "bytes": 269,
+      "source_sha256": "18186b24841ddf67e583483da528f6910f995fd5c0c899a768b2dccc18db1262",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "52b285cc514937ede19378b1fe2ba07132389a006b9263649ecafb2cd3e01c9b"
+    },
+    {
+      "path": "syntax-candidates/c/stream/valid/pull-one.sico",
+      "bytes": 262,
+      "source_sha256": "8a8ef10f82bc106d9be9e0d436f4bb0000dc045dc2f4fdf514d8ddd92ce3c4a5",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 2,
+      "diagnostic_ids": [
+        "LEXICAL"
+      ],
+      "diagnostic_sha256": "5356367ef6f7e15fe2e821e4a1e145e2f63ce9dc16a46bb56b764e2bda12370b"
+    },
+    {
+      "path": "tests/end-to-end/answer.sico",
+      "bytes": 58,
+      "source_sha256": "2c19f9055a3c3da0021f6752e1203c80ae2dad6a2db6f38ce8c74fd3e1bbd0d3",
+      "rust_format": "accepted",
+      "formatted_sha256": "2c19f9055a3c3da0021f6752e1203c80ae2dad6a2db6f38ce8c74fd3e1bbd0d3",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/bit-ops-bitboard.sico",
+      "bytes": 3343,
+      "source_sha256": "82201926dc60b39e3889054d6241b690d8d0c4f7a60d9ef7e3f0cbf2dc54f4af",
+      "rust_format": "accepted",
+      "formatted_sha256": "b573ed972b10456d032a1c18960afc25072e1d06455c1e4bc52554d8151a590d",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/block-solver.sico",
+      "bytes": 49212,
+      "source_sha256": "c242220192ec65227118b695f21db407a5a104c6fd95c7762b5e3146f9d9ab31",
+      "rust_format": "accepted",
+      "formatted_sha256": "f29e2598638e9ffd3e638fa2e51135cd86561dd2b6b00fd971d89e9f402e804b",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/capability-state-machine.sico",
+      "bytes": 7244,
+      "source_sha256": "12208bb4f98ce7ed2eeead5176675ff89af8c15dea8561ead1d6f552aee00b2a",
+      "rust_format": "accepted",
+      "formatted_sha256": "12208bb4f98ce7ed2eeead5176675ff89af8c15dea8561ead1d6f552aee00b2a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/checked-mul-div.sico",
+      "bytes": 5452,
+      "source_sha256": "b09d07796e8de46d172844d90f1fe5a65166ca64edc727a78d1bdf9b4a1a87cb",
+      "rust_format": "accepted",
+      "formatted_sha256": "da87b19fd1bfcdbf6b6e22f7773236307eb120fcce096ab282eef48764cbcb38",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/control-flow-counter.sico",
+      "bytes": 1482,
+      "source_sha256": "146ed3169bce3869c1798a89b3e0ee835a5ba727da411ea9fa863893f59f66f0",
+      "rust_format": "accepted",
+      "formatted_sha256": "0322e1a9e2c7ba9e1aa852da705e78cf59ad17e3ffa51d75d690ab17d4f50216",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/error-propagation.sico",
+      "bytes": 1647,
+      "source_sha256": "f0b87b08d73b51ea5377b07e72563131f26a26cb08a8e14ff59c9d8d879ca121",
+      "rust_format": "accepted",
+      "formatted_sha256": "6eafb4ef320e676c9a633f52b928814c94c50148de78da8967f96160ca4dd087",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/for-loop-collections.sico",
+      "bytes": 1387,
+      "source_sha256": "0a553b8b9b32c5d7fb18d53d8ea01450182f233616dd53ccebac2c4a6aa6d4af",
+      "rust_format": "accepted",
+      "formatted_sha256": "bbe3a868b35d77e9f01ffa154eea335a43b0160fb8f6d3d62fa2823285568cfe",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/for-loop-i64.sico",
+      "bytes": 1196,
+      "source_sha256": "d3e4b536e08e70244a19aeeec5e711d037624bbcd99784459ef5e5a2bc2dd332",
+      "rust_format": "accepted",
+      "formatted_sha256": "31ef9c34bc3683543c9251b7a58a5511fee73500a1eb9e41bbbd6f738e3550f7",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/for-loop-words.sico",
+      "bytes": 1189,
+      "source_sha256": "3707d46a81319ff4e9d78d43bebc902647452e7cd4a19b36251a9f6d7a1e7dd2",
+      "rust_format": "accepted",
+      "formatted_sha256": "c47c99c86c576a9035a6dc6891b58f80e5790d7630450372a7d7efc797eca3ef",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/infix-equality.sico",
+      "bytes": 1355,
+      "source_sha256": "d627c86daa8e72f7941efba4d06d6d9c8967b0497dec8fb84e37cce913a130f8",
+      "rust_format": "accepted",
+      "formatted_sha256": "684922413cbae48abba64be20430bec9a9953ce05e149854e0be683052e99fba",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/list-i64-family.sico",
+      "bytes": 1011,
+      "source_sha256": "9574a41e578eec19a1514ea695dcbf49eb1ead1eec427fe7883d43b3a5a231bc",
+      "rust_format": "accepted",
+      "formatted_sha256": "9574a41e578eec19a1514ea695dcbf49eb1ead1eec427fe7883d43b3a5a231bc",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/list-i64-sort.sico",
+      "bytes": 1557,
+      "source_sha256": "a096a99dc9848e883638d37bf6e317372aa82d5705f640f551379e6b7f8fb048",
+      "rust_format": "accepted",
+      "formatted_sha256": "480315b6aee6867482004fce4ad21ef3a40e9050aaa4a83b59b10151d8fe1578",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/list-numeric.sico",
+      "bytes": 2924,
+      "source_sha256": "4a782b958c0b87f1d1db91a986141c230a26ecd8209d7458df65a3e14e3ca71a",
+      "rust_format": "accepted",
+      "formatted_sha256": "cdc8fae8dd72297fb87b1befb3464d8fd35f2328be1146408d757bf70ff212b4",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/map-keys-traversal.sico",
+      "bytes": 5113,
+      "source_sha256": "bfe68df0c1ee9e6a3c75fc1e552510d5beb351892abf8e09abb27182ee35e43b",
+      "rust_format": "accepted",
+      "formatted_sha256": "cc40f2918d000f184bc291d4637a71bc154206870a8eaabbe38002f55cac089a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/map-set-frequency.sico",
+      "bytes": 2717,
+      "source_sha256": "c197010aa3876d4e8594ba4ab49c13d09ec35b67a6bf05849544bf431c6e6232",
+      "rust_format": "accepted",
+      "formatted_sha256": "81937b06a50d8244d1c4a694f3737cccc2e6ac0e23a826df2e2216887bfa7c97",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/modules-report/main.sico",
+      "bytes": 818,
+      "source_sha256": "2d162494354f9e951ea1ae686bf03a0871643f7bb1af6c96c24f99ba80712b50",
+      "rust_format": "accepted",
+      "formatted_sha256": "2d162494354f9e951ea1ae686bf03a0871643f7bb1af6c96c24f99ba80712b50",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/modules-report/math_util.sico",
+      "bytes": 210,
+      "source_sha256": "ffdbc5417f4d1f92ae12d79fb33f55288f8dde9b41f3577f28522d90a9e7fbb8",
+      "rust_format": "accepted",
+      "formatted_sha256": "f68864badc77aa9464cab0909adafb510955abb126392a57e3307bd536eb57a6",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E8010"
+      ],
+      "diagnostic_sha256": "946d761db4b00283778c6ef9b4fd04dfbfe3584029ec99bc9caf2c275dd6fcba"
+    },
+    {
+      "path": "tests/end-to-end/prng-xorshift.sico",
+      "bytes": 3407,
+      "source_sha256": "da35b62147ec78b4f1481170e497267dd4f8c39033b0f7b0745c8c2f4dfd3adc",
+      "rust_format": "accepted",
+      "formatted_sha256": "7a90a134983a92ea6109f98bf51a3dd2581017fee3cd0e9da46685bd924b82d9",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/recursion-depth.sico",
+      "bytes": 1753,
+      "source_sha256": "61b4af1298a5ff201f93506148e05f69f16738a5decf9fe2e12764125c145a33",
+      "rust_format": "accepted",
+      "formatted_sha256": "2ecf56a3e830c0d602ebf72d1f26e3e706580deb505feaf0168d5952149c09a8",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/recursion-unbounded.sico",
+      "bytes": 798,
+      "source_sha256": "8118d317845b29333046fcd7703aa6919a023991bf3456558b54ea9171d0cadf",
+      "rust_format": "accepted",
+      "formatted_sha256": "8118d317845b29333046fcd7703aa6919a023991bf3456558b54ea9171d0cadf",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-args-echo.sico",
+      "bytes": 613,
+      "source_sha256": "e2361739be335cf298071ba3950eee2ca2ab0b062bf6ed004e9d7d4f3193306a",
+      "rust_format": "accepted",
+      "formatted_sha256": "e2361739be335cf298071ba3950eee2ca2ab0b062bf6ed004e9d7d4f3193306a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-echo.sico",
+      "bytes": 561,
+      "source_sha256": "006ecd7e2f5127016c8ff7336d7d7e7851cb59f7c4ae275f7250322669adc31a",
+      "rust_format": "accepted",
+      "formatted_sha256": "006ecd7e2f5127016c8ff7336d7d7e7851cb59f7c4ae275f7250322669adc31a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-file-transform.sico",
+      "bytes": 1725,
+      "source_sha256": "62026231d878b7f33da59d182604d673647ea8d35ef6618b58a20e343158e39a",
+      "rust_format": "accepted",
+      "formatted_sha256": "62026231d878b7f33da59d182604d673647ea8d35ef6618b58a20e343158e39a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-fs-escape.sico",
+      "bytes": 1729,
+      "source_sha256": "74d00e25104c5621507734d4e8c18f6b901063f7fab046a54a6dfec2df083303",
+      "rust_format": "accepted",
+      "formatted_sha256": "74d00e25104c5621507734d4e8c18f6b901063f7fab046a54a6dfec2df083303",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-http-request.sico",
+      "bytes": 1396,
+      "source_sha256": "a9a85daa04e6a570a16726bd33fb0922cfb319fb4d29f4e2e4fc4d2e1e978670",
+      "rust_format": "accepted",
+      "formatted_sha256": "a9a85daa04e6a570a16726bd33fb0922cfb319fb4d29f4e2e4fc4d2e1e978670",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-http2-request.sico",
+      "bytes": 1177,
+      "source_sha256": "dbdf545ea612e7dca6d527c13b1bbc12312e6480c9c56e7a63be3b9c1efa6f09",
+      "rust_format": "accepted",
+      "formatted_sha256": "dbdf545ea612e7dca6d527c13b1bbc12312e6480c9c56e7a63be3b9c1efa6f09",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-json-filter.sico",
+      "bytes": 1144,
+      "source_sha256": "43a4f01262450896204be38c40c3dbc87ab661db778db5f8b0696411d057eb8b",
+      "rust_format": "accepted",
+      "formatted_sha256": "43a4f01262450896204be38c40c3dbc87ab661db778db5f8b0696411d057eb8b",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-reject.sico",
+      "bytes": 550,
+      "source_sha256": "ce083b6302bfa558902f329949baf95c3cb28978d7679a7d8d601d1df334744d",
+      "rust_format": "accepted",
+      "formatted_sha256": "ce083b6302bfa558902f329949baf95c3cb28978d7679a7d8d601d1df334744d",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-stream-passthrough.sico",
+      "bytes": 2613,
+      "source_sha256": "21de14e2409afffa2d23c032ed7c5019dbbde391b490d8983d394ea99dcfc4ed",
+      "rust_format": "accepted",
+      "formatted_sha256": "21de14e2409afffa2d23c032ed7c5019dbbde391b490d8983d394ea99dcfc4ed",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-stream-pump.sico",
+      "bytes": 1070,
+      "source_sha256": "b0bf8a7db328e3e06aaeb85b3cc2d7a5a37f5270596bfe42779ae92a19d8266d",
+      "rust_format": "accepted",
+      "formatted_sha256": "b0bf8a7db328e3e06aaeb85b3cc2d7a5a37f5270596bfe42779ae92a19d8266d",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-stream-read-once.sico",
+      "bytes": 910,
+      "source_sha256": "029fd226ebb53da25795e392c546ed1ebfd6c39a617c9278da4dfe8408057f01",
+      "rust_format": "accepted",
+      "formatted_sha256": "029fd226ebb53da25795e392c546ed1ebfd6c39a617c9278da4dfe8408057f01",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-stream-use-after-close.sico",
+      "bytes": 1213,
+      "source_sha256": "adaddb874fdc2cc490305139151dc0922ecc17d97fb1e962b5b13c053d7e8470",
+      "rust_format": "accepted",
+      "formatted_sha256": "adaddb874fdc2cc490305139151dc0922ecc17d97fb1e962b5b13c053d7e8470",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-task-cancelled.sico",
+      "bytes": 981,
+      "source_sha256": "1641f2f550f98f3542fd594000cf577818a62aed16a4249dee029424dea3ceb4",
+      "rust_format": "accepted",
+      "formatted_sha256": "1641f2f550f98f3542fd594000cf577818a62aed16a4249dee029424dea3ceb4",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-task-collect.sico",
+      "bytes": 867,
+      "source_sha256": "63873e384ee2f0ea5020761edc7bac497ab611b913097473ddcfd698038b3d7d",
+      "rust_format": "accepted",
+      "formatted_sha256": "63873e384ee2f0ea5020761edc7bac497ab611b913097473ddcfd698038b3d7d",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-task-pair.sico",
+      "bytes": 842,
+      "source_sha256": "e0e29d7f24607a3627cad5a7171eb6ac6bd8a78286fccfe0f50944601c52599b",
+      "rust_format": "accepted",
+      "formatted_sha256": "e0e29d7f24607a3627cad5a7171eb6ac6bd8a78286fccfe0f50944601c52599b",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/script-word-count.sico",
+      "bytes": 880,
+      "source_sha256": "e18905d956eecdec05e423a9541c1cdf1f9c7d84b937549352cd99a54c2cb7f7",
+      "rust_format": "accepted",
+      "formatted_sha256": "e18905d956eecdec05e423a9541c1cdf1f9c7d84b937549352cd99a54c2cb7f7",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/stdlib-batch2.sico",
+      "bytes": 3428,
+      "source_sha256": "c831dd4ddcac9e901604b6d55ef3afafdf2b1a1063a64f9c123e68c296fc29c5",
+      "rust_format": "accepted",
+      "formatted_sha256": "722cca983f2bbbab42fc6def9504ffb778579ce4f05385c7feaaf01f1e5e3aa3",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/stream-transform.sico",
+      "bytes": 2768,
+      "source_sha256": "4062af6659847d19e68d9cc97d072a15bb84fc0fc322f6d3880cc0f79115baec",
+      "rust_format": "accepted",
+      "formatted_sha256": "4062af6659847d19e68d9cc97d072a15bb84fc0fc322f6d3880cc0f79115baec",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/truth.sico",
+      "bytes": 57,
+      "source_sha256": "c79aa63f858ab3913c256cb7234d00badefb53d065fb883d330f3a99c77c401a",
+      "rust_format": "accepted",
+      "formatted_sha256": "c79aa63f858ab3913c256cb7234d00badefb53d065fb883d330f3a99c77c401a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/unit.sico",
+      "bytes": 57,
+      "source_sha256": "7b52f1ad2d33476bc40fb131ac6a97700c2095397e4a5e5e88fdfd66db37471a",
+      "rust_format": "accepted",
+      "formatted_sha256": "7b52f1ad2d33476bc40fb131ac6a97700c2095397e4a5e5e88fdfd66db37471a",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    }
+  ]
+}

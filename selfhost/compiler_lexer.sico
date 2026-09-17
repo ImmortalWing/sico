@@ -1,25 +1,4 @@
-record ScriptInput:
-  field arguments: List[Text]
-  field stdin: Bytes
-end record
-
-record ScriptOutput:
-  field stdout: Bytes
-  field stderr: Bytes
-  field exit_code: I64
-end record
-
-enum ScriptErrorCode:
-  case InvalidInput
-  case ResourceLimit
-  case DomainError
-  case Cancelled
-end enum
-
-record ScriptError:
-  field code: ScriptErrorCode
-  field message: Text
-end record
+module compiler_lexer
 
 function add(left: U64, right: U64) returns U64:
   match U64.checked_add(left, right):
@@ -449,11 +428,4 @@ function lex(src: Bytes) returns Text:
     set cursor = finish
   end while
   return sico.text.join(append_token(out, "Eof", size, size, src), "")
-end function
-
-function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
-  if sico.bytes.is_utf8(input.stdin):
-    return ok(ScriptOutput(stdout: sico.text.encode(lex(input.stdin)), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
-  end if
-  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "source is not UTF-8"))
 end function

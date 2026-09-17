@@ -28,6 +28,8 @@
 - [M20 跨平台 Runtime、语言 v1 与完成审计计划](./plans/M20-platform-breadth-language-v1.md)
 - [M21 开发者体验、标准库第二批与生态激活计划](./plans/M21-developer-experience-and-stdlib.md)
 - [M22 编译器自举轨道计划](./plans/M22-compiler-self-host.md)
+- [M23 视觉/模型与原生 AI 闭环收口计划](./plans/M23-vision-model-native-loop-closure.md)
+- [M24 Sico 1.0 与外部证据收口计划](./plans/M24-product-1-0-external-evidence.md)
 - [M9 exit audit](./reports/m9-exit-audit-v0.md)
 - [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)

@@ -1,25 +1,26 @@
-//! M22 S5 (STEP-0192): the Sico-written parser consumes the token stream
-//! (struct-of-arrays `List[Text]` words from STEP-0191) and counts
-//! declaration keywords — the first parser-level shape over the token
-//! stream.
+//! M22 bounded semantic AST differential. The executable parser emits the
+//! exact `ModuleAst::shape()` declaration tree consumed by later lowering.
 
+use sico_parser::parse;
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
+use sico_source::{SourceFile, SourceId};
 
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
-const INPUT: &[u8] = b"function main() returns Int:\n  return 42\nend function\n";
-const INPUT_TWO_PARAMS: &[u8] =
-    b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n";
 
-fn compile_parser(tag: &str) -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!("sico-step0192-parser-{tag}-{}", std::process::id()));
+fn compile_parser() -> Vec<u8> {
+    let directory =
+        std::env::temp_dir().join(format!("sico-step0203-parser-{}", std::process::id()));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
     std::fs::create_dir(&directory).unwrap();
     let source_path = directory.join("parser.sico");
     let component_path = directory.join("parser.component.wasm");
     std::fs::write(&source_path, PARSER_SOURCE).unwrap();
-    let mut stdout: Vec<u8> = Vec::new();
-    let mut stderr: Vec<u8> = Vec::new();
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
     let exit = sico_cli::run(
         [
             std::ffi::OsString::from("sico"),
@@ -40,50 +41,97 @@ fn compile_parser(tag: &str) -> Vec<u8> {
     component
 }
 
-fn run_parser(tag: &str, input: &[u8]) -> Vec<u8> {
-    let component = compile_parser(tag);
+#[test]
+fn sico_parser_matches_rust_module_ast_on_every_accepted_source() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(repository.join("selfhost/corpus-v0.json")).unwrap())
+            .unwrap();
+    let accepted: Vec<_> = manifest["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["rust_format"] == "accepted")
+        .map(|entry| entry["path"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(accepted.len(), 99);
+
+    let component = compile_parser();
     let runner = Runner::new().expect("runner builds");
     let prepared = runner
         .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
         .expect("parser component links");
-    match prepared
-        .run(
-            &ScriptInput {
-                stdin: input.to_vec(),
-                ..ScriptInput::default()
-            },
-            &RunnerLimits::default(),
-            &CancelToken::new(),
-        )
-        .expect("input bounds hold")
-    {
-        RunOutcome::Output(output) => {
-            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-            output.stdout
-        }
-        other => panic!("expected guest output, got {other:?}"),
+    let limits = RunnerLimits {
+        fuel: 1_000_000_000,
+        timeout: std::time::Duration::from_secs(30),
+        ..RunnerLimits::default()
+    };
+
+    for (index, path) in accepted.iter().enumerate() {
+        let bytes = std::fs::read(repository.join(path)).unwrap();
+        let source =
+            SourceFile::from_bytes(SourceId::new(u32::try_from(index).unwrap()), path, &bytes)
+                .unwrap();
+        let parsed = parse(&source);
+        let expected = parsed.ast().unwrap_or_else(|| {
+            panic!("manifest says formatter accepted but parser refused {path}")
+        });
+        let outcome = prepared
+            .run(
+                &ScriptInput {
+                    stdin: bytes,
+                    ..ScriptInput::default()
+                },
+                &limits,
+                &CancelToken::new(),
+            )
+            .expect("input bounds hold");
+        let RunOutcome::Output(output) = outcome else {
+            panic!("Sico parser failed for {path}: {outcome:?}")
+        };
+        assert_eq!(output.exit_code, 0, "{path}: {:?}", output.stderr);
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            expected.shape(),
+            "{path}"
+        );
+
+        let expected_metadata = expected
+            .declarations()
+            .iter()
+            .map(|declaration| {
+                format!(
+                    "{:?}\t{}\t{}\t{}\t{:?}\n",
+                    declaration.kind,
+                    declaration.name,
+                    u32::from(declaration.range.start()),
+                    u32::from(declaration.range.end()),
+                    declaration.detail,
+                )
+            })
+            .collect::<String>();
+        let metadata_outcome = prepared
+            .run(
+                &ScriptInput {
+                    arguments: vec!["--metadata".to_owned()],
+                    stdin: std::fs::read(repository.join(path)).unwrap(),
+                },
+                &limits,
+                &CancelToken::new(),
+            )
+            .expect("input bounds hold");
+        let RunOutcome::Output(metadata_output) = metadata_outcome else {
+            panic!("Sico parser metadata failed for {path}: {metadata_outcome:?}")
+        };
+        assert_eq!(
+            metadata_output.exit_code, 0,
+            "{path}: {:?}",
+            metadata_output.stderr
+        );
+        assert_eq!(
+            String::from_utf8(metadata_output.stdout).unwrap(),
+            expected_metadata,
+            "{path} metadata"
+        );
     }
-}
-
-#[test]
-fn sico_parser_extracts_function_names() {
-    // STEP-0194: the parser extracts function name + param count
-    // (the IR-signature shape): `function main()` yields `fn:main/0`.
-    assert_eq!(
-        run_parser("main0", INPUT),
-        b"fn:main/0".to_vec(),
-        "parser summary drifted"
-    );
-}
-
-#[test]
-fn sico_parser_counts_parameters() {
-    // STEP-0195: the arity walk counts the full parameter list; the
-    // punctuation-free word stream carries each `name: Type` parameter as
-    // two words, so `function add(a: I64, b: I64)` yields `fn:add/2`.
-    assert_eq!(
-        run_parser("add2", INPUT_TWO_PARAMS),
-        b"fn:add/2".to_vec(),
-        "param count drifted"
-    );
 }

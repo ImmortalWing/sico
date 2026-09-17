@@ -1,25 +1,10 @@
-record ScriptInput:
-  field arguments: List[Text]
-  field stdin: Bytes
-end record
+module compiler_parser
 
-record ScriptOutput:
-  field stdout: Bytes
-  field stderr: Bytes
-  field exit_code: I64
-end record
+use compiler_lexer.lex
 
-enum ScriptErrorCode:
-  case InvalidInput
-  case ResourceLimit
-  case DomainError
-  case Cancelled
-end enum
-
-record ScriptError:
-  field code: ScriptErrorCode
-  field message: Text
-end record
+function lossless_tokens(src: Bytes) returns Text:
+  return compiler_lexer.lex(src)
+end function
 
 function add(left: U64, right: U64) returns U64:
   match U64.checked_add(left, right):
@@ -66,43 +51,20 @@ function is_word_byte(b: I64) returns Bool:
 end function
 
 function words(line: Text) returns List[Text]:
-  let src = sico.text.encode(line)
-  let size = sico.bytes.length(src)
-  let cursor = U64.literal(0)
-  let start = U64.literal(0)
-  let length = U64.literal(0)
-  let active = I64.literal(0)
+  let framed = sico.text.split_lines(compiler_lexer.lex(sico.text.encode(line)))
+  let count = sico.list.length(framed)
+  let index = U64.literal(0)
   let out = sico.text.split_lines("")
-  while U64.less_than(cursor, size):
-    let b = sico.bytes.at(src, cursor, I64.literal(-1))
-    if is_word_byte(b):
-      if I64.equal(active, I64.literal(0)):
-        set active = I64.literal(1)
-        set start = cursor
-        set length = U64.literal(0)
+  while U64.less_than(add(index, U64.literal(1)), count):
+    let raw = at(framed, add(index, U64.literal(1)))
+    let raw_bytes = sico.text.encode(raw)
+    if U64.less_than(U64.literal(0), sico.bytes.length(raw_bytes)):
+      if is_word_byte(sico.bytes.at(raw_bytes, U64.literal(0), I64.literal(-1))):
+        set out = sico.list.append(out, raw)
       end if
-      set length = add(length, U64.literal(1))
-    else:
-      if I64.equal(active, I64.literal(1)):
-        match sico.bytes.slice(src, start, length):
-          case ok(value):
-            set out = sico.list.append(out, sico.bytes.utf8_decode(value))
-          case error(_):
-            return out
-        end match
-      end if
-      set active = I64.literal(0)
     end if
-    set cursor = add(cursor, U64.literal(1))
+    set index = add(index, U64.literal(2))
   end while
-  if I64.equal(active, I64.literal(1)):
-    match sico.bytes.slice(src, start, length):
-      case ok(value):
-        set out = sico.list.append(out, sico.bytes.utf8_decode(value))
-      case error(_):
-        return out
-    end match
-  end if
   return out
 end function
 
@@ -352,21 +314,4 @@ function parse_shape(source: Text) returns Text:
     set index = add(index, U64.literal(1))
   end while
   return shape
-end function
-
-function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
-  if sico.bytes.is_utf8(input.stdin):
-    let source = sico.bytes.utf8_decode(input.stdin)
-    let shape = parse_shape(source)
-    match sico.list.get(input.arguments, U64.literal(0)):
-      case ok(argument):
-        if same(argument, "--metadata"):
-          set shape = parse_metadata(source)
-        end if
-      case error(_):
-        set shape = shape
-    end match
-    return ok(ScriptOutput(stdout: sico.text.encode(shape), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
-  end if
-  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "source is not UTF-8"))
 end function

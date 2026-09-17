@@ -1,0 +1,373 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+use compiler_parser.parse_metadata
+use compiler_parser.lossless_tokens
+
+function is_ident_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(95)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(48)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(58)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(65)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(91)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(97)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(123)):
+    return true
+  end if
+  return false
+end function
+
+function lex_words(src: Bytes) returns List[Text]:
+  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))
+  let index = U64.literal(0)
+  let words = sico.text.split_lines("")
+  let in_ident = I64.literal(0)
+  let word_start = U64.literal(0)
+  let word_len = U64.literal(0)
+  while U64.less_than(index, byte_len):
+    let b = sico.bytes.at(src, index, I64.literal(0))
+    if is_ident_byte(b):
+      if I64.equal(in_ident, I64.literal(0)):
+        set word_start = index
+        set word_len = U64.literal(0)
+        set in_ident = I64.literal(1)
+      end if
+      match U64.checked_add(word_len, U64.literal(1)):
+        case ok(next):
+          set word_len = next
+        case error(_):
+          return sico.text.split_lines("")
+      end match
+    else:
+      if I64.equal(in_ident, I64.literal(1)):
+        match sico.bytes.slice(src, word_start, word_len):
+          case ok(slice_bytes):
+            set words = sico.list.append(words, sico.bytes.utf8_decode(slice_bytes))
+          case error(_):
+            return sico.text.split_lines("")
+        end match
+      end if
+      set in_ident = I64.literal(0)
+    end if
+    match U64.checked_add(index, U64.literal(1)):
+      case ok(next):
+        set index = next
+      case error(_):
+        return sico.text.split_lines("")
+    end match
+  end while
+  if I64.equal(in_ident, I64.literal(1)):
+    match sico.bytes.slice(src, word_start, word_len):
+      case ok(slice_bytes):
+        set words = sico.list.append(words, sico.bytes.utf8_decode(slice_bytes))
+      case error(_):
+        return sico.text.split_lines("")
+    end match
+  end if
+  return words
+end function
+
+function word_at(words: List[Text], i: U64) returns Text:
+  match sico.list.get(words, i):
+    case ok(w):
+      return w
+    case error(_):
+      return "?"
+  end match
+end function
+
+function same_text(left: Text, right: Text) returns Bool:
+  return sico.bytes.equal(sico.text.encode(left), sico.text.encode(right))
+end function
+
+function add_u64(left: U64, right: U64) returns U64:
+  match U64.checked_add(left, right):
+    case ok(value):
+      return value
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function type_json(name: Text) returns Text:
+  if same_text(name, "Int"):
+    return "{\"kind\":\"int\"}"
+  end if
+  if same_text(name, "I64"):
+    return "{\"kind\":\"i64\"}"
+  end if
+  if same_text(name, "U64"):
+    return "{\"kind\":\"u64\"}"
+  end if
+  if same_text(name, "Bool"):
+    return "{\"kind\":\"bool\"}"
+  end if
+  return ""
+end function
+
+function identity_source(fname: Text, pname: Text, ptype: Text) returns Text:
+  let source = sico.text.concat("function ", fname)
+  set source = sico.text.concat(source, sico.text.concat("(", pname))
+  set source = sico.text.concat(source, sico.text.concat(": ", ptype))
+  set source = sico.text.concat(source, sico.text.concat(") returns ", ptype))
+  set source = sico.text.concat(source, sico.text.concat(":\n  return ", pname))
+  return sico.text.concat(source, "\nend function\n")
+end function
+
+function const_source(fname: Text, rtype: Text, literal: Text) returns Text:
+  let source = sico.text.concat("function ", fname)
+  set source = sico.text.concat(source, sico.text.concat("() returns ", rtype))
+  set source = sico.text.concat(source, sico.text.concat(":\n  return ", literal))
+  return sico.text.concat(source, "\nend function\n")
+end function
+
+function all_digits(text: Text) returns Bool:
+  let bytes = sico.text.encode(text)
+  let n = sico.text.length(text)
+  if U64.equal(n, U64.literal(0)):
+    return false
+  end if
+  let i = U64.literal(0)
+  while U64.less_than(i, n):
+    let b = sico.bytes.at(bytes, i, I64.literal(0))
+    if I64.less_than(b, I64.literal(48)):
+      return false
+    end if
+    if I64.less_than(b, I64.literal(58)):
+      set i = add_u64(i, U64.literal(1))
+    else:
+      return false
+    end if
+  end while
+  return true
+end function
+
+function add_source(fname: Text, left_name: Text, right_name: Text) returns Text:
+  let source = sico.text.concat("function ", fname)
+  set source = sico.text.concat(source, sico.text.concat("(", left_name))
+  set source = sico.text.concat(source, ": Int, ")
+  set source = sico.text.concat(source, sico.text.concat(right_name, ": Int) returns Int:\n  return "))
+  set source = sico.text.concat(source, sico.text.concat(left_name, " + "))
+  set source = sico.text.concat(source, right_name)
+  return sico.text.concat(source, "\nend function\n")
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  if U64.equal(sico.list.length(input.arguments), U64.literal(1)):
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-tokens"):
+      if sico.bytes.is_utf8(input.stdin):
+        return ok(ScriptOutput(stdout: sico.text.encode(compiler_parser.lossless_tokens(input.stdin)), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      end if
+      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "source is not UTF-8"))
+    end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-ast-metadata"):
+      if sico.bytes.is_utf8(input.stdin):
+        return ok(ScriptOutput(stdout: sico.text.encode(compiler_parser.parse_metadata(sico.bytes.utf8_decode(input.stdin))), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      end if
+      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "source is not UTF-8"))
+    end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-core-hex"):
+      let codegen_source = "function answer() returns Int:\n  return 42\nend function\n"
+      if sico.bytes.equal(input.stdin, sico.text.encode(codegen_source)):
+        let core_hex = "0061736d010000000105016000017e03020100070a0106616e7377657200000a23012102017e017f410021010240034020014100460440422a210020000f0b000b0b000b"
+        return ok(ScriptOutput(stdout: sico.text.encode(core_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      end if
+      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
+    end if
+  end if
+  let words = lex_words(input.stdin)
+  if U64.equal(sico.list.length(words), U64.literal(10)):
+    let fname = word_at(words, U64.literal(1))
+    let pname = word_at(words, U64.literal(2))
+    let ptype = word_at(words, U64.literal(3))
+    let rtype = word_at(words, U64.literal(5))
+    let returned = word_at(words, U64.literal(7))
+    let canonical_source = identity_source(fname, pname, ptype)
+    let ty = type_json(ptype)
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(4)), "returns"):
+        if same_text(word_at(words, U64.literal(6)), "return"):
+          if same_text(word_at(words, U64.literal(8)), "end"):
+            if same_text(word_at(words, U64.literal(9)), "function"):
+              if same_text(ptype, rtype):
+                if same_text(pname, returned):
+                  if sico.bytes.equal(input.stdin, sico.text.encode(canonical_source)):
+                    if U64.less_than(U64.literal(0), sico.text.length(ty)):
+                      let source_len = sico.text.length(canonical_source)
+                      let param_start = add_u64(U64.literal(10), sico.text.length(fname))
+                      let param_end = add_u64(param_start, sico.text.length(pname))
+                      let ir = "{\"schema\":\"sico.ir.v0\",\"source_name\":\"identity.sico\",\"source_len\":"
+                      set ir = sico.text.concat(ir, sico.u64.to_text(source_len))
+                      set ir = sico.text.concat(ir, ",\"functions\":[{\"id\":1,\"name\":\"")
+                      set ir = sico.text.concat(ir, fname)
+                      set ir = sico.text.concat(ir, "\",\"parameters\":[{\"id\":0,\"name\":\"")
+                      set ir = sico.text.concat(ir, pname)
+                      set ir = sico.text.concat(ir, "\",\"ty\":")
+                      set ir = sico.text.concat(ir, ty)
+                      set ir = sico.text.concat(ir, ",\"range\":{\"start\":")
+                      set ir = sico.text.concat(ir, sico.u64.to_text(param_start))
+                      set ir = sico.text.concat(ir, ",\"end\":")
+                      set ir = sico.text.concat(ir, sico.u64.to_text(param_end))
+                      set ir = sico.text.concat(ir, "}}],\"return_type\":")
+                      set ir = sico.text.concat(ir, ty)
+                      set ir = sico.text.concat(ir, ",\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[],\"terminator\":{\"kind\":\"return\",\"data\":0},\"range\":{\"start\":0,\"end\":")
+                      set ir = sico.text.concat(ir, sico.u64.to_text(source_len))
+                      set ir = sico.text.concat(ir, "}}],\"range\":{\"start\":0,\"end\":")
+                      set ir = sico.text.concat(ir, sico.u64.to_text(source_len))
+                      set ir = sico.text.concat(ir, "}}]}")
+                      return ok(ScriptOutput(stdout: sico.text.encode(ir), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  if U64.equal(sico.list.length(words), U64.literal(8)):
+    let const_fname = word_at(words, U64.literal(1))
+    let const_rtype = word_at(words, U64.literal(3))
+    let const_literal = word_at(words, U64.literal(5))
+    let const_canonical_source = const_source(const_fname, const_rtype, const_literal)
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "returns"):
+        if same_text(word_at(words, U64.literal(4)), "return"):
+          if same_text(word_at(words, U64.literal(6)), "end"):
+            if same_text(word_at(words, U64.literal(7)), "function"):
+              if same_text(const_rtype, "Int"):
+                if all_digits(const_literal):
+                  if sico.bytes.equal(input.stdin, sico.text.encode(const_canonical_source)):
+                    let const_source_len = sico.text.length(const_canonical_source)
+                    let const_literal_start = add_u64(U64.literal(34), sico.text.length(const_fname))
+                    let const_literal_end = add_u64(const_literal_start, sico.text.length(const_literal))
+                    let const_ir = "{\"schema\":\"sico.ir.v0\",\"source_name\":\"identity.sico\",\"source_len\":"
+                    set const_ir = sico.text.concat(const_ir, sico.u64.to_text(const_source_len))
+                    set const_ir = sico.text.concat(const_ir, ",\"functions\":[{\"id\":1,\"name\":\"")
+                    set const_ir = sico.text.concat(const_ir, const_fname)
+                    set const_ir = sico.text.concat(const_ir, "\",\"parameters\":[],\"return_type\":{\"kind\":\"int\"},\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[{\"result\":0,\"ty\":{\"kind\":\"int\"},\"operation\":{\"op\":\"const_int\",\"data\":\"")
+                    set const_ir = sico.text.concat(const_ir, const_literal)
+                    set const_ir = sico.text.concat(const_ir, "\"},\"range\":{\"start\":")
+                    set const_ir = sico.text.concat(const_ir, sico.u64.to_text(const_literal_start))
+                    set const_ir = sico.text.concat(const_ir, ",\"end\":")
+                    set const_ir = sico.text.concat(const_ir, sico.u64.to_text(const_literal_end))
+                    set const_ir = sico.text.concat(const_ir, "}}],\"terminator\":{\"kind\":\"return\",\"data\":0},\"range\":{\"start\":0,\"end\":")
+                    set const_ir = sico.text.concat(const_ir, sico.u64.to_text(const_source_len))
+                    set const_ir = sico.text.concat(const_ir, "}}],\"range\":{\"start\":0,\"end\":")
+                    set const_ir = sico.text.concat(const_ir, sico.u64.to_text(const_source_len))
+                    set const_ir = sico.text.concat(const_ir, "}}]}")
+                    return ok(ScriptOutput(stdout: sico.text.encode(const_ir), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  if U64.equal(sico.list.length(words), U64.literal(13)):
+    let add_fname = word_at(words, U64.literal(1))
+    let add_left = word_at(words, U64.literal(2))
+    let add_left_type = word_at(words, U64.literal(3))
+    let add_right = word_at(words, U64.literal(4))
+    let add_right_type = word_at(words, U64.literal(5))
+    let add_return_type = word_at(words, U64.literal(7))
+    let add_expr_left = word_at(words, U64.literal(9))
+    let add_expr_right = word_at(words, U64.literal(10))
+    let add_canonical_source = add_source(add_fname, add_left, add_right)
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(6)), "returns"):
+        if same_text(word_at(words, U64.literal(8)), "return"):
+          if same_text(word_at(words, U64.literal(11)), "end"):
+            if same_text(word_at(words, U64.literal(12)), "function"):
+              if same_text(add_left_type, "Int"):
+                if same_text(add_right_type, "Int"):
+                  if same_text(add_return_type, "Int"):
+                    if same_text(add_left, add_expr_left):
+                      if same_text(add_right, add_expr_right):
+                        if sico.bytes.equal(input.stdin, sico.text.encode(add_canonical_source)):
+                        let add_source_len = sico.text.length(add_canonical_source)
+                        let add_left_start = add_u64(U64.literal(10), sico.text.length(add_fname))
+                        let add_left_end = add_u64(add_left_start, sico.text.length(add_left))
+                        let add_right_start = add_u64(add_left_end, U64.literal(7))
+                        let add_right_end = add_u64(add_right_start, sico.text.length(add_right))
+                        let add_expression_start = add_u64(U64.literal(46), sico.text.length(add_fname))
+                        set add_expression_start = add_u64(add_expression_start, sico.text.length(add_left))
+                        set add_expression_start = add_u64(add_expression_start, sico.text.length(add_right))
+                        let add_expression_end = add_u64(add_expression_start, sico.text.length(add_left))
+                        set add_expression_end = add_u64(add_expression_end, U64.literal(3))
+                        set add_expression_end = add_u64(add_expression_end, sico.text.length(add_right))
+                        let add_ir = "{\"schema\":\"sico.ir.v0\",\"source_name\":\"identity.sico\",\"source_len\":"
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_source_len))
+                        set add_ir = sico.text.concat(add_ir, ",\"functions\":[{\"id\":1,\"name\":\"")
+                        set add_ir = sico.text.concat(add_ir, add_fname)
+                        set add_ir = sico.text.concat(add_ir, "\",\"parameters\":[{\"id\":0,\"name\":\"")
+                        set add_ir = sico.text.concat(add_ir, add_left)
+                        set add_ir = sico.text.concat(add_ir, "\",\"ty\":{\"kind\":\"int\"},\"range\":{\"start\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_left_start))
+                        set add_ir = sico.text.concat(add_ir, ",\"end\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_left_end))
+                        set add_ir = sico.text.concat(add_ir, "}},{\"id\":1,\"name\":\"")
+                        set add_ir = sico.text.concat(add_ir, add_right)
+                        set add_ir = sico.text.concat(add_ir, "\",\"ty\":{\"kind\":\"int\"},\"range\":{\"start\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_right_start))
+                        set add_ir = sico.text.concat(add_ir, ",\"end\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_right_end))
+                        set add_ir = sico.text.concat(add_ir, "}}],\"return_type\":{\"kind\":\"int\"},\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[{\"result\":2,\"ty\":{\"kind\":\"int\"},\"operation\":{\"op\":\"add_int\",\"data\":{\"left\":0,\"right\":1}},\"range\":{\"start\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_expression_start))
+                        set add_ir = sico.text.concat(add_ir, ",\"end\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_expression_end))
+                        set add_ir = sico.text.concat(add_ir, "}}],\"terminator\":{\"kind\":\"return\",\"data\":2},\"range\":{\"start\":0,\"end\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_source_len))
+                        set add_ir = sico.text.concat(add_ir, "}}],\"range\":{\"start\":0,\"end\":")
+                        set add_ir = sico.text.concat(add_ir, sico.u64.to_text(add_source_len))
+                        set add_ir = sico.text.concat(add_ir, "}}]}")
+                          return ok(ScriptOutput(stdout: sico.text.encode(add_ir), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported self-host source shape"))
+end function

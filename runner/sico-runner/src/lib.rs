@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bootstrap;
 mod dap;
 pub mod http2;
 pub mod scheduler;

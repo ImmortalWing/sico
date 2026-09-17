@@ -154,3 +154,12 @@
 | [STEP-0130](./STEP-0130-general-control-flow.md) | complete | M14 | 通用控制流落地：while/if-else/break/continue/set + IR cells + 通用 CFG 降级，冻结形状字节不变；端到端 3 测试 + 修复 watch bridge 抢跑 bug |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core；STEP-0125 完成 guest-visible http@0.2.0 runner integration，STEP-0126 关闭 Linux provider parity，STEP-0127 复审发出 M12 完整 GO。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨；STEP-0128 以 DeepSeek 真实运行收口，ADR-0012 依实测基线下达预算且达标——§13 质量预算项 (d) 实测 GO，B-repair 0.833 为既定跟踪缺口。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。
+
+| [STEP-0201](./STEP-0201-m22-corpus-bundle-baseline.md) | complete | M22 closure sequence 1 | 冻结 215-source 语料与 Rust formatter/checker oracle，落地 ADR-0015 strict canonical source-bundle decoder 和全部 limit+1 |
+| [STEP-0202](./STEP-0202-m22-lossless-lexer-corpus.md) | complete | M22 S3 lexer | Sico lossless kind/span/raw-text token stream 在 215/215 冻结源码与 Rust lexer byte-exact 差分绿；按物理行有界执行 |
+| [STEP-0203](./STEP-0203-m22-semantic-ast-shape.md) | complete / partial-S3 | M22 S3 AST | Sico parser 的 accepted semantic ModuleAst declaration shape 在 99/99 源码与 Rust byte-exact；syntax/refusal AST 仍开放 |
+| [STEP-0204](./STEP-0204-m22-accepted-formatter-parity.md) | complete / partial-S1 | M22 S1 formatter | Sico formatter 在 99/99 Rust-accepted 源码上 byte-exact 且二次格式化幂等；116-source typed refusal gate 仍开放 |
+| [STEP-0205](./STEP-0205-m22-formatter-refusal-gate.md) | complete | M22 S1 formatter | 基于源码 token 错误检测关闭 116/116 typed lexical refusal；合并 accepted 99/99 后 S1 全 215-source 完成 |
+| [STEP-0206](./STEP-0206-m22-declaration-metadata.md) | complete / partial-S3 | M22 S3 AST | accepted ModuleAst kind/name/range/detail 在 99/99 源码与 Rust byte-exact；expression/statement/recovery/refusal AST 仍开放 |
+| [STEP-0207](./STEP-0207-m22-script-build-corpus.md) | complete / oracle baseline | M22 L2 corpus | Script v0 37 accept/178 refuse；accepted Component 37/37 双构建 byte-reproducible，refused 0 artifact，固定 guest parity 目标 |
+| [STEP-0208](./STEP-0208-m22-modular-compiler-frontend.md) | complete / frontend integrated | M22 S3→S4 | lossless lexer + declaration parser 链接进 compiler Component；自身 3 源码 token/AST metadata 对齐 Rust，lowering/codegen 仍 partial |
