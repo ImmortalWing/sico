@@ -1,6 +1,6 @@
-//! M22 S6 (STEP-0210): the Sico-written frontend lowers fixed-width
-//! literal call arguments (I64/U64.literal forms, including negatives)
-//! to Rust-identical const instructions with digits-span ranges.
+//! M22 S6 (STEP-0211): the Sico-written frontend lowers nested call
+//! arguments via recursive descent — inner calls emit before outer calls
+//! with subtree-ordered result ids — while staying Rust-identical.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -224,6 +224,22 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function bits(a: U64, b: U64) returns U64:\n  return a\nend function\n\nfunction main(v: U64) returns U64:\n  return bits(v, U64.literal(7))\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function g(v: Int) returns Int:\n  return v\nend function\n\nfunction f(v: Int) returns Int:\n  return v\nend function\n\nfunction main(v: Int) returns Int:\n  return f(g(v))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function g(v: Int) returns Int:\n  return v\nend function\n\nfunction f(v: Int) returns Int:\n  return v\nend function\n\nfunction main() returns Int:\n  return f(g(1))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function g(v: Int) returns Int:\n  return v\nend function\n\nfunction f(a: Int, b: Int) returns Int:\n  return a\nend function\n\nfunction main(v: Int) returns Int:\n  return f(v, g(v))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function g(v: Int) returns Int:\n  return v\nend function\n\nfunction f(a: Int, b: Int) returns Int:\n  return a\nend function\n\nfunction main(v: Int) returns Int:\n  return f(g(v), g(v))\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -409,6 +425,14 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         (
             b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main(v: I64) returns I64:\n  return add(v, 3)\nend function\n".as_slice(),
             "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function g(v: Int) returns Int:\n  return v\nend function\n\nfunction f(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main(v: Int) returns Int:\n  return f(g(v), g(v))\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function f(a: Int, b: Int) returns Int:\n  return a\nend function\n\nfunction main(v: Int) returns Int:\n  return f(ghost(v))\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TARGET",
         ),
     ] {
         let rust_source = SourceFile::from_text(
