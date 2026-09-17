@@ -1,7 +1,6 @@
-//! M22 S6 (STEP-0207): the Sico-written frontend lowers modules with
-//! multiple function definitions and cross-function calls to Rust-identical
-//! typed IR while keeping declaration-order function ids and per-function
-//! spans.
+//! M22 S6 (STEP-0208): the Sico-written frontend lowers constant call
+//! arguments (int/bool/string atoms alongside parameter references) to
+//! Rust-identical typed IR with source-ordered const instructions.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -177,6 +176,22 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function sub(left: Int, right: Int) returns Int:\n  return left\nend function\n\nfunction main(x: Int, y: Int) returns Int:\n  return sub(y, x)\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(left: Int, right: Int) returns Int:\n  return left\nend function\n\nfunction main() returns Int:\n  return add(1, 22)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(left: Int, right: Int) returns Int:\n  return left\nend function\n\nfunction main(v: Int) returns Int:\n  return add(v, 7)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function flag(ready: Bool) returns Bool:\n  return ready\nend function\n\nfunction main() returns Bool:\n  return flag(true)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function label(text: Text) returns Text:\n  return text\nend function\n\nfunction main() returns Text:\n  return label(\"hi\\n\")\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -330,6 +345,18 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         (
             b"function f(value: Int) returns Int:\n  return value\nend function\n\nfunction f(other: Int) returns Int:\n  return other\nend function\n".as_slice(),
             "ERR:E-SH-IR-FUNCTION-DUPLICATE",
+        ),
+        (
+            b"function wide(amount: I64) returns I64:\n  return amount\nend function\n\nfunction main() returns I64:\n  return wide(1)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function one(value: Int) returns Int:\n  return value\nend function\n\nfunction main() returns Int:\n  return one(ghost)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            b"function one(value: Int) returns Int:\n  return value\nend function\n\nfunction main() returns Int:\n  return one(01)\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
         ),
     ] {
         let rust_source = SourceFile::from_text(
