@@ -23,6 +23,7 @@ sico-package = { path = "../../crates/sico-package" }
 sico-app-cli = { path = "../../crates/sico-app-cli" }
 sico-cli = { path = "../../crates/sico-cli" }
 sico-ir = { path = "../../crates/sico-ir" }
+sico-source = { path = "../../crates/sico-source" }
 wasm-encoder = "=0.253.0"
 
 [workspace]

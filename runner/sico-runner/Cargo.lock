@@ -1242,6 +1242,7 @@ dependencies = [
  "sico-ir",
  "sico-observability",
  "sico-package",
+ "sico-source",
  "sico-tooling-protocol",
  "wasm-encoder 0.253.0",
  "wasmparser 0.253.0",

@@ -18,7 +18,8 @@ ADR 记录工程与架构决定，例如 Component Runtime 引擎、`.sapp` 物�
 | [ADR-0012](./ADR-0012-ai-quality-budgets-live-model.md) | accepted | AI 质量预算 live-model 实证与预算结论 |
 | [ADR-0013](./ADR-0013-native-automation-host-platform-v0.md) | accepted | M16 Native Automation Host 平台适配 v0：Windows 优先、Win32 枚举（UIA 划线）、SendInput、有界动作原子性、适配器最小隔离 crate；2026-09-10 owner 接受，修正案 A1：v0 捕获走 GDI PrintWindow（离线锁定工具链无 WinRT 面），WGC 升级按后续修正案回归 |
 | [ADR-0014](./ADR-0014-web-hosting-substrate-v0.md) | accepted | M15 Web 宿主形态 v0：JS canonical-ABI shim 承载编译组件内嵌核心模块（稳定浏览器默认不提供 Component Model），HTTP authority 按 RFC-0037 shim 侧执行且连接池声明为不可代表，M10 三元组降级如实声明，一载一 Store，限额降级声明化，DOM 控件树走 RFC-0042；2026-09-10 owner 接受 |
+| [ADR-0015](./ADR-0015-compiler-bootstrap-closure-v0.md) | accepted | M22 编译器自举闭环：Rust seed `A`、两代自编译 `B/C` 字节一致，Rust verifier 永久 oracle，`.sapp` 信任链与预算证据固定 |
 
-下一可用编号：`ADR-0014`。
+下一可用编号：`ADR-0016`。
 
 创建时使用 [`ADR template`](../templates/ADR.md)，并在本页登记状态和替代关系。

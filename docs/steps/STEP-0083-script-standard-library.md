@@ -1,6 +1,6 @@
 # STEP-0083: minimal useful script standard library
 
-> - status: complete
+> - status: complete for the executed pilot corpus; intrinsic-completeness claim corrected by STEP-0203
 > - phase: M8
 > - started: 2026-07-17
 > - completed: 2026-07-18
@@ -19,7 +19,7 @@ Make the Script profile useful for representative AI automation without native e
 
 ## 3. Included
 
-- text: length, concat, trim, contains, starts_with, split_lines, split_words, replace;
+- text: length, concat, trim, contains, starts_with, split_lines, split_words;
 - bytes: length, concat, slice (checked), utf8_decode (validated), text.encode;
 - list: length, get (checked), append;
 - `sico.u64.to_text` / `sico.i64.to_text`;
@@ -47,3 +47,13 @@ Make the Script profile useful for representative AI automation without native e
 - [`M8 plan`](../plans/M8-script-profile.md) (§8 standard-library minimum)
 - [`STEP-0079 evidence`](../reports/script-aggregate-canonical-abi-v0.md)
 - [`RFC-0029`](../rfc/RFC-0029-script-profile-v0.md)
+
+## 7. Executable-evidence correction (STEP-0203)
+
+`sico.text.replace` has a semantics/IR signature but no backend emission
+case. A real `sico build --profile script-v0` therefore returns typed
+`unsupported stdlib intrinsic`. The four STEP-0083 pilots did not execute
+that intrinsic, so their evidence remains valid, but the earlier statement
+that every listed intrinsic had deterministic emission was too broad.
+`text.replace` is now recorded as check-accepted/build-refused in the
+application support matrix; it is not executable support.

@@ -1,8 +1,8 @@
 {
   "schema": "sico.application-profile.v0",
-  "step": "STEP-0131..0175",
+  "step": "STEP-0131..0203",
   "rfc": "RFC-0038;RFC-0039;RFC-0045;RFC-0046",
-  "updated": "2026-09-14",
+  "updated": "2026-09-17",
   "profile": "script-v0",
   "matrix": {
     "executable": {
@@ -73,11 +73,11 @@
         "step": "STEP-0132",
         "notes": "I64/U64 bit_and/bit_or/bit_xor/shl/shr; shift amount shares the operand type and wasm masks counts to [0,63]; shr is arithmetic on I64, logical on U64"
       },
-      "stdlib-intrinsics-36": {
+      "stdlib-intrinsics-corpus-covered": {
         "check": true,
         "build": true,
         "run": true,
-        "notes": "42 registered + RFC-0045 batch-2 additions; count re-measured at STEP-0174"
+        "notes": "Executable triple applies to corpus-covered members. The signature registry is wider than backend support: sico.text.replace is separately declared refused after STEP-0203 executable evidence corrected the STEP-0083 claim."
       },
       "http-0-2-0-guest-visible": {
         "check": true,
@@ -220,6 +220,14 @@
       }
     },
     "refused": {
+      "text-replace-backend-gap": {
+        "check": true,
+        "build": false,
+        "run": false,
+        "refusal": "typed build refusal: unsupported stdlib intrinsic; semantics/IR signature exists but codegen has no sico.text.replace implementation",
+        "step": "STEP-0203",
+        "notes": "Pre-existing STEP-0083 documentation discrepancy discovered by the self-host string-IR slice; no executable support is claimed until a dedicated implementation STEP lands."
+      },
       "unbounded-int-at-abi": {
         "refusal": "unbounded Int parameter"
       },

@@ -10,7 +10,7 @@ The Script v0 standard library is a closed, versioned intrinsic registry pinned 
 
 Pure-computation intrinsics lower to deterministic helper core functions emitted into the program module, reusing the STEP-0079 bounded arena and checked arithmetic (`crates/sico-codegen-wasm/src/stdlib.rs`, `src/json.rs`):
 
-- text: `length`, `concat`, `trim`, `contains`, `starts_with`, `split_lines`, `split_words`, `replace`, `join`, `encode`;
+- text: `length`, `concat`, `trim`, `contains`, `starts_with`, `split_lines`, `split_words`, `join`, `encode`;
 - bytes: `length`, `concat`, `slice` (checked, `Result[Bytes, NumericError]`), `is_utf8`, `utf8_decode` (passthrough guarded by `is_utf8`; a strict DFA validator backs the check);
 - list (List\[Text\]): `length`, `get` (checked), `append`;
 - `sico.u64.to_text` / `sico.i64.to_text`;
@@ -49,3 +49,8 @@ Deviation from the step-0083 draft architecture: two interfaces (`fs-read`/`fs-w
 - `sico.json.get` returns the raw token text; typed number/boolean accessors are later work (the number contract is scan-only).
 - Multiple read roots resolve in grant order (first containing root); writes go to the first write root. No `sico.fs.list`, no streaming file IO (M9).
 - `case ok(x)` binding requires the match subject to be a function parameter; nested match statements inside one arm and multi-statement arms stay refused (helpers flatten the control flow, as the pilots show).
+- STEP-0203 correction: `sico.text.replace` is registered in semantics/IR
+  but absent from backend emission and is therefore check-accepted,
+  build-refused (`unsupported stdlib intrinsic`). The STEP-0083 pilots did
+  not exercise it; the previous implemented-boundary list overstated its
+  support.

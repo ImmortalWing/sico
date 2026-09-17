@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14); S1–S5 landed (STEP-0178–0192, 2026-09-14); S6 in progress (STEP-0193–0195: parser → IR-signature shape, `fn:name/arity` exact); bootstrap architecture ADR (entry condition 5) still open and required before the S6 closure; owner session directive (2026-09-14, 「规划自举里程碑」); no STEP numbers reserved beyond STEP-0195 — each was allocated only when its entry gate was satisfied
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); S1–S5 landed (STEP-0178–0192); S6 in progress (STEP-0193–0207: parser/expression tree → Rust-identical scalar IR → multi-parameter SSA → typed user calls (recursive + cross-function)); owner directives (2026-09-14 「规划自举里程碑」, 2026-09-17 「完成自举」); no STEP numbers reserved beyond STEP-0207 — each is allocated only when its entry gate is satisfied
 
 ## 1. Objective
 
@@ -29,7 +29,7 @@ remains the permanent differential oracle and is not retired.
 | 2 | Byte-level differential oracle exists | **satisfied** — RFC-0011 deterministic backend + frozen snapshot corpora + byte-exact formatter |
 | 3 | Language prereq RFC accepted and implemented: byte/text access, collection extension (M21 stdlib batch 2 — shared work, not duplicated) | **satisfied** — RFC-0045 + STEP-0174 (2026-09-14) |
 | 4 | v1 batch 2 decisions that the self-host frontend consumes (bare-literal typing, error propagation) accepted | **satisfied** — RFC-0046 + STEP-0175 (2026-09-14); for-loops explicitly NOT required (while suffices), landed anyway |
-| 5 | Bootstrap architecture ADR accepted (differential harness, artifact packaging through the M7 trust chain, budget re-measurement policy) | **open** — required before S6, not before S1 |
+| 5 | Bootstrap architecture ADR accepted (differential harness, artifact packaging through the M7 trust chain, budget re-measurement policy) | **satisfied** — ADR-0015 / STEP-0198 (2026-09-17): `A == B == C`, Rust oracle retained, canonical `.sapp`, frozen evidence/budget record |
 | 6 | M18 combined portfolio still runs without core patches | **satisfied (4/5)** — STEP-0165 |
 
 Entry work (condition 3/4) is the same M21 batch-2 track; M22 does not

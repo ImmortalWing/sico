@@ -22,13 +22,13 @@ if (-not (Test-Path $runnerTest)) { throw "runner test missing: $runnerTest" }
 
 # STEP-0143 (RFC-0039): the module-slice fixtures must exist and the
 # modules entry must declare the executable check/build/run triple.
-if ($json.step -notmatch '01(4[3-9]|7[0-5])$') {
+if ($json.step -notmatch '01(4[3-9]|7[0-5])$|0203$') {
     throw "matrix step does not include the modules slice: $($json.step)"
 }
 
 # STEP-0147 (RFC-0039 section 2.3/2.4): the package/user-WIT slice must be
 # executable end to end and the refusal corpus must exist.
-if ($json.step -notmatch '0147|017[0-5]') {
+if ($json.step -notmatch '0147|017[0-5]|0203') {
     throw "matrix step does not include the packages slice: $($json.step)"
 }
 $packages = $json.matrix.executable.'packages-user-wit'
@@ -37,6 +37,9 @@ if (-not ($packages.check -and $packages.build -and $packages.run)) {
     throw 'packages-user-wit must be executable end to end'
 }
 $refusals = $json.matrix.refused
+if (-not $refusals.'text-replace-backend-gap') {
+    throw 'text.replace backend-gap refusal missing after STEP-0203'
+}
 foreach ($member in 'package-unknown-or-missing', 'package-version-or-limit',
     'wit-shape-mismatch', 'wit-unsupported-type', 'duplicate-or-colliding-package',
     'export-user-interface', 'unknown-exposed-interface', 'impure-package') {

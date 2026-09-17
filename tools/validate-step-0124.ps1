@@ -30,6 +30,17 @@ foreach ($plan in $plans) {
     if ($text -notlike '*no STEP numbers reserved*') { throw "$plan must keep implementation STEP numbers unreserved" }
 }
 
+$bootstrapAdrPath = Join-Path $root 'docs\adr\ADR-0015-compiler-bootstrap-closure-v0.md'
+if (-not (Test-Path -LiteralPath $bootstrapAdrPath)) { throw 'missing accepted M22 bootstrap ADR-0015' }
+$bootstrapAdr = Get-Content -LiteralPath $bootstrapAdrPath -Raw -Encoding UTF8
+foreach ($needle in 'status: accepted', 'A == B == C', 'Rust compiler remains', 'RFC-0015 canonical', 'cold and warm wall time') {
+    if ($bootstrapAdr -notlike "*$needle*") { throw "ADR-0015 missing bootstrap contract: $needle" }
+}
+$m22Plan = Get-Content -LiteralPath (Join-Path $root 'docs\plans\M22-compiler-self-host.md') -Raw -Encoding UTF8
+if ($m22Plan -notlike '*ADR-0015*' -or $m22Plan -notlike '*condition 5 closed*') {
+    throw 'M22 plan must record bootstrap ADR-0015 entry condition closure'
+}
+
 $roadmap = Get-Content (Join-Path $root 'docs\ROADMAP.md') -Raw -Encoding UTF8
 $headings = @(
     '## M14: Application-ready language baseline',
