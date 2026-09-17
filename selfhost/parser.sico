@@ -1107,6 +1107,29 @@ function function_declaration_ordinal(words: List[Text], target_name_idx: U64) r
   return U64.literal(0)
 end function
 
+function checked_op_name(word: Text) returns Text:
+  if is_word(word, "checked_add"):
+    return "checked_add"
+  end if
+  if is_word(word, "checked_sub"):
+    return "checked_sub"
+  end if
+  if is_word(word, "checked_mul"):
+    return "checked_mul"
+  end if
+  if is_word(word, "checked_div"):
+    return "checked_div"
+  end if
+  return ""
+end function
+
+function result_type_json(ok_kind: Text) returns Text:
+  let rtj_open = "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\""
+  let rtj_mid = "\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}"
+  let rtj_left = sico.text.concat(rtj_open, ok_kind)
+  return sico.text.concat(rtj_left, rtj_mid)
+end function
+
 function declared_return_kind(words: List[Text], body_from: U64) returns Text:
   let sig_words_len = sico.list.length(words)
   let sig_end = line_end(words, body_from)
@@ -1117,20 +1140,44 @@ function declared_return_kind(words: List[Text], body_from: U64) returns Text:
       let type_idx = next_index(sig_i, sig_end)
       if U64.less_than(type_idx, sig_end):
         let type_word = word_at(words, type_idx)
-        if is_word(type_word, "Int"):
-          set sig_kind = "int"
+        if is_word(type_word, "Result"):
+          let result_open_idx = next_index(type_idx, sig_end)
+          if U64.less_than(result_open_idx, sig_end):
+            if is_word(word_at(words, result_open_idx), "["):
+              let result_ok_idx = next_index(result_open_idx, sig_end)
+              let result_comma_idx = next_index(result_ok_idx, sig_end)
+              let result_err_idx = next_index(result_comma_idx, sig_end)
+              let result_close_idx = next_index(result_err_idx, sig_end)
+              if U64.less_than(result_close_idx, sig_end):
+                if is_word(word_at(words, result_comma_idx), ","):
+                  if is_word(word_at(words, result_close_idx), "]"):
+                    let result_ok_kind = scalar_type_kind(word_at(words, result_ok_idx))
+                    if sico.text.starts_with(result_ok_kind, "ERR:"):
+                      let result_ok_err = I64.literal(1)
+                    else:
+                      set sig_kind = result_type_json(result_ok_kind)
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
         else:
-          if is_word(type_word, "Bool"):
-            set sig_kind = "bool"
+          if is_word(type_word, "Int"):
+            set sig_kind = "int"
           else:
-            if is_word(type_word, "Text"):
-              set sig_kind = "string"
+            if is_word(type_word, "Bool"):
+              set sig_kind = "bool"
             else:
-              if is_word(type_word, "I64"):
-                set sig_kind = "i64"
+              if is_word(type_word, "Text"):
+                set sig_kind = "string"
               else:
-                if is_word(type_word, "U64"):
-                  set sig_kind = "u64"
+                if is_word(type_word, "I64"):
+                  set sig_kind = "i64"
+                else:
+                  if is_word(type_word, "U64"):
+                    set sig_kind = "u64"
+                  end if
                 end if
               end if
             end if
@@ -2157,6 +2204,17 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
               end if
             end if
           end if
+          let checked_name = checked_op_name(word_at(words, next_index(next_index(start, finish), finish)))
+          let is_checked_op = false
+          if is_word(word_at(words, next_index(start, finish)), "."):
+            if U64.less_than(U64.literal(0), sico.text.length(checked_name)):
+              if U64.less_than(U64.literal(0), sico.text.length(op_receiver_kind)):
+                if is_word(word_at(words, next_index(next_index(next_index(start, finish), finish), finish)), "("):
+                  set is_checked_op = true
+                end if
+              end if
+            end if
+          end if
           if is_fixed_op:
             let operand_check = fixed_operation_operand_check(words, start, finish, name_idx, op_receiver_kind)
             if sico.text.starts_with(operand_check, "ERR:"):
@@ -2171,6 +2229,20 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
             set expression_type = op_receiver_kind
             set call_range = I64.literal(1)
           else:
+            if is_checked_op:
+              let checked_operand_check = fixed_operation_operand_check(words, start, finish, name_idx, op_receiver_kind)
+              if sico.text.starts_with(checked_operand_check, "ERR:"):
+                return checked_operand_check
+              end if
+              set fixed_op_name_value = checked_name
+              set fixed_op_left = fixed_operation_operand_value(words, start, finish, name_idx, U64.literal(0))
+              set fixed_op_right = fixed_operation_operand_value(words, start, finish, name_idx, U64.literal(1))
+              set op_constant_count = fixed_operation_literal_count(words, start, name_idx)
+              set op_constants_json = fixed_operation_literal_instructions(words, src, start, name_idx, parameter_count, start, return_expression_start(src, fn_start))
+              set expression_kind = "checked_op"
+              set expression_type = result_type_json(op_receiver_kind)
+              set call_range = I64.literal(1)
+            else:
         let fixed_call_name_idx = start
         let fixed_dot_idx = next_index(fixed_call_name_idx, finish)
         let fixed_literal_name_idx = next_index(fixed_dot_idx, finish)
@@ -2264,6 +2336,7 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
               return "ERR:E-SH-IR-EXPRESSION"
             end if
           end if
+        end if
         end if
         end if
         end if
@@ -2395,11 +2468,17 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
                       if U64.less_than(U64.literal(0), sico.text.length(call_constants_json)):
                         set instructions_json = sico.text.concat(instructions_json, ",")
                       end if
-                      set instructions_json = sico.text.concat(instructions_json, "{\"result\":")
-                      set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(result_value))
-                      set instructions_json = sico.text.concat(instructions_json, ",\"ty\":{\"kind\":\"")
-                      set instructions_json = sico.text.concat(instructions_json, expression_type)
-                      set instructions_json = sico.text.concat(instructions_json, "\"},\"operation\":{\"op\":\"call\",\"data\":{\"function\":")
+                        set instructions_json = sico.text.concat(instructions_json, "{\"result\":")
+                        set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(result_value))
+                        if sico.text.starts_with(expression_type, "{"):
+                          set instructions_json = sico.text.concat(instructions_json, ",\"ty\":")
+                          set instructions_json = sico.text.concat(instructions_json, expression_type)
+                        else:
+                          set instructions_json = sico.text.concat(instructions_json, ",\"ty\":{\"kind\":\"")
+                          set instructions_json = sico.text.concat(instructions_json, expression_type)
+                          set instructions_json = sico.text.concat(instructions_json, "\"}")
+                        end if
+                        set instructions_json = sico.text.concat(instructions_json, ",\"operation\":{\"op\":\"call\",\"data\":{\"function\":")
                       set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(function_declaration_ordinal(words, call_target_idx)))
                       set instructions_json = sico.text.concat(instructions_json, ",\"arguments\":")
                       set instructions_json = sico.text.concat(instructions_json, call_arguments_json)
@@ -2454,7 +2533,36 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
                       set instructions_json = sico.text.concat(instructions_json, range_end_text)
                       set instructions_json = sico.text.concat(instructions_json, "}}]")
                     else:
-                      return "ERR:E-SH-IR-EXPRESSION-KIND"
+                      if is_word(expression_kind, "checked_op"):
+                        match U64.checked_add(parameter_count, op_constant_count):
+                          case ok(checked_result):
+                            set result_value = checked_result
+                          case error(_):
+                            return "ERR:E-SH-IR-RANGE"
+                        end match
+                        set instructions_json = "["
+                        set instructions_json = sico.text.concat(instructions_json, op_constants_json)
+                        if U64.less_than(U64.literal(0), sico.text.length(op_constants_json)):
+                          set instructions_json = sico.text.concat(instructions_json, ",")
+                        end if
+                        set instructions_json = sico.text.concat(instructions_json, "{\"result\":")
+                        set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(result_value))
+                        set instructions_json = sico.text.concat(instructions_json, ",\"ty\":")
+                        set instructions_json = sico.text.concat(instructions_json, expression_type)
+                        set instructions_json = sico.text.concat(instructions_json, ",\"operation\":{\"op\":\"")
+                        set instructions_json = sico.text.concat(instructions_json, fixed_op_name_value)
+                        set instructions_json = sico.text.concat(instructions_json, "\",\"data\":{\"left\":")
+                        set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(fixed_op_left))
+                        set instructions_json = sico.text.concat(instructions_json, ",\"right\":")
+                        set instructions_json = sico.text.concat(instructions_json, sico.u64.to_text(fixed_op_right))
+                        set instructions_json = sico.text.concat(instructions_json, "}},\"range\":{\"start\":")
+                        set instructions_json = sico.text.concat(instructions_json, range_start_text)
+                        set instructions_json = sico.text.concat(instructions_json, ",\"end\":")
+                        set instructions_json = sico.text.concat(instructions_json, range_end_text)
+                        set instructions_json = sico.text.concat(instructions_json, "}}]")
+                      else:
+                        return "ERR:E-SH-IR-EXPRESSION-KIND"
+                      end if
                     end if
                     end if
                   end if
@@ -2469,9 +2577,15 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
         set function_json = sico.text.concat(function_json, function_name)
         set function_json = sico.text.concat(function_json, "\",\"parameters\":")
         set function_json = sico.text.concat(function_json, parameters_json)
-        set function_json = sico.text.concat(function_json, ",\"return_type\":{\"kind\":\"")
-        set function_json = sico.text.concat(function_json, return_type_kind)
-        set function_json = sico.text.concat(function_json, "\"},\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":")
+        if sico.text.starts_with(return_type_kind, "{"):
+          set function_json = sico.text.concat(function_json, ",\"return_type\":")
+          set function_json = sico.text.concat(function_json, return_type_kind)
+        else:
+          set function_json = sico.text.concat(function_json, ",\"return_type\":{\"kind\":\"")
+          set function_json = sico.text.concat(function_json, return_type_kind)
+          set function_json = sico.text.concat(function_json, "\"}")
+        end if
+        set function_json = sico.text.concat(function_json, ",\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":")
         set function_json = sico.text.concat(function_json, instructions_json)
         set function_json = sico.text.concat(function_json, ",\"terminator\":{\"kind\":\"return\",\"data\":")
         set function_json = sico.text.concat(function_json, sico.u64.to_text(result_value))

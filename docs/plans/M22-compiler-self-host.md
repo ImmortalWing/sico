@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); S1–S5 landed (STEP-0178–0192); S6 in progress (STEP-0193–0212: parser/expression tree → Rust-identical scalar IR → multi-parameter SSA → typed user calls (recursive + cross-function) → constant/fixed-width-literal/nested-call arguments → fixed-width operations with literal operands); owner directives (2026-09-14 「规划自举里程碑」, 2026-09-17 「完成自举」); no STEP numbers reserved beyond STEP-0212 — each is allocated only when its entry gate is satisfied
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); S1–S5 landed (STEP-0178–0192); S6 in progress (STEP-0193–0213: parser/expression tree → Rust-identical scalar IR → multi-parameter SSA → typed user calls (recursive + cross-function) → constant/fixed-width-literal/nested-call arguments → fixed-width operations with literal operands → checked arithmetic Result IR; match-shaped checked arithmetic registered for investigation — Rust lowering itself failed the independent verifier in probing); owner directives (2026-09-14 「规划自举里程碑」, 2026-09-17 「完成自举」); no STEP numbers reserved beyond STEP-0213 — each is allocated only when its entry gate is satisfied
 
 ## 1. Objective
 

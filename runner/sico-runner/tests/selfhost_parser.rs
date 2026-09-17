@@ -1,6 +1,6 @@
-//! M22 S6 (STEP-0212): the Sico-written frontend lowers fixed-width
-//! literal operands of fixed-width operations — const instructions emit
-//! before the operation with digits/sign ranges and SSA-ordered values.
+//! M22 S6 (STEP-0213): the Sico-written frontend lowers checked
+//! arithmetic returned directly as Result[I64/U64, NumericError] —
+//! result-typed return types and call targets included — byte-identically.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -252,6 +252,26 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function seed(a: I64) returns I64:\n  return I64.bit_or(I64.literal(1), a)\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function inc(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function mul(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_mul(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function div(a: U64, b: U64) returns Result[U64, NumericError]:\n  return U64.checked_div(a, b)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function make(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n\nfunction pass(a: I64) returns Result[I64, NumericError]:\n  return make(a)\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -449,6 +469,14 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         (
             b"function over(a: U64) returns U64:\n  return U64.shr(a, U64.literal(18446744073709551616))\nend function\n".as_slice(),
             "ERR:E-SH-IR-U64-RANGE",
+        ),
+        (
+            b"function bad(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, U64.literal(1))\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function bad(a: I64) returns I64:\n  return I64.checked_add(a, I64.literal(1))\nend function\n".as_slice(),
+            "ERR:E-SH-IR-TYPE-MISMATCH",
         ),
     ] {
         let rust_source = SourceFile::from_text(
