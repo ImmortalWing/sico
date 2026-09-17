@@ -92,3 +92,14 @@ fixture dependency, not the non-TTY harness — both tests pass in this
 harness once Python 3.12.10 is available. All three fresh-host gaps
 (binutils PATH, Python prerequisite, runner build order) are repaired
 in STEP-0196 (`tools/ensure-python.ps1`, `tools/run-ci.ps1`).
+
+## 8. Superseded parallel variant
+
+A parallel session pushed an alternative STEP-0195 variant to
+`github/dev` (commit 2952d16 「暂存」, 2026-09-16): pair-counting over
+the punctuation-free word stream (`name: Type` = two words), which
+self-registers generic type parameters (`xs: List[Text]`, three words)
+as outside its shape and does not add `end function` context. The merge
+that integrates it keeps this implementation (punctuation tokens +
+depth-1 span count) as the STEP-0195 mechanism; the variant survives in
+history via the merge and is documented in STEP-0194 §3.
