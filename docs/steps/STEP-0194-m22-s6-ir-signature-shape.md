@@ -30,7 +30,12 @@ not a defect in the token stream or the name extraction (both byte-exact).
 
 - Fix the arity walk to count `(`…`)` parameters correctly (comma+1 when
   the list is non-empty); then the IR signature is exact. — **closed by
-  STEP-0195** (`fn:add/2`); mechanism corrected: commas are not in the
-  punctuation-free word stream at all, arity = `name: Type` word pairs.
+  STEP-0195** (`fn:add/2`); mechanism corrected: commas were never in
+  the token stream at all (the lexer captured identifier runs only).
+  Two variants were built in parallel; the merged implementation emits
+  single-character punctuation tokens and counts the depth-1 `(`…`)`
+  span (empty list 0, otherwise commas+1), which also covers generic
+  type parameters (`xs: List[Text]`) and stays correct across
+  multi-function streams (`end function` context).
 - The full typed IR (expression trees, blocks) and the Rust-verifier
   differential are the remaining S6 slices toward the bootstrap closure.

@@ -155,11 +155,30 @@
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core；STEP-0125 完成 guest-visible http@0.2.0 runner integration，STEP-0126 关闭 Linux provider parity，STEP-0127 复审发出 M12 完整 GO。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨；STEP-0128 以 DeepSeek 真实运行收口，ADR-0012 依实测基线下达预算且达标——§13 质量预算项 (d) 实测 GO，B-repair 0.833 为既定跟踪缺口。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。
 
-| [STEP-0201](./STEP-0201-m22-corpus-bundle-baseline.md) | complete | M22 closure sequence 1 | 冻结 215-source 语料与 Rust formatter/checker oracle，落地 ADR-0015 strict canonical source-bundle decoder 和全部 limit+1 |
-| [STEP-0202](./STEP-0202-m22-lossless-lexer-corpus.md) | complete | M22 S3 lexer | Sico lossless kind/span/raw-text token stream 在 215/215 冻结源码与 Rust lexer byte-exact 差分绿；按物理行有界执行 |
-| [STEP-0203](./STEP-0203-m22-semantic-ast-shape.md) | complete / partial-S3 | M22 S3 AST | Sico parser 的 accepted semantic ModuleAst declaration shape 在 99/99 源码与 Rust byte-exact；syntax/refusal AST 仍开放 |
-| [STEP-0204](./STEP-0204-m22-accepted-formatter-parity.md) | complete / partial-S1 | M22 S1 formatter | Sico formatter 在 99/99 Rust-accepted 源码上 byte-exact 且二次格式化幂等；116-source typed refusal gate 仍开放 |
-| [STEP-0205](./STEP-0205-m22-formatter-refusal-gate.md) | complete | M22 S1 formatter | 基于源码 token 错误检测关闭 116/116 typed lexical refusal；合并 accepted 99/99 后 S1 全 215-source 完成 |
-| [STEP-0206](./STEP-0206-m22-declaration-metadata.md) | complete / partial-S3 | M22 S3 AST | accepted ModuleAst kind/name/range/detail 在 99/99 源码与 Rust byte-exact；expression/statement/recovery/refusal AST 仍开放 |
-| [STEP-0207](./STEP-0207-m22-script-build-corpus.md) | complete / oracle baseline | M22 L2 corpus | Script v0 37 accept/178 refuse；accepted Component 37/37 双构建 byte-reproducible，refused 0 artifact，固定 guest parity 目标 |
-| [STEP-0208](./STEP-0208-m22-modular-compiler-frontend.md) | complete / frontend integrated | M22 S3→S4 | lossless lexer + declaration parser 链接进 compiler Component；自身 3 源码 token/AST metadata 对齐 Rust，lowering/codegen 仍 partial |
+| [STEP-0195](./STEP-0195-m22-s6-exact-ir-signatures.md) | complete | M22 S4 | 精确 typed IR function signatures |
+| [STEP-0196](./STEP-0196-m19-fresh-host-ci-repair.md) | complete-support | M19 | fresh-host Python/GNU toolchain CI 修复与 11/11 CI 证据 |
+| [STEP-0197](./STEP-0197-m22-s6-statement-shape.md) | complete | M22 S4 | canonical statement shape |
+| [STEP-0198](./STEP-0198-m22-bootstrap-architecture.md) | complete-design | M22 | 接受 ADR-0015 A=B=C 自举架构与证据门 |
+| [STEP-0199](./STEP-0199-m22-return-expression-shape.md) | complete | M22 S4 | return expression shape |
+| [STEP-0200](./STEP-0200-m22-recursive-expression-tree.md) | complete | M22 S4 | recursive expression tree |
+| [STEP-0201](./STEP-0201-m22-first-verifier-accepted-ir.md) | complete | M22 S4 | 首个 verifier-accepted canonical IR |
+| [STEP-0202](./STEP-0202-m22-parameter-ssa-ir.md) | complete | M22 S4 | parameter SSA IR |
+| [STEP-0203](./STEP-0203-m22-bool-text-constant-ir.md) | complete | M22 S4 | Bool/Text constant IR |
+| [STEP-0204](./STEP-0204-m22-fixed-width-literal-ir.md) | complete | M22 S4 | fixed-width literal IR |
+| [STEP-0205](./STEP-0205-m22-multi-scalar-parameter-ir.md) | complete | M22 S4 | multi-scalar parameter IR |
+| [STEP-0206](./STEP-0206-m22-recursive-user-call-ir.md) | complete | M22 S4 | recursive typed user-call IR |
+| [STEP-0207](./STEP-0207-m22-cross-function-call-ir.md) | complete | M22 S4 | cross-function call IR |
+| [STEP-0208](./STEP-0208-m22-constant-call-argument-ir.md) | complete | M22 S4 | constant call-argument IR |
+| [STEP-0209](./STEP-0209-m22-fixed-width-operation-ir.md) | complete | M22 S4 | fixed-width operation IR |
+| [STEP-0210](./STEP-0210-m22-fixed-literal-argument-ir.md) | complete | M22 S4 | fixed-width literal call arguments |
+| [STEP-0211](./STEP-0211-m22-nested-call-argument-ir.md) | complete | M22 S4 | nested call arguments |
+| [STEP-0212](./STEP-0212-m22-fixed-op-literal-operand-ir.md) | complete | M22 S4 | fixed-operation literal operands |
+| [STEP-0213](./STEP-0213-m22-interim-evidence-audit.md) | complete-audit / M22 NO-GO | M22 | 校正旧 S1–S5 完成措辞，逐门记录实际可执行证据 |
+| [STEP-0214](./STEP-0214-m22-corpus-bundle-baseline.md) | complete | M22 closure sequence 1 | 冻结 215-source 语料与 Rust formatter/checker oracle，落地 ADR-0015 strict canonical source-bundle decoder 和全部 limit+1 |
+| [STEP-0215](./STEP-0215-m22-lossless-lexer-corpus.md) | complete | M22 S3 lexer | Sico lossless kind/span/raw-text token stream 在 215/215 冻结源码与 Rust lexer byte-exact 差分绿；按物理行有界执行 |
+| [STEP-0216](./STEP-0216-m22-semantic-ast-shape.md) | complete / partial-S3 | M22 S3 AST | Sico parser 的 accepted semantic ModuleAst declaration shape 在 99/99 源码与 Rust byte-exact；syntax/refusal AST 仍开放 |
+| [STEP-0217](./STEP-0217-m22-accepted-formatter-parity.md) | complete / partial-S1 | M22 S1 formatter | Sico formatter 在 99/99 Rust-accepted 源码上 byte-exact 且二次格式化幂等；116-source typed refusal gate 仍开放 |
+| [STEP-0218](./STEP-0218-m22-formatter-refusal-gate.md) | complete | M22 S1 formatter | 基于源码 token 错误检测关闭 116/116 typed lexical refusal；合并 accepted 99/99 后 S1 全 215-source 完成 |
+| [STEP-0219](./STEP-0219-m22-declaration-metadata.md) | complete / partial-S3 | M22 S3 AST | accepted ModuleAst kind/name/range/detail 在 99/99 源码与 Rust byte-exact；expression/statement/recovery/refusal AST 仍开放 |
+| [STEP-0220](./STEP-0220-m22-script-build-corpus.md) | complete / oracle baseline | M22 L2 corpus | Script v0 37 accept/178 refuse；accepted Component 37/37 双构建 byte-reproducible，refused 0 artifact，固定 guest parity 目标 |
+| [STEP-0221](./STEP-0221-m22-modular-compiler-frontend.md) | complete / frontend integrated | M22 S3→S4 | lossless lexer + declaration parser 链接进 compiler Component；自身 3 源码 token/AST metadata 对齐 Rust，lowering/codegen 仍 partial |

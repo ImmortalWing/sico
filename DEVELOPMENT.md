@@ -1299,6 +1299,10 @@ M10–M12 是在 production domain/identity/credentials、third-party pilots、l
 
 M14–M18 的详细门槛见 [`docs/plans/`](docs/plans/README.md)。规划阶段不预占 STEP 编号；每个里程碑的第一项实现工作必须先冻结 RFC/ADR、威胁模型和可复现退出语料。
 
+### M19–M25：生产工程、平台广度、DX、自举与产品退出
+
+M19 生产工程与发布就绪、M20 跨平台 Runtime/语言 v1/完成审计、M21 开发者体验/标准库第二批/生态激活、M22 编译器自举轨道按各自 owner session directive 执行，状态以 [`docs/ROADMAP.md`](docs/ROADMAP.md) 为准。所有者于 2026-09-17 以「继续完成sico，M22-M25」确认：继续 M22 自举闭环（S6 lowering → S7 出口审计），并登记 M23 语言 v1 第三批——表达式人机工学（逐项 RFC-0033 门：中缀比较/逻辑运算符、表达式位置条件、裸字面量复测政策、text.chars 决定）、M24 视觉收口与方块游戏试点（M17 gate 2/4 + RFC-0043 roster 包将 M17 翻 GO，随后俄罗斯方块案例在真实 Windows 窗口经 M14 求解器 + M16 capture/input + M17 vision 走通完整验收链）、M25 v1.0 发布（语言 v1 freeze、§13 完成审计以 M14–M24 全证据链重发、可复现签名 bundle 与显式产品退出结论）。M23–M25 规划不预占 STEP 编号；每项实现工作仍以接受的 RFC/ADR 和盘点 STEP 开工。
+
 ## 20. 性能与质量指标
 
 第一阶段不提前写死数值，但从首个原型开始持续记录：

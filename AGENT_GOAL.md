@@ -439,6 +439,18 @@ AI 实验必须记录：
 
 使用 API agent、流式工具、Web/UI、原生视觉自动化和独立消费者检验公开接口。俄罗斯方块案例依次作为 M14 纯 Sico 求解器、M16 capture/input、M17 vision 和 M18 安全长期运行的验收基准。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
 
+#### M23：语言 v1 第三批——表达式人机工学
+
+所有者于 2026-09-17 以「继续完成sico，M22-M25」确认登记。逐项关闭 M22 计划 §8 记录的语言摩擦（中缀比较/逻辑运算符、表达式位置条件、裸字面量复测政策、text.chars），每项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断），实现等 M22 S7 出口审计。
+
+#### M24：视觉收口与方块游戏试点
+
+关闭 M17 剩余 gate（加速 provider ADR、model/provenance RFC、RFC-0043 roster 包）将 M17 翻 GO，随后俄罗斯方块案例在真实 Windows 窗口经 M14 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop 完整验收链；错误注入全部 fail closed，急停实测。
+
+#### M25：v1.0 发布——平台广度、完成审计与产品退出
+
+语言 v1 freeze、§13 完成审计以 M14–M24 全证据链重发（每项 GO 或显式 deferred + 外部门名称）、M19 残余在 owner 输入允许处收口、可复现签名 v1.0 bundle、按 §13 发出显式产品退出结论。公网 rollout、移动平台与无凭据 live-model 主张保持外部门控。
+
 ### 9. 当前建议执行顺序
 
 每次根据仓库真实状态调整，但默认从当前 M0 缺口开始：
