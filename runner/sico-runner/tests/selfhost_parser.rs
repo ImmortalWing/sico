@@ -308,7 +308,30 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function chain() returns I64:\n  let base = I64.literal(6)\n  let copy = base\n  return I64.bit_or(copy, I64.literal(1))\nend function\n",
     );
-
+    assert_ir_matches_rust(
+        &prepared,
+        b"function mask(a: I64, b: I64) returns I64:\n  let masked = I64.bit_and(a, b)\n  return masked\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function kept(a: I64, b: I64) returns Result[I64, NumericError]:\n  let added = I64.checked_add(a, b)\n  return added\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main() returns I64:\n  let total = add(I64.literal(3), I64.literal(4))\n  return total\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function chain(a: I64) returns I64:\n  let masked = I64.bit_and(a, I64.literal(7))\n  let copy = masked\n  return I64.bit_or(copy, I64.literal(1))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function pick(left: I64, right: I64) returns I64:\n  return left\nend function\n\nfunction main(v: I64) returns I64:\n  let other = I64.literal(9)\n  let got = pick(v, other)\n  return got\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function make(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n\nfunction pass(a: I64) returns Result[I64, NumericError]:\n  let got = make(a)\n  return got\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -515,6 +538,18 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             b"function bad(a: I64) returns I64:\n  return I64.checked_add(a, I64.literal(1))\nend function\n".as_slice(),
             "ERR:E-SH-IR-TYPE-MISMATCH",
         ),
+        (
+            b"function lonely(a: I64) returns I64:\n  let masked = I64.bit_and(a, ghost)\n  return masked\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            b"function main(v: I64) returns I64:\n  let got = ghost(v)\n  return got\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TARGET",
+        ),
+        (
+            b"function bad(a: I64, b: I64) returns I64:\n  let added = I64.checked_add(a, b)\n  return added\nend function\n".as_slice(),
+            "ERR:E-SH-IR-TYPE-MISMATCH",
+        ),
     ] {
         let rust_source = SourceFile::from_text(
             SourceId::new(0),
@@ -583,5 +618,25 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             message: "ERR:E-SH-IR-STATEMENT".to_owned(),
         },
         "unresolved let aliases must remain typed refusals"
+    );
+
+    let unsupported_let_op = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin: b"function equal(a: I64, b: I64) returns Bool:\n  let flag = I64.equal(a, b)\n  return flag\nend function\n"
+                    .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    assert_eq!(
+        unsupported_let_op,
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "ERR:E-SH-IR-STATEMENT".to_owned(),
+        },
+        "let RHS operations outside the declared subset must remain typed refusals"
     );
 }
