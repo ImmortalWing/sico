@@ -81,13 +81,23 @@ fn sico_parser_emits_recursive_return_expression_trees() {
 }
 
 fn assert_ir_matches_rust(prepared: &PreparedProgram, source: &[u8]) {
+    // STEP-0223 fuel budget: the word-oriented self-host frontend costs
+    // ~1M fuel per general-CFG statement on the default runner budget
+    // (measured: 0.7M trivial, 3.7M straight-cell, 5.1M single-while,
+    // 11M nested-while). The differential harness raises the budget to
+    // 64M so every fixture runs to completion; the budget is registered
+    // in docs/steps/STEP-0223 and re-measured at the S6 bootstrap gate.
+    let limits = RunnerLimits {
+        fuel: 64_000_000,
+        ..RunnerLimits::default()
+    };
     let outcome = prepared
         .run(
             &ScriptInput {
                 arguments: vec!["--emit-ir".to_owned()],
                 stdin: source.to_vec(),
             },
-            &RunnerLimits::default(),
+            &limits,
             &CancelToken::new(),
         )
         .expect("input bounds hold");
@@ -356,6 +366,46 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function logged(flag: Bool, note: Text) returns Text:\n  let seen = flag\n  set seen = false\n  let label = \"log\\n\"\n  return note\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function pick(a: I64, b: I64) returns I64:\n  if I64.equal(a, b):\n    return a\n  end if\n  return b\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function choose(a: I64, b: I64, flag: Bool) returns I64:\n  if flag:\n    return a\n  else:\n    return b\n  end if\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function bump(a: I64, b: I64) returns I64:\n  let total = I64.literal(0)\n  if I64.less_than(a, b):\n    set total = a\n  else:\n    set total = b\n  end if\n  return total\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function grade(a: I64) returns I64:\n  let tag = I64.literal(0)\n  if I64.equal(a, I64.literal(0)):\n    set tag = I64.literal(1)\n  else:\n    if I64.less_than(a, I64.literal(0)):\n      set tag = I64.literal(2)\n    end if\n  end if\n  return tag\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function gate(flag: Bool, a: I64) returns I64:\n  if flag:\n    let hit = I64.literal(7)\n    set hit = a\n  end if\n  return a\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function climb(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function stop(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    break\n  end while\n  return x\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function skip(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    continue\n  end while\n  return x\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function grid(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    let y = I64.literal(0)\n    while I64.less_than(y, a):\n      set y = I64.bit_or(y, I64.literal(1))\n    end while\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function find(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    if I64.equal(x, a):\n      break\n    end if\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -594,6 +644,30 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             b"function bump() returns I64:\n  let x = I64.literal(1)\n  set x = ghost\n  return x\nend function\n".as_slice(),
             "ERR:E-SH-IR-UNRESOLVED",
         ),
+        (
+            b"function pick(a: I64, b: I64) returns I64:\n  if a:\n    return a\n  end if\n  return b\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CONTROL",
+        ),
+        (
+            b"function pick(a: I64, b: I64) returns I64:\n  if I64.equal(a, b):\n    return a\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CONTROL",
+        ),
+        (
+            b"function pick(a: I64, b: U64) returns I64:\n  if I64.equal(a, b):\n    return a\n  end if\n  return b\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            b"function leave(a: I64) returns I64:\n  let x = I64.literal(1)\n  break\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CONTROL",
+        ),
+        (
+            b"function again(a: I64) returns I64:\n  let x = I64.literal(1)\n  continue\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CONTROL",
+        ),
+        (
+            b"function count(a: I64) returns I64:\n  let x = I64.literal(0)\n  while a:\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-CONTROL",
+        ),
     ] {
         let rust_source = SourceFile::from_text(
             SourceId::new(0),
@@ -682,5 +756,25 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             message: "ERR:E-SH-IR-STATEMENT".to_owned(),
         },
         "let RHS operations outside the declared subset must remain typed refusals"
+    );
+
+    let statements_after_break = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin: b"function stop(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    break\n    set x = I64.literal(1)\n  end while\n  return x\nend function\n"
+                    .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    assert_eq!(
+        statements_after_break,
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "ERR:E-SH-IR-STATEMENT".to_owned(),
+        },
+        "statements after break in the same region must remain typed refusals"
     );
 }
