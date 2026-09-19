@@ -3495,6 +3495,165 @@ function general_find_region(words: List[Text], body_end_word: U64, if_line: U64
   return general_emission(gfr_else, gfr_end, "", "")
 end function
 
+function general_materialize(words: List[Text], fn_name: Text, blk_instr: List[Text], blk_tkind: List[Text], blk_ta: List[Text], blk_tb: List[Text], blk_tc: List[Text], blk_rs: List[Text], blk_re: List[Text], blk_stamp: List[Text], blk_marked: List[Text], blk_count: U64, stamp_seq: U64, m_blk: List[Text], m_pat: List[Text], m_rs: List[Text], m_re: List[Text], fn_start: U64, fn_end: U64, parameters_json: Text, function_ordinal: U64, return_kind: Text, locals: Text) returns Text:
+  let order = sico.text.split_lines("")
+  let gsf_seq_scan = U64.literal(0)
+  while U64.less_than(gsf_seq_scan, stamp_seq):
+    set gsf_seq_scan = next_index(gsf_seq_scan, gsf_seq_scan)
+    let gsf_seq_target = gsf_seq_scan
+    let gsf_seq_b = U64.literal(0)
+    let gsf_seq_found = U64.literal(0)
+    while U64.less_than(gsf_seq_b, blk_count):
+      if U64.equal(gsf_seq_found, U64.literal(0)):
+        let gsf_seq_marked = general_field(blk_marked, gsf_seq_b)
+        if is_word(gsf_seq_marked, "1"):
+          let gsf_seq_stamp = general_parse_u64(general_field(blk_stamp, gsf_seq_b))
+          if U64.equal(gsf_seq_stamp, gsf_seq_target):
+            set order = sico.list.append(order, sico.u64.to_text(gsf_seq_b))
+            set gsf_seq_found = U64.literal(1)
+          else:
+            let gsf_seq_stamp_diff = I64.literal(1)
+          end if
+        else:
+          let gsf_seq_unmarked = I64.literal(1)
+        end if
+      else:
+        let gsf_seq_found_dead = I64.literal(1)
+      end if
+      set gsf_seq_b = next_index(gsf_seq_b, blk_count)
+    end while
+  end while
+  let gsf_trail_b = U64.literal(0)
+  while U64.less_than(gsf_trail_b, blk_count):
+    let gsf_trail_marked = general_field(blk_marked, gsf_trail_b)
+    if is_word(gsf_trail_marked, "0"):
+      set order = sico.list.append(order, sico.u64.to_text(gsf_trail_b))
+    else:
+      let gsf_trail_marked_dead = I64.literal(1)
+    end if
+    set gsf_trail_b = next_index(gsf_trail_b, blk_count)
+  end while
+  let gsf_blocks_json = ""
+  let order_len = sico.list.length(order)
+  let order_k = U64.literal(0)
+  while U64.less_than(order_k, order_len):
+    let gsf_blk_b = general_parse_u64(general_field(order, order_k))
+    let gsf_blk_json_instr = general_field(blk_instr, gsf_blk_b)
+    let gsf_blk_json_tkind = general_field(blk_tkind, gsf_blk_b)
+    let gsf_blk_json_ta = general_parse_u64(general_field(blk_ta, gsf_blk_b))
+    let gsf_blk_json_tb = general_parse_u64(general_field(blk_tb, gsf_blk_b))
+    let gsf_blk_json_tc = general_parse_u64(general_field(blk_tc, gsf_blk_b))
+    let gsf_blk_json_rs = general_parse_u64(general_field(blk_rs, gsf_blk_b))
+    let gsf_blk_json_re = general_parse_u64(general_field(blk_re, gsf_blk_b))
+    let gsf_blk_term = "{\"kind\":\"unreachable\"}"
+    if is_word(gsf_blk_json_tkind, "return"):
+      set gsf_blk_term = "{\"kind\":\"return\",\"data\":"
+      set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(gsf_blk_json_ta))
+      set gsf_blk_term = sico.text.concat(gsf_blk_term, "}")
+    else:
+      if is_word(gsf_blk_json_tkind, "jump"):
+        let gsf_blk_term_scan = U64.literal(0)
+        let gsf_blk_term_pos = U64.literal(0)
+        while U64.less_than(gsf_blk_term_scan, order_len):
+          if U64.equal(gsf_blk_term_pos, U64.literal(0)):
+            let gsf_blk_term_entry = general_parse_u64(general_field(order, gsf_blk_term_scan))
+            if U64.equal(gsf_blk_term_entry, gsf_blk_json_ta):
+              set gsf_blk_term_pos = next_index(gsf_blk_term_scan, gsf_blk_term_scan)
+            else:
+              let gsf_blk_term_entry_diff = I64.literal(1)
+            end if
+          else:
+            let gsf_blk_term_pos_dead = I64.literal(1)
+          end if
+          set gsf_blk_term_scan = next_index(gsf_blk_term_scan, order_len)
+        end while
+        set gsf_blk_term = "{\"kind\":\"jump\",\"data\":"
+        set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_pos, gsf_blk_term_pos)))
+        set gsf_blk_term = sico.text.concat(gsf_blk_term, "}")
+      else:
+        if is_word(gsf_blk_json_tkind, "branch"):
+          let gsf_blk_term_then_scan = U64.literal(0)
+          let gsf_blk_term_then_pos = U64.literal(0)
+          while U64.less_than(gsf_blk_term_then_scan, order_len):
+            if U64.equal(gsf_blk_term_then_pos, U64.literal(0)):
+              let gsf_blk_term_then_entry = general_parse_u64(general_field(order, gsf_blk_term_then_scan))
+              if U64.equal(gsf_blk_term_then_entry, gsf_blk_json_tb):
+                set gsf_blk_term_then_pos = next_index(gsf_blk_term_then_scan, gsf_blk_term_then_scan)
+              else:
+                let gsf_blk_term_then_diff = I64.literal(1)
+              end if
+            else:
+              let gsf_blk_term_then_dead = I64.literal(1)
+            end if
+            set gsf_blk_term_then_scan = next_index(gsf_blk_term_then_scan, order_len)
+          end while
+          let gsf_blk_term_else_scan = U64.literal(0)
+          let gsf_blk_term_else_pos = U64.literal(0)
+          while U64.less_than(gsf_blk_term_else_scan, order_len):
+            if U64.equal(gsf_blk_term_else_pos, U64.literal(0)):
+              let gsf_blk_term_else_entry = general_parse_u64(general_field(order, gsf_blk_term_else_scan))
+              if U64.equal(gsf_blk_term_else_entry, gsf_blk_json_tc):
+                set gsf_blk_term_else_pos = next_index(gsf_blk_term_else_scan, gsf_blk_term_else_scan)
+              else:
+                let gsf_blk_term_else_diff = I64.literal(1)
+              end if
+            else:
+              let gsf_blk_term_else_dead = I64.literal(1)
+            end if
+            set gsf_blk_term_else_scan = next_index(gsf_blk_term_else_scan, order_len)
+          end while
+          set gsf_blk_term = "{\"kind\":\"branch\",\"data\":{\"condition\":"
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(gsf_blk_json_ta))
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, ",\"then_block\":")
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_then_pos, gsf_blk_term_then_pos)))
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, ",\"else_block\":")
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_else_pos, gsf_blk_term_else_pos)))
+          set gsf_blk_term = sico.text.concat(gsf_blk_term, "}}")
+        else:
+          let gsf_blk_term_unreachable = I64.literal(1)
+        end if
+      end if
+    end if
+    if U64.less_than(U64.literal(0), sico.text.length(gsf_blocks_json)):
+      set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",")
+    end if
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "{\"id\":")
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(order_k))
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"instructions\":[")
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, gsf_blk_json_instr)
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "],\"terminator\":")
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, gsf_blk_term)
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"range\":{\"start\":")
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(gsf_blk_json_rs))
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"end\":")
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(gsf_blk_json_re))
+    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "}}")
+    set order_k = next_index(order_k, order_len)
+  end while
+  let gsf_json = "{\"id\":"
+  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(function_ordinal))
+  set gsf_json = sico.text.concat(gsf_json, ",\"name\":\"")
+  set gsf_json = sico.text.concat(gsf_json, fn_name)
+  set gsf_json = sico.text.concat(gsf_json, "\",\"parameters\":")
+  set gsf_json = sico.text.concat(gsf_json, parameters_json)
+  set gsf_json = sico.text.concat(gsf_json, ",\"return_type\":")
+  set gsf_json = sico.text.concat(gsf_json, general_type_json(return_kind))
+  set gsf_json = sico.text.concat(gsf_json, ",\"effects\":[]")
+  if U64.less_than(U64.literal(0), sico.text.length(locals)):
+    set gsf_json = sico.text.concat(gsf_json, ",\"locals\":[")
+    set gsf_json = sico.text.concat(gsf_json, locals)
+    set gsf_json = sico.text.concat(gsf_json, "]")
+  end if
+  set gsf_json = sico.text.concat(gsf_json, ",\"entry\":0,\"blocks\":[")
+  set gsf_json = sico.text.concat(gsf_json, gsf_blocks_json)
+  set gsf_json = sico.text.concat(gsf_json, "],\"range\":{\"start\":")
+  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(fn_start))
+  set gsf_json = sico.text.concat(gsf_json, ",\"end\":")
+  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(fn_end))
+  set gsf_json = sico.text.concat(gsf_json, "}}")
+  return gsf_json
+end function
+
 function general_straight_function_ir(words: List[Text], src: Bytes, fn_token_idx: U64, fn_start: U64, name_idx: U64, function_ordinal: U64, body_from: U64, body_end_word: U64, parameters_json: Text, return_kind: Text, parameter_count: U64) returns Text:
   let gsf_words_len = sico.list.length(words)
   let gsf_next = parameter_count
@@ -3511,6 +3670,10 @@ function general_straight_function_ir(words: List[Text], src: Bytes, fn_token_id
   let gsf_blk_re = sico.text.split_lines("")
   let gsf_blk_stamp = sico.text.split_lines("")
   let gsf_blk_marked = sico.text.split_lines("")
+  let gsf_m_blk = sico.text.split_lines("")
+  let gsf_m_pat = sico.text.split_lines("")
+  let gsf_m_rs = sico.text.split_lines("")
+  let gsf_m_re = sico.text.split_lines("")
   let gsf_source_len = sico.bytes.length(src)
   let gsf_end_function_offset = find_text_from(src, "end function", fn_start)
   let gsf_fn_end = gsf_end_function_offset
@@ -4188,162 +4351,7 @@ function general_straight_function_ir(words: List[Text], src: Bytes, fn_token_id
   if U64.equal(sico.text.length(return_kind), U64.literal(0)):
     return "ERR:E-SH-IR-RETURN-TYPE"
   end if
-  let gsf_order = sico.text.split_lines("")
-  let gsf_seq_scan = U64.literal(0)
-  while U64.less_than(gsf_seq_scan, gsf_stamp_seq):
-    set gsf_seq_scan = next_index(gsf_seq_scan, gsf_seq_scan)
-    let gsf_seq_target = gsf_seq_scan
-    let gsf_seq_b = U64.literal(0)
-    let gsf_seq_found = U64.literal(0)
-    while U64.less_than(gsf_seq_b, gsf_blk_count):
-      if U64.equal(gsf_seq_found, U64.literal(0)):
-        let gsf_seq_marked = general_field(gsf_blk_marked, gsf_seq_b)
-        if is_word(gsf_seq_marked, "1"):
-          let gsf_seq_stamp = general_parse_u64(general_field(gsf_blk_stamp, gsf_seq_b))
-          if U64.equal(gsf_seq_stamp, gsf_seq_target):
-            set gsf_order = sico.list.append(gsf_order, sico.u64.to_text(gsf_seq_b))
-            set gsf_seq_found = U64.literal(1)
-          else:
-            let gsf_seq_stamp_diff = I64.literal(1)
-          end if
-        else:
-          let gsf_seq_unmarked = I64.literal(1)
-        end if
-      else:
-        let gsf_seq_found_dead = I64.literal(1)
-      end if
-      set gsf_seq_b = next_index(gsf_seq_b, gsf_blk_count)
-    end while
-  end while
-  let gsf_trail_b = U64.literal(0)
-  while U64.less_than(gsf_trail_b, gsf_blk_count):
-    let gsf_trail_marked = general_field(gsf_blk_marked, gsf_trail_b)
-    if is_word(gsf_trail_marked, "0"):
-      set gsf_order = sico.list.append(gsf_order, sico.u64.to_text(gsf_trail_b))
-    else:
-      let gsf_trail_marked_dead = I64.literal(1)
-    end if
-    set gsf_trail_b = next_index(gsf_trail_b, gsf_blk_count)
-  end while
-  let gsf_blocks_json = ""
-  let gsf_order_len = sico.list.length(gsf_order)
-  let gsf_order_k = U64.literal(0)
-  while U64.less_than(gsf_order_k, gsf_order_len):
-    let gsf_blk_b = general_parse_u64(general_field(gsf_order, gsf_order_k))
-    let gsf_blk_json_instr = general_field(gsf_blk_instr, gsf_blk_b)
-    let gsf_blk_json_tkind = general_field(gsf_blk_tkind, gsf_blk_b)
-    let gsf_blk_json_ta = general_parse_u64(general_field(gsf_blk_ta, gsf_blk_b))
-    let gsf_blk_json_tb = general_parse_u64(general_field(gsf_blk_tb, gsf_blk_b))
-    let gsf_blk_json_tc = general_parse_u64(general_field(gsf_blk_tc, gsf_blk_b))
-    let gsf_blk_json_rs = general_parse_u64(general_field(gsf_blk_rs, gsf_blk_b))
-    let gsf_blk_json_re = general_parse_u64(general_field(gsf_blk_re, gsf_blk_b))
-    let gsf_blk_term = "{\"kind\":\"unreachable\"}"
-    if is_word(gsf_blk_json_tkind, "return"):
-      set gsf_blk_term = "{\"kind\":\"return\",\"data\":"
-      set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(gsf_blk_json_ta))
-      set gsf_blk_term = sico.text.concat(gsf_blk_term, "}")
-    else:
-      if is_word(gsf_blk_json_tkind, "jump"):
-        let gsf_blk_term_scan = U64.literal(0)
-        let gsf_blk_term_pos = U64.literal(0)
-        while U64.less_than(gsf_blk_term_scan, gsf_order_len):
-          if U64.equal(gsf_blk_term_pos, U64.literal(0)):
-            let gsf_blk_term_entry = general_parse_u64(general_field(gsf_order, gsf_blk_term_scan))
-            if U64.equal(gsf_blk_term_entry, gsf_blk_json_ta):
-              set gsf_blk_term_pos = next_index(gsf_blk_term_scan, gsf_blk_term_scan)
-            else:
-              let gsf_blk_term_entry_diff = I64.literal(1)
-            end if
-          else:
-            let gsf_blk_term_pos_dead = I64.literal(1)
-          end if
-          set gsf_blk_term_scan = next_index(gsf_blk_term_scan, gsf_order_len)
-        end while
-        set gsf_blk_term = "{\"kind\":\"jump\",\"data\":"
-        set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_pos, gsf_blk_term_pos)))
-        set gsf_blk_term = sico.text.concat(gsf_blk_term, "}")
-      else:
-        if is_word(gsf_blk_json_tkind, "branch"):
-          let gsf_blk_term_then_scan = U64.literal(0)
-          let gsf_blk_term_then_pos = U64.literal(0)
-          while U64.less_than(gsf_blk_term_then_scan, gsf_order_len):
-            if U64.equal(gsf_blk_term_then_pos, U64.literal(0)):
-              let gsf_blk_term_then_entry = general_parse_u64(general_field(gsf_order, gsf_blk_term_then_scan))
-              if U64.equal(gsf_blk_term_then_entry, gsf_blk_json_tb):
-                set gsf_blk_term_then_pos = next_index(gsf_blk_term_then_scan, gsf_blk_term_then_scan)
-              else:
-                let gsf_blk_term_then_diff = I64.literal(1)
-              end if
-            else:
-              let gsf_blk_term_then_dead = I64.literal(1)
-            end if
-            set gsf_blk_term_then_scan = next_index(gsf_blk_term_then_scan, gsf_order_len)
-          end while
-          let gsf_blk_term_else_scan = U64.literal(0)
-          let gsf_blk_term_else_pos = U64.literal(0)
-          while U64.less_than(gsf_blk_term_else_scan, gsf_order_len):
-            if U64.equal(gsf_blk_term_else_pos, U64.literal(0)):
-              let gsf_blk_term_else_entry = general_parse_u64(general_field(gsf_order, gsf_blk_term_else_scan))
-              if U64.equal(gsf_blk_term_else_entry, gsf_blk_json_tc):
-                set gsf_blk_term_else_pos = next_index(gsf_blk_term_else_scan, gsf_blk_term_else_scan)
-              else:
-                let gsf_blk_term_else_diff = I64.literal(1)
-              end if
-            else:
-              let gsf_blk_term_else_dead = I64.literal(1)
-            end if
-            set gsf_blk_term_else_scan = next_index(gsf_blk_term_else_scan, gsf_order_len)
-          end while
-          set gsf_blk_term = "{\"kind\":\"branch\",\"data\":{\"condition\":"
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(gsf_blk_json_ta))
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, ",\"then_block\":")
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_then_pos, gsf_blk_term_then_pos)))
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, ",\"else_block\":")
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, sico.u64.to_text(previous_index(gsf_blk_term_else_pos, gsf_blk_term_else_pos)))
-          set gsf_blk_term = sico.text.concat(gsf_blk_term, "}}")
-        else:
-          let gsf_blk_term_unreachable = I64.literal(1)
-        end if
-      end if
-    end if
-    if U64.less_than(U64.literal(0), sico.text.length(gsf_blocks_json)):
-      set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",")
-    end if
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "{\"id\":")
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(gsf_order_k))
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"instructions\":[")
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, gsf_blk_json_instr)
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "],\"terminator\":")
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, gsf_blk_term)
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"range\":{\"start\":")
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(gsf_blk_json_rs))
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, ",\"end\":")
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, sico.u64.to_text(gsf_blk_json_re))
-    set gsf_blocks_json = sico.text.concat(gsf_blocks_json, "}}")
-    set gsf_order_k = next_index(gsf_order_k, gsf_order_len)
-  end while
-  let gsf_json = "{\"id\":"
-  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(function_ordinal))
-  set gsf_json = sico.text.concat(gsf_json, ",\"name\":\"")
-  set gsf_json = sico.text.concat(gsf_json, word_at(words, name_idx))
-  set gsf_json = sico.text.concat(gsf_json, "\",\"parameters\":")
-  set gsf_json = sico.text.concat(gsf_json, parameters_json)
-  set gsf_json = sico.text.concat(gsf_json, ",\"return_type\":")
-  set gsf_json = sico.text.concat(gsf_json, general_type_json(return_kind))
-  set gsf_json = sico.text.concat(gsf_json, ",\"effects\":[]")
-  if U64.less_than(U64.literal(0), sico.text.length(gsf_locals)):
-    set gsf_json = sico.text.concat(gsf_json, ",\"locals\":[")
-    set gsf_json = sico.text.concat(gsf_json, gsf_locals)
-    set gsf_json = sico.text.concat(gsf_json, "]")
-  end if
-  set gsf_json = sico.text.concat(gsf_json, ",\"entry\":0,\"blocks\":[")
-  set gsf_json = sico.text.concat(gsf_json, gsf_blocks_json)
-  set gsf_json = sico.text.concat(gsf_json, "],\"range\":{\"start\":")
-  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(fn_start))
-  set gsf_json = sico.text.concat(gsf_json, ",\"end\":")
-  set gsf_json = sico.text.concat(gsf_json, sico.u64.to_text(gsf_fn_end))
-  set gsf_json = sico.text.concat(gsf_json, "}}")
-  return gsf_json
+  return general_materialize(words, word_at(words, name_idx), gsf_blk_instr, gsf_blk_tkind, gsf_blk_ta, gsf_blk_tb, gsf_blk_tc, gsf_blk_rs, gsf_blk_re, gsf_blk_stamp, gsf_blk_marked, gsf_blk_count, gsf_stamp_seq, gsf_m_blk, gsf_m_pat, gsf_m_rs, gsf_m_re, fn_start, gsf_fn_end, parameters_json, function_ordinal, return_kind, gsf_locals)
 end function
 
 function checked_result_match_function_ir(words: List[Text], src: Bytes, name_idx: U64, function_ordinal: U64, fn_start: U64, body_from: U64, body_end_word: U64, parameters_json: Text, return_kind: Text) returns Text:
