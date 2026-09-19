@@ -1,6 +1,6 @@
-//! M22 S6 (STEP-0213): the Sico-written frontend lowers checked
-//! arithmetic returned directly as Result[I64/U64, NumericError] —
-//! result-typed return types and call targets included — byte-identically.
+//! M22 S6 (STEP-0219): the Sico-written frontend lowers checked
+//! arithmetic, the frozen checked-Result payload match, and straight-line
+//! fixed-width `let` SSA bindings, aliases, operands and call arguments byte-identically.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -92,11 +92,11 @@ fn assert_ir_matches_rust(prepared: &PreparedProgram, source: &[u8]) {
         )
         .expect("input bounds hold");
     let RunOutcome::Output(output) = outcome else {
-        panic!("expected canonical IR output, got {outcome:?}");
+        panic!("expected canonical IR output for {}, got {outcome:?}", String::from_utf8_lossy(source));
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     let module: Module = serde_json::from_slice(&output.stdout).expect("IR JSON deserializes");
-    assert!(verify(&module).is_empty(), "self-host IR must verify");
+    assert!(verify(&module).is_empty(), "self-host IR must verify for {}: {:?}", String::from_utf8_lossy(&output.stdout), output.stdout);
     assert_eq!(
         canonical_json(&module).unwrap().as_bytes(),
         output.stdout,
@@ -272,6 +272,43 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function make(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n\nfunction pass(a: I64) returns Result[I64, NumericError]:\n  return make(a)\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add_or_zero(left: I64, right: I64) returns I64:\n  match I64.checked_add(left, right):\n    case ok(value):\n      return value\n    case error(reason):\n      return I64.literal(0)\n  end match\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function div_or_one(left: U64, right: U64) returns U64:\n  match U64.checked_div(left, right):\n    case ok(value):\n      return value\n    case error(reason):\n      return U64.literal(1)\n  end match\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function constants() returns U64:\n  let signed = I64.literal(7)\n  let result = U64.literal(9)\n  return result\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function mask() returns I64:\n  let left = I64.literal(7)\n  let right = I64.literal(3)\n  return I64.bit_and(left, right)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function checked() returns Result[U64, NumericError]:\n  let left = U64.literal(8)\n  return U64.checked_div(left, U64.literal(2))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function pick(left: I64, right: I64) returns I64:\n  return left\nend function\n\nfunction main() returns I64:\n  let left = I64.literal(5)\n  let right = I64.literal(6)\n  return pick(right, left)\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function pick(left: I64, right: I64) returns I64:\n  return left\nend function\n\nfunction main() returns I64:\n  let left = I64.literal(5)\n  return pick(left, I64.literal(6))\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function alias(value: I64) returns I64:\n  let copy = value\n  return copy\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function chain() returns I64:\n  let base = I64.literal(6)\n  let copy = base\n  return I64.bit_or(copy, I64.literal(1))\nend function\n",
+    );
+
 
     let refused = prepared
         .run(
@@ -508,4 +545,43 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             "cross-function violations must have typed refusals"
         );
     }
+    let wider_match = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin: b"function add_or_zero(left: I64, right: I64) returns I64:\n  match I64.checked_add(left, right):\n    case ok(value):\n      let copy = value\n      return copy\n    case error(reason):\n      return I64.literal(0)\n  end match\nend function\n"
+                    .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    assert_eq!(
+        wider_match,
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "ERR:E-SH-IR-CONTROL".to_owned(),
+        },
+        "match shapes outside the frozen slice must remain typed refusals"
+    );
+
+    let unresolved_let = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin: b"function keep(value: I64) returns I64:\n  let copy = ghost\n  return copy\nend function\n"
+                    .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    assert_eq!(
+        unresolved_let,
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "ERR:E-SH-IR-STATEMENT".to_owned(),
+        },
+        "unresolved let aliases must remain typed refusals"
+    );
 }
