@@ -332,6 +332,30 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         &prepared,
         b"function make(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n\nfunction pass(a: I64) returns Result[I64, NumericError]:\n  let got = make(a)\n  return got\nend function\n",
     );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function bump(a: I64, b: I64) returns I64:\n  let total = I64.literal(0)\n  set total = I64.bit_or(a, b)\n  return total\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function tally() returns I64:\n  let acc = I64.literal(3)\n  set acc = I64.bit_and(acc, I64.literal(7))\n  return acc\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main() returns I64:\n  let total = I64.literal(1)\n  set total = add(total, I64.literal(4))\n  return total\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function keep(a: I64) returns I64:\n  let copy = a\n  set copy = I64.bit_xor(copy, a)\n  let flag = copy\n  return flag\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function kept(a: I64, b: I64) returns Result[I64, NumericError]:\n  let saved = I64.checked_add(a, b)\n  set saved = I64.checked_sub(b, a)\n  return saved\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function logged(flag: Bool, note: Text) returns Text:\n  let seen = flag\n  set seen = false\n  let label = \"log\\n\"\n  return note\nend function\n",
+    );
 
     let refused = prepared
         .run(
@@ -549,6 +573,26 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         (
             b"function bad(a: I64, b: I64) returns I64:\n  let added = I64.checked_add(a, b)\n  return added\nend function\n".as_slice(),
             "ERR:E-SH-IR-TYPE-MISMATCH",
+        ),
+        (
+            b"function bump() returns I64:\n  set total = I64.literal(1)\n  return total\nend function\n".as_slice(),
+            "ERR:E-SH-IR-STATEMENT",
+        ),
+        (
+            b"function bump(v: I64) returns I64:\n  set v = I64.literal(1)\n  return v\nend function\n".as_slice(),
+            "ERR:E-SH-IR-STATEMENT",
+        ),
+        (
+            b"function bump() returns I64:\n  let x = I64.literal(3)\n  set x = true\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-TYPE-MISMATCH",
+        ),
+        (
+            b"function bump() returns I64:\n  let x = I64.literal(1)\n  let x = I64.literal(2)\n  set x = I64.literal(3)\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-STATEMENT",
+        ),
+        (
+            b"function bump() returns I64:\n  let x = I64.literal(1)\n  set x = ghost\n  return x\nend function\n".as_slice(),
+            "ERR:E-SH-IR-UNRESOLVED",
         ),
     ] {
         let rust_source = SourceFile::from_text(
