@@ -14,8 +14,10 @@ NumericError]` return types. The `match` decomposition form was probed
 and is explicitly out of scope: a straightforward match lowering
 produced IR that the independent Rust verifier itself rejects
 (`InvalidIr TypeMismatch` on `function[0].block[1]`), so match-shaped
-checked arithmetic needs its own investigation before the guest can
-mirror it.
+checked arithmetic was left for investigation. STEP-0214 supersedes that
+probe finding: the retained minimal source passes Rust lowering and the
+independent verifier when it uses the established spill/read/project
+shape; the earlier transient probe was not valid Rust-oracle evidence.
 
 ## 2. Contract and mechanism
 
@@ -55,9 +57,9 @@ green on the real Windows x64 runner.
 
 ## 4. Residuals
 
-Match-shaped checked arithmetic (the `case ok/error` decomposition —
-blocked until the Rust-side lowering/verifier mismatch observed in
-probing is understood), general statements and blocks inside function
-bodies, nested calls as operation operands, and full-corpus lowering
-remain open. This step proves directly returned checked arithmetic, not
-match lowering or bootstrap closure.
+Match-shaped checked arithmetic (the `case ok/error` decomposition),
+general statements and blocks inside function bodies, nested calls as
+operation operands, and full-corpus lowering remain open. STEP-0214 has
+removed the alleged Rust-oracle blocker but has not implemented the shape
+in the Sico-written frontend. This step proves directly returned checked
+arithmetic, not match lowering or bootstrap closure.

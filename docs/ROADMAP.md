@@ -328,7 +328,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（in-progress; entry satisfied 2026-09-14）
 
-状态：`in-progress：S1–S5 complete（STEP-0177–0192）；S6 lowering 进行中（STEP-0193–0213：parser/expression tree → Rust-identical scalar IR → 多参数 SSA → typed user calls（自递归 + 跨函数）→ 常量/定宽字面量/嵌套调用实参（递归下降）→ 定宽运算及字面量操作数 → checked 算术 Result IR；match 拆解形态探针发现 Rust 降级产物被自身 verifier 拒，登记调查；真实 runner + verifier + lower_core byte differential）；自举架构门禁由 ADR-0015 / STEP-0198 关闭；下一门为 match 形态调查与通用语句块；后续 STEP 不预留`
+状态：`in-progress：S1–S5 complete（STEP-0177–0192）；S6 lowering 进行中——工作树前端当前为 STEP-0219 提交状态（frozen match + checked 算术 + 定宽字面量/调用）。STEP-0220–0223（let-bound operation/call RHS → 直线 mutable set 经 local cells → 通用 CFG if/else 区域 → while/break/continue 循环；完成时累计 69 个正例经真实 runner + verifier + lower_core byte differential，燃料预算按门 4 实测登记）已于 2026-09-18/19 实现并验证，但因 STEP-0224 match 机制拼接事故其代码已回退入 git stash（含 WIP 快照）；STEP 记录与验证器为已验证工作的权威描述，恢复时须整链重跑。自举架构门禁由 ADR-0015 / STEP-0198 关闭；下一门为从 stash 重建 0220–0223 并完成通用 match/case 与 for 循环；后续 STEP 不预留`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 
