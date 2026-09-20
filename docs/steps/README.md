@@ -205,3 +205,4 @@ STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支�
 | [STEP-0242](./STEP-0242-m22-checker-lexical-partition.md) | complete / partial-S2 | M22 S2 | checker 复用 integrated lexer；215-source 冻结语料的 116 `LEXICAL` / 99 non-lexical 分区由真实 runner 精确验证，无大型 token 中间串 |
 | [STEP-0243](./STEP-0243-m22-checker-e1xxx-syntax-identities.md) | complete / partial-S2 | M22 S2 | integrated parser 按真实块/定界符/声明形状实现 E1001–E1016；12 mutation + 4 shape oracle 全部经真实 runner，215-source 无误判回归保持绿 |
 | [STEP-0244](./STEP-0244-m22-checker-core-semantics.md) | complete / partial-S2 | M22 S2 | struct-of-arrays 语义表实现 E2001/E2002/E2010/E2011/E2020；9 个冻结拒绝精确匹配、65 accepted 保持通过，删除 free-form header scanner |
+| [STEP-0245](./STEP-0245-m22-checker-frozen-corpus-closure.md) | complete / S2 GO | M22 S2 | 215-source 声明式 checker 子集关闭：116 lexical + 34 精确诊断 identity + 65 accepted + 0 unsupported；outline 复用 STEP-0216/0219 byte-exact 证据，不宣称完整诊断渲染 parity |

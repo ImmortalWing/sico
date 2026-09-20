@@ -1,7 +1,7 @@
 # M22 interim evidence audit
 
 > - verdict: **NO-GO / implementation in progress**
-> - date: 2026-09-20 (updated through STEP-0244)
+> - date: 2026-09-20 (updated through STEP-0245)
 > - trigger: owner directive "先完成自举，再完善 GUI/原生界面库"
 > - evidence class: internal-fixture
 
@@ -24,7 +24,7 @@ bounded seam is never promoted automatically to a later slice or M22 GO.
 | Plan gate | Executable evidence | Verdict |
 |---|---|---|
 | L1 formatter byte-exact + idempotent on frozen corpora | STEP-0217/0218: 99/99 accepted byte-exact and idempotent; 116/116 typed lexical refusal through real runner | **GO (S1)** |
-| L1 checker declared diagnostic differential | STEP-0242/0243: exact lexical partition + E1001–E1016; STEP-0244: newtype/record/function symbol tables close 9 frozen E2001/E2002/E2010/E2011/E2020 cases, 65 accepted remain accepted, 25 unsupported refusals remain open | **partial** |
+| L1 checker declared diagnostic differential | STEP-0242–0245: all 215 outcomes match the declared relation — 116 lexical refusals, 34 exact frozen parser/semantic/module identities, 65 accepts, zero unsupported; STEP-0216/0219 separately provide byte-exact outline metadata on 99 accepted sources; full rendered diagnostics are outside the v0 claim | **GO (S2 declared subset)** |
 | Lexer/token/AST parser | STEP-0215: lossless tokens 215/215; STEP-0216/0219: accepted declaration shape/metadata 99/99 via `declaration_parser.sico`; STEP-0221: lexer/parser linked into compiler on its own 3 sources; the primary lowering parser additionally carries the STEP-0193–0212 expression subset, but general statement/recovery/refusal AST remains absent | **partial** |
 | Canonical typed IR + Rust verifier differential | STEP-0193–0212 plus STEP-0222–0240: 110 positive fixtures cover recursive expression trees, parameters, constants, typed user calls, fixed-width operations, I64/U64 checked arithmetic matches with recursive operands, a loop-driven straight environment with cross-statement SSA, all Rust lower_core straight-line return shapes, set/mutation cell-mode lowering (write_local/read_local/locals table) extended to operation/call right-hand sides and nested call arguments, and structured if/else plus while loops with break/continue — all byte-identical to the Rust paths; the full compiler corpus remains outside the executed subset | **partial** |
 | Sico-native deterministic codegen | STEP-0221 retains one fixed constant-return Core Wasm byte seam; no general encoder or Component wrapper | **partial** |
@@ -39,9 +39,10 @@ bounded seam is never promoted automatically to a later slice or M22 GO.
 - `selfhost/formatter.sico`: S1 complete on the frozen 215-source
   accept/refuse corpus; this does not supply checker semantics.
 - `selfhost/checker.sico`: imports the integrated lexer/parser/semantics chain;
-  it covers the frozen lexical partition, E1001–E1016 and nine core E2xxx
-  refusals. The free-form header scanner is removed; 25 semantic/module
-  refusals remain open.
+  all 215 frozen accept/refuse outcomes match the declared identity-level
+  relation. The typed runner result carries the identity, not full Rust
+  diagnostic text/JSON; outline parity remains the separate 99-source
+  declaration-parser differential.
 - `selfhost/tokens.sico`: lossless lexer parity on 215/215 bounded line
   segments. `selfhost/declaration_parser.sico` matches accepted top-level
   declaration metadata; `selfhost/parser.sico` is the primary lowering parser
@@ -59,8 +60,8 @@ bounded seam is never promoted automatically to a later slice or M22 GO.
 
 ## Required closure sequence
 
-1. Complete S2 checker diagnostics and extend the integrated parser from
-   declaration metadata to expression/statement and refusal AST identities.
+1. Extend the integrated parser from declaration metadata to complete
+   expression/statement and refusal AST identities.
 2. Implement semantic/type tables and canonical IR for every construct used by
    the compiler source and frozen corpus; verify/reserialize natively.
 3. Implement a general deterministic Core Wasm + Component encoder in Sico;

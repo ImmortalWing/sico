@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0244: S1 complete, S2/S3/S4/S5 partial, S6 not entered. STEP-0193–0212 advance canonical typed IR; STEP-0213–0221 freeze the full source/build oracle and close formatter/lossless-lexer plus bounded frontend integration; STEP-0222–0241 advance and repair lowering; STEP-0242 closes the exact lexical partition; STEP-0243 implements frozen E1001–E1016 identities; STEP-0244 adds nine core E2xxx semantic identities and removes the free-form header scanner, leaving 25 semantic/module refusals open. No later STEP numbers are reserved.
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0245: S1 and the declared S2 identity/outline subset are complete, S3/S4/S5 partial, S6 not entered. STEP-0193–0212 advance canonical typed IR; STEP-0213–0221 freeze the full source/build oracle and close formatter/lossless-lexer plus bounded frontend integration; STEP-0222–0241 advance and repair lowering; STEP-0242–0245 close all 215 checker accept/refuse outcomes (116 lexical, 34 exact identities, 65 accepts) with zero unsupported cases. Full rendered diagnostic parity is not claimed. No later STEP numbers are reserved.
 
 ## 1. Objective
 

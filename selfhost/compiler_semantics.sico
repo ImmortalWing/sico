@@ -14,6 +14,15 @@ function add(left: U64, right: U64) returns U64:
   end match
 end function
 
+function sub(left: U64, right: U64) returns U64:
+  match U64.checked_sub(left, right):
+    case ok(value):
+      return value
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
 function same(left: Text, right: Text) returns Bool:
   return sico.bytes.equal(sico.text.encode(left), sico.text.encode(right))
 end function
@@ -52,11 +61,49 @@ function list_has(items: List[Text], target: Text) returns Bool:
   return false
 end function
 
+function list_missing(items: List[Text], target: Text) returns Bool:
+  if list_has(items, target):
+    return false
+  end if
+  return true
+end function
+
+function has_unconsumed(spawned: List[Text], consumed: List[Text]) returns Bool:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(spawned)):
+    if list_missing(consumed, item(spawned, index)):
+      return true
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return false
+end function
+
+function missing_two_arguments(items: List[Text], call_index: U64) returns Bool:
+  if U64.less_than(add(call_index, U64.literal(2)), sico.list.length(items)):
+    return false
+  end if
+  return true
+end function
+
 function map_get(keys: List[Text], values: List[Text], target: Text) returns Text:
   let index = U64.literal(0)
   while U64.less_than(index, sico.list.length(keys)):
     if same(item(keys, index), target):
       return item(values, index)
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function
+
+function parameter_type(owners: List[Text], names: List[Text], types: List[Text], function_name: Text, parameter_name: Text) returns Text:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(owners)):
+    if same(item(owners, index), function_name):
+      if same(item(names, index), parameter_name):
+        return item(types, index)
+      end if
     end if
     set index = add(index, U64.literal(1))
   end while
@@ -197,6 +244,9 @@ function semantic_diagnostic(source: Text) returns Text:
   let lines = sico.text.split_lines(source)
   let nominal_names = sico.text.split_lines("")
   let record_names = sico.text.split_lines("")
+  let resource_names = sico.text.split_lines("")
+  let enum_names = sico.text.split_lines("")
+  let variant_owners = sico.text.split_lines("")
   let field_owners = sico.text.split_lines("")
   let field_names = sico.text.split_lines("")
   let invariant_owners = sico.text.split_lines("")
@@ -205,7 +255,13 @@ function semantic_diagnostic(source: Text) returns Text:
   let function_names = sico.text.split_lines("")
   let function_params = sico.text.split_lines("")
   let function_returns = sico.text.split_lines("")
+  let function_result_errors = sico.text.split_lines("")
+  let async_function_names = sico.text.split_lines("")
+  let parameter_owners = sico.text.split_lines("")
+  let parameter_names = sico.text.split_lines("")
+  let parameter_types = sico.text.split_lines("")
   let active_record = ""
+  let active_enum = ""
   let index = U64.literal(0)
 
   while U64.less_than(index, sico.list.length(lines)):
@@ -213,6 +269,9 @@ function semantic_diagnostic(source: Text) returns Text:
     let line = sico.text.trim(raw)
     let parts = compiler_parser.words(line)
     if same(raw, line):
+      if sico.text.starts_with(line, "module "):
+        return "E8010"
+      end if
       if sico.text.starts_with(line, "newtype "):
         if U64.equal(sico.list.length(parts), U64.literal(4)):
           set nominal_names = sico.list.append(nominal_names, compiler_parser.at(parts, U64.literal(1)))
@@ -222,8 +281,18 @@ function semantic_diagnostic(source: Text) returns Text:
         set active_record = compiler_parser.at(parts, U64.literal(1))
         set record_names = sico.list.append(record_names, active_record)
       end if
+      if sico.text.starts_with(line, "resource "):
+        set resource_names = sico.list.append(resource_names, compiler_parser.at(parts, U64.literal(1)))
+      end if
+      if sico.text.starts_with(line, "enum "):
+        set active_enum = compiler_parser.at(parts, U64.literal(1))
+        set enum_names = sico.list.append(enum_names, active_enum)
+      end if
       if same(line, "end record"):
         set active_record = ""
+      end if
+      if same(line, "end enum"):
+        set active_enum = ""
       end if
       if compiler_parser.syntax_function_header(line):
         let function_index = compiler_parser.find(parts, "function")
@@ -238,6 +307,26 @@ function semantic_diagnostic(source: Text) returns Text:
             set function_names = sico.list.append(function_names, name)
             set function_params = sico.list.append(function_params, parameter)
             set function_returns = sico.list.append(function_returns, compiler_parser.at(parts, add(returns_index, U64.literal(1))))
+            let result_error = ""
+            if same(compiler_parser.at(parts, add(returns_index, U64.literal(1))), "Result"):
+              if U64.less_than(add(returns_index, U64.literal(3)), sico.list.length(parts)):
+                set result_error = compiler_parser.at(parts, add(returns_index, U64.literal(3)))
+              end if
+            end if
+            set function_result_errors = sico.list.append(function_result_errors, result_error)
+            if sico.text.starts_with(line, "async function "):
+              set async_function_names = sico.list.append(async_function_names, name)
+            end if
+            if sico.text.starts_with(line, "export async function "):
+              set async_function_names = sico.list.append(async_function_names, name)
+            end if
+            let parameter_index = add(function_index, U64.literal(2))
+            while U64.less_than(add(parameter_index, U64.literal(1)), returns_index):
+              set parameter_owners = sico.list.append(parameter_owners, name)
+              set parameter_names = sico.list.append(parameter_names, compiler_parser.at(parts, parameter_index))
+              set parameter_types = sico.list.append(parameter_types, compiler_parser.at(parts, add(parameter_index, U64.literal(1))))
+              set parameter_index = add(parameter_index, U64.literal(2))
+            end while
           end if
         end if
       end if
@@ -257,11 +346,36 @@ function semantic_diagnostic(source: Text) returns Text:
           end if
         end if
       end if
+      if U64.less_than(U64.literal(0), sico.text.length(active_enum)):
+        if sico.text.starts_with(line, "case "):
+          set variant_owners = sico.list.append(variant_owners, active_enum)
+        end if
+      end if
     end if
     set index = add(index, U64.literal(1))
   end while
 
   let active_return = ""
+  let active_function_name = ""
+  let active_result_error = ""
+  let pending_error_map = ""
+  let match_active = I64.literal(0)
+  let match_is_error_map = I64.literal(0)
+  let match_enum_one = ""
+  let match_enum_two = ""
+  let match_wildcard = I64.literal(0)
+  let match_cases = sico.text.split_lines("")
+  let declared_effect_none = I64.literal(0)
+  let declared_capability_none = I64.literal(0)
+  let moved_resources = sico.text.split_lines("")
+  let closed_resources = sico.text.split_lines("")
+  let borrow_live = I64.literal(0)
+  let future_names = sico.text.split_lines("")
+  let awaited_names = sico.text.split_lines("")
+  let task_depth = U64.literal(0)
+  let spawned_tasks = sico.text.split_lines("")
+  let consumed_tasks = sico.text.split_lines("")
+  let revision_guard = I64.literal(0)
   set index = U64.literal(0)
   while U64.less_than(index, sico.list.length(lines)):
     let body_raw = item(lines, index)
@@ -271,12 +385,306 @@ function semantic_diagnostic(source: Text) returns Text:
       if compiler_parser.syntax_function_header(body_line):
         let body_function_index = compiler_parser.find(body_parts, "function")
         let body_function_name = compiler_parser.at(body_parts, add(body_function_index, U64.literal(1)))
+        set active_function_name = body_function_name
         set active_return = map_get(function_names, function_returns, body_function_name)
+        set active_result_error = map_get(function_names, function_result_errors, body_function_name)
+        set declared_effect_none = I64.literal(0)
+        set declared_capability_none = I64.literal(0)
+        set moved_resources = sico.text.split_lines("")
+        set closed_resources = sico.text.split_lines("")
+        set borrow_live = I64.literal(0)
+        set future_names = sico.text.split_lines("")
+        set awaited_names = sico.text.split_lines("")
+        set task_depth = U64.literal(0)
+        set spawned_tasks = sico.text.split_lines("")
+        set consumed_tasks = sico.text.split_lines("")
+        set revision_guard = I64.literal(0)
+        if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(64))):
+          return "E6001"
+        end if
       end if
       if same(body_line, "end function"):
+        if has_unconsumed(spawned_tasks, consumed_tasks):
+          return "E5103"
+        end if
+        set active_function_name = ""
         set active_return = ""
+        set active_result_error = ""
       end if
     else:
+      if U64.less_than(U64.literal(0), sico.text.length(active_function_name)):
+        if same(body_line, "effects: none"):
+          set declared_effect_none = I64.literal(1)
+        end if
+        if same(body_line, "capabilities: none"):
+          set declared_capability_none = I64.literal(1)
+        end if
+
+        let close_index = compiler_parser.find(body_parts, "close")
+        if U64.less_than(U64.literal(0), close_index):
+          if U64.less_than(close_index, sico.list.length(body_parts)):
+            let close_receiver = compiler_parser.at(body_parts, sub(close_index, U64.literal(1)))
+            if list_has(moved_resources, close_receiver):
+              return "E5001"
+            end if
+            if list_has(closed_resources, close_receiver):
+              return "E5002"
+            end if
+            set closed_resources = sico.list.append(closed_resources, close_receiver)
+          end if
+        end if
+        let read_index = compiler_parser.find(body_parts, "read")
+        if U64.less_than(U64.literal(0), read_index):
+          if U64.less_than(read_index, sico.list.length(body_parts)):
+            let read_receiver = compiler_parser.at(body_parts, sub(read_index, U64.literal(1)))
+            if list_has(moved_resources, read_receiver):
+              return "E5001"
+            end if
+            if list_has(closed_resources, read_receiver):
+              return "E5002"
+            end if
+          end if
+        end if
+
+        let move_index = compiler_parser.find(body_parts, "move")
+        if U64.less_than(move_index, sico.list.length(body_parts)):
+          let move_source = compiler_parser.at(body_parts, add(move_index, U64.literal(1)))
+          let move_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, move_source)
+          if list_has(resource_names, move_type):
+            set moved_resources = sico.list.append(moved_resources, move_source)
+          end if
+        end if
+        let borrow_index = compiler_parser.find(body_parts, "borrow")
+        if U64.less_than(borrow_index, sico.list.length(body_parts)):
+          let borrow_source = compiler_parser.at(body_parts, add(borrow_index, U64.literal(1)))
+          let borrow_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, borrow_source)
+          if list_has(resource_names, borrow_type):
+            set borrow_live = I64.literal(1)
+          end if
+        end if
+
+        let await_index = compiler_parser.find(body_parts, "await")
+        if U64.less_than(await_index, sico.list.length(body_parts)):
+          if I64.equal(borrow_live, I64.literal(1)):
+            return "E5003"
+          end if
+          let await_scan = U64.literal(0)
+          while U64.less_than(await_scan, sico.list.length(body_parts)):
+            if same(compiler_parser.at(body_parts, await_scan), "await"):
+              let await_name = compiler_parser.at(body_parts, add(await_scan, U64.literal(1)))
+              if list_has(future_names, await_name):
+                if list_has(awaited_names, await_name):
+                  return "E5101"
+                end if
+                set awaited_names = sico.list.append(awaited_names, await_name)
+              else:
+                if list_has(spawned_tasks, await_name):
+                  if list_has(awaited_names, await_name):
+                    return "E5101"
+                  end if
+                  set awaited_names = sico.list.append(awaited_names, await_name)
+                  set consumed_tasks = sico.list.append(consumed_tasks, await_name)
+                end if
+              end if
+            end if
+            set await_scan = add(await_scan, U64.literal(1))
+          end while
+        end if
+
+        if U64.less_than(compiler_parser.find(body_parts, "collect_tasks"), sico.list.length(body_parts)):
+          let collected_index = U64.literal(0)
+          while U64.less_than(collected_index, sico.list.length(spawned_tasks)):
+            let collected_name = item(spawned_tasks, collected_index)
+            if list_has(body_parts, collected_name):
+              set consumed_tasks = sico.list.append(consumed_tasks, collected_name)
+            end if
+            set collected_index = add(collected_index, U64.literal(1))
+          end while
+        end if
+
+        let spawn_index = compiler_parser.find(body_parts, "spawn")
+        if U64.less_than(spawn_index, sico.list.length(body_parts)):
+          if U64.equal(task_depth, U64.literal(0)):
+            return "E5104"
+          end if
+          if sico.text.starts_with(body_line, "return "):
+            return "E5102"
+          end if
+          if sico.text.starts_with(body_line, "let "):
+            set spawned_tasks = sico.list.append(spawned_tasks, compiler_parser.at(body_parts, U64.literal(1)))
+          end if
+        else:
+          if sico.text.starts_with(body_line, "let "):
+            if U64.equal(sico.list.length(body_parts), U64.literal(3)):
+              let future_callee = compiler_parser.at(body_parts, U64.literal(2))
+              if list_has(async_function_names, future_callee):
+                set future_names = sico.list.append(future_names, compiler_parser.at(body_parts, U64.literal(1)))
+              end if
+            end if
+          end if
+        end if
+
+        if same(body_line, "task group:"):
+          set task_depth = add(task_depth, U64.literal(1))
+          if U64.less_than(U64.literal(64), task_depth):
+            return "E5105"
+          end if
+        end if
+        if same(body_line, "end task"):
+          set task_depth = sub(task_depth, U64.literal(1))
+        end if
+
+        let next_index = compiler_parser.find(body_parts, "next")
+        if U64.less_than(U64.literal(0), next_index):
+          if U64.less_than(next_index, sico.list.length(body_parts)):
+            let next_receiver = compiler_parser.at(body_parts, sub(next_index, U64.literal(1)))
+            if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, next_receiver), "Stream"):
+              if U64.equal(await_index, sico.list.length(body_parts)):
+                return "E5202"
+              end if
+            end if
+          end if
+        end if
+        let collect_index = compiler_parser.find(body_parts, "collect")
+        if U64.less_than(U64.literal(0), collect_index):
+          if U64.less_than(collect_index, sico.list.length(body_parts)):
+            let collect_receiver = compiler_parser.at(body_parts, sub(collect_index, U64.literal(1)))
+            if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, collect_receiver), "Stream"):
+              if U64.equal(compiler_parser.find(body_parts, "limit"), sico.list.length(body_parts)):
+                return "E5201"
+              end if
+            end if
+          end if
+        end if
+
+        if sico.text.starts_with(body_line, "return "):
+          if I64.equal(declared_capability_none, I64.literal(1)):
+            if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
+              return "E4001"
+            end if
+          end if
+          if I64.equal(declared_effect_none, I64.literal(1)):
+            if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
+              return "E4002"
+            end if
+          end if
+          if U64.less_than(compiler_parser.find(body_parts, "call"), sico.list.length(body_parts)):
+            if same(active_return, "Result"):
+              return "E6002"
+            end if
+          end if
+          let commit_index = compiler_parser.find(body_parts, "commit")
+          if U64.less_than(commit_index, sico.list.length(body_parts)):
+            if missing_two_arguments(body_parts, commit_index):
+              return "E7001"
+            end if
+          end if
+          if same(compiler_parser.at(body_parts, U64.literal(1)), "Model"):
+            if same(word_after(body_parts, "text"), "loaded"):
+              if same(word_after(body_parts, "revision"), "model"):
+                if I64.equal(revision_guard, I64.literal(0)):
+                  return "E7002"
+                end if
+              end if
+            end if
+          end if
+        end if
+        if sico.text.starts_with(body_line, "if "):
+          if U64.less_than(U64.literal(1), owner_count(body_parts, "revision")):
+            set revision_guard = I64.literal(1)
+          end if
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "return "):
+        if U64.less_than(compiler_parser.find(body_parts, "map_error"), sico.list.length(body_parts)):
+          set pending_error_map = map_get(function_names, function_result_errors, compiler_parser.at(body_parts, U64.literal(1)))
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "match "):
+        set match_active = I64.literal(0)
+        set match_is_error_map = I64.literal(0)
+        set match_enum_one = ""
+        set match_enum_two = ""
+        set match_wildcard = I64.literal(0)
+        set match_cases = sico.text.split_lines("")
+        if U64.less_than(U64.literal(0), sico.text.length(pending_error_map)):
+          set match_enum_one = pending_error_map
+          set match_is_error_map = I64.literal(1)
+          set pending_error_map = ""
+        else:
+          set match_enum_one = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, compiler_parser.at(body_parts, U64.literal(1)))
+          set match_enum_two = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, compiler_parser.at(body_parts, U64.literal(2)))
+        end if
+        if list_has(enum_names, match_enum_one):
+          set match_active = I64.literal(1)
+        end if
+      end if
+
+      if I64.equal(match_active, I64.literal(1)):
+        if sico.text.starts_with(body_line, "case "):
+          if same(compiler_parser.at(body_parts, U64.literal(1)), "else"):
+            set match_wildcard = I64.literal(1)
+          else:
+            if list_has(match_cases, body_line):
+              return "E3003"
+            end if
+            set match_cases = sico.list.append(match_cases, body_line)
+          end if
+        end if
+        if same(body_line, "end match"):
+          let covered = sico.list.length(match_cases)
+          let variants = owner_count(variant_owners, match_enum_one)
+          if I64.equal(match_is_error_map, I64.literal(1)):
+            if U64.less_than(covered, variants):
+              if I64.equal(match_wildcard, I64.literal(1)):
+                return "E3103"
+              end if
+              return "E3102"
+            end if
+          else:
+            if I64.equal(match_wildcard, I64.literal(1)):
+              if U64.less_than(U64.literal(0), sico.text.length(match_enum_two)):
+                return "E3002"
+              end if
+              if U64.less_than(covered, variants):
+                return "E3002"
+              end if
+            else:
+              if U64.equal(sico.text.length(match_enum_two), U64.literal(0)):
+                if U64.less_than(covered, variants):
+                  return "E3001"
+                end if
+              end if
+            end if
+          end if
+          set match_active = I64.literal(0)
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "let "):
+        let try_index = compiler_parser.find(body_parts, "try")
+        if U64.less_than(try_index, sico.list.length(body_parts)):
+          let try_callee = compiler_parser.at(body_parts, add(try_index, U64.literal(1)))
+          let try_source_error = map_get(function_names, function_result_errors, try_callee)
+          if U64.less_than(U64.literal(0), sico.text.length(try_source_error)):
+            if U64.less_than(U64.literal(0), sico.text.length(active_result_error)):
+              if different(try_source_error, active_result_error):
+                return "E3101"
+              end if
+            end if
+          end if
+        end if
+      end if
+
+      if U64.equal(sico.list.length(body_parts), U64.literal(1)):
+        let statement_error = map_get(function_names, function_result_errors, compiler_parser.at(body_parts, U64.literal(0)))
+        if U64.less_than(U64.literal(0), sico.text.length(statement_error)):
+          return "E3104"
+        end if
+      end if
+
       if sico.text.starts_with(body_line, "return "):
         if same(active_return, "Float64"):
           let value = compiler_parser.at(body_parts, U64.literal(1))

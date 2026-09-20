@@ -1,6 +1,6 @@
-//! M22 S2: the Sico-written checker runs end-to-end. STEP-0242 reuses the
-//! integrated lossless lexer and closes the frozen corpus's exact 116/99
-//! lexical accept/refuse partition without pretending semantic parity.
+//! M22 S2: the Sico-written checker runs end-to-end. STEP-0245 closes the
+//! declared identity-level diagnostic subset on all 215 frozen sources while
+//! keeping full rendered Rust diagnostics outside the claim.
 
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
@@ -59,13 +59,18 @@ fn compile_checker() -> Vec<u8> {
 }
 
 fn run_checker(prepared: &PreparedProgram, stdin: &[u8]) -> RunOutcome {
+    let limits = RunnerLimits {
+        fuel: 5_000_000_000,
+        timeout: std::time::Duration::from_secs(30),
+        ..RunnerLimits::default()
+    };
     prepared
         .run(
             &ScriptInput {
                 stdin: stdin.to_vec(),
                 ..ScriptInput::default()
             },
-            &RunnerLimits::default(),
+            &limits,
             &CancelToken::new(),
         )
         .expect("input bounds hold")
@@ -109,7 +114,7 @@ fn sico_checker_catches_missing_colon_where_rust_refuses() {
 }
 
 #[test]
-fn sico_checker_matches_the_supported_frozen_diagnostic_partition() {
+fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(repository.join("selfhost/corpus-v0.json")).unwrap())
@@ -161,7 +166,13 @@ fn sico_checker_matches_the_supported_frozen_diagnostic_partition() {
                     "{path}"
                 );
             }
-            Some(code @ ("E2001" | "E2002" | "E2010" | "E2011" | "E2020")) => {
+            Some(
+                code @ ("E2001" | "E2002" | "E2010" | "E2011" | "E2020" | "E3001" | "E3002"
+                | "E3003" | "E3101" | "E3102" | "E3103" | "E3104" | "E4001" | "E4002"
+                | "E5001" | "E5002" | "E5003" | "E5101" | "E5102" | "E5103" | "E5104"
+                | "E5105" | "E5201" | "E5202" | "E6001" | "E6002" | "E7001" | "E7002"
+                | "E8010"),
+            ) => {
                 semantic += 1;
                 assert_eq!(
                     outcome,
@@ -189,7 +200,7 @@ fn sico_checker_matches_the_supported_frozen_diagnostic_partition() {
         }
     }
 
-    assert_eq!((lexical, semantic, accepted, unsupported), (116, 9, 65, 25));
+    assert_eq!((lexical, semantic, accepted, unsupported), (116, 34, 65, 0));
 }
 
 #[test]
@@ -300,6 +311,151 @@ fn sico_checker_matches_frozen_e2xxx_semantic_identities() {
             "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico",
             "E2020",
         ),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (path, code) in cases {
+        let source = std::fs::read(repository.join(path)).unwrap();
+        assert_eq!(
+            run_checker(&prepared, &source),
+            RunOutcome::Domain {
+                code: "invalid-input".to_owned(),
+                message: code.to_owned(),
+            },
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn sico_checker_matches_frozen_e3xxx_match_and_result_identities() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = [
+        (
+            "syntax-candidates/b/exhaustive-match/invalid/missing-variant.sico",
+            "E3001",
+        ),
+        (
+            "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+            "E3002",
+        ),
+        (
+            "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-product.sico",
+            "E3002",
+        ),
+        (
+            "syntax-candidates/b/exhaustive-match/invalid/unreachable-branch.sico",
+            "E3003",
+        ),
+        (
+            "syntax-candidates/b/result-mapping/invalid/error-type-mismatch.sico",
+            "E3101",
+        ),
+        (
+            "syntax-candidates/b/result-mapping/invalid/incomplete-error-map.sico",
+            "E3102",
+        ),
+        (
+            "syntax-candidates/b/result-mapping/invalid/catch-all-error-map.sico",
+            "E3103",
+        ),
+        (
+            "syntax-candidates/b/result-mapping/invalid/unhandled-result.sico",
+            "E3104",
+        ),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (path, code) in cases {
+        let source = std::fs::read(repository.join(path)).unwrap();
+        assert_eq!(
+            run_checker(&prepared, &source),
+            RunOutcome::Domain {
+                code: "invalid-input".to_owned(),
+                message: code.to_owned(),
+            },
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn sico_checker_matches_remaining_frozen_semantic_and_module_identities() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = [
+        (
+            "syntax-candidates/b/effects-capabilities/invalid/undeclared-capability.sico",
+            "E4001",
+        ),
+        (
+            "syntax-candidates/b/effects-capabilities/invalid/undeclared-effect.sico",
+            "E4002",
+        ),
+        (
+            "syntax-candidates/b/affine-resources/invalid/use-after-move.sico",
+            "E5001",
+        ),
+        (
+            "syntax-candidates/b/affine-resources/invalid/use-after-close.sico",
+            "E5002",
+        ),
+        (
+            "syntax-candidates/b/affine-resources/invalid/borrow-across-await.sico",
+            "E5003",
+        ),
+        (
+            "syntax-candidates/b/future-task/invalid/await-twice.sico",
+            "E5101",
+        ),
+        (
+            "syntax-candidates/b/future-task/invalid/task-escapes-scope.sico",
+            "E5102",
+        ),
+        (
+            "syntax-candidates/b/future-task/invalid/uncollected-task.sico",
+            "E5103",
+        ),
+        (
+            "syntax-candidates/b/future-task/invalid/detached-spawn.sico",
+            "E5104",
+        ),
+        (
+            "syntax-candidates/b/future-task/invalid/scope-nesting-limit.sico",
+            "E5105",
+        ),
+        (
+            "syntax-candidates/b/stream/invalid/unbounded-collect.sico",
+            "E5201",
+        ),
+        (
+            "syntax-candidates/b/stream/invalid/missing-await.sico",
+            "E5202",
+        ),
+        (
+            "syntax-candidates/b/component-call/invalid/version-as-type.sico",
+            "E6001",
+        ),
+        (
+            "syntax-candidates/b/component-call/invalid/trap-as-domain-error.sico",
+            "E6002",
+        ),
+        (
+            "syntax-candidates/b/revision/invalid/missing-commit-revision.sico",
+            "E7001",
+        ),
+        (
+            "syntax-candidates/b/revision/invalid/unchecked-stale-result.sico",
+            "E7002",
+        ),
+        ("tests/end-to-end/modules-report/math_util.sico", "E8010"),
     ];
     let component = compile_checker();
     let runner = Runner::new().expect("runner builds");
