@@ -1,13 +1,14 @@
-//! M22 S2 (STEP-0180): the Sico-written checker runs end-to-end and is
-//! differentially compared against `sico check`. The simple well-formed
-//! program matches (`check ok` both sides); the missing-colon negative case
-//! is the honest coverage gap the Sico checker does not yet catch.
+//! M22 S2: the Sico-written checker runs end-to-end. STEP-0242 reuses the
+//! integrated lossless lexer and closes the frozen corpus's exact 116/99
+//! lexical accept/refuse partition without pretending semantic parity.
 
 use sico_runner::{
-    CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
+    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
+    ScriptInput,
 };
 
 const CHECKER_SOURCE: &str = include_str!("../../../selfhost/checker.sico");
+const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
 const OK_SOURCE: &str = "function main() returns Int:\n  return 42\nend function\n";
 
 fn compile_checker() -> Vec<u8> {
@@ -22,6 +23,7 @@ fn compile_checker() -> Vec<u8> {
     let source_path = directory.join("checker.sico");
     let component_path = directory.join("checker.component.wasm");
     std::fs::write(&source_path, CHECKER_SOURCE).unwrap();
+    std::fs::write(directory.join("compiler_lexer.sico"), COMPILER_LEXER_SOURCE).unwrap();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let exit = sico_cli::run(
@@ -44,11 +46,7 @@ fn compile_checker() -> Vec<u8> {
     component
 }
 
-fn run_checker(component: &[u8], stdin: &[u8]) -> RunOutcome {
-    let runner = Runner::new().expect("runner builds");
-    let prepared = runner
-        .prepare_program_with_net(component, &FsGrants::default(), &NetGrants::default())
-        .expect("checker component links");
+fn run_checker(prepared: &PreparedProgram, stdin: &[u8]) -> RunOutcome {
     prepared
         .run(
             &ScriptInput {
@@ -64,7 +62,11 @@ fn run_checker(component: &[u8], stdin: &[u8]) -> RunOutcome {
 #[test]
 fn sico_checker_matches_rust_on_well_formed_program() {
     let component = compile_checker();
-    match run_checker(&component, OK_SOURCE.as_bytes()) {
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+    match run_checker(&prepared, OK_SOURCE.as_bytes()) {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
             assert!(
@@ -83,8 +85,12 @@ fn sico_checker_catches_missing_colon_where_rust_refuses() {
     // header (the declaration colon-shape check via `sico.text.ends_with`),
     // matching the Rust checker's refusal on the same input.
     let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
     let bad = b"function main() returns Int\n  return 42\nend function\n";
-    match run_checker(&component, bad) {
+    match run_checker(&prepared, bad) {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0);
             let text = String::from_utf8_lossy(&output.stdout);
@@ -96,4 +102,66 @@ fn sico_checker_catches_missing_colon_where_rust_refuses() {
         }
         other => panic!("expected guest output, got {other:?}"),
     }
+}
+
+#[test]
+fn sico_checker_matches_the_frozen_lexical_partition() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(repository.join("selfhost/corpus-v0.json")).unwrap())
+            .unwrap();
+    let entries = manifest["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 215);
+
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+    let limits = RunnerLimits {
+        fuel: 5_000_000_000,
+        timeout: std::time::Duration::from_secs(30),
+        ..RunnerLimits::default()
+    };
+    let mut lexical = 0;
+    let mut non_lexical = 0;
+
+    for entry in entries {
+        let path = entry["path"].as_str().unwrap();
+        let expected_lexical = entry["diagnostic_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|id| id == "LEXICAL");
+        let source = std::fs::read(repository.join(path)).unwrap();
+        let outcome = prepared
+            .run(
+                &ScriptInput {
+                    stdin: source,
+                    ..ScriptInput::default()
+                },
+                &limits,
+                &CancelToken::new(),
+            )
+            .expect("frozen source fits runner input bounds");
+        if expected_lexical {
+            lexical += 1;
+            assert_eq!(
+                outcome,
+                RunOutcome::Domain {
+                    code: "invalid-input".to_owned(),
+                    message: "LEXICAL".to_owned(),
+                },
+                "{path}"
+            );
+        } else {
+            non_lexical += 1;
+            assert!(
+                matches!(outcome, RunOutcome::Output(_)),
+                "non-lexical source must not be classified as lexical: {path}: {outcome:?}"
+            );
+        }
+    }
+
+    assert_eq!((lexical, non_lexical), (116, 99));
 }

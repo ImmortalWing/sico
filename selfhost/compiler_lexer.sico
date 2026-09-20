@@ -35,6 +35,13 @@ function ascii_letter(b: I64) returns Bool:
   return I64.less_than(b, I64.literal(123))
 end function
 
+function ascii_digit(b: I64) returns Bool:
+  if I64.less_than(b, I64.literal(48)):
+    return false
+  end if
+  return I64.less_than(b, I64.literal(58))
+end function
+
 function ident_start(b: I64) returns Bool:
   if I64.equal(b, I64.literal(95)):
     return true
@@ -46,10 +53,7 @@ function ident_continue(b: I64) returns Bool:
   if ident_start(b):
     return true
   end if
-  if I64.less_than(b, I64.literal(48)):
-    return false
-  end if
-  return I64.less_than(b, I64.literal(58))
+  return ascii_digit(b)
 end function
 
 function word_kind(word: Text) returns Text:
@@ -344,88 +348,115 @@ function append_token(out: List[Text], kind: Text, start: U64, finish: U64, src:
   end match
 end function
 
+function token_finish(src: Bytes, start: U64, size: U64) returns U64:
+  let next_index = add(start, U64.literal(1))
+  let b = sico.bytes.at(src, start, I64.literal(-1))
+  let next = sico.bytes.at(src, next_index, I64.literal(-1))
+  if I64.equal(b, I64.literal(32)):
+    return scan_space(src, start, size)
+  end if
+  if I64.equal(b, I64.literal(9)):
+    return scan_space(src, start, size)
+  end if
+  if I64.equal(b, I64.literal(13)):
+    return add(start, U64.literal(2))
+  end if
+  if I64.equal(b, I64.literal(47)):
+    if I64.equal(next, I64.literal(47)):
+      return scan_comment(src, start, size)
+    end if
+  end if
+  if ident_start(b):
+    return scan_ident(src, start, size)
+  end if
+  if ascii_digit(b):
+    return scan_integer(src, start, size)
+  end if
+  if I64.equal(b, I64.literal(34)):
+    return scan_string(src, start, size)
+  end if
+  if I64.equal(b, I64.literal(61)):
+    if I64.equal(next, I64.literal(61)):
+      return add(start, U64.literal(2))
+    end if
+  end if
+  if I64.equal(b, I64.literal(60)):
+    if I64.equal(next, I64.literal(61)):
+      return add(start, U64.literal(2))
+    end if
+  end if
+  return next_index
+end function
+
+function token_kind(src: Bytes, start: U64, finish: U64) returns Text:
+  let b = sico.bytes.at(src, start, I64.literal(-1))
+  let next = sico.bytes.at(src, add(start, U64.literal(1)), I64.literal(-1))
+  if I64.equal(b, I64.literal(32)):
+    return "Whitespace"
+  end if
+  if I64.equal(b, I64.literal(9)):
+    return "Whitespace"
+  end if
+  if I64.equal(b, I64.literal(10)):
+    return "Newline"
+  end if
+  if I64.equal(b, I64.literal(13)):
+    return "Newline"
+  end if
+  if I64.equal(b, I64.literal(47)):
+    if I64.equal(next, I64.literal(47)):
+      return "LineComment"
+    end if
+  end if
+  if ident_start(b):
+    match sico.bytes.slice(src, start, sub(finish, start)):
+      case ok(word_bytes):
+        return word_kind(sico.bytes.utf8_decode(word_bytes))
+      case error(_):
+        return "Error"
+    end match
+  end if
+  if ascii_digit(b):
+    return "Integer"
+  end if
+  if I64.equal(b, I64.literal(34)):
+    return "String"
+  end if
+  if I64.equal(b, I64.literal(61)):
+    if I64.equal(next, I64.literal(61)):
+      return "EqualEqual"
+    end if
+    return "Equal"
+  end if
+  if I64.equal(b, I64.literal(60)):
+    if I64.equal(next, I64.literal(61)):
+      return "LessEqual"
+    end if
+  end if
+  return punctuation_kind(b)
+end function
+
 function lex(src: Bytes) returns Text:
   let size = sico.bytes.length(src)
   let cursor = U64.literal(0)
   let out = sico.text.split_lines("")
   while U64.less_than(cursor, size):
-    let start = cursor
-    let finish = add(cursor, U64.literal(1))
-    let kind = "Error"
-    let b = sico.bytes.at(src, cursor, I64.literal(-1))
-    let next = sico.bytes.at(src, finish, I64.literal(-1))
-    if I64.equal(b, I64.literal(32)):
-      set kind = "Whitespace"
-      set finish = scan_space(src, cursor, size)
-    else:
-      if I64.equal(b, I64.literal(9)):
-        set kind = "Whitespace"
-        set finish = scan_space(src, cursor, size)
-      else:
-        if I64.equal(b, I64.literal(10)):
-          set kind = "Newline"
-        else:
-          if I64.equal(b, I64.literal(13)):
-            set kind = "Newline"
-            set finish = add(cursor, U64.literal(2))
-          else:
-            if I64.equal(b, I64.literal(47)):
-              if I64.equal(next, I64.literal(47)):
-                set kind = "LineComment"
-                set finish = scan_comment(src, cursor, size)
-              end if
-            else:
-              if ident_start(b):
-                set finish = scan_ident(src, cursor, size)
-                match sico.bytes.slice(src, cursor, sub(finish, cursor)):
-                  case ok(word_bytes):
-                    set kind = word_kind(sico.bytes.utf8_decode(word_bytes))
-                  case error(_):
-                    set kind = "Error"
-                end match
-              else:
-                if I64.less_than(b, I64.literal(48)):
-                  set kind = kind
-                else:
-                  if I64.less_than(b, I64.literal(58)):
-                    set kind = "Integer"
-                    set finish = scan_integer(src, cursor, size)
-                  end if
-                end if
-                if same(kind, "Integer"):
-                  set kind = kind
-                else:
-                  if I64.equal(b, I64.literal(34)):
-                    set kind = "String"
-                    set finish = scan_string(src, cursor, size)
-                  else:
-                    if I64.equal(b, I64.literal(61)):
-                      if I64.equal(next, I64.literal(61)):
-                        set kind = "EqualEqual"
-                        set finish = add(cursor, U64.literal(2))
-                      else:
-                        set kind = "Equal"
-                      end if
-                    else:
-                      if I64.equal(b, I64.literal(60)):
-                        if I64.equal(next, I64.literal(61)):
-                          set kind = "LessEqual"
-                          set finish = add(cursor, U64.literal(2))
-                        end if
-                      else:
-                        set kind = punctuation_kind(b)
-                      end if
-                    end if
-                  end if
-                end if
-              end if
-            end if
-          end if
-        end if
-      end if
-    end if
-    set out = append_token(out, kind, start, finish, src)
+    let finish = token_finish(src, cursor, size)
+    set out = append_token(out, token_kind(src, cursor, finish), cursor, finish, src)
     set cursor = finish
   end while
   return sico.text.join(append_token(out, "Eof", size, size, src), "")
+end function
+
+function has_error(src: Bytes) returns Bool:
+  let size = sico.bytes.length(src)
+  let cursor = U64.literal(0)
+  while U64.less_than(cursor, size):
+    let finish = token_finish(src, cursor, size)
+    if same(token_kind(src, cursor, finish), "Error"):
+      return true
+    end if
+    set cursor = finish
+  end while
+  return false
 end function

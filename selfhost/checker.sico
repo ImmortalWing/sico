@@ -21,6 +21,8 @@ record ScriptError:
   field message: Text
 end record
 
+use compiler_lexer.has_error
+
 function starts_with_any(line: Text, prefixes: List[Text]) returns Bool:
   let count = sico.list.length(prefixes)
   let index = U64.literal(0)
@@ -89,6 +91,9 @@ function check_source(src: Text) returns Text:
 end function
 
 function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  if compiler_lexer.has_error(input.stdin):
+    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "LEXICAL"))
+  end if
   let text = sico.bytes.utf8_decode(input.stdin)
   let issues = check_source(text)
   if U64.equal(sico.text.length(issues), U64.literal(0)):
