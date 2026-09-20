@@ -66,14 +66,13 @@ fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
     let component = compile_guest();
     let runner = Runner::new().expect("runner builds");
     let prepared = runner
-        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .prepare_program_with_net(component, &FsGrants::default(), &NetGrants::default())
         .expect("compiler component links");
     prepared
         .run(
             &ScriptInput {
                 arguments,
                 stdin: input.as_bytes().to_vec(),
-                ..ScriptInput::default()
             },
             &RunnerLimits {
                 fuel: 5_000_000_000,
@@ -99,7 +98,10 @@ fn decode_hex(text: &[u8]) -> Vec<u8> {
         }
     }
     assert_eq!(text.len() % 2, 0);
-    text.chunks_exact(2)
+    let (pairs, remainder) = text.as_chunks::<2>();
+    assert!(remainder.is_empty());
+    pairs
+        .iter()
         .map(|pair| (nibble(pair[0]) << 4) | nibble(pair[1]))
         .collect()
 }

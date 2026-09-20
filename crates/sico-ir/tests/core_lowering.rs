@@ -157,6 +157,520 @@ fn fixed_width_source_lowers_to_verified_typed_ir() {
 }
 
 #[test]
+fn computed_checked_result_match_payloads_lower_to_verified_ir() {
+    let text = "function add_or_zero(left: I64, right: I64) returns I64:\n  match I64.checked_add(left, right):\n    case ok(value):\n      return value\n    case error(reason):\n      return I64.literal(0)\n  end match\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "checked-match.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    let function = &module.functions[0];
+    assert_eq!(function.blocks.len(), 3);
+    assert_eq!(function.locals.len(), 1);
+    assert!(matches!(
+        function.blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::CheckedAdd { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { local: 0, .. },
+                ..
+            }
+        ]
+    ));
+    for arm in &function.blocks[1..] {
+        assert!(matches!(
+            arm.instructions
+                .first()
+                .map(|instruction| &instruction.operation),
+            Some(Operation::ReadLocal { local: 0 })
+        ));
+        assert!(matches!(
+            arm.instructions
+                .get(1)
+                .map(|instruction| &instruction.operation),
+            Some(Operation::Project { .. })
+        ));
+    }
+}
+
+#[test]
+fn straight_line_fixed_let_bindings_lower_to_ssa_values() {
+    let text = "function constants() returns U64:\n  let signed = I64.literal(7)\n  let result = U64.literal(9)\n  return result\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "fixed-lets.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    let block = &module.functions[0].blocks[0];
+    assert!(matches!(
+        block.instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(7),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstU64(9),
+                ..
+            }
+        ]
+    ));
+    assert_eq!(
+        block.terminator,
+        Terminator::Return(Some(sico_ir::ValueId(1)))
+    );
+}
+
+#[test]
+fn straight_line_let_bindings_feed_fixed_and_checked_operations() {
+    let text = "function mask() returns I64:\n  let left = I64.literal(7)\n  let right = I64.literal(3)\n  return I64.bit_and(left, right)\nend function\n\nfunction checked() returns Result[U64, NumericError]:\n  let left = U64.literal(8)\n  return U64.checked_div(left, U64.literal(2))\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "let-operands.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    assert!(matches!(
+        module.functions[0].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(7),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(3),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::BitAnd { .. },
+                ..
+            }
+        ]
+    ));
+    assert!(matches!(
+        module.functions[1].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstU64(8),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstU64(2),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::CheckedDiv { .. },
+                ..
+            }
+        ]
+    ));
+}
+
+#[test]
+fn straight_line_let_bindings_feed_user_calls() {
+    let text = "function pick(left: I64, right: I64) returns I64:\n  return left\nend function\n\nfunction main() returns I64:\n  let left = I64.literal(5)\n  let right = I64.literal(6)\n  return pick(right, left)\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "let-call.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    let instructions = &module.functions[1].blocks[0].instructions;
+    assert!(matches!(
+        instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(5),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(6),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::Call { arguments, .. },
+                ..
+            }
+        ] if arguments == &[sico_ir::ValueId(1), sico_ir::ValueId(0)]
+    ));
+}
+
+#[test]
+fn straight_line_alias_lets_reuse_existing_ssa_values() {
+    let text = "function alias(value: I64) returns I64:\n  let copy = value\n  return copy\nend function\n\nfunction chain() returns I64:\n  let base = I64.literal(6)\n  let copy = base\n  return I64.bit_or(copy, I64.literal(1))\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "alias-lets.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    assert!(module.functions[0].blocks[0].instructions.is_empty());
+    assert_eq!(
+        module.functions[0].blocks[0].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(0)))
+    );
+    assert!(matches!(
+        module.functions[1].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(6),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(1),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::BitOr { .. },
+                ..
+            }
+        ]
+    ));
+}
+
+#[test]
+fn straight_line_let_bindings_lower_operations_to_ssa_values() {
+    let op_text = "function mask(a: I64, b: I64) returns I64:\n  let masked = I64.bit_and(a, b)\n  return masked\nend function\n";
+    let op_source = SourceFile::from_text(SourceId::new(0), "let-op.sico", op_text).unwrap();
+    let op_module = lower_core(&op_source).unwrap();
+    assert!(verify(&op_module).is_empty());
+    assert!(matches!(
+        op_module.functions[0].blocks[0].instructions.as_slice(),
+        [sico_ir::Instruction {
+            operation: Operation::BitAnd { .. },
+            ..
+        }]
+    ));
+    assert_eq!(
+        op_module.functions[0].blocks[0].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(2)))
+    );
+
+    let checked_text = "function kept(a: I64, b: I64) returns Result[I64, NumericError]:\n  let added = I64.checked_add(a, b)\n  return added\nend function\n";
+    let checked_source =
+        SourceFile::from_text(SourceId::new(0), "let-checked.sico", checked_text).unwrap();
+    let checked_module = lower_core(&checked_source).unwrap();
+    assert!(verify(&checked_module).is_empty());
+    assert!(matches!(
+        checked_module.functions[0].blocks[0]
+            .instructions
+            .as_slice(),
+        [sico_ir::Instruction {
+            operation: Operation::CheckedAdd { .. },
+            ..
+        }]
+    ));
+
+    let mismatch_text = "function bad(a: I64, b: I64) returns I64:\n  let added = I64.checked_add(a, b)\n  return added\nend function\n";
+    let mismatch_source =
+        SourceFile::from_text(SourceId::new(0), "let-mismatch.sico", mismatch_text).unwrap();
+    assert!(lower_core(&mismatch_source).is_err());
+}
+
+#[test]
+fn straight_line_let_bindings_lower_calls_to_ssa_values() {
+    let call_text = "function add(a: I64, b: I64) returns I64:\n  return a\nend function\n\nfunction main() returns I64:\n  let total = add(I64.literal(3), I64.literal(4))\n  return total\nend function\n";
+    let call_source =
+        SourceFile::from_text(SourceId::new(0), "let-call-rhs.sico", call_text).unwrap();
+    let call_module = lower_core(&call_source).unwrap();
+    assert!(verify(&call_module).is_empty());
+    assert!(matches!(
+        call_module.functions[1].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(3),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(4),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::Call { arguments, .. },
+                ..
+            }
+        ] if arguments == &[sico_ir::ValueId(0), sico_ir::ValueId(1)]
+    ));
+    assert_eq!(
+        call_module.functions[1].blocks[0].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(2)))
+    );
+
+    let let_args_text = "function pick(left: I64, right: I64) returns I64:\n  return left\nend function\n\nfunction main(v: I64) returns I64:\n  let other = I64.literal(9)\n  let got = pick(v, other)\n  return got\nend function\n";
+    let let_args_source =
+        SourceFile::from_text(SourceId::new(0), "let-call-args.sico", let_args_text).unwrap();
+    let let_args_module = lower_core(&let_args_source).unwrap();
+    assert!(verify(&let_args_module).is_empty());
+    assert!(matches!(
+        let_args_module.functions[1].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(9),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::Call { arguments, .. },
+                ..
+            }
+        ] if arguments == &[sico_ir::ValueId(0), sico_ir::ValueId(1)]
+    ));
+
+    let result_call_text = "function make(a: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, I64.literal(1))\nend function\n\nfunction pass(a: I64) returns Result[I64, NumericError]:\n  let got = make(a)\n  return got\nend function\n";
+    let result_call_source =
+        SourceFile::from_text(SourceId::new(0), "let-result-call.sico", result_call_text).unwrap();
+    let result_call_module = lower_core(&result_call_source).unwrap();
+    assert!(verify(&result_call_module).is_empty());
+    assert!(matches!(
+        result_call_module.functions[1].blocks[0]
+            .instructions
+            .as_slice(),
+        [sico_ir::Instruction {
+            operation: Operation::Call { .. },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn straight_line_set_reassignment_lowers_to_local_cells() {
+    let op_text = "function bump(a: I64, b: I64) returns I64:\n  let total = I64.literal(0)\n  set total = I64.bit_or(a, b)\n  return total\nend function\n";
+    let op_source = SourceFile::from_text(SourceId::new(0), "set-op.sico", op_text).unwrap();
+    let op_module = lower_core(&op_source).unwrap();
+    assert!(verify(&op_module).is_empty());
+    let block = &op_module.functions[0].blocks[0];
+    assert_eq!(op_module.functions[0].blocks.len(), 1);
+    assert_eq!(op_module.functions[0].locals.len(), 1);
+    assert_eq!(op_module.functions[0].locals[0].name, "total");
+    assert_eq!(op_module.functions[0].locals[0].ty, sico_ir::Type::I64);
+    assert!(matches!(
+        block.instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::ConstI64(0),
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { local: 0, .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::BitOr { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { local: 0, .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ReadLocal { local: 0, .. },
+                ..
+            }
+        ]
+    ));
+    assert_eq!(
+        block.terminator,
+        Terminator::Return(Some(sico_ir::ValueId(6)))
+    );
+
+    let cells_text = "function keep(a: I64) returns I64:\n  let copy = a\n  set copy = I64.bit_xor(copy, a)\n  let flag = copy\n  return flag\nend function\n";
+    let cells_source =
+        SourceFile::from_text(SourceId::new(0), "set-cells.sico", cells_text).unwrap();
+    let cells_module = lower_core(&cells_source).unwrap();
+    assert!(verify(&cells_module).is_empty());
+    assert_eq!(cells_module.functions[0].locals.len(), 2);
+    assert_eq!(cells_module.functions[0].locals[0].name, "copy");
+    assert_eq!(cells_module.functions[0].locals[1].name, "flag");
+    assert!(matches!(
+        cells_module.functions[0].blocks[0].instructions.as_slice(),
+        [
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ReadLocal { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::BitXor { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ReadLocal { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::WriteLocal { .. },
+                ..
+            },
+            sico_ir::Instruction {
+                operation: Operation::ReadLocal { .. },
+                ..
+            }
+        ]
+    ));
+
+    let result_text = "function kept(a: I64, b: I64) returns Result[I64, NumericError]:\n  let saved = I64.checked_add(a, b)\n  set saved = I64.checked_sub(b, a)\n  return saved\nend function\n";
+    let result_source =
+        SourceFile::from_text(SourceId::new(0), "set-result.sico", result_text).unwrap();
+    let result_module = lower_core(&result_source).unwrap();
+    assert!(verify(&result_module).is_empty());
+    assert_eq!(
+        result_module.functions[0].locals[0].ty,
+        sico_ir::Type::Result {
+            ok: Box::new(sico_ir::Type::I64),
+            error: Box::new(sico_ir::Type::Named("NumericError".into())),
+        }
+    );
+
+    let missing_text = "function bump() returns I64:\n  set total = I64.literal(1)\n  return total\nend function\n";
+    let missing_source =
+        SourceFile::from_text(SourceId::new(0), "set-missing.sico", missing_text).unwrap();
+    assert!(lower_core(&missing_source).is_err());
+
+    let mismatch_text = "function bump() returns I64:\n  let x = I64.literal(3)\n  set x = true\n  return x\nend function\n";
+    let mismatch_source =
+        SourceFile::from_text(SourceId::new(0), "set-mismatch.sico", mismatch_text).unwrap();
+    assert!(lower_core(&mismatch_source).is_err());
+}
+
+#[test]
+fn general_cfg_if_regions_lower_to_branch_terminators() {
+    let open_text = "function pick(a: I64, b: I64) returns I64:\n  if I64.equal(a, b):\n    return a\n  end if\n  return b\nend function\n";
+    let open_source = SourceFile::from_text(SourceId::new(0), "if-open.sico", open_text).unwrap();
+    let open_module = lower_core(&open_source).unwrap();
+    assert!(verify(&open_module).is_empty());
+    assert_eq!(open_module.functions[0].blocks.len(), 4);
+    assert!(matches!(
+        open_module.functions[0].blocks[0].terminator,
+        Terminator::Branch {
+            condition: sico_ir::ValueId(2),
+            then_block: sico_ir::BlockId(1),
+            else_block: sico_ir::BlockId(3),
+        }
+    ));
+    assert_eq!(
+        open_module.functions[0].blocks[1].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(0)))
+    );
+    assert_eq!(
+        open_module.functions[0].blocks[2].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(1)))
+    );
+    assert_eq!(
+        open_module.functions[0].blocks[3].terminator,
+        Terminator::Jump(sico_ir::BlockId(2))
+    );
+
+    let else_text = "function choose(a: I64, b: I64, flag: Bool) returns I64:\n  if flag:\n    return a\n  else:\n    return b\n  end if\nend function\n";
+    let else_source = SourceFile::from_text(SourceId::new(0), "if-else.sico", else_text).unwrap();
+    let else_module = lower_core(&else_source).unwrap();
+    assert!(verify(&else_module).is_empty());
+    assert_eq!(else_module.functions[0].blocks.len(), 4);
+    assert_eq!(
+        else_module.functions[0].blocks[1].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(0)))
+    );
+    assert_eq!(
+        else_module.functions[0].blocks[2].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(1)))
+    );
+    assert_eq!(
+        else_module.functions[0].blocks[3].terminator,
+        Terminator::Unreachable
+    );
+
+    let nested_text = "function grade(a: I64) returns I64:\n  let tag = I64.literal(0)\n  if I64.equal(a, I64.literal(0)):\n    set tag = I64.literal(1)\n  else:\n    if I64.less_than(a, I64.literal(0)):\n      set tag = I64.literal(2)\n    end if\n  end if\n  return tag\nend function\n";
+    let nested_source =
+        SourceFile::from_text(SourceId::new(0), "if-nested.sico", nested_text).unwrap();
+    let nested_module = lower_core(&nested_source).unwrap();
+    assert!(verify(&nested_module).is_empty());
+    assert_eq!(nested_module.functions[0].blocks.len(), 7);
+    let outer_else = match &nested_module.functions[0].blocks[0].terminator {
+        Terminator::Branch { else_block, .. } => else_block.0,
+        other => panic!("expected branch, got {other:?}"),
+    };
+    assert!(matches!(
+        nested_module.functions[0].blocks[outer_else as usize].terminator,
+        Terminator::Branch { .. }
+    ));
+
+    let non_bool_text = "function pick(a: I64, b: I64) returns I64:\n  if a:\n    return a\n  end if\n  return b\nend function\n";
+    let non_bool_source =
+        SourceFile::from_text(SourceId::new(0), "if-non-bool.sico", non_bool_text).unwrap();
+    assert!(lower_core(&non_bool_source).is_err());
+}
+
+#[test]
+fn general_cfg_while_loops_lower_to_header_branches_and_back_edges() {
+    let climb_text = "function climb(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n";
+    let climb_source =
+        SourceFile::from_text(SourceId::new(0), "while-climb.sico", climb_text).unwrap();
+    let climb_module = lower_core(&climb_source).unwrap();
+    assert!(verify(&climb_module).is_empty());
+    assert_eq!(climb_module.functions[0].blocks.len(), 4);
+    let climb_branch = match &climb_module.functions[0].blocks[1].terminator {
+        Terminator::Branch {
+            condition,
+            then_block,
+            else_block,
+        } => (*condition, *then_block, *else_block),
+        other => panic!("expected branch, got {other:?}"),
+    };
+    // The header block carries the condition and branches body -> after.
+    assert!(matches!(climb_branch.0, sico_ir::ValueId(4)));
+    assert_eq!(climb_branch.1, sico_ir::BlockId(2));
+    assert_eq!(climb_branch.2, sico_ir::BlockId(3));
+    // The body's last instruction is the write; the block jumps back to the
+    // header (the back edge).
+    let climb_body = &climb_module.functions[0].blocks[2];
+    assert!(matches!(
+        climb_body.instructions.last().map(|i| &i.operation),
+        Some(Operation::WriteLocal { .. })
+    ));
+    assert_eq!(climb_body.terminator, Terminator::Jump(sico_ir::BlockId(1)));
+    assert_eq!(
+        climb_module.functions[0].blocks[3].terminator,
+        Terminator::Return(Some(sico_ir::ValueId(9)))
+    );
+
+    let break_text = "function stop(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    break\n  end while\n  return x\nend function\n";
+    let break_source =
+        SourceFile::from_text(SourceId::new(0), "while-break.sico", break_text).unwrap();
+    let break_module = lower_core(&break_source).unwrap();
+    assert!(verify(&break_module).is_empty());
+    // break jumps to the after block and suppresses the body back edge.
+    assert_eq!(
+        break_module.functions[0].blocks[2].terminator,
+        Terminator::Jump(sico_ir::BlockId(3))
+    );
+
+    let nested_text = "function grid(a: I64) returns I64:\n  let x = I64.literal(0)\n  while I64.less_than(x, a):\n    let y = I64.literal(0)\n    while I64.less_than(y, a):\n      set y = I64.bit_or(y, I64.literal(1))\n    end while\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n";
+    let nested_source =
+        SourceFile::from_text(SourceId::new(0), "while-nested.sico", nested_text).unwrap();
+    let nested_module = lower_core(&nested_source).unwrap();
+    assert!(verify(&nested_module).is_empty());
+    assert_eq!(nested_module.functions[0].blocks.len(), 7);
+    assert!(matches!(
+        nested_module.functions[0].blocks[0].terminator,
+        Terminator::Jump(_)
+    ));
+    let outer_header = match &nested_module.functions[0].blocks[0].terminator {
+        Terminator::Jump(target) => target.0,
+        other => panic!("expected jump, got {other:?}"),
+    };
+    assert!(matches!(
+        nested_module.functions[0].blocks[outer_header as usize].terminator,
+        Terminator::Branch { .. }
+    ));
+
+    let stray_break_text = "function leave(a: I64) returns I64:\n  let x = I64.literal(1)\n  break\n  return x\nend function\n";
+    let stray_break_source =
+        SourceFile::from_text(SourceId::new(0), "while-stray-break.sico", stray_break_text)
+            .unwrap();
+    assert!(lower_core(&stray_break_source).is_err());
+
+    let non_bool_text = "function count(a: I64) returns I64:\n  let x = I64.literal(0)\n  while a:\n    set x = I64.bit_or(x, I64.literal(1))\n  end while\n  return x\nend function\n";
+    let non_bool_source =
+        SourceFile::from_text(SourceId::new(0), "while-non-bool.sico", non_bool_text).unwrap();
+    assert!(lower_core(&non_bool_source).is_err());
+}
+
+#[test]
 fn verifier_rejects_fixed_width_operand_and_result_mutations() {
     let source = SourceFile::from_text(
         SourceId::new(0),

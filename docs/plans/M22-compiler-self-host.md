@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0221: S1 complete, S2 NO-GO, S3/S4/S5 partial, S6 not entered. STEP-0193–0212 advance canonical typed IR; STEP-0213–0221 freeze the full source/build oracle and close formatter/lossless-lexer plus bounded frontend integration. Owner directives: 2026-09-14 「规划自举里程碑」, 2026-09-17 「完成自举」. no STEP numbers reserved beyond STEP-0221.
+> Status: entry satisfied; executable audit through STEP-0241: S1 complete, S2 NO-GO, S3/S4/S5 partial, S6 not entered. STEP-0213–0221 freeze the 215-source/build oracle and modular frontend evidence; the merged origin/dev path adds 69 hand-selected general-CFG lowering differentials through STEP-0223; STEP-0241 repairs shadowing semantics and diagnostic identity. Bounded fixtures do not substitute for the remaining corpus/codegen/bootstrap gates.
 
 ## 1. Objective
 
