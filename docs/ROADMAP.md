@@ -1,8 +1,8 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-17 (owner directive 「继续完成sico，M22-M25」: M22 S6 in progress; M23–M25 registered — language v1 batch 3, vision closure + block-game pilot, release v1.0 completion audit)
+> - updated: 2026-09-20 (STEP-0241 reconciles M22 evidence with the accepted slice definitions: partial S1–S4; S5/S6 not entered)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（block-game 待 M24）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 S6 in progress；主线 = M22 自举闭环，随后 M23→M24→M25
+> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（block-game 待 M24）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 partial S4（S5 codegen 与 S6 bootstrap 尚未进入）；主线 = M22 自举闭环，随后 M23→M24→M25
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -328,7 +328,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（in-progress; entry satisfied 2026-09-14）
 
-状态：`in-progress：S1–S5 complete（STEP-0177–0192）；S6 lowering 进行中（STEP-0193–0223 在树：parser/expression tree → Rust-identical scalar IR → 多参数 SSA → typed user calls（自递归 + 跨函数）→ 常量/定宽字面量/嵌套调用实参（递归下降）→ 定宽运算及字面量操作数 → checked 算术 Result IR → checked-Result match oracle/实现 → 直线 fixed-width let SSA/alias → let-bound operation/call RHS → 直线 mutable set 经 local cells → 通用 CFG if/else 区域（Branch 终结符/空 else 殿后/嵌套重编号）→ while/break/continue 循环（头块 Branch/回边/帧栈最近循环）。0224 拼接事故后前端已在 STEP-0213 提交基线上重建并整链重验证：累计 69 个正例经真实 runner + verifier + lower_core byte differential，燃料预算按门 4 实测登记（每通用 CFG 语句约 1M，harness 64M，S6 重测）；自举架构门禁由 ADR-0015 / STEP-0198 关闭；下一门为通用 match/case 与 for 循环；后续 STEP 不预留`
+状态：`in-progress：S1/S2/S3 partial，S4 partial（STEP-0193–0241）；S5 deterministic Component codegen 与 S6 ADR-0015 A=B=C bootstrap 尚未进入。当前 69 个正例只构成 bounded internal-fixture IR differential evidence，不替代 frozen-corpus、codegen、package 或 bootstrap gate。`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 

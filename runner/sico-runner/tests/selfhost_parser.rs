@@ -102,11 +102,19 @@ fn assert_ir_matches_rust(prepared: &PreparedProgram, source: &[u8]) {
         )
         .expect("input bounds hold");
     let RunOutcome::Output(output) = outcome else {
-        panic!("expected canonical IR output for {}, got {outcome:?}", String::from_utf8_lossy(source));
+        panic!(
+            "expected canonical IR output for {}, got {outcome:?}",
+            String::from_utf8_lossy(source)
+        );
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     let module: Module = serde_json::from_slice(&output.stdout).expect("IR JSON deserializes");
-    assert!(verify(&module).is_empty(), "self-host IR must verify for {}: {:?}", String::from_utf8_lossy(&output.stdout), output.stdout);
+    assert!(
+        verify(&module).is_empty(),
+        "self-host IR must verify for {}: {:?}",
+        String::from_utf8_lossy(&output.stdout),
+        output.stdout
+    );
     assert_eq!(
         canonical_json(&module).unwrap().as_bytes(),
         output.stdout,
@@ -365,6 +373,10 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
     assert_ir_matches_rust(
         &prepared,
         b"function logged(flag: Bool, note: Text) returns Text:\n  let seen = flag\n  set seen = false\n  let label = \"log\\n\"\n  return note\nend function\n",
+    );
+    assert_ir_matches_rust(
+        &prepared,
+        b"function shadow(x: I64) returns I64:\n  let x = I64.literal(1)\n  set x = I64.literal(2)\n  return x\nend function\n",
     );
     assert_ir_matches_rust(
         &prepared,
@@ -776,5 +788,25 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             message: "ERR:E-SH-IR-STATEMENT".to_owned(),
         },
         "statements after break in the same region must remain typed refusals"
+    );
+
+    let literal_after_let = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin: b"function literal_after_let() returns I64:\n  let x = I64.literal(1)\n  return I64.literal(2)\nend function\n"
+                    .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    assert_eq!(
+        literal_after_let,
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "ERR:E-SH-IR-STATEMENT".to_owned(),
+        },
+        "unsupported return shapes after let bindings must keep the stable diagnostic"
     );
 }

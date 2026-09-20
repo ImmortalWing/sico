@@ -2846,15 +2846,6 @@ function general_expression(words: List[Text], src: Bytes, name_idx: U64, body_f
       set ge_string_json = sico.text.concat(ge_string_json, "}}")
       return general_emission(next_value, U64.literal(1), "string", ge_string_json)
     end if
-    let ge_param_count = count_params(words, name_idx)
-    let ge_param_id = binding_parameter_index(words, name_idx, ge_first)
-    if U64.less_than(ge_param_id, ge_param_count):
-      let ge_param_kind = binding_parameter_kind(words, name_idx, ge_first)
-      if sico.text.starts_with(ge_param_kind, "ERR:"):
-        return general_emission(next_value, U64.literal(0), "", ge_param_kind)
-      end if
-      return general_emission(ge_param_id, U64.literal(0), ge_param_kind, "")
-    end if
     let ge_cell_index = general_cell_lookup(words, body_from, expr_start, ge_first)
     if U64.less_than(ge_cell_index, ge_words_len):
       let ge_cell_kind = fixed_let_binding_kind(words, body_from, expr_start, ge_first)
@@ -2880,6 +2871,15 @@ function general_expression(words: List[Text], src: Bytes, name_idx: U64, body_f
       set ge_cell_json = sico.text.concat(ge_cell_json, sico.u64.to_text(ge_cell_end))
       set ge_cell_json = sico.text.concat(ge_cell_json, "}}")
       return general_emission(next_value, U64.literal(1), ge_cell_kind, ge_cell_json)
+    end if
+    let ge_param_count = count_params(words, name_idx)
+    let ge_param_id = binding_parameter_index(words, name_idx, ge_first)
+    if U64.less_than(ge_param_id, ge_param_count):
+      let ge_param_kind = binding_parameter_kind(words, name_idx, ge_first)
+      if sico.text.starts_with(ge_param_kind, "ERR:"):
+        return general_emission(next_value, U64.literal(0), "", ge_param_kind)
+      end if
+      return general_emission(ge_param_id, U64.literal(0), ge_param_kind, "")
     end if
     return general_emission(next_value, U64.literal(0), "", "ERR:E-SH-IR-UNRESOLVED")
   end if
@@ -5190,7 +5190,7 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
                 if is_word(expression_kind, "call"):
                   let straight_call_return = I64.literal(1)
                 else:
-                  return "ERR:E-SH-IR-STATEMENTATEMENT"
+                  return "ERR:E-SH-IR-STATEMENT"
                 end if
               end if
             end if

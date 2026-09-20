@@ -152,5 +152,6 @@
 | [STEP-0128](./STEP-0128-live-model-evaluation.md) | complete | M13 | 权威 live-model 评测（DeepSeek deepseek-chat，96×30，$0.78）：实测 0.9095，ADR-0012 预算下达且达标→§13 (d) = 实测 GO（B-repair 0.833 为既定缺口）；报告 docs/reports/ai-eval-live-model-v1.md |
 | [STEP-0129](./STEP-0129-m14-inventory-profile-rfc.md) | complete (RFC-0038 accepted) | M14 | M14 盘点：check/build/run 实测矩阵（递归过 check 但 match 全 return 臂封死；无 loop 语法）、应用 profile 与出口语料冻结 RFC |
 | [STEP-0130](./STEP-0130-general-control-flow.md) | complete | M14 | 通用控制流落地：while/if-else/break/continue/set + IR cells + 通用 CFG 降级，冻结形状字节不变；端到端 3 测试 + 修复 watch bridge 抢跑 bug |
+| [STEP-0241](./STEP-0241-m22-origin-dev-quality-repair.md) | complete / partial-S4 | M22 S4 | origin/dev 质量修复：local cell 遮蔽参数与 Rust oracle 一致、稳定诊断码修复、runner 回归与 M22 阶段声明校正 |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core；STEP-0125 完成 guest-visible http@0.2.0 runner integration，STEP-0126 关闭 Linux provider parity，STEP-0127 复审发出 M12 完整 GO。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨；STEP-0128 以 DeepSeek 真实运行收口，ADR-0012 依实测基线下达预算且达标——§13 质量预算项 (d) 实测 GO，B-repair 0.833 为既定跟踪缺口。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。
