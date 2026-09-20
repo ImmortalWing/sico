@@ -2419,8 +2419,8 @@
     },
     {
       "path": "tests/end-to-end/block-solver.sico",
-      "bytes": 49212,
-      "source_sha256": "c242220192ec65227118b695f21db407a5a104c6fd95c7762b5e3146f9d9ab31",
+      "bytes": 47898,
+      "source_sha256": "08a113456719d407c470bfec16cb5bea4c3f2d373017b1cda8a13bdbf8e01829",
       "rust_format": "accepted",
       "formatted_sha256": "f29e2598638e9ffd3e638fa2e51135cd86561dd2b6b00fd971d89e9f402e804b",
       "format_idempotent": true,

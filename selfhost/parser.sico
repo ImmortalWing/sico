@@ -1,25 +1,4 @@
-record ScriptInput:
-  field arguments: List[Text]
-  field stdin: Bytes
-end record
-
-record ScriptOutput:
-  field stdout: Bytes
-  field stderr: Bytes
-  field exit_code: I64
-end record
-
-enum ScriptErrorCode:
-  case InvalidInput
-  case ResourceLimit
-  case DomainError
-  case Cancelled
-end enum
-
-record ScriptError:
-  field code: ScriptErrorCode
-  field message: Text
-end record
+module parser
 
 function is_ident_byte(b: I64) returns Bool:
   if I64.equal(b, I64.literal(95)):
@@ -47,6 +26,9 @@ function is_ident_byte(b: I64) returns Bool:
 end function
 
 function is_punct_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(43)):
+    return true
+  end if
   if I64.equal(b, I64.literal(45)):
     return true
   end if
@@ -681,10 +663,6 @@ function summarize(words: List[Text]) returns Text:
     end match
   end while
   return summary
-end function
-
-function invalid_input(message: Text) returns Result[ScriptOutput, ScriptError]:
-  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: message))
 end function
 
 function is_canonical_magnitude(w: Text) returns Bool:
@@ -2282,35 +2260,45 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   else:
     return "ERR:E-SH-IR-MATCH-SHAPE"
   end if
-  if is_word(word_at(words, literal_receiver), word_at(words, receiver)):
-    let literal_receiver_ok = I64.literal(1)
+  let fallback_parameter = binding_parameter_index(words, name_idx, word_at(words, literal_receiver))
+  let fallback_is_parameter = I64.literal(0)
+  if U64.less_than(fallback_parameter, parameter_count):
+    if U64.equal(next_index(literal_receiver, n), line_end(words, error_return)):
+      set fallback_is_parameter = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
   else:
-    return "ERR:E-SH-IR-CALL-TYPE"
-  end if
-  if is_word(word_at(words, literal_dot), "."):
-    let literal_dot_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
-  end if
-  if is_word(word_at(words, literal_name), "literal"):
-    let literal_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
-  end if
-  if is_word(word_at(words, literal_open), "("):
-    let literal_open_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
-  end if
-  if is_word(word_at(words, zero), "0"):
-    let zero_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
-  end if
-  if is_word(word_at(words, literal_close), ")"):
-    let literal_close_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
+    if is_word(word_at(words, literal_receiver), word_at(words, receiver)):
+      let literal_receiver_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if is_word(word_at(words, literal_dot), "."):
+      let literal_dot_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, literal_name), "literal"):
+      let literal_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, literal_open), "("):
+      let literal_open_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, zero), "0"):
+      let zero_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, literal_close), ")"):
+      let literal_close_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
   end if
   if is_word(word_at(words, end_word), "end"):
     let end_ok = I64.literal(1)
@@ -2349,7 +2337,18 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   let literal_close_start = find_text_from(src, ")", zero_start)
   let error_case_end = next_index(error_colon_start, sico.bytes.length(src))
   let zero_end = next_index(zero_start, sico.bytes.length(src))
+  let fallback_start = find_text_from(src, word_at(words, literal_receiver), error_colon_start)
+  let fallback_end = fallback_start
+  match U64.checked_add(fallback_start, sico.bytes.length(sico.text.encode(word_at(words, literal_receiver)))):
+    case ok(after_fallback):
+      set fallback_end = after_fallback
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
   let error_block_end = next_index(literal_close_start, sico.bytes.length(src))
+  if I64.equal(fallback_is_parameter, I64.literal(1)):
+    set error_block_end = fallback_end
+  end if
   let end_function_offset = find_text_from(src, "end function", fn_start)
   let fn_end = fn_start
   match U64.checked_add(end_function_offset, U64.literal(13)):
@@ -2374,6 +2373,9 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   let read = next_index(write, write)
   let project = next_index(read, read)
   let error_value = next_index(project, project)
+  if I64.equal(fallback_is_parameter, I64.literal(1)):
+    set error_value = fallback_parameter
+  end if
   let result_type = "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\""
   set result_type = sico.text.concat(result_type, kind)
   set result_type = sico.text.concat(result_type, "\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}")
@@ -2458,17 +2460,23 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   set out = sico.text.concat(out, sico.u64.to_text(ok_case_start))
   set out = sico.text.concat(out, ",\"end\":")
   set out = sico.text.concat(out, sico.u64.to_text(ok_value_end))
-  set out = sico.text.concat(out, "}},{\"id\":2,\"instructions\":[{\"result\":")
-  set out = sico.text.concat(out, sico.u64.to_text(error_value))
-  set out = sico.text.concat(out, ",\"ty\":{\"kind\":\"")
-  set out = sico.text.concat(out, kind)
-  set out = sico.text.concat(out, "\"},\"operation\":{\"op\":\"const_")
-  set out = sico.text.concat(out, kind)
-  set out = sico.text.concat(out, "\",\"data\":0},\"range\":{\"start\":")
-  set out = sico.text.concat(out, sico.u64.to_text(zero_start))
-  set out = sico.text.concat(out, ",\"end\":")
-  set out = sico.text.concat(out, sico.u64.to_text(zero_end))
-  set out = sico.text.concat(out, "}}],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set out = sico.text.concat(out, "}},{\"id\":2,\"instructions\":")
+  if I64.equal(fallback_is_parameter, I64.literal(1)):
+    set out = sico.text.concat(out, "[]")
+  else:
+    set out = sico.text.concat(out, "[{\"result\":")
+    set out = sico.text.concat(out, sico.u64.to_text(error_value))
+    set out = sico.text.concat(out, ",\"ty\":{\"kind\":\"")
+    set out = sico.text.concat(out, kind)
+    set out = sico.text.concat(out, "\"},\"operation\":{\"op\":\"const_")
+    set out = sico.text.concat(out, kind)
+    set out = sico.text.concat(out, "\",\"data\":0},\"range\":{\"start\":")
+    set out = sico.text.concat(out, sico.u64.to_text(zero_start))
+    set out = sico.text.concat(out, ",\"end\":")
+    set out = sico.text.concat(out, sico.u64.to_text(zero_end))
+    set out = sico.text.concat(out, "}}]")
+  end if
+  set out = sico.text.concat(out, ",\"terminator\":{\"kind\":\"return\",\"data\":")
   set out = sico.text.concat(out, sico.u64.to_text(error_value))
   set out = sico.text.concat(out, "},\"range\":{\"start\":")
   set out = sico.text.concat(out, sico.u64.to_text(error_case_start))
@@ -3960,6 +3968,93 @@ function while_call_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
   return sico.text.concat(scl_kind, sico.text.concat("\n", sico.text.concat(scl_json, sico.text.concat("\n", scl_emit_out))))
   end if
 end function
+
+function while_bytes_at_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  let sbi_member = next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end)
+  let sbi_open = next_index(sbi_member, line_end)
+  if is_word(word_at(words, sbi_open), "("):
+    let sbi_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let sbi_close = matching_close(words, sbi_open, line_end)
+  if U64.equal(next_index(sbi_close, line_end), line_end):
+    let sbi_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let sbi_src = next_index(sbi_open, sbi_close)
+  let sbi_comma1 = next_index(sbi_src, sbi_close)
+  let sbi_cursor = next_index(sbi_comma1, sbi_close)
+  let sbi_comma2 = next_index(sbi_cursor, sbi_close)
+  let sbi_default = next_index(sbi_comma2, sbi_close)
+  if is_word(word_at(words, sbi_comma1), ","):
+    if is_word(word_at(words, sbi_comma2), ","):
+      let sbi_commas_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let sbi_src_value = binding_parameter_index(words, name_idx, word_at(words, sbi_src))
+  if U64.less_than(sbi_src_value, parameter_count):
+    if is_word(binding_parameter_kind(words, name_idx, word_at(words, sbi_src)), "bytes"):
+      let sbi_src_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  let sbi_cursor_cell = local_binding_index(cell_names, word_at(words, sbi_cursor))
+  if U64.less_than(sbi_cursor_cell, sico.list.length(cell_names)):
+    if is_word(word_at(cell_kinds, sbi_cursor_cell), "u64"):
+      let sbi_cursor_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  if is_word(fixed_literal_argument(words, sbi_default), "i64"):
+    let sbi_default_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let sbi_default_width = fixed_operation_operand_width(words, sbi_default, name_idx)
+  let sbi_after_default = sbi_default
+  match U64.checked_add(sbi_default, sbi_default_width):
+    case ok(sbi_after):
+      set sbi_after_default = sbi_after
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.equal(sbi_after_default, sbi_close):
+    let sbi_shape_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let sbi_cursor_start = word_span_offset(words, src, expr_start, receiver_idx, sbi_cursor)
+  let sbi_cursor_end = sbi_cursor_start
+  match U64.checked_add(sbi_cursor_start, sico.bytes.length(sico.text.encode(word_at(words, sbi_cursor)))):
+    case ok(sbi_after_cursor):
+      set sbi_cursor_end = sbi_after_cursor
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let sbi_cursor_json = read_local_instruction_json(base, "u64", u64_list_at(cell_locals, sbi_cursor_cell, U64.literal(0)), sbi_cursor_start, sbi_cursor_end)
+  let sbi_default_result = next_index(base, base)
+  let sbi_default_json = fixed_literal_operand_json(words, src, sbi_default, receiver_idx, expr_start, sbi_default_result)
+  if sico.text.starts_with(sbi_default_json, "ERR:"):
+    return sbi_default_json
+  end if
+  let sbi_result = next_index(sbi_default_result, sbi_default_result)
+  let sbi_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(sbi_src_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(base), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbi_default_result), "]"))))))
+  let sbi_intrinsic = intrinsic_instruction_json(sbi_result, "i64", "sico.bytes.at", sbi_arguments, expr_start, line_end_offset)
+  let sbi_json = sico.text.concat(sbi_cursor_json, sico.text.concat(",", sico.text.concat(sbi_default_json, sico.text.concat(",", sbi_intrinsic))))
+  return sico.text.concat("i64", sico.text.concat("\n", sico.text.concat(sbi_json, sico.text.concat("\n", sico.u64.to_text(sbi_result)))))
+end function
 function control_while_function_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
   let swl_words_len = sico.list.length(words)
   let swl_cell_names = sico.text.split_lines("")
@@ -4047,6 +4142,22 @@ function control_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       let sws_rhs_value = swl_next
       let sws_rhs_kind = ""
       if sws_rhs_multi:
+        if is_intrinsic_path(words, sws_receiver_idx, "bytes", "at"):
+          let sbi_pack = while_bytes_at_rhs_packed(words, src, name_idx, sws_receiver_idx, sws_line_end, sws_expr_start, sws_line_end_offset, swl_cell_names, swl_cell_kinds, swl_cell_locals, parameter_count, swl_next)
+          if sico.text.starts_with(sbi_pack, "ERR:"):
+            return sbi_pack
+          end if
+          let sbi_parts = sico.text.split_lines(sbi_pack)
+          set sws_rhs_kind = word_at(sbi_parts, U64.literal(0))
+          set sws_rhs_json = word_at(sbi_parts, U64.literal(1))
+          set sws_rhs_count = U64.literal(3)
+          match U64.checked_add(swl_next, U64.literal(2)):
+            case ok(sbi_rhs_value):
+              set sws_rhs_value = sbi_rhs_value
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
+        else:
         let sws_rhs_second_idx = next_index(sws_receiver_idx, sws_line_end)
         if is_word(word_at(words, sws_rhs_second_idx), "."):
           let sws_rhs_third_idx = next_index(sws_rhs_second_idx, sws_line_end)
@@ -4240,6 +4351,7 @@ function control_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
           else:
             set sws_rhs_json = scl_call
           end if
+        end if
         end if
       else:
         let sws_atom = word_at(words, sws_receiver_idx)
@@ -6938,6 +7050,696 @@ function straight_let_function_ir(words: List[Text], src: Bytes, name_idx: U64, 
   return sl_json
 end function
 
+function is_intrinsic_path(words: List[Text], start: U64, family: Text, member: Text) returns Bool:
+  let n = sico.list.length(words)
+  let dot1 = next_index(start, n)
+  let family_idx = next_index(dot1, n)
+  let dot2 = next_index(family_idx, n)
+  let member_idx = next_index(dot2, n)
+  if is_word(word_at(words, start), "sico"):
+    if is_word(word_at(words, dot1), "."):
+      if is_word(word_at(words, family_idx), family):
+        if is_word(word_at(words, dot2), "."):
+          return is_word(word_at(words, member_idx), member)
+        end if
+      end if
+    end if
+  end if
+  return false
+end function
+
+function intrinsic_instruction_json(result_id: U64, kind: Text, name: Text, arguments: Text, range_start: U64, range_end: U64) returns Text:
+  let json = "{\"result\":"
+  set json = sico.text.concat(json, sico.u64.to_text(result_id))
+  set json = sico.text.concat(json, ",\"ty\":{\"kind\":\"")
+  set json = sico.text.concat(json, kind)
+  set json = sico.text.concat(json, "\"},\"operation\":{\"op\":\"intrinsic\",\"data\":{\"name\":\"")
+  set json = sico.text.concat(json, name)
+  set json = sico.text.concat(json, "\",\"arguments\":")
+  set json = sico.text.concat(json, arguments)
+  set json = sico.text.concat(json, "}},\"range\":{\"start\":")
+  set json = sico.text.concat(json, sico.u64.to_text(range_start))
+  set json = sico.text.concat(json, ",\"end\":")
+  set json = sico.text.concat(json, sico.u64.to_text(range_end))
+  return sico.text.concat(json, "}}")
+end function
+
+function direct_bytes_equal_encode_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
+  let n = sico.list.length(words)
+  if U64.equal(parameter_count, U64.literal(2)):
+    let arity_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(return_kind, "bool"):
+    let return_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let return_idx = body_from
+  while U64.less_than(return_idx, body_end):
+    if is_word(word_at(words, return_idx), "return"):
+      break
+    end if
+    set return_idx = next_index(return_idx, body_end)
+  end while
+  if U64.equal(return_idx, body_end):
+    return "SKIP"
+  end if
+  let start = next_index(return_idx, n)
+  if is_intrinsic_path(words, start, "bytes", "equal"):
+    let outer_path_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let outer_member = next_index(next_index(next_index(next_index(start, n), n), n), n)
+  let outer_open = next_index(outer_member, n)
+  if is_word(word_at(words, outer_open), "("):
+    let outer_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let outer_close = matching_close(words, outer_open, line_end(words, return_idx))
+  if U64.equal(next_index(outer_close, n), line_end(words, return_idx)):
+    let outer_complete = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let left_start = next_index(outer_open, n)
+  if is_intrinsic_path(words, left_start, "text", "encode"):
+    let left_path_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  let left_member = next_index(next_index(next_index(next_index(left_start, n), n), n), n)
+  let left_open = next_index(left_member, n)
+  let left_close = matching_close(words, left_open, outer_close)
+  let left_argument = next_index(left_open, n)
+  if U64.equal(next_index(left_argument, n), left_close):
+    let left_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  let comma = next_index(left_close, n)
+  if is_word(word_at(words, comma), ","):
+    let comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let right_start = next_index(comma, n)
+  if is_intrinsic_path(words, right_start, "text", "encode"):
+    let right_path_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  let right_member = next_index(next_index(next_index(next_index(right_start, n), n), n), n)
+  let right_open = next_index(right_member, n)
+  let right_close = matching_close(words, right_open, outer_close)
+  let right_argument = next_index(right_open, n)
+  if U64.equal(next_index(right_argument, n), right_close):
+    let right_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  if U64.equal(next_index(right_close, n), outer_close):
+    let outer_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  let left_value = binding_parameter_index(words, name_idx, word_at(words, left_argument))
+  let right_value = binding_parameter_index(words, name_idx, word_at(words, right_argument))
+  if U64.less_than(left_value, parameter_count):
+    if is_word(binding_parameter_kind(words, name_idx, word_at(words, left_argument)), "string"):
+      let left_type_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-UNRESOLVED"
+  end if
+  if U64.less_than(right_value, parameter_count):
+    if is_word(binding_parameter_kind(words, name_idx, word_at(words, right_argument)), "string"):
+      let right_type_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-UNRESOLVED"
+  end if
+  let parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(parameters, "ERR:"):
+    return parameters
+  end if
+  let expression_start = return_expression_start(src, fn_start)
+  let left_start_offset = word_span_offset(words, src, expression_start, start, left_start)
+  let left_close_offset = word_span_offset(words, src, expression_start, start, left_close)
+  let right_start_offset = word_span_offset(words, src, expression_start, start, right_start)
+  let right_close_offset = word_span_offset(words, src, expression_start, start, right_close)
+  let expression_end = return_expression_end(src, expression_start)
+  let left_end_offset = next_index(left_close_offset, sico.bytes.length(src))
+  let right_end_offset = next_index(right_close_offset, sico.bytes.length(src))
+  let left_result = parameter_count
+  let right_result = next_index(left_result, left_result)
+  let equal_result = next_index(right_result, right_result)
+  let instructions = intrinsic_instruction_json(left_result, "bytes", "sico.text.encode", sico.text.concat("[", sico.text.concat(sico.u64.to_text(left_value), "]")), left_start_offset, left_end_offset)
+  set instructions = sico.text.concat(instructions, ",")
+  set instructions = sico.text.concat(instructions, intrinsic_instruction_json(right_result, "bytes", "sico.text.encode", sico.text.concat("[", sico.text.concat(sico.u64.to_text(right_value), "]")), right_start_offset, right_end_offset))
+  set instructions = sico.text.concat(instructions, ",")
+  let equal_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(left_result), sico.text.concat(",", sico.text.concat(sico.u64.to_text(right_result), "]"))))
+  set instructions = sico.text.concat(instructions, intrinsic_instruction_json(equal_result, "bool", "sico.bytes.equal", equal_arguments, expression_start, expression_end))
+  let end_function_offset = find_text_from(src, "end function", fn_start)
+  let fn_end = fn_start
+  match U64.checked_add(end_function_offset, U64.literal(13)):
+    case ok(after_end_function):
+      set fn_end = after_end_function
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.less_than(sico.bytes.length(src), fn_end):
+    set fn_end = sico.bytes.length(src)
+  end if
+  let json = "{\"id\":"
+  set json = sico.text.concat(json, sico.u64.to_text(function_ordinal))
+  set json = sico.text.concat(json, ",\"name\":\"")
+  set json = sico.text.concat(json, word_at(words, name_idx))
+  set json = sico.text.concat(json, "\",\"parameters\":")
+  set json = sico.text.concat(json, parameters)
+  set json = sico.text.concat(json, ",\"return_type\":{\"kind\":\"bool\"},\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[")
+  set json = sico.text.concat(json, instructions)
+  set json = sico.text.concat(json, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set json = sico.text.concat(json, sico.u64.to_text(equal_result))
+  set json = sico.text.concat(json, "},\"range\":{\"start\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_start))
+  set json = sico.text.concat(json, ",\"end\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_end))
+  set json = sico.text.concat(json, "}}],\"range\":{\"start\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_start))
+  set json = sico.text.concat(json, ",\"end\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_end))
+  return sico.text.concat(json, "}}")
+end function
+
+function fixed_guard_condition_json(words: List[Text], src: Bytes, expr_idx: U64, expr_end: U64, name_idx: U64, expr_offset: U64, first_result: U64) returns Text:
+  let n = sico.list.length(words)
+  let receiver = word_at(words, expr_idx)
+  let kind = ""
+  if is_word(receiver, "I64"):
+    set kind = "i64"
+  else:
+    if is_word(receiver, "U64"):
+      set kind = "u64"
+    else:
+      return "SKIP:COND-RECEIVER"
+    end if
+  end if
+  let dot = next_index(expr_idx, n)
+  let predicate = next_index(dot, n)
+  let open = next_index(predicate, n)
+  if is_word(word_at(words, dot), "."):
+    let dot_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let operation = ""
+  if is_word(word_at(words, predicate), "equal"):
+    set operation = "equal_fixed"
+  else:
+    if is_word(word_at(words, predicate), "less_than"):
+      set operation = "less_fixed"
+    else:
+      return "SKIP:COND-OPERATION"
+    end if
+  end if
+  if is_word(word_at(words, open), "("):
+    let open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let left_idx = fixed_operation_operand_atom_idx(words, expr_idx, name_idx, U64.literal(0))
+  let right_idx = fixed_operation_operand_atom_idx(words, expr_idx, name_idx, U64.literal(1))
+  let left_value = binding_parameter_index(words, name_idx, word_at(words, left_idx))
+  if U64.less_than(left_value, count_params(words, name_idx)):
+    if is_word(binding_parameter_kind(words, name_idx, word_at(words, left_idx)), kind):
+      let left_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  else:
+    return "SKIP:COND-LEFT"
+  end if
+  let right_kind = fixed_literal_argument(words, right_idx)
+  if sico.text.starts_with(right_kind, "ERR:"):
+    return right_kind
+  end if
+  if is_word(right_kind, kind):
+    let right_ok = I64.literal(1)
+  else:
+    return "SKIP:COND-RIGHT"
+  end if
+  let right_width = fixed_operation_operand_width(words, right_idx, name_idx)
+  let close = right_idx
+  match U64.checked_add(right_idx, right_width):
+    case ok(after_right):
+      set close = after_right
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if is_word(word_at(words, close), ")"):
+    if U64.equal(next_index(close, n), expr_end):
+      let shape_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+  else:
+    return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let right_json = fixed_literal_operand_json(words, src, right_idx, expr_idx, expr_offset, first_result)
+  if sico.text.starts_with(right_json, "ERR:"):
+    return right_json
+  end if
+  let close_offset = word_span_offset(words, src, expr_offset, expr_idx, close)
+  let condition_end = next_index(close_offset, sico.bytes.length(src))
+  let result = next_index(first_result, first_result)
+  let condition_json = "{\"result\":"
+  set condition_json = sico.text.concat(condition_json, sico.u64.to_text(result))
+  set condition_json = sico.text.concat(condition_json, ",\"ty\":{\"kind\":\"bool\"},\"operation\":{\"op\":\"")
+  set condition_json = sico.text.concat(condition_json, operation)
+  set condition_json = sico.text.concat(condition_json, "\",\"data\":{\"left\":")
+  set condition_json = sico.text.concat(condition_json, sico.u64.to_text(left_value))
+  set condition_json = sico.text.concat(condition_json, ",\"right\":")
+  set condition_json = sico.text.concat(condition_json, sico.u64.to_text(first_result))
+  set condition_json = sico.text.concat(condition_json, "}},\"range\":{\"start\":")
+  set condition_json = sico.text.concat(condition_json, sico.u64.to_text(expr_offset))
+  set condition_json = sico.text.concat(condition_json, ",\"end\":")
+  set condition_json = sico.text.concat(condition_json, sico.u64.to_text(condition_end))
+  set condition_json = sico.text.concat(condition_json, "}}")
+  return sico.text.concat(right_json, sico.text.concat(",", condition_json))
+end function
+
+function user_call_expression_json(words: List[Text], src: Bytes, expr_idx: U64, expr_end: U64, name_idx: U64, expr_offset: U64, first_result: U64, expected_kind: Text) returns Text:
+  let n = sico.list.length(words)
+  let open = next_index(expr_idx, n)
+  if is_word(word_at(words, open), "("):
+    let open_ok = I64.literal(1)
+  else:
+    return "SKIP:CALL-OPEN"
+  end if
+  let close = matching_close(words, open, expr_end)
+  if U64.equal(next_index(close, n), expr_end):
+    let close_ok = I64.literal(1)
+  else:
+    return "SKIP:CALL-SHAPE"
+  end if
+  let callee_idx = function_declaration_index(words, word_at(words, expr_idx))
+  if U64.equal(callee_idx, n):
+    return "SKIP:CALL-TARGET"
+  end if
+  let callee_kind = declared_return_kind(words, next_index(callee_idx, n))
+  if is_word(callee_kind, expected_kind):
+    let return_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let args_start = next_index(open, close)
+  let empty_names = sico.text.split_lines("")
+  let empty_kinds = sico.text.split_lines("")
+  let empty_values = sico.list.empty[U64]()
+  let arguments = environment_call_arguments(words, args_start, close, name_idx, callee_idx, empty_names, empty_kinds, empty_values, first_result)
+  if sico.text.starts_with(arguments, "ERR:"):
+    return arguments
+  end if
+  let literal_count = argument_region_instruction_count(words, args_start, close, name_idx)
+  let literals = argument_instructions(words, src, expr_idx, expr_offset, args_start, close, name_idx, first_result)
+  let result = first_result
+  match U64.checked_add(first_result, literal_count):
+    case ok(call_result):
+      set result = call_result
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let close_offset = word_span_offset(words, src, expr_offset, expr_idx, close)
+  let expression_end = next_index(close_offset, sico.bytes.length(src))
+  let call_json = call_instruction_json(result, callee_kind, function_declaration_ordinal(words, callee_idx), arguments, expr_offset, expression_end)
+  if U64.less_than(U64.literal(0), sico.text.length(literals)):
+    return sico.text.concat(literals, sico.text.concat(",", call_json))
+  end if
+  return call_json
+end function
+
+function fixed_guard_chain_ir(words: List[Text], src: Bytes, name_idx: U64, fn_start: U64, function_ordinal: U64) returns Text:
+  let n = sico.list.length(words)
+  let body_from = next_index(name_idx, n)
+  let body_end = find_body_end(words, body_from)
+  let guard_count = U64.literal(0)
+  let count_cursor = body_from
+  let count_previous = ""
+  while U64.less_than(count_cursor, body_end):
+    let count_word = word_at(words, count_cursor)
+    if is_word(count_word, "if"):
+      if is_word(count_previous, "end"):
+        let closing_if = I64.literal(1)
+      else:
+        set guard_count = next_index(guard_count, guard_count)
+      end if
+    end if
+    set count_previous = count_word
+    set count_cursor = next_index(count_cursor, body_end)
+  end while
+  let parameter_count = count_params(words, name_idx)
+  let return_kind = declared_return_kind(words, body_from)
+  if U64.less_than(U64.literal(0), guard_count):
+    let count_ok = I64.literal(1)
+  else:
+    return sico.text.concat("SKIP:COUNT:", sico.u64.to_text(guard_count))
+  end if
+  if U64.equal(parameter_count, U64.literal(1)):
+    if is_word(return_kind, "bool"):
+      let signature_ok = I64.literal(1)
+    else:
+      if is_word(return_kind, "string"):
+        let string_signature_ok = I64.literal(1)
+      else:
+        return "SKIP:RETURN-TYPE"
+      end if
+    end if
+  else:
+    return "SKIP:ARITY"
+  end if
+  let end_function_offset = find_text_from(src, "end function", fn_start)
+  let fn_end = fn_start
+  match U64.checked_add(end_function_offset, U64.literal(13)):
+    case ok(after_end):
+      set fn_end = after_end
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.less_than(sico.bytes.length(src), fn_end):
+    set fn_end = sico.bytes.length(src)
+  end if
+  let parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(parameters, "ERR:"):
+    return parameters
+  end if
+  let blocks = ""
+  let jumps = ""
+  let emitted_blocks = U64.literal(0)
+  let emitted_jumps = U64.literal(0)
+  let next_value = parameter_count
+  let guard_index = U64.literal(0)
+  let idx = next_index(line_end(words, body_from), body_end)
+  let source_cursor = fn_start
+  let previous_if_start = fn_start
+  let previous_if_end = fn_end
+  let jump_base = guard_count
+  match U64.checked_mul(guard_count, U64.literal(2)):
+    case ok(twice_guards):
+      set jump_base = next_index(twice_guards, twice_guards)
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  while U64.less_than(guard_index, guard_count):
+    while U64.less_than(idx, body_end):
+      if is_word(word_at(words, idx), "<nl>"):
+        set idx = next_index(idx, body_end)
+      else:
+        break
+      end if
+    end while
+    if is_word(word_at(words, idx), "if"):
+      let if_shape = I64.literal(1)
+    else:
+      return "SKIP:EXPECTED-IF"
+    end if
+    let if_line_end = line_end(words, idx)
+    let colon = if_line_end
+    match U64.checked_sub(if_line_end, U64.literal(1)):
+      case ok(last_token):
+        set colon = last_token
+      case error(_):
+        return "ERR:E-SH-IR-EXPRESSION"
+    end match
+    if is_word(word_at(words, colon), ":"):
+      let colon_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+    let expression_idx = next_index(idx, if_line_end)
+    let if_start = find_text_from(src, "if", source_cursor)
+    let expression_start = word_span_offset(words, src, if_start, idx, expression_idx)
+    let if_end = return_expression_end(src, if_start)
+    let condition_json = fixed_guard_condition_json(words, src, expression_idx, colon, name_idx, expression_start, next_value)
+    let condition_value = next_index(next_value, next_value)
+    if sico.text.starts_with(condition_json, "SKIP"):
+      set condition_json = user_call_expression_json(words, src, expression_idx, colon, name_idx, expression_start, next_value, "bool")
+      if sico.text.starts_with(condition_json, "SKIP"):
+        return condition_json
+      end if
+      let condition_open = next_index(expression_idx, colon)
+      let condition_close = matching_close(words, condition_open, colon)
+      let condition_literal_count = argument_region_instruction_count(words, next_index(condition_open, condition_close), condition_close, name_idx)
+      match U64.checked_add(next_value, condition_literal_count):
+        case ok(call_value):
+          set condition_value = call_value
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+    end if
+    if sico.text.starts_with(condition_json, "ERR:"):
+      return condition_json
+    end if
+    set next_value = next_index(condition_value, condition_value)
+    set idx = next_index(if_line_end, body_end)
+    while U64.less_than(idx, body_end):
+      if is_word(word_at(words, idx), "<nl>"):
+        set idx = next_index(idx, body_end)
+      else:
+        break
+      end if
+    end while
+    if is_word(word_at(words, idx), "return"):
+      let return_shape = I64.literal(1)
+    else:
+      return "SKIP:EXPECTED-RETURN"
+    end if
+    let return_line_end = line_end(words, idx)
+    let return_value_idx = next_index(idx, return_line_end)
+    let return_atom = word_at(words, return_value_idx)
+    if U64.equal(next_index(return_value_idx, n), return_line_end):
+      if is_word(return_kind, "bool"):
+        if is_word(return_atom, "true"):
+          let return_literal_ok = I64.literal(1)
+        else:
+          if is_word(return_atom, "false"):
+            let return_literal_false_ok = I64.literal(1)
+          else:
+            return "SKIP:RETURN-LITERAL"
+          end if
+        end if
+      else:
+        if is_string_token(return_atom):
+          let return_string_ok = I64.literal(1)
+        else:
+          return "SKIP:RETURN-LITERAL"
+        end if
+      end if
+    else:
+      return "SKIP:RETURN-WIDTH"
+    end if
+    let return_start = return_expression_start(src, if_end)
+    let return_end = return_start
+    match U64.checked_add(return_start, sico.bytes.length(sico.text.encode(return_atom))):
+      case ok(after_return_value):
+        set return_end = after_return_value
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    let return_data = return_atom
+    if is_word(return_kind, "string"):
+      set return_data = json_string_token(return_atom)
+    end if
+    let return_json = scalar_const_instruction_json(next_value, return_kind, return_data, return_start, return_end)
+    let return_value = next_value
+    set next_value = next_index(next_value, next_value)
+    set idx = next_index(return_line_end, body_end)
+    while U64.less_than(idx, body_end):
+      if is_word(word_at(words, idx), "<nl>"):
+        set idx = next_index(idx, body_end)
+      else:
+        break
+      end if
+    end while
+    if is_word(word_at(words, idx), "end"):
+      if is_word(word_at(words, next_index(idx, body_end)), "if"):
+        let end_if_ok = I64.literal(1)
+      else:
+        return "SKIP:END-KIND"
+      end if
+    else:
+      return "SKIP:EXPECTED-END"
+    end if
+    let condition_block = guard_index
+    match U64.checked_mul(guard_index, U64.literal(2)):
+      case ok(block_id):
+        set condition_block = block_id
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    let return_block = next_index(condition_block, condition_block)
+    let else_block = jump_base
+    match U64.checked_add(jump_base, guard_index):
+      case ok(jump_id):
+        set else_block = jump_id
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    let block_start = previous_if_start
+    let block_end = previous_if_end
+    if U64.equal(guard_index, U64.literal(0)):
+      set block_start = fn_start
+      set block_end = fn_end
+    end if
+    let condition_block_json = "{\"id\":"
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(condition_block))
+    set condition_block_json = sico.text.concat(condition_block_json, ",\"instructions\":[")
+    set condition_block_json = sico.text.concat(condition_block_json, condition_json)
+    set condition_block_json = sico.text.concat(condition_block_json, "],\"terminator\":{\"kind\":\"branch\",\"data\":{\"condition\":")
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(condition_value))
+    set condition_block_json = sico.text.concat(condition_block_json, ",\"then_block\":")
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(return_block))
+    set condition_block_json = sico.text.concat(condition_block_json, ",\"else_block\":")
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(else_block))
+    set condition_block_json = sico.text.concat(condition_block_json, "}},\"range\":{\"start\":")
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(block_start))
+    set condition_block_json = sico.text.concat(condition_block_json, ",\"end\":")
+    set condition_block_json = sico.text.concat(condition_block_json, sico.u64.to_text(block_end))
+    set condition_block_json = sico.text.concat(condition_block_json, "}}")
+    let return_block_json = "{\"id\":"
+    set return_block_json = sico.text.concat(return_block_json, sico.u64.to_text(return_block))
+    set return_block_json = sico.text.concat(return_block_json, ",\"instructions\":[")
+    set return_block_json = sico.text.concat(return_block_json, return_json)
+    set return_block_json = sico.text.concat(return_block_json, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+    set return_block_json = sico.text.concat(return_block_json, sico.u64.to_text(return_value))
+    set return_block_json = sico.text.concat(return_block_json, "},\"range\":{\"start\":")
+    set return_block_json = sico.text.concat(return_block_json, sico.u64.to_text(if_start))
+    set return_block_json = sico.text.concat(return_block_json, ",\"end\":")
+    set return_block_json = sico.text.concat(return_block_json, sico.u64.to_text(if_end))
+    set return_block_json = sico.text.concat(return_block_json, "}}")
+    if U64.less_than(U64.literal(0), emitted_blocks):
+      set blocks = sico.text.concat(blocks, ",")
+    end if
+    set blocks = sico.text.concat(blocks, condition_block_json)
+    set blocks = sico.text.concat(blocks, sico.text.concat(",", return_block_json))
+    set emitted_blocks = next_index(emitted_blocks, emitted_blocks)
+    let jump_target = next_index(return_block, return_block)
+    let jump_json = "{\"id\":"
+    set jump_json = sico.text.concat(jump_json, sico.u64.to_text(else_block))
+    set jump_json = sico.text.concat(jump_json, ",\"instructions\":[],\"terminator\":{\"kind\":\"jump\",\"data\":")
+    set jump_json = sico.text.concat(jump_json, sico.u64.to_text(jump_target))
+    set jump_json = sico.text.concat(jump_json, "},\"range\":{\"start\":")
+    set jump_json = sico.text.concat(jump_json, sico.u64.to_text(if_start))
+    set jump_json = sico.text.concat(jump_json, ",\"end\":")
+    set jump_json = sico.text.concat(jump_json, sico.u64.to_text(if_end))
+    set jump_json = sico.text.concat(jump_json, "}}")
+    if U64.less_than(U64.literal(0), emitted_jumps):
+      set jumps = sico.text.concat(jumps, ",")
+    end if
+    set jumps = sico.text.concat(jumps, jump_json)
+    set emitted_jumps = next_index(emitted_jumps, emitted_jumps)
+    set previous_if_start = if_start
+    set previous_if_end = if_end
+    let end_if_line = line_end(words, idx)
+    set idx = next_index(end_if_line, body_end)
+    set source_cursor = return_expression_end(src, find_text_from(src, "end if", return_end))
+    set guard_index = next_index(guard_index, guard_index)
+  end while
+  while U64.less_than(idx, body_end):
+    if is_word(word_at(words, idx), "<nl>"):
+      set idx = next_index(idx, body_end)
+    else:
+      break
+    end if
+  end while
+  if is_word(word_at(words, idx), "return"):
+    let final_return_ok = I64.literal(1)
+  else:
+    return "SKIP:FINAL-RETURN"
+  end if
+  let final_line_end = line_end(words, idx)
+  let final_expr_idx = next_index(idx, final_line_end)
+  let final_expr_start = return_expression_start(src, source_cursor)
+  let final_json = fixed_guard_condition_json(words, src, final_expr_idx, final_line_end, name_idx, final_expr_start, next_value)
+  let final_value = next_index(next_value, next_value)
+  if sico.text.starts_with(final_json, "SKIP"):
+    if U64.equal(next_index(final_expr_idx, n), final_line_end):
+      let final_atom = word_at(words, final_expr_idx)
+      if is_word(return_kind, "string"):
+        if is_string_token(final_atom):
+          set final_json = scalar_const_instruction_json(next_value, "string", json_string_token(final_atom), final_expr_start, return_expression_end(src, final_expr_start))
+          set final_value = next_value
+        else:
+          return "SKIP:FINAL-LITERAL"
+        end if
+      else:
+        return "SKIP:FINAL-LITERAL"
+      end if
+    else:
+      set final_json = user_call_expression_json(words, src, final_expr_idx, final_line_end, name_idx, final_expr_start, next_value, return_kind)
+      if sico.text.starts_with(final_json, "SKIP"):
+        return final_json
+      end if
+      let final_open = next_index(final_expr_idx, final_line_end)
+      let final_close = matching_close(words, final_open, final_line_end)
+      let final_literal_count = argument_region_instruction_count(words, next_index(final_open, final_close), final_close, name_idx)
+      match U64.checked_add(next_value, final_literal_count):
+        case ok(call_value):
+          set final_value = call_value
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+    end if
+  end if
+  if sico.text.starts_with(final_json, "ERR:"):
+    return final_json
+  end if
+  let final_block = guard_count
+  match U64.checked_mul(guard_count, U64.literal(2)):
+    case ok(final_id):
+      set final_block = final_id
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let final_block_json = "{\"id\":"
+  set final_block_json = sico.text.concat(final_block_json, sico.u64.to_text(final_block))
+  set final_block_json = sico.text.concat(final_block_json, ",\"instructions\":[")
+  set final_block_json = sico.text.concat(final_block_json, final_json)
+  set final_block_json = sico.text.concat(final_block_json, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set final_block_json = sico.text.concat(final_block_json, sico.u64.to_text(final_value))
+  set final_block_json = sico.text.concat(final_block_json, "},\"range\":{\"start\":")
+  set final_block_json = sico.text.concat(final_block_json, sico.u64.to_text(previous_if_start))
+  set final_block_json = sico.text.concat(final_block_json, ",\"end\":")
+  set final_block_json = sico.text.concat(final_block_json, sico.u64.to_text(previous_if_end))
+  set final_block_json = sico.text.concat(final_block_json, "}}")
+  set blocks = sico.text.concat(blocks, sico.text.concat(",", final_block_json))
+  if U64.less_than(U64.literal(0), sico.text.length(jumps)):
+    set blocks = sico.text.concat(blocks, sico.text.concat(",", jumps))
+  end if
+  let json = "{\"id\":"
+  set json = sico.text.concat(json, sico.u64.to_text(function_ordinal))
+  set json = sico.text.concat(json, ",\"name\":\"")
+  set json = sico.text.concat(json, word_at(words, name_idx))
+  set json = sico.text.concat(json, "\",\"parameters\":")
+  set json = sico.text.concat(json, parameters)
+  set json = sico.text.concat(json, ",\"return_type\":{\"kind\":\"")
+  set json = sico.text.concat(json, return_kind)
+  set json = sico.text.concat(json, "\"},\"effects\":[],\"entry\":0,\"blocks\":[")
+  set json = sico.text.concat(json, blocks)
+  set json = sico.text.concat(json, "],\"range\":{\"start\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_start))
+  set json = sico.text.concat(json, ",\"end\":")
+  set json = sico.text.concat(json, sico.u64.to_text(fn_end))
+  return sico.text.concat(json, "}}")
+end function
+
 function scalar_ir(words: List[Text], src: Bytes) returns Text:
   let source_len = sico.bytes.length(src)
   let n = sico.list.length(words)
@@ -6978,8 +7780,63 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
         let let_count = count_until_end_function(words, body_from, "let")
         let set_count = count_until_end_function(words, body_from, "set")
         let match_count = count_until_end_function(words, body_from, "match")
+        let if_count = count_until_end_function(words, body_from, "if")
         if U64.less_than(U64.literal(1), match_count):
           return "ERR:E-SH-IR-CONTROL"
+        end if
+        let direct_intrinsic_json = direct_bytes_equal_encode_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+        if is_word(direct_intrinsic_json, "SKIP"):
+          let no_direct_intrinsic = I64.literal(1)
+        else:
+          if sico.text.starts_with(direct_intrinsic_json, "ERR:"):
+            return direct_intrinsic_json
+          end if
+          if U64.less_than(U64.literal(1), function_count):
+            set functions_json = sico.text.concat(functions_json, ",")
+          end if
+          set functions_json = sico.text.concat(functions_json, direct_intrinsic_json)
+          let direct_end_offset = find_text_from(src, "end function", fn_start)
+          let direct_fn_end = fn_start
+          match U64.checked_add(direct_end_offset, U64.literal(13)):
+            case ok(direct_after_end):
+              set direct_fn_end = direct_after_end
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
+          if U64.less_than(source_len, direct_fn_end):
+            set direct_fn_end = source_len
+          end if
+          set source_cursor = direct_fn_end
+          set i = body_end_word
+          set prev = "function"
+          continue
+        end if
+        let guard_chain_json = fixed_guard_chain_ir(words, src, name_idx, fn_start, function_ordinal)
+        if sico.text.starts_with(guard_chain_json, "SKIP"):
+          let no_guard_chain = I64.literal(1)
+        else:
+          if sico.text.starts_with(guard_chain_json, "ERR:"):
+            return guard_chain_json
+          end if
+          if U64.less_than(U64.literal(1), function_count):
+            set functions_json = sico.text.concat(functions_json, ",")
+          end if
+          set functions_json = sico.text.concat(functions_json, guard_chain_json)
+          let guard_end_offset = find_text_from(src, "end function", fn_start)
+          let guard_fn_end = fn_start
+          match U64.checked_add(guard_end_offset, U64.literal(13)):
+            case ok(guard_after_end):
+              set guard_fn_end = guard_after_end
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
+          if U64.less_than(source_len, guard_fn_end):
+            set guard_fn_end = source_len
+          end if
+          set source_cursor = guard_fn_end
+          set i = body_end_word
+          set prev = "function"
+          continue
         end if
         if U64.less_than(U64.literal(0), count_until_end_function(words, body_from, "while")):
           if U64.less_than(U64.literal(0), match_count):
@@ -7009,7 +7866,7 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           set prev = "function"
           continue
         end if
-        if U64.less_than(U64.literal(0), count_until_end_function(words, body_from, "if")):
+        if U64.less_than(U64.literal(0), if_count):
           if U64.less_than(U64.literal(0), match_count):
             return "ERR:E-SH-IR-STATEMENT"
           end if
@@ -7198,6 +8055,34 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           end if
         end if
       else:
+        let infix_operator_idx = next_index(start, finish)
+        let infix_right_idx = next_index(infix_operator_idx, finish)
+        let infix_after_idx = next_index(infix_right_idx, finish)
+        let is_int_add = false
+        if U64.equal(infix_after_idx, finish):
+          if is_word(word_at(words, infix_operator_idx), "+"):
+            let infix_left_value = binding_parameter_index(words, name_idx, word_at(words, start))
+            let infix_right_value = binding_parameter_index(words, name_idx, word_at(words, infix_right_idx))
+            if U64.less_than(infix_left_value, parameter_count):
+              if U64.less_than(infix_right_value, parameter_count):
+                if is_word(binding_parameter_kind(words, name_idx, word_at(words, start)), "int"):
+                  if is_word(binding_parameter_kind(words, name_idx, word_at(words, infix_right_idx)), "int"):
+                    set fixed_op_name_value = "add_int"
+                    set fixed_op_left = infix_left_value
+                    set fixed_op_right = infix_right_value
+                    set expression_kind = "fixed_op"
+                    set expression_type = "int"
+                    set call_range = I64.literal(1)
+                    set is_int_add = true
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+        if is_int_add:
+          let int_add_valid = I64.literal(1)
+        else:
         if is_word(word_at(words, next_index(start, finish)), "("):
           let callee_name = word_at(words, start)
           let callee_name_idx = function_declaration_index(words, callee_name)
@@ -7345,6 +8230,7 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
               return "ERR:E-SH-IR-EXPRESSION"
             end if
           end if
+        end if
         end if
         end if
         end if
@@ -7587,22 +8473,4 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
   set json = sico.text.concat(json, functions_json)
   set json = sico.text.concat(json, "]}")
   return json
-end function
-
-function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
-  let words = lex_words(input.stdin)
-  match sico.list.get(input.arguments, U64.literal(0)):
-    case ok(mode):
-      if is_word(mode, "--emit-ir"):
-        let ir = scalar_ir(words, input.stdin)
-        if sico.text.starts_with(ir, "ERR:"):
-          return invalid_input(ir)
-        end if
-        return ok(ScriptOutput(stdout: sico.text.encode(ir), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
-      end if
-    case error(_):
-      let no_mode = I64.literal(0)
-  end match
-  let out = summarize(words)
-  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
 end function

@@ -1,6 +1,6 @@
 {
   "schema": "sico.m22.script-build-corpus.v0",
-  "source_manifest_sha256": "759ad5924c1f9f3cdcf4a00bf4f8b325c05e8d0277ccb278838fd1299ea6842a",
+  "source_manifest_sha256": "351e91d117cf6ba65da17d2807e8d3501b35dc18d70cd48600b1be4b0660251d",
   "entry_count": 215,
   "accepted_count": 37,
   "refused_count": 178,
@@ -2117,7 +2117,7 @@
     },
     {
       "path": "tests/end-to-end/block-solver.sico",
-      "source_sha256": "c242220192ec65227118b695f21db407a5a104c6fd95c7762b5e3146f9d9ab31",
+      "source_sha256": "08a113456719d407c470bfec16cb5bea4c3f2d373017b1cda8a13bdbf8e01829",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
       "component_sha256": "3248b2638e5af0a083db6bb3416ed583cf8ad955fdbb24eb34c8669cbb96c316",
@@ -2180,7 +2180,7 @@
       "source_sha256": "d3e4b536e08e70244a19aeeec5e711d037624bbcd99784459ef5e5a2bc2dd332",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "c2087d0a42d415f836187d142214d8979863b308c4337b66cd0539690cf3ba5d",
+      "component_sha256": "b2295aae539f97f3a682c1784cc43106dd8073b7e2f9220c4c940764473311eb",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
@@ -2210,7 +2210,7 @@
       "source_sha256": "9574a41e578eec19a1514ea695dcbf49eb1ead1eec427fe7883d43b3a5a231bc",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "c08be3445bcd719a0b64cd2786651aaac481582fe2e8c42f89379fc16653272a",
+      "component_sha256": "7567a5cd34b6e1d0110f183203eac942360df003097b1590ed27ebc028855c8b",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
@@ -2220,7 +2220,7 @@
       "source_sha256": "a096a99dc9848e883638d37bf6e317372aa82d5705f640f551379e6b7f8fb048",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "99b403405c4a560698bd31d4377f049f0513a6667ecee9b192645856adc5300a",
+      "component_sha256": "8139d2db3cf2256ac3bd891e5deef84a2ea33606c61d01dc7809baeb5bc902f4",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
@@ -2230,7 +2230,7 @@
       "source_sha256": "4a782b958c0b87f1d1db91a986141c230a26ecd8209d7458df65a3e14e3ca71a",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "7316fb84b07c033c1e2294d863fd9777505a3965c7dbc62c0d2df3eee6cdeadf",
+      "component_sha256": "33fca760686d383322a34f7116f131e4179900b1a920a92931a95d481fe01a31",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
@@ -2472,7 +2472,7 @@
       "source_sha256": "c831dd4ddcac9e901604b6d55ef3afafdf2b1a1063a64f9c123e68c296fc29c5",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "67320d86e8775bf739daa3a5f3c78d1326f723302241e23c89961b74cc14efe2",
+      "component_sha256": "6a2324e39dce8d907010cbb364f3462f59a69f99252c9725f95d1cbacd377868",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
@@ -2482,7 +2482,7 @@
       "source_sha256": "4062af6659847d19e68d9cc97d072a15bb84fc0fc322f6d3880cc0f79115baec",
       "rust_script_build": "accepted",
       "rust_script_build_exit": 0,
-      "component_sha256": "ccbaa7184aace146eadac50324ea057fe7ad5ece3ab1d2145e4a9d505c6c1c9a",
+      "component_sha256": "f567487f87bc55eb9a6308845b5e7c8a6b4a81c865b6cf7b3d24f452b334a48b",
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"

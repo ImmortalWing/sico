@@ -2,6 +2,7 @@
 //! declared identity-level diagnostic subset on all 215 frozen sources while
 //! keeping full rendered Rust diagnostics outside the claim.
 
+use sha2::{Digest, Sha256};
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
     ScriptInput,
@@ -12,6 +13,17 @@ const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lex
 const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
 const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler_semantics.sico");
 const OK_SOURCE: &str = "function main() returns Int:\n  return 42\nend function\n";
+
+fn canonical_source(bytes: Vec<u8>, path: &str) -> Vec<u8> {
+    let text =
+        String::from_utf8(bytes).unwrap_or_else(|error| panic!("non-UTF-8 source {path}: {error}"));
+    let canonical = text.replace("\r\n", "\n");
+    assert!(
+        !canonical.contains('\r'),
+        "non-CRLF carriage return: {path}"
+    );
+    canonical.into_bytes()
+}
 
 fn compile_checker() -> Vec<u8> {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -143,7 +155,17 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
             .as_array()
             .and_then(|ids| ids.first())
             .and_then(serde_json::Value::as_str);
-        let source = std::fs::read(repository.join(path)).unwrap();
+        let source = canonical_source(std::fs::read(repository.join(path)).unwrap(), path);
+        assert_eq!(
+            entry["bytes"].as_u64().unwrap(),
+            u64::try_from(source.len()).unwrap(),
+            "frozen source length drifted: {path}"
+        );
+        assert_eq!(
+            entry["source_sha256"].as_str().unwrap(),
+            format!("{:x}", Sha256::digest(&source)),
+            "frozen source digest drifted: {path}"
+        );
         let outcome = prepared
             .run(
                 &ScriptInput {

@@ -469,19 +469,77 @@ fn emit_i64_to_text(alloc: u32) -> Function {
 
 /// `(table, count) = append(table, count, element ptr, element len)`.
 fn emit_list_append(alloc: u32) -> Function {
-    let mut body = Function::new(vec![(1, ValType::I32)]);
-    // locals: new table(4)
+    let mut body = Function::new(vec![(5, ValType::I32)]);
+    // locals: base(4), table(5), capacity(6), next count(7), old base(8).
+    //
+    // List values expose only `(table, count)`.  A table created here carries
+    // a private 16-byte header immediately before the visible pointer:
+    // magic, used version, capacity, magic2.  Appending the latest version may
+    // fill an unobservable spare slot in place.  Appending an older alias
+    // (`count != used`) takes the copy path, which preserves persistent-list
+    // semantics while making the common linear builder path amortized O(n).
     ops!(body;
         Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
-        Instruction::I32Const(3), Instruction::I32Shl, Instruction::Call(alloc), Instruction::LocalSet(4),
-        Instruction::LocalGet(4), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::LocalSet(7),
+        // Reuse only a table carrying both private header magics, and only
+        // when the caller holds its latest logical version.
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32Sub,
+        Instruction::LocalSet(8),
+        Instruction::LocalGet(8), Instruction::I32Load(mem(0, 2)),
+        Instruction::I32Const(0x5349_434f), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(8), Instruction::I32Load(mem(12, 2)),
+        Instruction::I32Const(0x4c49_5354), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(8), Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalGet(1), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(8), Instruction::I32Load(mem(8, 2)),
+        Instruction::LocalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(2), Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(3), Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(8), Instruction::LocalGet(7),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(0), Instruction::LocalGet(7), Instruction::Return,
+        Instruction::End, Instruction::End, Instruction::End,
+        Instruction::End, Instruction::End,
+        // Allocate a geometrically sized private table for a foreign table,
+        // a full table, or an append from a stale alias.
+        Instruction::I32Const(1), Instruction::LocalSet(6),
+        Instruction::Block(BlockType::Empty), Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(6), Instruction::LocalGet(7), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(6), Instruction::I32Const(1), Instruction::I32Shl,
+        Instruction::LocalSet(6), Instruction::Br(0),
+        Instruction::End, Instruction::End,
+        Instruction::LocalGet(6), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::Call(alloc), Instruction::LocalSet(4),
+        Instruction::LocalGet(4), Instruction::I32Const(0x5349_434f),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(4), Instruction::LocalGet(7),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(4), Instruction::LocalGet(6),
+        Instruction::I32Store(mem(8, 2)),
+        Instruction::LocalGet(4), Instruction::I32Const(0x4c49_5354),
+        Instruction::I32Store(mem(12, 2)),
+        Instruction::LocalGet(4), Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::LocalSet(5),
+        Instruction::LocalGet(5), Instruction::LocalGet(0), Instruction::LocalGet(1),
         Instruction::I32Const(3), Instruction::I32Shl,
         Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
-        Instruction::LocalGet(4), Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::LocalGet(5), Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
         Instruction::I32Add, Instruction::LocalGet(2), Instruction::I32Store(mem(0, 2)),
-        Instruction::LocalGet(4), Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::LocalGet(5), Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
         Instruction::I32Add, Instruction::LocalGet(3), Instruction::I32Store(mem(4, 2)),
-        Instruction::LocalGet(4), Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalGet(5), Instruction::LocalGet(7),
         Instruction::End,
     );
     body
@@ -1740,20 +1798,65 @@ fn emit_list_get_scalar() -> Function {
 }
 
 /// `(table, count) = list.append(table, count, value)`: copy-on-write into a
-/// fresh `(count + 1) * 8` table, like the Text pair-slot version.
+/// geometrically sized table, like the Text pair-slot version.
 fn emit_list_append_scalar(alloc: u32) -> Function {
-    let mut body = Function::new(vec![(1, ValType::I32)]);
-    // params: table(0), count(1), value(2 i64); local: new(3)
+    let mut body = Function::new(vec![(5, ValType::I32)]);
+    // params: table(0), count(1), value(2 i64)
+    // locals: base(3), table(4), capacity(5), next count(6), old base(7)
     ops!(body;
         Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
-        Instruction::I32Const(3), Instruction::I32Shl, Instruction::Call(alloc), Instruction::LocalSet(3),
-        Instruction::LocalGet(3), Instruction::LocalGet(0), Instruction::LocalGet(1),
-        Instruction::I32Const(3), Instruction::I32Shl,
-        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
-        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::LocalSet(6),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32Sub,
+        Instruction::LocalSet(7),
+        Instruction::LocalGet(7), Instruction::I32Load(mem(0, 2)),
+        Instruction::I32Const(0x5349_4c4e), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::I32Load(mem(12, 2)),
+        Instruction::I32Const(0x4c49_5354), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalGet(1), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(7), Instruction::I32Load(mem(8, 2)),
+        Instruction::LocalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Const(3),
         Instruction::I32Shl, Instruction::I32Add,
         Instruction::LocalGet(2), Instruction::I64Store(mem(0, 3)),
-        Instruction::LocalGet(3), Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalGet(7), Instruction::LocalGet(6),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(0), Instruction::LocalGet(6), Instruction::Return,
+        Instruction::End, Instruction::End, Instruction::End,
+        Instruction::End, Instruction::End,
+        Instruction::I32Const(1), Instruction::LocalSet(5),
+        Instruction::Block(BlockType::Empty), Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(5), Instruction::LocalGet(6), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(5), Instruction::I32Const(1), Instruction::I32Shl,
+        Instruction::LocalSet(5), Instruction::Br(0),
+        Instruction::End, Instruction::End,
+        Instruction::LocalGet(5), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::Call(alloc), Instruction::LocalSet(3),
+        Instruction::LocalGet(3), Instruction::I32Const(0x5349_4c4e),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(3), Instruction::LocalGet(6),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(3), Instruction::LocalGet(5),
+        Instruction::I32Store(mem(8, 2)),
+        Instruction::LocalGet(3), Instruction::I32Const(0x4c49_5354),
+        Instruction::I32Store(mem(12, 2)),
+        Instruction::LocalGet(3), Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::LocalSet(4),
+        Instruction::LocalGet(4), Instruction::LocalGet(0), Instruction::LocalGet(1),
+        Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(4), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add,
+        Instruction::LocalGet(2), Instruction::I64Store(mem(0, 3)),
+        Instruction::LocalGet(4), Instruction::LocalGet(6),
         Instruction::End,
     );
     body

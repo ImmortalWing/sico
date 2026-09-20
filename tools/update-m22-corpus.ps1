@@ -11,6 +11,21 @@ if (-not (Test-Path -LiteralPath $sico)) {
     throw "build sico before refreshing the M22 corpus: $sico"
 }
 
+# Windows PowerShell 5.1 (.NET Framework) has neither ProcessStartInfo.ArgumentList
+# nor StandardInputEncoding; quote into .Arguments instead.  Redirected stdin then
+# uses the console encoding, which is safe for the ASCII-only invocations here.
+function ConvertTo-ArgumentsString {
+    param([string[]]$Arguments)
+    $parts = foreach ($argument in $Arguments) {
+        if ($argument -match '[\s"]') {
+            '"' + ($argument -replace '"', '\"') + '"'
+        } else {
+            $argument
+        }
+    }
+    return ($parts -join ' ')
+}
+
 function Invoke-Sico {
     param(
         [string[]]$Arguments,
@@ -23,19 +38,23 @@ function Invoke-Sico {
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
     $start.RedirectStandardInput = $true
-    $start.StandardInputEncoding = [System.Text.UTF8Encoding]::new($false)
     $start.StandardOutputEncoding = [System.Text.UTF8Encoding]::new($false)
     $start.StandardErrorEncoding = [System.Text.UTF8Encoding]::new($false)
-    foreach ($argument in $Arguments) {
-        [void]$start.ArgumentList.Add($argument)
-    }
+    $start.Arguments = ConvertTo-ArgumentsString $Arguments
     $process = [System.Diagnostics.Process]::new()
     $process.StartInfo = $start
     [void]$process.Start()
     if ($null -ne $StdinText) {
-        $process.StandardInput.Write($StdinText)
+        # Write raw UTF-8 bytes through the pipe base stream: Windows
+        # PowerShell 5.1 has no StandardInputEncoding and would otherwise
+        # re-encode through the console codepage, corrupting non-ASCII source.
+        $stdinBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($StdinText)
+        $process.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)
+        $process.StandardInput.BaseStream.Flush()
+        $process.StandardInput.BaseStream.Close()
+    } else {
+        $process.StandardInput.Close()
     }
-    $process.StandardInput.Close()
     $stdout = $process.StandardOutput.ReadToEnd()
     $stderr = $process.StandardError.ReadToEnd()
     $process.WaitForExit()
@@ -48,13 +67,101 @@ function Invoke-Sico {
 
 function Get-Sha256Hex {
     param([byte[]]$Bytes)
-    $digest = [System.Security.Cryptography.SHA256]::HashData($Bytes)
-    return [Convert]::ToHexString($digest).ToLowerInvariant()
+    # [Security.Cryptography.SHA256]::HashData and [Convert]::ToHexString need
+    # .NET 5+; SHA256.Create().ComputeHash plus a hex loop runs on Windows
+    # PowerShell 5.1 and PowerShell 7 alike with identical output.
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = $sha256.ComputeHash($Bytes)
+    } finally {
+        [void]$sha256.Dispose()
+    }
+    $builder = [System.Text.StringBuilder]::new($digest.Length * 2)
+    foreach ($byte in $digest) {
+        [void]$builder.Append($byte.ToString('x2'))
+    }
+    return $builder.ToString()
+}
+
+function Get-CanonicalSourceBytes {
+    param([string]$Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $text = [System.Text.UTF8Encoding]::new($false, $true).GetString($bytes)
+    $canonical = $text.Replace("`r`n", "`n")
+    if ($canonical.Contains("`r")) {
+        throw "source contains a non-CRLF carriage return: $Path"
+    }
+    return [System.Text.UTF8Encoding]::new($false).GetBytes($canonical)
+}
+
+# ConvertTo-Json formatting differs between Windows PowerShell 5.1 and
+# PowerShell 7, which would make the frozen manifests host-dependent (the
+# exact defect the canonical-LF re-freeze closed).  Serialize deterministically
+# instead: 2-space indent, no-BOM UTF-8, identical bytes on both hosts.
+function ConvertTo-CanonicalJsonString {
+    param([string]$Text)
+    $builder = [System.Text.StringBuilder]::new($Text.Length + 2)
+    [void]$builder.Append('"')
+    foreach ($character in $Text.ToCharArray()) {
+        switch ([int]$character) {
+            34 { [void]$builder.Append('\"') }
+            92 { [void]$builder.Append('\\') }
+            8 { [void]$builder.Append('\b') }
+            12 { [void]$builder.Append('\f') }
+            10 { [void]$builder.Append('\n') }
+            13 { [void]$builder.Append('\r') }
+            9 { [void]$builder.Append('\t') }
+            default {
+                if ([int]$character -lt 32) {
+                    [void]$builder.Append(('\u{0:x4}' -f [int]$character))
+                } else {
+                    [void]$builder.Append($character)
+                }
+            }
+        }
+    }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function ConvertTo-CanonicalJson {
+    param($Value, [int]$Depth = 0)
+    $indent = ' ' * (2 * $Depth)
+    $childIndent = ' ' * (2 * ($Depth + 1))
+    if ($null -eq $Value) { return 'null' }
+    if ($Value -is [bool]) { if ($Value) { return 'true' } else { return 'false' } }
+    if ($Value -is [System.SByte] -or $Value -is [System.Byte] -or $Value -is [System.Int16] -or
+        $Value -is [System.UInt16] -or $Value -is [System.Int32] -or $Value -is [System.UInt32] -or
+        $Value -is [System.Int64] -or $Value -is [System.UInt64]) {
+        return $Value.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+    }
+    if ($Value -is [string]) { return (ConvertTo-CanonicalJsonString $Value) }
+    if ($Value -is [System.Collections.IDictionary]) {
+        if ($Value.Count -eq 0) { return '{}' }
+        $lines = foreach ($key in $Value.Keys) {
+            $childIndent + (ConvertTo-CanonicalJsonString ([string]$key)) + ': ' +
+                (ConvertTo-CanonicalJson $Value[$key] ($Depth + 1))
+        }
+        return "{`n" + ($lines -join ",`n") + "`n" + $indent + '}'
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $items = @($Value)
+        if ($items.Count -eq 0) { return '[]' }
+        $lines = foreach ($item in $items) {
+            $childIndent + (ConvertTo-CanonicalJson $item ($Depth + 1))
+        }
+        return "[`n" + ($lines -join ",`n") + "`n" + $indent + ']'
+    }
+    throw "unsupported manifest value type: $($Value.GetType().FullName)"
 }
 
 $relativePaths = @(
     & rg --files syntax-candidates semantic-cases tests/end-to-end -g '*.sico'
-) | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -CaseSensitive
+) | ForEach-Object { $_.Replace('\', '/') }
+# Sort-Object ordering is culture-sensitive and differs between hosts; the
+# frozen manifest requires byte-wise (ordinal) path order everywhere.
+$relativePaths = @($relativePaths)
+[System.Array]::Sort($relativePaths, [System.StringComparer]::Ordinal)
 
 $artifactRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sico-m22-corpus-{0}" -f [Guid]::NewGuid().ToString('N'))
 [void](New-Item -ItemType Directory -Path $artifactRoot)
@@ -63,7 +170,10 @@ $entryIndex = 0
 $buildEntries = @()
 $entries = foreach ($relativePath in $relativePaths) {
     $nativePath = Join-Path $root $relativePath
-    $bytes = [System.IO.File]::ReadAllBytes($nativePath)
+    # Repository sources are canonical LF (`.gitattributes`).  Hash the
+    # canonical bytes rather than the host checkout's autocrlf materialization
+    # so the frozen manifest is identical on Windows, Linux and clean CI.
+    [byte[]]$bytes = Get-CanonicalSourceBytes $nativePath
     $format = Invoke-Sico -Arguments @('format', $relativePath) -StdinText $null
     $formatState = if ($format.ExitCode -eq 0) { 'accepted' } else { 'refused' }
     $formattedSha256 = $null
@@ -85,9 +195,10 @@ $entries = foreach ($relativePath in $relativePaths) {
             Sort-Object -Unique
     )
     if ($diagnosticIds.Count -eq 0 -and $check.ExitCode -ne 0) {
-        if ($diagnosticText.Contains('lexical error', [StringComparison]::OrdinalIgnoreCase)) {
+        $diagnosticLower = $diagnosticText.ToLowerInvariant()
+        if ($diagnosticLower.Contains('lexical error')) {
             $diagnosticIds = @('LEXICAL')
-        } elseif ($diagnosticText.Contains('syntax', [StringComparison]::OrdinalIgnoreCase)) {
+        } elseif ($diagnosticLower.Contains('syntax')) {
             $diagnosticIds = @('SYNTAX')
         } else {
             $diagnosticIds = @('UNCLASSIFIED')
@@ -115,7 +226,17 @@ $entries = foreach ($relativePath in $relativePaths) {
             throw "second deterministic build failed: $relativePath"
         }
         $reproBytes = [System.IO.File]::ReadAllBytes($reproPath)
-        $componentReproducible = [System.Linq.Enumerable]::SequenceEqual[byte]($artifactBytes, $reproBytes)
+        # Windows PowerShell 5.1 cannot invoke static generic methods
+        # ([Linq.Enumerable]::SequenceEqual[byte] is a parse error there).
+        $componentReproducible = $artifactBytes.Length -eq $reproBytes.Length
+        if ($componentReproducible) {
+            for ($byteIndex = 0; $byteIndex -lt $artifactBytes.Length; $byteIndex++) {
+                if ($artifactBytes[$byteIndex] -ne $reproBytes[$byteIndex]) {
+                    $componentReproducible = $false
+                    break
+                }
+            }
+        }
         if (-not $componentReproducible) {
             throw "script-v0 artifact is not reproducible: $relativePath"
         }
@@ -125,7 +246,7 @@ $entries = foreach ($relativePath in $relativePaths) {
         throw "sico build refusal left an artifact: $relativePath"
     }
     $buildDiagnosticText = "$($build.Stdout)`n--stderr--`n$($build.Stderr)"
-    $buildDiagnosticText = $buildDiagnosticText.Replace($artifactPath, '<artifact>', [StringComparison]::Ordinal)
+    $buildDiagnosticText = $buildDiagnosticText.Replace($artifactPath, '<artifact>')
     $buildDiagnosticBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($buildDiagnosticText)
     $buildDiagnosticIds = @(
         [regex]::Matches($buildDiagnosticText, '\bE\d{4}\b') |
@@ -133,11 +254,12 @@ $entries = foreach ($relativePath in $relativePaths) {
             Sort-Object -Unique
     )
     if ($buildDiagnosticIds.Count -eq 0 -and $build.ExitCode -ne 0) {
-        if ($buildDiagnosticText.Contains('lexical error', [StringComparison]::OrdinalIgnoreCase)) {
+        $buildDiagnosticLower = $buildDiagnosticText.ToLowerInvariant()
+        if ($buildDiagnosticLower.Contains('lexical error')) {
             $buildDiagnosticIds = @('LEXICAL')
-        } elseif ($buildDiagnosticText.Contains('script profile requires', [StringComparison]::OrdinalIgnoreCase)) {
+        } elseif ($buildDiagnosticLower.Contains('script profile requires')) {
             $buildDiagnosticIds = @('SCRIPT_ABI')
-        } elseif ($buildDiagnosticText.Contains('syntax error', [StringComparison]::OrdinalIgnoreCase)) {
+        } elseif ($buildDiagnosticLower.Contains('syntax error')) {
             $buildDiagnosticIds = @('SYNTAX')
         } else {
             $buildDiagnosticIds = @('UNCLASSIFIED')
@@ -178,7 +300,7 @@ $manifest = [ordered]@{
     entry_count = $entries.Count
     entries = $entries
 }
-$json = ($manifest | ConvertTo-Json -Depth 8) + "`n"
+$json = (ConvertTo-CanonicalJson $manifest) + "`n"
 $output = Join-Path $root 'selfhost\corpus-v0.json'
 $jsonBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($json)
 $buildManifest = [ordered]@{
@@ -189,9 +311,11 @@ $buildManifest = [ordered]@{
     refused_count = @($buildEntries | Where-Object rust_script_build -eq 'refused').Count
     entries = $buildEntries
 }
-$buildJson = ($buildManifest | ConvertTo-Json -Depth 8) + "`n"
+$buildJson = (ConvertTo-CanonicalJson $buildManifest) + "`n"
 $buildOutput = Join-Path $root 'selfhost\script-build-corpus-v0.json'
 if ($Verify) {
+    # Serialization is deterministic (ConvertTo-CanonicalJson), so the frozen
+    # bytes compare equal across Windows PowerShell 5.1 and PowerShell 7 hosts.
     $existing = [System.IO.File]::ReadAllText($output, [System.Text.Encoding]::UTF8)
     if ($existing -cne $json) {
         throw 'M22 corpus manifest is stale; run tools/update-m22-corpus.ps1'

@@ -12,6 +12,17 @@ fn entry(path: &str, source: &[u8]) -> SourceBundleEntry {
     }
 }
 
+fn canonical_source(bytes: Vec<u8>, path: &str) -> Vec<u8> {
+    let text =
+        String::from_utf8(bytes).unwrap_or_else(|error| panic!("non-UTF-8 source {path}: {error}"));
+    let canonical = text.replace("\r\n", "\n");
+    assert!(
+        !canonical.contains('\r'),
+        "non-CRLF carriage return: {path}"
+    );
+    canonical.into_bytes()
+}
+
 #[test]
 fn canonical_bundle_round_trips_byte_exact() {
     let entries = vec![
@@ -170,7 +181,10 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
 
     let mut bundle = Vec::with_capacity(manifest.entries.len());
     for entry in &manifest.entries {
-        let source = std::fs::read(repository.join(&entry.path)).unwrap();
+        let source = canonical_source(
+            std::fs::read(repository.join(&entry.path)).unwrap(),
+            &entry.path,
+        );
         assert_eq!(entry.bytes, source.len(), "{}", entry.path);
         assert_eq!(entry.source_sha256, hex(&Sha256::digest(&source)));
         assert!(matches!(entry.rust_format.as_str(), "accepted" | "refused"));

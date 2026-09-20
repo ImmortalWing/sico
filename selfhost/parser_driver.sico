@@ -1,0 +1,49 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+use parser.lex_words
+use parser.is_word
+use parser.scalar_ir
+use parser.summarize
+
+function invalid_input(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: message))
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let words = parser.lex_words(input.stdin)
+  match sico.list.get(input.arguments, U64.literal(0)):
+    case ok(mode):
+      if parser.is_word(mode, "--emit-ir"):
+        let ir = parser.scalar_ir(words, input.stdin)
+        if sico.text.starts_with(ir, "ERR:"):
+          return invalid_input(ir)
+        end if
+        return ok(ScriptOutput(stdout: sico.text.encode(ir), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      end if
+    case error(_):
+      let no_mode = I64.literal(0)
+  end match
+  let out = parser.summarize(words)
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

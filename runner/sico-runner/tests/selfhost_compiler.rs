@@ -11,11 +11,34 @@ use sico_source::{SourceFile, SourceId};
 const COMPILER_SOURCE: &str = include_str!("../../../selfhost/compiler.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
 const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
+const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
+const FORMATTER_SOURCE: &str = include_str!("../../../selfhost/formatter.sico");
 const IDENTITY_SOURCE: &str =
     "function identity(value: Int) returns Int:\n  return value\nend function\n";
 
+fn assert_bytes_equal(actual: &[u8], expected: &[u8]) {
+    if actual == expected {
+        return;
+    }
+    let first = actual
+        .iter()
+        .zip(expected)
+        .position(|(left, right)| left != right)
+        .unwrap_or(actual.len().min(expected.len()));
+    let start = first.saturating_sub(80);
+    let actual_end = (first + 160).min(actual.len());
+    let expected_end = (first + 160).min(expected.len());
+    panic!(
+        "byte mismatch at {first}; actual_len={}, expected_len={}\nactual: {}\nexpected: {}",
+        actual.len(),
+        expected.len(),
+        String::from_utf8_lossy(&actual[start..actual_end]),
+        String::from_utf8_lossy(&expected[start..expected_end]),
+    );
+}
+
 fn rust_ir(text: &str) -> String {
-    let source = SourceFile::from_text(SourceId::new(0), "identity.sico", text)
+    let source = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", text)
         .expect("fixture source is bounded");
     let module = lower_core(&source).expect("Rust oracle lowers fixture");
     canonical_json(&module).expect("Rust oracle emits canonical IR")
@@ -39,6 +62,7 @@ fn compile_guest() -> &'static [u8] {
             COMPILER_PARSER_SOURCE,
         )
         .unwrap();
+        std::fs::write(directory.join("parser.sico"), PARSER_SOURCE).unwrap();
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let exit = sico_cli::run(
@@ -293,14 +317,42 @@ fn sico_compiler_emits_rust_verified_canonical_ir() {
 }
 
 #[test]
-fn sico_compiler_refuses_an_unknown_same_length_source() {
+fn sico_compiler_lowers_the_formatter_intrinsic_prefix_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function ascii_letter")
+        .expect("formatter keeps the intrinsic prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter intrinsic prefix must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_fixed_guard_chains_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function scan_space")
+        .expect("formatter keeps the fixed guard-chain prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter fixed guard-chain prefix must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
     assert_eq!(
         run_guest(&mutation),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "unsupported self-host source shape".into(),
+            message: "ERR:E-SH-IR-PARAMETER-TYPE".into(),
         }
     );
 }

@@ -12,6 +12,7 @@ use sico_runner::{
 use sico_source::{SourceFile, SourceId};
 
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
+const PARSER_DRIVER_SOURCE: &str = include_str!("../../../selfhost/parser_driver.sico");
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 const INPUT: &[u8] = b"function main() returns Int:\n  let xs = sico.list.empty()\n  let total = I64.literal(0)\n  for x in xs:\n    if I64.equal(total, I64.literal(0)):\n      set total = I64.literal(1)\n    else:\n      while I64.less_than(total, I64.literal(2)):\n        match I64.checked_add(total, I64.literal(1)):\n          case ok(next):\n            set total = next\n          case error(_):\n            return -1\n        end match\n      end while\n    end if\n  end for\n  return 0\nend function\n\nfunction add(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(I64.literal(1), b)\nend function\n\nfunction message() returns Text:\n  return \"ready, (nested-looking)\"\nend function\n";
 
@@ -22,9 +23,10 @@ fn compile_parser() -> Vec<u8> {
         TEMP_ID.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir(&directory).unwrap();
-    let source_path = directory.join("parser.sico");
+    let source_path = directory.join("parser_driver.sico");
     let component_path = directory.join("parser.component.wasm");
-    std::fs::write(&source_path, PARSER_SOURCE).unwrap();
+    std::fs::write(directory.join("parser.sico"), PARSER_SOURCE).unwrap();
+    std::fs::write(&source_path, PARSER_DRIVER_SOURCE).unwrap();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let exit = sico_cli::run(
