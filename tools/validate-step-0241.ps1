@@ -6,21 +6,28 @@ $env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
 
 $parser = Get-Content -LiteralPath (Join-Path $repo 'selfhost\parser.sico') -Raw
 $tests = Get-Content -LiteralPath (Join-Path $repo 'runner\sico-runner\tests\selfhost_parser.rs') -Raw
+$steps = Get-ChildItem -LiteralPath (Join-Path $repo 'docs\steps') -File
+
+foreach ($number in 213..241) {
+    $prefix = 'STEP-{0:D4}-' -f $number
+    $matches = @($steps | Where-Object { $_.Name.StartsWith($prefix, [StringComparison]::Ordinal) })
+    if ($matches.Count -ne 1) {
+        $names = ($matches.Name | Sort-Object) -join ', '
+        throw "$prefix must have exactly one M22 record; found $($matches.Count): $names"
+    }
+}
 
 if ($parser.Contains('ERR:E-SH-IR-STATEMENTATEMENT')) {
     throw 'misspelled statement diagnostic remains'
 }
 
-$cell = $parser.IndexOf('let ge_cell_index = general_cell_lookup')
-$parameter = $parser.IndexOf('let ge_param_count = count_params', $cell)
-if ($cell -lt 0 -or $parameter -lt 0 -or $cell -ge $parameter) {
-    throw 'general expression lookup must resolve local cells before parameters'
+if (-not $parser.Contains('return "ERR:E-SH-IR-CELL-SHADOW"')) {
+    throw 'advanced cell frontend must fail closed on parameter shadowing'
 }
 
 foreach ($needle in @(
     'function shadow(x: I64) returns I64:',
-    'function literal_after_let() returns I64:',
-    'ERR:E-SH-IR-STATEMENT'
+    'ERR:E-SH-IR-CELL-SHADOW'
 )) {
     if (-not $tests.Contains($needle)) {
         throw "missing STEP-0241 regression: $needle"
@@ -38,7 +45,7 @@ try {
     & $cargo clippy --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --all-targets -- -D warnings
     if ($LASTEXITCODE -ne 0) { throw 'runner clippy failed' }
 
-    git diff --check
+    git diff --check HEAD
     if ($LASTEXITCODE -ne 0) { throw 'git diff --check failed' }
 }
 finally {

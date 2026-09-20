@@ -1,7 +1,7 @@
 # M22 interim evidence audit
 
 > - verdict: **NO-GO / implementation in progress**
-> - date: 2026-09-17 (updated through STEP-0221)
+> - date: 2026-09-18 (updated through STEP-0240)
 > - trigger: owner directive "先完成自举，再完善 GUI/原生界面库"
 > - evidence class: internal-fixture
 
@@ -26,7 +26,7 @@ bounded seam is never promoted automatically to a later slice or M22 GO.
 | L1 formatter byte-exact + idempotent on frozen corpora | STEP-0217/0218: 99/99 accepted byte-exact and idempotent; 116/116 typed lexical refusal through real runner | **GO (S1)** |
 | L1 checker declared diagnostic differential | `selfhost_checker`: one accept + one missing-colon refusal | **NO-GO** |
 | Lexer/token/AST parser | STEP-0215: lossless tokens 215/215; STEP-0216/0219: accepted declaration shape/metadata 99/99 via `declaration_parser.sico`; STEP-0221: lexer/parser linked into compiler on its own 3 sources; the primary lowering parser additionally carries the STEP-0193–0212 expression subset, but general statement/recovery/refusal AST remains absent | **partial** |
-| Canonical typed IR + Rust verifier differential | STEP-0193–0212: 32 positive fixtures cover recursive expression trees, parameters, constants, typed user calls and fixed-width operations with literal operands; checked arithmetic/match and the full compiler corpus remain outside the executed subset | **partial** |
+| Canonical typed IR + Rust verifier differential | STEP-0193–0212 plus STEP-0222–0240: 110 positive fixtures cover recursive expression trees, parameters, constants, typed user calls, fixed-width operations, I64/U64 checked arithmetic matches with recursive operands, a loop-driven straight environment with cross-statement SSA, all Rust lower_core straight-line return shapes, set/mutation cell-mode lowering (write_local/read_local/locals table) extended to operation/call right-hand sides and nested call arguments, and structured if/else plus while loops with break/continue — all byte-identical to the Rust paths; the full compiler corpus remains outside the executed subset | **partial** |
 | Sico-native deterministic codegen | STEP-0221 retains one fixed constant-return Core Wasm byte seam; no general encoder or Component wrapper | **partial** |
 | Frozen corpus artifact equality | STEP-0220 freezes native oracle: 37 reproducible Script Components + 178 no-artifact refusals; guest has not reproduced them | **NO-GO (oracle ready)** |
 | A=B=C self-compilation | Sico compiler does not compile `selfhost/compiler.sico` | **NO-GO** |
@@ -43,7 +43,7 @@ bounded seam is never promoted automatically to a later slice or M22 GO.
 - `selfhost/tokens.sico`: lossless lexer parity on 215/215 bounded line
   segments. `selfhost/declaration_parser.sico` matches accepted top-level
   declaration metadata; `selfhost/parser.sico` is the primary lowering parser
-  advanced through STEP-0212. Neither supplies a general statement/recovery
+  advanced through STEP-0240. Neither supplies a general statement/recovery
   tree for the full frozen corpus.
 - `selfhost/compiler.sico` now links `compiler_lexer.sico` and
   `compiler_parser.sico`; the actual compiler Component consumes their token

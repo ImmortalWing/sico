@@ -152,7 +152,6 @@
 | [STEP-0128](./STEP-0128-live-model-evaluation.md) | complete | M13 | 权威 live-model 评测（DeepSeek deepseek-chat，96×30，$0.78）：实测 0.9095，ADR-0012 预算下达且达标→§13 (d) = 实测 GO（B-repair 0.833 为既定缺口）；报告 docs/reports/ai-eval-live-model-v1.md |
 | [STEP-0129](./STEP-0129-m14-inventory-profile-rfc.md) | complete (RFC-0038 accepted) | M14 | M14 盘点：check/build/run 实测矩阵（递归过 check 但 match 全 return 臂封死；无 loop 语法）、应用 profile 与出口语料冻结 RFC |
 | [STEP-0130](./STEP-0130-general-control-flow.md) | complete | M14 | 通用控制流落地：while/if-else/break/continue/set + IR cells + 通用 CFG 降级，冻结形状字节不变；端到端 3 测试 + 修复 watch bridge 抢跑 bug |
-| [STEP-0241](./STEP-0241-m22-origin-dev-quality-repair.md) | complete / partial-S4 | M22 S4 | origin/dev 质量修复：local cell 遮蔽参数与 Rust oracle 一致、稳定诊断码修复、runner 回归与 M22 阶段声明校正 |
 
 STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支持工作。STEP-0075–0084 完成 M8（GO）；STEP-0085–0094 完成 M9（GO）；STEP-0095–0102 完成 M10（GO）；STEP-0103–0110 完成 M11（GO）。M12 STEP-0111–0118 已形成 GO-core；STEP-0125 完成 guest-visible http@0.2.0 runner integration，STEP-0126 关闭 Linux provider parity，STEP-0127 复审发出 M12 完整 GO。STEP-0119–0123 为 M13 AI tooling closure 并行支持轨；STEP-0128 以 DeepSeek 真实运行收口，ADR-0012 依实测基线下达预算且达标——§13 质量预算项 (d) 实测 GO，B-repair 0.833 为既定跟踪缺口。STEP-0124 只冻结 M14–M18 路线与门槛，没有预留或启动任何实现 STEP。
 
@@ -183,3 +182,23 @@ STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支�
 | [STEP-0219](./STEP-0219-m22-declaration-metadata.md) | complete / partial-S3 | M22 S3 AST | accepted ModuleAst kind/name/range/detail 在 99/99 源码与 Rust byte-exact；expression/statement/recovery/refusal AST 仍开放 |
 | [STEP-0220](./STEP-0220-m22-script-build-corpus.md) | complete / oracle baseline | M22 L2 corpus | Script v0 37 accept/178 refuse；accepted Component 37/37 双构建 byte-reproducible，refused 0 artifact，固定 guest parity 目标 |
 | [STEP-0221](./STEP-0221-m22-modular-compiler-frontend.md) | complete / frontend integrated | M22 S3→S4 | lossless lexer + declaration parser 链接进 compiler Component；自身 3 源码 token/AST metadata 对齐 Rust，lowering/codegen 仍 partial |
+| [STEP-0222](./STEP-0222-m22-checked-add-match-ir.md) | complete / partial-S4 | M22 S4 | I64/U64 checked_add 精确 all-return match：3-block canonical IR、spill/project、34 正例 byte-exact；非零 fallback typed refusal |
+| [STEP-0223](./STEP-0223-m22-checked-arithmetic-match-ir.md) | complete / partial-S4 | M22 S4 | 同一精确 match 形状扩至 checked_sub/mul/div；I64/U64 六个新增正例，累计 40 个 byte-exact |
+| [STEP-0224](./STEP-0224-m22-checked-literal-operand-match-ir.md) | complete / partial-S4 | M22 S4 | checked match 支持同宽定宽字面量操作数；常量先发与 SSA 顺序逐字节一致，累计 42 正例 |
+| [STEP-0225](./STEP-0225-m22-checked-nested-call-match-ir.md) | complete / partial-S4 | M22 S4 | checked match 左右操作数支持一层 typed user call；错误返回类型拒绝，累计 44 正例 byte-exact |
+| [STEP-0226](./STEP-0226-m22-deep-checked-operand-ir.md) | complete / partial-S4 | M22 S4 | checked operand 证明二层 nested call 与 nested literal 递归发射；累计 46 正例 byte-exact |
+| [STEP-0227](./STEP-0227-m22-straight-let-binding-ir.md) | complete / partial-S4 | M22 S4 | 首个通用语句切片：单个定宽运算 let 绑定后 return；纯 SSA alias、literal 先发，累计 48 正例 byte-exact |
+| [STEP-0228](./STEP-0228-m22-chained-let-binding-ir.md) | complete / partial-S4 | M22 S4 | 两条直线 let 建立跨语句 SSA 依赖；独立源码范围锚点与同宽拒绝，累计 50 正例 byte-exact |
+| [STEP-0229](./STEP-0229-m22-straight-binding-environment.md) | complete / partial-S4 | M22 S4 | 循环式 name/type/value 环境移除 1/2 条绑定上限；4/5 条依赖链与前向引用拒绝，累计 52 正例 byte-exact |
+| [STEP-0230](./STEP-0230-m22-long-block-literal-ir.md) | complete / partial-S4 | M22 S4 | 长直线块任意语句支持 I64/U64 literal；const/operation SSA 顺序、溢出拒绝，累计 54 正例 byte-exact |
+| [STEP-0231](./STEP-0231-m22-environment-call-ir.md) | complete / partial-S4 | M22 S4 | 长直线块统一 typed user call：嵌套括号分段实参、参数/前绑定/literal 解析与位置类型检查，累计 58 正例 byte-exact |
+| [STEP-0232](./STEP-0232-m22-scalar-const-binding-ir.md) | complete / partial-S4 | M22 S4 | 长直线块统一 Int/Bool/Text 标量常量绑定：token 级 range、canonical magnitude 与转义拒绝，累计 64 正例 byte-exact |
+| [STEP-0233](./STEP-0233-m22-alias-and-const-return-ir.md) | complete / partial-S4 | M22 S4 | 长直线块统一别名绑定（零指令纯 SSA alias）与裸常量 return；emitted 计数逗号排序，累计 69 正例 byte-exact |
+| [STEP-0234](./STEP-0234-m22-literal-call-return-ir.md) | complete / partial-S4 | M22 S4 | 长直线块统一定宽 literal 与 typed call return；实参嵌套调用解析与 value-base 推进，累计 76 正例 byte-exact |
+| [STEP-0235](./STEP-0235-m22-fixed-op-return-ir.md) | complete / partial-S4 | M22 S4 | 长直线块统一定宽运算 return：operand 检查、literal 先发与 value/amount 键，全部 return 形状闭环，累计 81 正例 byte-exact |
+| [STEP-0236](./STEP-0236-m22-set-mutation-cell-ir.md) | complete / partial-S4 | M22 S4 | set/mutation cell 模式：let/set→write_local、读→read_local、locals 表，与 Rust general CFG 路径逐字节一致，累计 88 正例 |
+| [STEP-0237](./STEP-0237-m22-cell-mode-op-call-rhs.md) | complete / partial-S4 | M22 S4 | cell 模式运算/调用 RHS：操作数/实参 cell 读源序 read_local、零参调用，累计 96 正例 byte-exact |
+| [STEP-0238](./STEP-0238-m22-cell-mode-nested-call-args.md) | complete / partial-S4 | M22 S4 | cell 模式 call 实参嵌套调用：复用 argument_* 机械、seg_advance 统一推进，累计 100 正例 byte-exact |
+| [STEP-0239](./STEP-0239-m22-structured-if-ir.md) | complete / partial-S4 | M22 S4 | 结构化 if/else lowering：branch/jump/unreachable 块、if 头 range、set/return 双形态，累计 107 正例 byte-exact |
+| [STEP-0240](./STEP-0240-m22-structured-while-ir.md) | complete / partial-S4 | M22 S4 | while+break/continue lowering：头/体/退出/回边块与 7 块 if 变体、locals 预算内辅助拆分，累计 110 正例 byte-exact |
+| [STEP-0241](./STEP-0241-m22-origin-dev-quality-repair.md) | complete / partial-S4 | M22 S4 | origin/dev 合并质量修复：旧路径 local cell 优先、新 cell frontend 同名遮蔽 typed fail-closed、稳定诊断码、all-target clippy 与重复 STEP 记录清理 |

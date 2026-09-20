@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied; executable audit through STEP-0241: S1 complete, S2 NO-GO, S3/S4/S5 partial, S6 not entered. STEP-0213–0221 freeze the 215-source/build oracle and modular frontend evidence; the merged origin/dev path adds 69 hand-selected general-CFG lowering differentials through STEP-0223; STEP-0241 repairs shadowing semantics and diagnostic identity. Bounded fixtures do not substitute for the remaining corpus/codegen/bootstrap gates.
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0241: S1 complete, S2 NO-GO, S3/S4/S5 partial, S6 not entered. STEP-0193–0212 advance canonical typed IR; STEP-0213–0221 freeze the full source/build oracle and close formatter/lossless-lexer plus bounded frontend integration; STEP-0222–0226 add Result-shaped checked arithmetic with literals and recursive typed user calls; STEP-0227–0235 build a loop-driven straight SSA environment; STEP-0236–0238 add set/mutation cell-mode lowering; STEP-0239/0240 lower structured if/else and while loops byte-identically to the Rust general-CFG path; STEP-0241 repairs the reviewed origin/dev shadowing/diagnostic defects and integration clippy gaps without widening support. No later STEP numbers are reserved.
 
 ## 1. Objective
 

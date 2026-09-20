@@ -1,6 +1,6 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-20 (origin/dev implementation merged through STEP-0241; executable evidence reconciled with the accepted M22 slice definitions)
+> - updated: 2026-09-20 (M22 STEP-0241 origin/dev integration quality repair)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
 > - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（block-game 待 M24）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1 GO，S2 NO-GO，S3/S4/S5 partial，S6 未进入）；主线 = M22 自举闭环，随后 M23→M24→M25
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
@@ -328,7 +328,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（in-progress; entry satisfied 2026-09-14）
 
-状态：`in-progress：S1 formatter 已由 STEP-0217/0218 在冻结 215-source 语料关闭；S2 checker 仍 NO-GO；S3 lexer 已关闭、parser 为 accepted declaration metadata partial；S4 同时保留 modular frontend 与 origin/dev general-CFG lowering，STEP-0241 修复 shadowing 语义分叉，但完整 corpus lowering 仍 partial；S5 只有 bounded codegen seam；S6 ADR-0015 A=B=C bootstrap 未进入。当前 69 个 lowering 正例只构成 internal-fixture differential evidence。`
+状态：`in-progress：S1 formatter 已关闭；S2 checker 仍 NO-GO；S3 lexer 已关闭、parser partial；S4 typed IR 由 STEP-0193–0240 覆盖递归表达式、typed calls、checked 算术、直线 SSA、mutation cells 与结构化 if/while（110 正例），STEP-0241 修复 origin/dev 合并前质量缺陷并把新 cell frontend 的同名遮蔽固定为 typed fail-closed；S4 仍 partial；S5 只有 bounded codegen seam，S6 A=B=C 未进入。下一门为语料级差分扩展或 checker；后续 STEP 不预留`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 
