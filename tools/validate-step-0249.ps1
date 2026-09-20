@@ -54,11 +54,10 @@ try {
         $stdout = $process.StandardOutput.ReadToEnd()
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
-        # The measured typed frontier after the local-limit repair: the
-        # while-body if-condition operand machinery refuses before any guest
-        # trap.  STEP-0250 advances this assertion when the frontier moves.
-        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-CALL-TYPE')) {
-            throw "formatter canary did not reach the declared typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
+        # Frontier policy: pinned to the typed fail-closed class here; the
+        # newest step validator pins the exact current error code.
+        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-')) {
+            throw "formatter canary did not reach a typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
         }
         if ($stderr.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -77,4 +76,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0249_OK local-limit=repaired canary=CALL-TYPE parser-driver=builds bounds=headroom-16 next=while-if-operands'
+Write-Output 'STEP_0249_OK local-limit=repaired canary=typed parser-driver=builds bounds=headroom-16 next=while-if-operands'

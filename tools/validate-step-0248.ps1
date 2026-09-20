@@ -50,11 +50,11 @@ try {
         $stdout = $process.StandardOutput.ReadToEnd()
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
-        # Frontier note (STEP-0249): the sbi extraction advanced the typed
-        # canary boundary from E-SH-IR-EXPRESSION to E-SH-IR-CALL-TYPE; the
-        # assertion tracks the current measured frontier, still fail-closed.
-        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-CALL-TYPE')) {
-            throw "formatter canary did not reach the declared typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
+        # Frontier policy: this validator pins the typed fail-closed class
+        # only (any E-SH-IR-* refusal, never a guest trap); the newest step
+        # validator pins the exact current error code.
+        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-')) {
+            throw "formatter canary did not reach a typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
         }
         if ($stderr.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }

@@ -845,6 +845,9 @@ function scalar_type_kind(type_name: Text) returns Text:
   if is_word(type_name, "U64"):
     return "u64"
   end if
+  if is_word(type_name, "Bytes"):
+    return "bytes"
+  end if
   return "ERR:E-SH-IR-PARAMETER-TYPE"
 end function
 
