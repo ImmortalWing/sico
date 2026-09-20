@@ -1,13 +1,13 @@
 # Sico project status
 
-> - updated: 2026-09-20 (STEP-0243 adds the frozen E1001-E1016 syntax identities to the integrated Sico parser/checker)
+> - updated: 2026-09-20 (STEP-0244 adds the frozen core type/record/invariant identities and removes the free-form checker path)
 > - phase: M12 complete (full GO per STEP-0127); M13 closed — authoritative live-model run measured and budgets met under ADR-0012 (STEP-0128); M7 public deployment and M6/mobile remain deferred
 > - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence); M22 compiler self-host track **S1 complete，S2/S3/S4/S5 partial，S6 尚未进入**。STEP-0193–0212 已把 lowering 扩至递归表达式、multi-parameter SSA、typed user calls、常量/定宽字面量/嵌套调用实参与定宽运算；STEP-0213–0221 冻结 215-source 语料、关闭 formatter 与 lossless lexer、补 accepted declaration metadata、native build oracle 和 modular frontend evidence。
-> - current step: STEP-0243 在 integrated parser/checker 中按真实块结构、定界符与 module/use/interface 形状实现 E1001–E1016；12 个 mutation 与 4 个 shape oracle 经真实 runner 全绿，STEP-0242 的 215-source 词法分区无误判回归保持绿。34 个非词法 Rust 语义/模块拒绝仍开放，因此 S2 保持 partial。
+> - current step: STEP-0244 新增 `compiler_semantics` 的 newtype/record/field/invariant/function struct-of-arrays 语义表，精确关闭冻结语料中的 9 个 E2001/E2002/E2010/E2011/E2020；65 accepted 保持通过，25 个未支持拒绝保持显式开放。旧 free-form header scanner 已删除，缺冒号函数头改为 disjoint typed refusal。
 > - current support step: 无
 > - last completed support step: STEP-0196 (M19 支持轨：fresh-host CI 修复——`tools/ensure-python.ps1`（CPython 3.12.10 embeddable SHA256 钉住，WindowsApps 存根排除 + Stop 偏好下的 stderr 终止错误修复）+ `run-ci.ps1` 三项修复（msys2 binutils PATH、Python 进 PATH、runner debug 构建先于 workspace 测试）；console-control 测试失败根因据实修正为缺 Python 依赖（非 TTY 理论未被实验证实），补 Python 后 2/2 绿；修复后完整 run-ci **CI GREEN 11/11**（clippy 本机首跑 -D warnings 全过）；此前 STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence))
-> - last completed active step: STEP-0243 (checker E1001–E1016：结构化检测、16/16 stable identities、215-source 无误判)；此前 STEP-0242 (116/99 lexical partition)。
-> - next step: M22 S2 实现 34 个非词法 Rust 拒绝的语义/模块诊断与稳定身份，并淘汰 checker 的 free-form header 报告；随后收拢 S3/S4、实现 RFC-0011 codegen 与 ADR-0015 bootstrap harness；自举 GO 后再进入原生 UI/GUI 转换器。
+> - last completed active step: STEP-0244 (checker core semantics：9 个 E2xxx 精确 identity、65 accepted、25 unsupported；删除 free-form scanner)；此前 STEP-0243 (E1001–E1016)。
+> - next step: M22 S2 实现剩余 25 个 match/result/effect/affine/task/stream/component/revision/module 诊断；随后收拢 S3/S4、实现 RFC-0011 codegen 与 ADR-0015 bootstrap harness；自举 GO 后再进入原生 UI/GUI 转换器。
 > - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots; M19 production engineering, M20 cross-platform/language v1/completion audit, M21 DX/stdlib batch 2/ecosystem activation and M22 compiler self-host followed by owner session directives (2026-09-13/14); on 2026-09-17 the owner directive 「继续完成sico，M22-M25」 confirmed continuing M22 and registering M23–M25 (language v1 batch 3, vision closure + block-game pilot, release v1.0 completion audit); M13 quality-budget gap (STEP-0128) is a recorded product fact for M17/M18 planning
 > - next support step: 无（M13 已收口：live-model 实测达标，ADR-0012 记录一个既定缺口 B-repair 0.833，供未来质量步骤跟踪）
 

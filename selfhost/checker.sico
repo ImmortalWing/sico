@@ -23,73 +23,7 @@ end record
 
 use compiler_lexer.has_error
 use compiler_parser.syntax_diagnostic
-
-function starts_with_any(line: Text, prefixes: List[Text]) returns Bool:
-  let count = sico.list.length(prefixes)
-  let index = U64.literal(0)
-  while U64.less_than(index, count):
-    match sico.list.get(prefixes, index):
-      case ok(prefix):
-        if sico.text.starts_with(line, prefix):
-          return true
-        end if
-        match U64.checked_add(index, U64.literal(1)):
-          case ok(next):
-            set index = next
-          case error(_):
-            return false
-        end match
-      case error(_):
-        return false
-    end match
-  end while
-  return false
-end function
-
-function report_line(issues: Text, index: U64, trimmed: Text) returns Text:
-  return sico.text.concat(issues, sico.text.concat("line ", sico.text.concat(sico.u64.to_text(index), sico.text.concat(": ", sico.text.concat(trimmed, "\n")))))
-end function
-
-function check_source(src: Text) returns Text:
-  let block_prefixes = sico.list.append(sico.list.append(sico.list.append(sico.list.append(sico.text.split_lines(""), "record"), "enum"), "module"), "interface")
-  let lines = sico.text.split_lines(src)
-  let count = sico.list.length(lines)
-  let index = U64.literal(0)
-  let issues = ""
-  while U64.less_than(index, count):
-    match sico.list.get(lines, index):
-      case ok(line):
-        let trimmed = sico.text.trim(line)
-        if U64.equal(sico.text.length(trimmed), U64.literal(0)):
-          set index = index
-        else:
-          if sico.text.starts_with(trimmed, "function"):
-            if sico.text.ends_with(trimmed, ":"):
-              set issues = sico.text.concat(issues, "")
-            else:
-              set issues = report_line(issues, index, trimmed)
-            end if
-          end if
-          if starts_with_any(trimmed, block_prefixes):
-            if sico.text.ends_with(trimmed, ":"):
-              set issues = sico.text.concat(issues, "")
-            else:
-              set issues = report_line(issues, index, trimmed)
-            end if
-          end if
-        end if
-        match U64.checked_add(index, U64.literal(1)):
-          case ok(next):
-            set index = next
-          case error(_):
-            return issues
-        end match
-      case error(_):
-        return issues
-    end match
-  end while
-  return issues
-end function
+use compiler_semantics.semantic_diagnostic
 
 function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
   if compiler_lexer.has_error(input.stdin):
@@ -100,9 +34,9 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
   if U64.less_than(U64.literal(0), sico.text.length(syntax)):
     return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: syntax))
   end if
-  let issues = check_source(text)
-  if U64.equal(sico.text.length(issues), U64.literal(0)):
-    return ok(ScriptOutput(stdout: sico.text.encode("check ok\n"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  let semantic = compiler_semantics.semantic_diagnostic(text)
+  if U64.less_than(U64.literal(0), sico.text.length(semantic)):
+    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: semantic))
   end if
-  return ok(ScriptOutput(stdout: sico.text.encode(issues), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  return ok(ScriptOutput(stdout: sico.text.encode("check ok\n"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
 end function

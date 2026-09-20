@@ -485,6 +485,18 @@ function syntax_missing_return_call_close(line: Text) returns Bool:
   return false
 end function
 
+function syntax_missing_function_colon(raw: Text, line: Text) returns Bool:
+  if same(raw, line):
+    if syntax_function_header(line):
+      if sico.text.ends_with(line, ":"):
+        return false
+      end if
+      return true
+    end if
+  end if
+  return false
+end function
+
 function syntax_missing_match_separator(line: Text, depth: U64) returns Bool:
   if U64.less_than(U64.literal(0), depth):
     if sico.text.starts_with(line, "case "):
@@ -588,6 +600,9 @@ function syntax_diagnostic(source: Text) returns Text:
           end if
           if U64.less_than(syntax_count_byte(line, I64.literal(93)), syntax_count_byte(line, I64.literal(91))):
             return "E1004"
+          end if
+          if syntax_missing_function_colon(raw, line):
+            return "E-SH-SYNTAX-FUNCTION-COLON"
           end if
         else:
           if syntax_missing_return_call_close(line):

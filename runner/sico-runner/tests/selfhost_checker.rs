@@ -10,6 +10,7 @@ use sico_runner::{
 const CHECKER_SOURCE: &str = include_str!("../../../selfhost/checker.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
 const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
+const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler_semantics.sico");
 const OK_SOURCE: &str = "function main() returns Int:\n  return 42\nend function\n";
 
 fn compile_checker() -> Vec<u8> {
@@ -28,6 +29,11 @@ fn compile_checker() -> Vec<u8> {
     std::fs::write(
         directory.join("compiler_parser.sico"),
         COMPILER_PARSER_SOURCE,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("compiler_semantics.sico"),
+        COMPILER_SEMANTICS_SOURCE,
     )
     .unwrap();
     let mut stdout: Vec<u8> = Vec::new();
@@ -87,31 +93,23 @@ fn sico_checker_matches_rust_on_well_formed_program() {
 
 #[test]
 fn sico_checker_catches_missing_colon_where_rust_refuses() {
-    // STEP-0181: the Sico checker now reports the missing-colon function
-    // header (the declaration colon-shape check via `sico.text.ends_with`),
-    // matching the Rust checker's refusal on the same input.
     let component = compile_checker();
     let runner = Runner::new().expect("runner builds");
     let prepared = runner
         .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
         .expect("checker component links");
     let bad = b"function main() returns Int\n  return 42\nend function\n";
-    match run_checker(&prepared, bad) {
-        RunOutcome::Output(output) => {
-            assert_eq!(output.exit_code, 0);
-            let text = String::from_utf8_lossy(&output.stdout);
-            assert!(
-                text.contains("line 0"),
-                "expected a line report, got {text}"
-            );
-            assert!(text.contains("function main() returns Int"), "got {text}");
+    assert_eq!(
+        run_checker(&prepared, bad),
+        RunOutcome::Domain {
+            code: "invalid-input".to_owned(),
+            message: "E-SH-SYNTAX-FUNCTION-COLON".to_owned(),
         }
-        other => panic!("expected guest output, got {other:?}"),
-    }
+    );
 }
 
 #[test]
-fn sico_checker_matches_the_frozen_lexical_partition() {
+fn sico_checker_matches_the_supported_frozen_diagnostic_partition() {
     let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let manifest: serde_json::Value =
         serde_json::from_slice(&std::fs::read(repository.join("selfhost/corpus-v0.json")).unwrap())
@@ -130,15 +128,16 @@ fn sico_checker_matches_the_frozen_lexical_partition() {
         ..RunnerLimits::default()
     };
     let mut lexical = 0;
-    let mut non_lexical = 0;
+    let mut semantic = 0;
+    let mut accepted = 0;
+    let mut unsupported = 0;
 
     for entry in entries {
         let path = entry["path"].as_str().unwrap();
-        let expected_lexical = entry["diagnostic_ids"]
+        let diagnostic = entry["diagnostic_ids"]
             .as_array()
-            .unwrap()
-            .iter()
-            .any(|id| id == "LEXICAL");
+            .and_then(|ids| ids.first())
+            .and_then(serde_json::Value::as_str);
         let source = std::fs::read(repository.join(path)).unwrap();
         let outcome = prepared
             .run(
@@ -150,26 +149,47 @@ fn sico_checker_matches_the_frozen_lexical_partition() {
                 &CancelToken::new(),
             )
             .expect("frozen source fits runner input bounds");
-        if expected_lexical {
-            lexical += 1;
-            assert_eq!(
-                outcome,
-                RunOutcome::Domain {
-                    code: "invalid-input".to_owned(),
-                    message: "LEXICAL".to_owned(),
-                },
-                "{path}"
-            );
-        } else {
-            non_lexical += 1;
-            assert!(
-                matches!(outcome, RunOutcome::Output(_)),
-                "non-lexical source must not be classified as lexical: {path}: {outcome:?}"
-            );
+        match diagnostic {
+            Some("LEXICAL") => {
+                lexical += 1;
+                assert_eq!(
+                    outcome,
+                    RunOutcome::Domain {
+                        code: "invalid-input".to_owned(),
+                        message: "LEXICAL".to_owned(),
+                    },
+                    "{path}"
+                );
+            }
+            Some(code @ ("E2001" | "E2002" | "E2010" | "E2011" | "E2020")) => {
+                semantic += 1;
+                assert_eq!(
+                    outcome,
+                    RunOutcome::Domain {
+                        code: "invalid-input".to_owned(),
+                        message: code.to_owned(),
+                    },
+                    "{path}"
+                );
+            }
+            _ if entry["rust_check"] == "accepted" => {
+                accepted += 1;
+                let RunOutcome::Output(output) = outcome else {
+                    panic!("accepted source was refused: {path}: {outcome:?}")
+                };
+                assert!(output.stdout.starts_with(b"check ok"), "{path}");
+            }
+            _ => {
+                unsupported += 1;
+                assert!(
+                    matches!(outcome, RunOutcome::Output(_)),
+                    "unsupported semantic source must remain open: {path}: {outcome:?}"
+                );
+            }
         }
     }
 
-    assert_eq!((lexical, non_lexical), (116, 99));
+    assert_eq!((lexical, semantic, accepted, unsupported), (116, 9, 65, 25));
 }
 
 #[test]
@@ -236,6 +256,66 @@ fn sico_checker_matches_remaining_e1xxx_shape_identities() {
                 message: code.to_owned(),
             },
             "{code}"
+        );
+    }
+}
+
+#[test]
+fn sico_checker_matches_frozen_e2xxx_semantic_identities() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = [
+        (
+            "syntax-candidates/b/nominal-invariants/invalid/nominal-confusion.sico",
+            "E2001",
+        ),
+        (
+            "syntax-candidates/b/nominal-invariants/invalid/structural-record-confusion.sico",
+            "E2001",
+        ),
+        (
+            "syntax-candidates/b/numbers-units/invalid/cross-currency.sico",
+            "E2001",
+        ),
+        (
+            "syntax-candidates/b/numbers-units/invalid/mixed-unit.sico",
+            "E2001",
+        ),
+        (
+            "syntax-candidates/b/numbers-units/invalid/text-as-int.sico",
+            "E2001",
+        ),
+        (
+            "syntax-candidates/b/numbers-units/invalid/implicit-int-to-float.sico",
+            "E2002",
+        ),
+        (
+            "syntax-candidates/b/nominal-invariants/invalid/missing-field.sico",
+            "E2010",
+        ),
+        (
+            "syntax-candidates/b/nominal-invariants/invalid/unknown-field.sico",
+            "E2011",
+        ),
+        (
+            "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico",
+            "E2020",
+        ),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (path, code) in cases {
+        let source = std::fs::read(repository.join(path)).unwrap();
+        assert_eq!(
+            run_checker(&prepared, &source),
+            RunOutcome::Domain {
+                code: "invalid-input".to_owned(),
+                message: code.to_owned(),
+            },
+            "{path}"
         );
     }
 }

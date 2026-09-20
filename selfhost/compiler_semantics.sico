@@ -1,0 +1,341 @@
+module compiler_semantics
+
+use compiler_parser.words
+use compiler_parser.at
+use compiler_parser.find
+use compiler_parser.syntax_function_header
+
+function add(left: U64, right: U64) returns U64:
+  match U64.checked_add(left, right):
+    case ok(value):
+      return value
+    case error(_):
+      return left
+  end match
+end function
+
+function same(left: Text, right: Text) returns Bool:
+  return sico.bytes.equal(sico.text.encode(left), sico.text.encode(right))
+end function
+
+function different(left: Text, right: Text) returns Bool:
+  if same(left, right):
+    return false
+  end if
+  return true
+end function
+
+function less_equal(left: U64, right: U64) returns Bool:
+  if U64.less_than(left, right):
+    return true
+  end if
+  return U64.equal(left, right)
+end function
+
+function item(items: List[Text], index: U64) returns Text:
+  match sico.list.get(items, index):
+    case ok(value):
+      return value
+    case error(_):
+      return ""
+  end match
+end function
+
+function list_has(items: List[Text], target: Text) returns Bool:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(items)):
+    if same(item(items, index), target):
+      return true
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return false
+end function
+
+function map_get(keys: List[Text], values: List[Text], target: Text) returns Text:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(keys)):
+    if same(item(keys, index), target):
+      return item(values, index)
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function
+
+function owner_count(owners: List[Text], target: Text) returns U64:
+  let index = U64.literal(0)
+  let count = U64.literal(0)
+  while U64.less_than(index, sico.list.length(owners)):
+    if same(item(owners, index), target):
+      set count = add(count, U64.literal(1))
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return count
+end function
+
+function count_byte(text: Text, target: I64) returns U64:
+  let bytes = sico.text.encode(text)
+  let index = U64.literal(0)
+  let count = U64.literal(0)
+  while U64.less_than(index, sico.bytes.length(bytes)):
+    if I64.equal(sico.bytes.at(bytes, index, I64.literal(-1)), target):
+      set count = add(count, U64.literal(1))
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return count
+end function
+
+function has_field_label(line: Text, field: Text) returns Bool:
+  let source = sico.text.encode(line)
+  let needle = sico.text.encode(sico.text.concat(field, ":"))
+  let start = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(needle)), sico.bytes.length(source)):
+    match sico.bytes.slice(source, start, sico.bytes.length(needle)):
+      case ok(part):
+        if sico.bytes.equal(part, needle):
+          return true
+        end if
+      case error(_):
+        return false
+    end match
+    set start = add(start, U64.literal(1))
+  end while
+  return false
+end function
+
+function word_after(items: List[Text], target: Text) returns Text:
+  let index = U64.literal(0)
+  while U64.less_than(add(index, U64.literal(1)), sico.list.length(items)):
+    if same(item(items, index), target):
+      return item(items, add(index, U64.literal(1)))
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function
+
+function decimal_less_equal(left: Text, right: Text) returns Bool:
+  let left_bytes = sico.text.encode(left)
+  let right_bytes = sico.text.encode(right)
+  if U64.equal(sico.bytes.length(left_bytes), U64.literal(0)):
+    return true
+  end if
+  if U64.equal(sico.bytes.length(right_bytes), U64.literal(0)):
+    return true
+  end if
+  if U64.less_than(sico.bytes.length(left_bytes), sico.bytes.length(right_bytes)):
+    return true
+  end if
+  if U64.less_than(sico.bytes.length(right_bytes), sico.bytes.length(left_bytes)):
+    return false
+  end if
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.bytes.length(left_bytes)):
+    let left_byte = sico.bytes.at(left_bytes, index, I64.literal(-1))
+    let right_byte = sico.bytes.at(right_bytes, index, I64.literal(-1))
+    if I64.less_than(left_byte, right_byte):
+      return true
+    end if
+    if I64.less_than(right_byte, left_byte):
+      return false
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return true
+end function
+
+function decimal_digits(value: Text) returns Bool:
+  let bytes = sico.text.encode(value)
+  let index = U64.literal(0)
+  if U64.equal(sico.bytes.length(bytes), U64.literal(0)):
+    return false
+  end if
+  while U64.less_than(index, sico.bytes.length(bytes)):
+    let b = sico.bytes.at(bytes, index, I64.literal(-1))
+    if I64.less_than(b, I64.literal(48)):
+      return false
+    end if
+    if I64.less_than(b, I64.literal(58)):
+      set index = add(index, U64.literal(1))
+    else:
+      return false
+    end if
+  end while
+  return true
+end function
+
+function missing_field_label(line: Text, field: Text) returns Bool:
+  if has_field_label(line, field):
+    return false
+  end if
+  return true
+end function
+
+function invariant_violated(left: Text, right: Text) returns Bool:
+  if decimal_digits(left):
+    if decimal_digits(right):
+      if decimal_less_equal(left, right):
+        return false
+      end if
+      return true
+    end if
+  end if
+  return false
+end function
+
+function implicit_integer_float(value: Text) returns Bool:
+  if decimal_digits(value):
+    return true
+  end if
+  return false
+end function
+
+function semantic_diagnostic(source: Text) returns Text:
+  let lines = sico.text.split_lines(source)
+  let nominal_names = sico.text.split_lines("")
+  let record_names = sico.text.split_lines("")
+  let field_owners = sico.text.split_lines("")
+  let field_names = sico.text.split_lines("")
+  let invariant_owners = sico.text.split_lines("")
+  let invariant_left = sico.text.split_lines("")
+  let invariant_right = sico.text.split_lines("")
+  let function_names = sico.text.split_lines("")
+  let function_params = sico.text.split_lines("")
+  let function_returns = sico.text.split_lines("")
+  let active_record = ""
+  let index = U64.literal(0)
+
+  while U64.less_than(index, sico.list.length(lines)):
+    let raw = item(lines, index)
+    let line = sico.text.trim(raw)
+    let parts = compiler_parser.words(line)
+    if same(raw, line):
+      if sico.text.starts_with(line, "newtype "):
+        if U64.equal(sico.list.length(parts), U64.literal(4)):
+          set nominal_names = sico.list.append(nominal_names, compiler_parser.at(parts, U64.literal(1)))
+        end if
+      end if
+      if sico.text.starts_with(line, "record "):
+        set active_record = compiler_parser.at(parts, U64.literal(1))
+        set record_names = sico.list.append(record_names, active_record)
+      end if
+      if same(line, "end record"):
+        set active_record = ""
+      end if
+      if compiler_parser.syntax_function_header(line):
+        let function_index = compiler_parser.find(parts, "function")
+        let returns_index = compiler_parser.find(parts, "returns")
+        if U64.less_than(function_index, sico.list.length(parts)):
+          if U64.less_than(returns_index, sico.list.length(parts)):
+            let name = compiler_parser.at(parts, add(function_index, U64.literal(1)))
+            let parameter = ""
+            if U64.equal(returns_index, add(function_index, U64.literal(4))):
+              set parameter = compiler_parser.at(parts, add(function_index, U64.literal(3)))
+            end if
+            set function_names = sico.list.append(function_names, name)
+            set function_params = sico.list.append(function_params, parameter)
+            set function_returns = sico.list.append(function_returns, compiler_parser.at(parts, add(returns_index, U64.literal(1))))
+          end if
+        end if
+      end if
+    else:
+      if U64.less_than(U64.literal(0), sico.text.length(active_record)):
+        if sico.text.starts_with(line, "field "):
+          if U64.equal(sico.list.length(parts), U64.literal(3)):
+            set field_owners = sico.list.append(field_owners, active_record)
+            set field_names = sico.list.append(field_names, compiler_parser.at(parts, U64.literal(1)))
+          end if
+        end if
+        if sico.text.starts_with(line, "invariant "):
+          if U64.equal(sico.list.length(parts), U64.literal(3)):
+            set invariant_owners = sico.list.append(invariant_owners, active_record)
+            set invariant_left = sico.list.append(invariant_left, compiler_parser.at(parts, U64.literal(1)))
+            set invariant_right = sico.list.append(invariant_right, compiler_parser.at(parts, U64.literal(2)))
+          end if
+        end if
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+
+  let active_return = ""
+  set index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(lines)):
+    let body_raw = item(lines, index)
+    let body_line = sico.text.trim(body_raw)
+    let body_parts = compiler_parser.words(body_line)
+    if same(body_raw, body_line):
+      if compiler_parser.syntax_function_header(body_line):
+        let body_function_index = compiler_parser.find(body_parts, "function")
+        let body_function_name = compiler_parser.at(body_parts, add(body_function_index, U64.literal(1)))
+        set active_return = map_get(function_names, function_returns, body_function_name)
+      end if
+      if same(body_line, "end function"):
+        set active_return = ""
+      end if
+    else:
+      if sico.text.starts_with(body_line, "return "):
+        if same(active_return, "Float64"):
+          let value = compiler_parser.at(body_parts, U64.literal(1))
+          if implicit_integer_float(value):
+            return "E2002"
+          end if
+        end if
+        if same(active_return, "Int"):
+          if sico.text.starts_with(body_line, "return \""):
+            return "E2001"
+          end if
+        end if
+
+        let constructor = compiler_parser.at(body_parts, U64.literal(1))
+        if list_has(record_names, constructor):
+          let field_index = U64.literal(0)
+          while U64.less_than(field_index, sico.list.length(field_owners)):
+            if same(item(field_owners, field_index), constructor):
+              if missing_field_label(body_line, item(field_names, field_index)):
+                return "E2010"
+              end if
+            end if
+            set field_index = add(field_index, U64.literal(1))
+          end while
+          if U64.less_than(owner_count(field_owners, constructor), count_byte(body_line, I64.literal(58))):
+            return "E2011"
+          end if
+          let invariant_index = U64.literal(0)
+          while U64.less_than(invariant_index, sico.list.length(invariant_owners)):
+            if same(item(invariant_owners, invariant_index), constructor):
+              let left_value = word_after(body_parts, item(invariant_left, invariant_index))
+              let right_value = word_after(body_parts, item(invariant_right, invariant_index))
+              if invariant_violated(left_value, right_value):
+                return "E2020"
+              end if
+            end if
+            set invariant_index = add(invariant_index, U64.literal(1))
+          end while
+        end if
+
+        let callee = compiler_parser.at(body_parts, U64.literal(1))
+        let actual = compiler_parser.at(body_parts, U64.literal(2))
+        let expected = map_get(function_names, function_params, callee)
+        if U64.less_than(U64.literal(0), sico.text.length(expected)):
+          if list_has(nominal_names, actual):
+            if different(expected, actual):
+              return "E2001"
+            end if
+          else:
+            if list_has(record_names, actual):
+              if different(expected, actual):
+                return "E2001"
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function

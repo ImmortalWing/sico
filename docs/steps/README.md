@@ -204,3 +204,4 @@ STEP-0062–0069 的仓库本地顺序已闭环；STEP-0070–0074 为后续支�
 | [STEP-0241](./STEP-0241-m22-origin-dev-quality-repair.md) | complete / partial-S4 | M22 S4 | origin/dev 合并质量修复：旧路径 local cell 优先、新 cell frontend 同名遮蔽 typed fail-closed、稳定诊断码、all-target clippy 与重复 STEP 记录清理 |
 | [STEP-0242](./STEP-0242-m22-checker-lexical-partition.md) | complete / partial-S2 | M22 S2 | checker 复用 integrated lexer；215-source 冻结语料的 116 `LEXICAL` / 99 non-lexical 分区由真实 runner 精确验证，无大型 token 中间串 |
 | [STEP-0243](./STEP-0243-m22-checker-e1xxx-syntax-identities.md) | complete / partial-S2 | M22 S2 | integrated parser 按真实块/定界符/声明形状实现 E1001–E1016；12 mutation + 4 shape oracle 全部经真实 runner，215-source 无误判回归保持绿 |
+| [STEP-0244](./STEP-0244-m22-checker-core-semantics.md) | complete / partial-S2 | M22 S2 | struct-of-arrays 语义表实现 E2001/E2002/E2010/E2011/E2020；9 个冻结拒绝精确匹配、65 accepted 保持通过，删除 free-form header scanner |
