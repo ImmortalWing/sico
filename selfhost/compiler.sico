@@ -174,6 +174,229 @@ function all_digits(text: Text) returns Bool:
   return true
 end function
 
+function decimal_at_most(value: Text, maximum: Text) returns Bool:
+  let value_len = sico.text.length(value)
+  let maximum_len = sico.text.length(maximum)
+  if U64.less_than(value_len, maximum_len):
+    return true
+  end if
+  if U64.less_than(maximum_len, value_len):
+    return false
+  end if
+  let value_bytes = sico.text.encode(value)
+  let maximum_bytes = sico.text.encode(maximum)
+  let index = U64.literal(0)
+  while U64.less_than(index, value_len):
+    let value_byte = sico.bytes.at(value_bytes, index, I64.literal(0))
+    let maximum_byte = sico.bytes.at(maximum_bytes, index, I64.literal(0))
+    if I64.less_than(value_byte, maximum_byte):
+      return true
+    end if
+    if I64.less_than(maximum_byte, value_byte):
+      return false
+    end if
+    set index = add_u64(index, U64.literal(1))
+  end while
+  return true
+end function
+
+function decimal_digit(byte: I64) returns U64:
+  if I64.equal(byte, I64.literal(48)):
+    return U64.literal(0)
+  end if
+  if I64.equal(byte, I64.literal(49)):
+    return U64.literal(1)
+  end if
+  if I64.equal(byte, I64.literal(50)):
+    return U64.literal(2)
+  end if
+  if I64.equal(byte, I64.literal(51)):
+    return U64.literal(3)
+  end if
+  if I64.equal(byte, I64.literal(52)):
+    return U64.literal(4)
+  end if
+  if I64.equal(byte, I64.literal(53)):
+    return U64.literal(5)
+  end if
+  if I64.equal(byte, I64.literal(54)):
+    return U64.literal(6)
+  end if
+  if I64.equal(byte, I64.literal(55)):
+    return U64.literal(7)
+  end if
+  if I64.equal(byte, I64.literal(56)):
+    return U64.literal(8)
+  end if
+  return U64.literal(9)
+end function
+
+function decimal_u64(value: Text) returns U64:
+  let bytes = sico.text.encode(value)
+  let index = U64.literal(0)
+  let parsed = U64.literal(0)
+  while U64.less_than(index, sico.text.length(value)):
+    match U64.checked_mul(parsed, U64.literal(10)):
+      case ok(shifted):
+        match U64.checked_add(shifted, decimal_digit(sico.bytes.at(bytes, index, I64.literal(0)))):
+          case ok(next):
+            set parsed = next
+          case error(_):
+            return U64.literal(0)
+        end match
+      case error(_):
+        return U64.literal(0)
+    end match
+    set index = add_u64(index, U64.literal(1))
+  end while
+  return parsed
+end function
+
+function hex_digit(value: U64) returns Text:
+  if U64.less_than(value, U64.literal(10)):
+    return sico.u64.to_text(value)
+  end if
+  if U64.equal(value, U64.literal(10)):
+    return "a"
+  end if
+  if U64.equal(value, U64.literal(11)):
+    return "b"
+  end if
+  if U64.equal(value, U64.literal(12)):
+    return "c"
+  end if
+  if U64.equal(value, U64.literal(13)):
+    return "d"
+  end if
+  if U64.equal(value, U64.literal(14)):
+    return "e"
+  end if
+  return "f"
+end function
+
+function hex_byte(value: U64) returns Text:
+  let high = U64.shr(value, U64.literal(4))
+  let low = U64.bit_and(value, U64.literal(15))
+  return sico.text.concat(hex_digit(high), hex_digit(low))
+end function
+
+function hex_digit_i64(value: I64) returns Text:
+  if I64.less_than(value, I64.literal(10)):
+    return sico.i64.to_text(value)
+  end if
+  if I64.equal(value, I64.literal(10)):
+    return "a"
+  end if
+  if I64.equal(value, I64.literal(11)):
+    return "b"
+  end if
+  if I64.equal(value, I64.literal(12)):
+    return "c"
+  end if
+  if I64.equal(value, I64.literal(13)):
+    return "d"
+  end if
+  if I64.equal(value, I64.literal(14)):
+    return "e"
+  end if
+  return "f"
+end function
+
+function hex_byte_i64(value: I64) returns Text:
+  let high = I64.shr(value, I64.literal(4))
+  let low = I64.bit_and(value, I64.literal(15))
+  return sico.text.concat(hex_digit_i64(high), hex_digit_i64(low))
+end function
+
+function bytes_hex(value: Text) returns Text:
+  let bytes = sico.text.encode(value)
+  let index = U64.literal(0)
+  let output = ""
+  while U64.less_than(index, sico.text.length(value)):
+    let byte = sico.bytes.at(bytes, index, I64.literal(0))
+    set output = sico.text.concat(output, hex_byte_i64(byte))
+    set index = add_u64(index, U64.literal(1))
+  end while
+  return output
+end function
+
+function uleb_hex(initial: U64) returns Text:
+  let value = initial
+  let output = ""
+  let done = I64.literal(0)
+  while I64.equal(done, I64.literal(0)):
+    let byte = U64.bit_and(value, U64.literal(127))
+    set value = U64.shr(value, U64.literal(7))
+    if U64.equal(value, U64.literal(0)):
+      set done = I64.literal(1)
+    else:
+      set byte = U64.bit_or(byte, U64.literal(128))
+    end if
+    set output = sico.text.concat(output, hex_byte(byte))
+  end while
+  return output
+end function
+
+function uleb_length(initial: U64) returns U64:
+  let value = initial
+  let count = U64.literal(1)
+  while U64.less_than(U64.literal(127), value):
+    set value = U64.shr(value, U64.literal(7))
+    set count = add_u64(count, U64.literal(1))
+  end while
+  return count
+end function
+
+function positive_sleb_hex(initial: U64) returns Text:
+  let value = initial
+  let output = ""
+  let done = I64.literal(0)
+  while I64.equal(done, I64.literal(0)):
+    let byte = U64.bit_and(value, U64.literal(127))
+    set value = U64.shr(value, U64.literal(7))
+    if U64.equal(value, U64.literal(0)):
+      if U64.less_than(byte, U64.literal(64)):
+        set done = I64.literal(1)
+      end if
+    end if
+    if I64.equal(done, I64.literal(0)):
+      set byte = U64.bit_or(byte, U64.literal(128))
+    end if
+    set output = sico.text.concat(output, hex_byte(byte))
+  end while
+  return output
+end function
+
+function positive_sleb_length(initial: U64) returns U64:
+  match U64.checked_div(sico.text.length(positive_sleb_hex(initial)), U64.literal(2)):
+    case ok(length):
+      return length
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function constant_core_hex(name: Text, value: U64) returns Text:
+  let name_len = sico.text.length(name)
+  let export_payload_len = add_u64(add_u64(U64.literal(3), name_len), uleb_length(name_len))
+  let body_len = add_u64(U64.literal(32), positive_sleb_length(value))
+  let code_payload_len = add_u64(add_u64(U64.literal(1), uleb_length(body_len)), body_len)
+  let output = "0061736d010000000105016000017e03020100"
+  set output = sico.text.concat(output, "07")
+  set output = sico.text.concat(output, uleb_hex(export_payload_len))
+  set output = sico.text.concat(output, "01")
+  set output = sico.text.concat(output, uleb_hex(name_len))
+  set output = sico.text.concat(output, bytes_hex(name))
+  set output = sico.text.concat(output, "0000")
+  set output = sico.text.concat(output, "0a")
+  set output = sico.text.concat(output, uleb_hex(code_payload_len))
+  set output = sico.text.concat(output, "01")
+  set output = sico.text.concat(output, uleb_hex(body_len))
+  set output = sico.text.concat(output, "02017e017f41002101024003402001410046044042")
+  set output = sico.text.concat(output, positive_sleb_hex(value))
+  return sico.text.concat(output, "210020000f0b000b0b000b")
+end function
+
 function add_source(fname: Text, left_name: Text, right_name: Text) returns Text:
   let source = sico.text.concat("function ", fname)
   set source = sico.text.concat(source, sico.text.concat("(", left_name))
@@ -199,10 +422,31 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
       return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "source is not UTF-8"))
     end if
     if same_text(word_at(input.arguments, U64.literal(0)), "--emit-core-hex"):
-      let codegen_source = "function answer() returns Int:\n  return 42\nend function\n"
-      if sico.bytes.equal(input.stdin, sico.text.encode(codegen_source)):
-        let core_hex = "0061736d010000000105016000017e03020100070a0106616e7377657200000a23012102017e017f410021010240034020014100460440422a210020000f0b000b0b000b"
-        return ok(ScriptOutput(stdout: sico.text.encode(core_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      let codegen_words = lex_words(input.stdin)
+      if U64.equal(sico.list.length(codegen_words), U64.literal(8)):
+        let codegen_name = word_at(codegen_words, U64.literal(1))
+        let codegen_type = word_at(codegen_words, U64.literal(3))
+        let codegen_literal = word_at(codegen_words, U64.literal(5))
+        if same_text(word_at(codegen_words, U64.literal(0)), "function"):
+          if same_text(word_at(codegen_words, U64.literal(2)), "returns"):
+            if same_text(codegen_type, "Int"):
+              if same_text(word_at(codegen_words, U64.literal(4)), "return"):
+                if same_text(word_at(codegen_words, U64.literal(6)), "end"):
+                  if same_text(word_at(codegen_words, U64.literal(7)), "function"):
+                    if all_digits(codegen_literal):
+                      if decimal_at_most(codegen_literal, "9223372036854775807"):
+                        if sico.bytes.equal(input.stdin, sico.text.encode(const_source(codegen_name, codegen_type, codegen_literal))):
+                          let core_hex = constant_core_hex(codegen_name, decimal_u64(codegen_literal))
+                          return ok(ScriptOutput(stdout: sico.text.encode(core_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
       end if
       return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
     end if

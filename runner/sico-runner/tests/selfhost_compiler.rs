@@ -306,17 +306,44 @@ fn sico_compiler_refuses_an_unknown_same_length_source() {
 }
 
 #[test]
-fn sico_compiler_emits_deterministic_core_wasm_for_constant_slice() {
-    let source = "function answer() returns Int:\n  return 42\nend function\n";
-    let source_file = SourceFile::from_text(SourceId::new(0), "identity.sico", source).unwrap();
-    let rust_module = lower_core(&source_file).unwrap();
-    let expected = sico_codegen_wasm::compile(&rust_module).unwrap();
+fn sico_compiler_encodes_general_nonnegative_int_constant_core_wasm() {
+    for (name, literal) in [
+        ("x", "0"),
+        ("small", "63"),
+        ("sign_boundary", "64"),
+        ("one_byte_max", "127"),
+        ("two_byte", "128"),
+        ("leb_probe", "624485"),
+        ("signed_max", "9223372036854775807"),
+    ] {
+        let source = format!("function {name}() returns Int:\n  return {literal}\nend function\n");
+        let source_file =
+            SourceFile::from_text(SourceId::new(0), "identity.sico", source.clone()).unwrap();
+        let rust_module = lower_core(&source_file).unwrap();
+        let expected = sico_codegen_wasm::compile(&rust_module).unwrap();
 
-    let RunOutcome::Output(output) = run_guest_with_args(source, vec!["--emit-core-hex".into()])
-    else {
-        panic!("constant codegen fixture must succeed")
-    };
-    let actual = decode_hex(&output.stdout);
-    assert_eq!(actual, expected);
-    wasmparser::Validator::new().validate_all(&actual).unwrap();
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-core-hex".into()])
+        else {
+            panic!("constant codegen fixture must succeed: {source}")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(actual, expected, "{source}");
+        wasmparser::Validator::new().validate_all(&actual).unwrap();
+    }
+
+    for source in [
+        "function negative() returns Int:\n  return -1\nend function\n",
+        "function too_large() returns Int:\n  return 9223372036854775808\nend function\n",
+        "function parameter(value: Int) returns Int:\n  return value\nend function\n",
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-core-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "unsupported Core Wasm shape must fail closed: {source}"
+        );
+    }
 }
