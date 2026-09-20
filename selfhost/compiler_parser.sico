@@ -315,3 +315,357 @@ function parse_shape(source: Text) returns Text:
   end while
   return shape
 end function
+
+function syntax_function_header(line: Text) returns Bool:
+  if sico.text.starts_with(line, "function "):
+    return true
+  end if
+  if sico.text.starts_with(line, "export function "):
+    return true
+  end if
+  if sico.text.starts_with(line, "async function "):
+    return true
+  end if
+  return sico.text.starts_with(line, "export async function ")
+end function
+
+function syntax_count_byte(line: Text, target: I64) returns U64:
+  let source = sico.text.encode(line)
+  let index = U64.literal(0)
+  let count = U64.literal(0)
+  while U64.less_than(index, sico.bytes.length(source)):
+    if I64.equal(sico.bytes.at(source, index, I64.literal(-1)), target):
+      set count = add(count, U64.literal(1))
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return count
+end function
+
+function syntax_top_level_kind(line: Text) returns Text:
+  if sico.text.ends_with(line, ":"):
+    if sico.text.starts_with(line, "record "):
+      return "record"
+    end if
+    if sico.text.starts_with(line, "enum "):
+      return "enum"
+    end if
+    if sico.text.starts_with(line, "capability "):
+      return "capability"
+    end if
+    if sico.text.starts_with(line, "resource "):
+      return "resource"
+    end if
+    if sico.text.starts_with(line, "interface "):
+      return "interface"
+    end if
+    if syntax_function_header(line):
+      return "function"
+    end if
+  end if
+  return ""
+end function
+
+function syntax_is_recovery_declaration(line: Text) returns Bool:
+  if same(syntax_top_level_kind(line), ""):
+    if sico.text.starts_with(line, "newtype "):
+      return true
+    end if
+    if sico.text.starts_with(line, "module "):
+      return true
+    end if
+    return sico.text.starts_with(line, "use ")
+  end if
+  return true
+end function
+
+function syntax_positive_integer(value: Text) returns Bool:
+  let source = sico.text.encode(value)
+  let index = U64.literal(0)
+  if U64.equal(sico.bytes.length(source), U64.literal(0)):
+    return false
+  end if
+  if same(value, "0"):
+    return false
+  end if
+  while U64.less_than(index, sico.bytes.length(source)):
+    let b = sico.bytes.at(source, index, I64.literal(-1))
+    if I64.less_than(b, I64.literal(48)):
+      return false
+    end if
+    if I64.less_than(b, I64.literal(58)):
+      set index = add(index, U64.literal(1))
+    else:
+      return false
+    end if
+  end while
+  return true
+end function
+
+function syntax_valid_module(line: Text) returns Bool:
+  let items = words(line)
+  if U64.equal(sico.list.length(items), U64.literal(2)):
+    if same(at(items, U64.literal(0)), "module"):
+      if U64.equal(syntax_count_byte(line, I64.literal(46)), U64.literal(0)):
+        return U64.equal(syntax_count_byte(line, I64.literal(58)), U64.literal(0))
+      end if
+    end if
+  end if
+  return false
+end function
+
+function syntax_valid_use(line: Text) returns Bool:
+  let items = words(line)
+  let count = sico.list.length(items)
+  if U64.equal(count, U64.literal(3)):
+    if same(at(items, U64.literal(0)), "use"):
+      return U64.equal(syntax_count_byte(line, I64.literal(46)), U64.literal(1))
+    end if
+  end if
+  if U64.equal(count, U64.literal(5)):
+    if same(at(items, U64.literal(0)), "use"):
+      if same(at(items, U64.literal(1)), "pkg"):
+        if same(at(items, U64.literal(3)), "version"):
+          return syntax_positive_integer(at(items, U64.literal(4)))
+        end if
+      end if
+    end if
+  end if
+  if U64.equal(count, U64.literal(7)):
+    if same(at(items, U64.literal(0)), "use"):
+      if same(at(items, U64.literal(1)), "pkg"):
+        if same(at(items, U64.literal(3)), "version"):
+          if syntax_positive_integer(at(items, U64.literal(4))):
+            return same(at(items, U64.literal(5)), "expose")
+          end if
+        end if
+      end if
+    end if
+  end if
+  return false
+end function
+
+function syntax_valid_interface_version(line: Text) returns Bool:
+  let items = words(line)
+  if U64.equal(sico.list.length(items), U64.literal(4)):
+    if same(at(items, U64.literal(0)), "interface"):
+      if same(at(items, U64.literal(2)), "version"):
+        if syntax_positive_integer(at(items, U64.literal(3))):
+          return sico.text.ends_with(line, ":")
+        end if
+      end if
+    end if
+  end if
+  return false
+end function
+
+function syntax_known_top_level(line: Text) returns Bool:
+  if same(syntax_top_level_kind(line), ""):
+    if syntax_function_header(line):
+      return true
+    end if
+    if sico.text.starts_with(line, "newtype "):
+      return true
+    end if
+    if sico.text.starts_with(line, "module "):
+      return true
+    end if
+    return sico.text.starts_with(line, "use ")
+  end if
+  return true
+end function
+
+function syntax_missing_return_call_close(line: Text) returns Bool:
+  if sico.text.starts_with(line, "return "):
+    if sico.text.ends_with(line, ":"):
+      return false
+    end if
+    return U64.less_than(syntax_count_byte(line, I64.literal(41)), syntax_count_byte(line, I64.literal(40)))
+  end if
+  return false
+end function
+
+function syntax_missing_match_separator(line: Text, depth: U64) returns Bool:
+  if U64.less_than(U64.literal(0), depth):
+    if sico.text.starts_with(line, "case "):
+      if sico.text.ends_with(line, ":"):
+        return false
+      end if
+      return true
+    end if
+  end if
+  return false
+end function
+
+function syntax_declaration_shape_diagnostic(line: Text) returns Text:
+  if sico.text.starts_with(line, "module "):
+    if syntax_valid_module(line):
+      return ""
+    end if
+    return "E1014"
+  end if
+  if sico.text.starts_with(line, "use "):
+    if syntax_valid_use(line):
+      return ""
+    end if
+    return "E1015"
+  end if
+  if sico.text.starts_with(line, "interface "):
+    let items = words(line)
+    if U64.less_than(find(items, "version"), sico.list.length(items)):
+      if syntax_valid_interface_version(line):
+        return ""
+      end if
+      return "E1016"
+    end if
+  end if
+  return ""
+end function
+
+function syntax_close_matches(kind: Text, line: Text) returns Bool:
+  if same(kind, "function"):
+    return same(line, "end function")
+  end if
+  if same(kind, "record"):
+    return same(line, "end record")
+  end if
+  if same(kind, "enum"):
+    return same(line, "end enum")
+  end if
+  if same(kind, "capability"):
+    return same(line, "end capability")
+  end if
+  if same(kind, "resource"):
+    return same(line, "end resource")
+  end if
+  if same(kind, "interface"):
+    return same(line, "end interface")
+  end if
+  return false
+end function
+
+function syntax_missing_close(kind: Text) returns Text:
+  if same(kind, "function"):
+    return "E1001"
+  end if
+  if same(kind, "record"):
+    return "E1003"
+  end if
+  if same(kind, "enum"):
+    return "E1005"
+  end if
+  if same(kind, "capability"):
+    return "E1007"
+  end if
+  if same(kind, "resource"):
+    return "E1008"
+  end if
+  if same(kind, "interface"):
+    return "E1011"
+  end if
+  return ""
+end function
+
+function syntax_diagnostic(source: Text) returns Text:
+  let lines = sico.text.split_lines(source)
+  let index = U64.literal(0)
+  let active = ""
+  let using_depth = U64.literal(0)
+  let task_depth = U64.literal(0)
+  let match_depth = U64.literal(0)
+  while U64.less_than(index, sico.list.length(lines)):
+    let raw = at(lines, index)
+    let line = sico.text.trim(raw)
+    if U64.equal(sico.text.length(line), U64.literal(0)):
+      set index = index
+    else:
+      if sico.text.starts_with(line, "//"):
+        set index = index
+      else:
+        if syntax_function_header(line):
+          if U64.less_than(syntax_count_byte(line, I64.literal(41)), syntax_count_byte(line, I64.literal(40))):
+            return "E1012"
+          end if
+          if U64.less_than(syntax_count_byte(line, I64.literal(93)), syntax_count_byte(line, I64.literal(91))):
+            return "E1004"
+          end if
+        else:
+          if syntax_missing_return_call_close(line):
+            return "E1006"
+          end if
+        end if
+
+        if same(active, "function"):
+          if same(line, "end function"):
+            if U64.less_than(U64.literal(0), using_depth):
+              return "E1009"
+            end if
+            if U64.less_than(U64.literal(0), task_depth):
+              return "E1010"
+            end if
+          end if
+          if sico.text.starts_with(line, "using "):
+            if sico.text.ends_with(line, ":"):
+              set using_depth = add(using_depth, U64.literal(1))
+            end if
+          end if
+          if same(line, "end using"):
+            set using_depth = sub(using_depth, U64.literal(1))
+          end if
+          if same(line, "task group:"):
+            set task_depth = add(task_depth, U64.literal(1))
+          end if
+          if same(line, "end task"):
+            set task_depth = sub(task_depth, U64.literal(1))
+          end if
+          if sico.text.starts_with(line, "match "):
+            if sico.text.ends_with(line, ":"):
+              set match_depth = add(match_depth, U64.literal(1))
+            end if
+          end if
+          if same(line, "end match"):
+            set match_depth = sub(match_depth, U64.literal(1))
+          else:
+            if syntax_missing_match_separator(line, match_depth):
+              return "E1002"
+            end if
+          end if
+        end if
+
+        if same(raw, line):
+          if same(active, ""):
+            let shape_diagnostic = syntax_declaration_shape_diagnostic(line)
+            if U64.less_than(U64.literal(0), sico.text.length(shape_diagnostic)):
+              return shape_diagnostic
+            end if
+            if syntax_known_top_level(line):
+              let top_kind = syntax_top_level_kind(line)
+              if same(top_kind, ""):
+                if syntax_function_header(line):
+                  set active = "function"
+                end if
+              else:
+                set active = top_kind
+              end if
+            else:
+              return "E1013"
+            end if
+          else:
+            if syntax_close_matches(active, line):
+              set active = ""
+              set using_depth = U64.literal(0)
+              set task_depth = U64.literal(0)
+              set match_depth = U64.literal(0)
+            else:
+              if syntax_is_recovery_declaration(line):
+                return syntax_missing_close(active)
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return syntax_missing_close(active)
+end function

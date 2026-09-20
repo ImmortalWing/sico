@@ -9,6 +9,7 @@ use sico_runner::{
 
 const CHECKER_SOURCE: &str = include_str!("../../../selfhost/checker.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
+const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
 const OK_SOURCE: &str = "function main() returns Int:\n  return 42\nend function\n";
 
 fn compile_checker() -> Vec<u8> {
@@ -24,6 +25,11 @@ fn compile_checker() -> Vec<u8> {
     let component_path = directory.join("checker.component.wasm");
     std::fs::write(&source_path, CHECKER_SOURCE).unwrap();
     std::fs::write(directory.join("compiler_lexer.sico"), COMPILER_LEXER_SOURCE).unwrap();
+    std::fs::write(
+        directory.join("compiler_parser.sico"),
+        COMPILER_PARSER_SOURCE,
+    )
+    .unwrap();
     let mut stdout: Vec<u8> = Vec::new();
     let mut stderr: Vec<u8> = Vec::new();
     let exit = sico_cli::run(
@@ -164,4 +170,72 @@ fn sico_checker_matches_the_frozen_lexical_partition() {
     }
 
     assert_eq!((lexical, non_lexical), (116, 99));
+}
+
+#[test]
+fn sico_checker_matches_all_frozen_e1xxx_mutation_identities() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = [
+        ("MUT-001-missing-function-close.sico", "E1001"),
+        ("MUT-002-missing-match-arm-separator.sico", "E1002"),
+        ("MUT-003-missing-record-close.sico", "E1003"),
+        ("MUT-004-missing-type-argument-close.sico", "E1004"),
+        ("MUT-005-missing-enum-close.sico", "E1005"),
+        ("MUT-006-missing-call-close.sico", "E1006"),
+        ("MUT-007-missing-capability-close.sico", "E1007"),
+        ("MUT-008-missing-resource-close.sico", "E1008"),
+        ("MUT-009-missing-using-close.sico", "E1009"),
+        ("MUT-010-missing-task-group-close.sico", "E1010"),
+        ("MUT-011-missing-interface-close.sico", "E1011"),
+        ("MUT-012-missing-parameter-list-close.sico", "E1012"),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (file, code) in cases {
+        let source = std::fs::read(repository.join("syntax-mutations/b").join(file)).unwrap();
+        assert_eq!(
+            run_checker(&prepared, &source),
+            RunOutcome::Domain {
+                code: "invalid-input".to_owned(),
+                message: code.to_owned(),
+            },
+            "{file}"
+        );
+    }
+}
+
+#[test]
+fn sico_checker_matches_remaining_e1xxx_shape_identities() {
+    let cases = [
+        (
+            b"stdout.write(stdin.read_all())\nfunction main() returns Int:\n  return 1\nend function\n".as_slice(),
+            "E1013",
+        ),
+        (b"module math extra\n".as_slice(), "E1014"),
+        (b"use math_util\n".as_slice(), "E1015"),
+        (
+            b"interface Bad version 0:\nend interface\n".as_slice(),
+            "E1016",
+        ),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (source, code) in cases {
+        assert_eq!(
+            run_checker(&prepared, source),
+            RunOutcome::Domain {
+                code: "invalid-input".to_owned(),
+                message: code.to_owned(),
+            },
+            "{code}"
+        );
+    }
 }

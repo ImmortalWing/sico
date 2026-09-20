@@ -22,6 +22,7 @@ record ScriptError:
 end record
 
 use compiler_lexer.has_error
+use compiler_parser.syntax_diagnostic
 
 function starts_with_any(line: Text, prefixes: List[Text]) returns Bool:
   let count = sico.list.length(prefixes)
@@ -95,6 +96,10 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
     return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "LEXICAL"))
   end if
   let text = sico.bytes.utf8_decode(input.stdin)
+  let syntax = compiler_parser.syntax_diagnostic(text)
+  if U64.less_than(U64.literal(0), sico.text.length(syntax)):
+    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: syntax))
+  end if
   let issues = check_source(text)
   if U64.equal(sico.text.length(issues), U64.literal(0)):
     return ok(ScriptOutput(stdout: sico.text.encode("check ok\n"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
