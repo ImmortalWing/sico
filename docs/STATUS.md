@@ -1,13 +1,13 @@
 # Sico project status
 
-> - updated: 2026-09-21 (STEP-0250 opens `Bytes` parameters to the while-path lowering; canary frontier advances to the while-body if/else statement regions)
+> - updated: 2026-09-21 (STEP-0251 general while-body if/else regions land byte-exact; canary frontier advances to the straight-line let-RHS intrinsic gap)
 > - phase: M12 complete (full GO per STEP-0127); M13 closed — authoritative live-model run measured and budgets met under ADR-0012 (STEP-0128); M7 public deployment and M6/mobile remain deferred
-> - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence); M22 compiler self-host track **S1/S2 complete；S3/S4/S5 partial；S6 尚未进入**。STEP-0249 修复 `control_while_function_ir` 256-local 越限并使验证器在本机 PowerShell 5.1 真实可跑；STEP-0250 让 `scalar_type_kind` 接受 `Bytes`，Bytes-parameter while 函数可 lowering，canary 前沿推进至 while 体 if/else 语句区域。完整源码 canary、Component codegen 与 bootstrap 仍开放。
-> - current step: STEP-0250 关闭 Bytes 参数缺口；下一个开放区域为 while 体 if/else 的语句区域（需按 Rust 规范块序 entry/header/body/after/then/else/join 与源序值分配重写装配），M22 保持 NO-GO。
+> - phase status: M11 complete (GO 2026-09-02); M12 complete (GO 2026-09-05, gates 10/10, Windows x64 + Linux x64 native runtime evidence); M22 compiler self-host track **S1/S2 complete；S3/S4/S5 partial；S6 尚未进入**。STEP-0251 落地 `general_while_function_ir`（惰性块纪律 + gw_* 支撑 helper），formatter 前八函数（至 `scan_space`，含嵌套 if/else 区域）与 Rust canonical IR byte-exact，canary 前沿推进至 `E-SH-IR-EXPRESSION`。完整源码 canary、Component codegen 与 bootstrap 仍开放。
+> - current step: STEP-0251 关闭 while 体 if/else 区域差分；下一个 typed 拒绝为直线 let-RHS 内联调用缺口（`scan_ident` 的 `sico.bytes.at` 直线 let），M22 保持 NO-GO。
 > - current support step: 无
 > - last completed support step: STEP-0196 (M19 支持轨：fresh-host CI 修复——`tools/ensure-python.ps1`（CPython 3.12.10 embeddable SHA256 钉住，WindowsApps 存根排除 + Stop 偏好下的 stderr 终止错误修复）+ `run-ci.ps1` 三项修复（msys2 binutils PATH、Python 进 PATH、runner debug 构建先于 workspace 测试）；console-control 测试失败根因据实修正为缺 Python 依赖（非 TTY 理论未被实验证实），补 Python 后 2/2 绿；修复后完整 run-ci **CI GREEN 11/11**（clippy 本机首跑 -D warnings 全过）；此前 STEP-0123 (M13 closure audit: a/b/c GO, d blocked-external-evidence))
-> - last completed active step: STEP-0250 (Bytes parameters; M22 remains NO-GO)；此前 STEP-0249 (local-limit repair + frontier re-pin)。
-> - next step: 实现 while 体 if/else 语句区域的规范 CFG 装配，使 `scan_space` 通过 byte-exact 差分；完整 formatter/selfhost bundle 绿后才进入 RFC-0011 general Component codegen 与 ADR-0015 bootstrap harness。
+> - last completed active step: STEP-0251 (general while-body if/else regions; M22 remains NO-GO)；此前 STEP-0250 (Bytes parameters)。
+> - next step: 打开直线 let-RHS 内联调用（`straight_let` 路径接入 intrinsic 分发），继续推进 formatter canary 至全绿；完整 formatter/selfhost bundle 绿后才进入 RFC-0011 general Component codegen 与 ADR-0015 bootstrap harness。
 > - roadmap decision: owner approved the application-layer sequence on 2026-09-04 — M14 application-ready language, M15 Web/UI, M16 Native Automation Host, M17 vision/model packages, M18 representative AI applications and external pilots; M19 production engineering, M20 cross-platform/language v1/completion audit, M21 DX/stdlib batch 2/ecosystem activation and M22 compiler self-host followed by owner session directives (2026-09-13/14); on 2026-09-17 the owner directive 「继续完成sico，M22-M25」 confirmed continuing M22 and registering M23–M25 (language v1 batch 3, vision closure + block-game pilot, release v1.0 completion audit); M13 quality-budget gap (STEP-0128) is a recorded product fact for M17/M18 planning
 > - next support step: 无（M13 已收口：live-model 实测达标，ADR-0012 记录一个既定缺口 B-repair 0.833，供未来质量步骤跟踪）
 

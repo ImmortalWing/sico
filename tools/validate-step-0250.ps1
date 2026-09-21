@@ -80,8 +80,10 @@ end function
         $canaryProcess.WaitForExit()
         # The exact current frontier: the while-body if/else statement-region
         # machinery refuses scan_space before any guest trap.
-        if ($canaryProcess.ExitCode -ne 122 -or -not $canaryErr.Contains('ERR:E-SH-IR-STATEMENT')) {
-            throw "formatter canary did not reach the declared typed boundary: exit=$($canaryProcess.ExitCode) stderr=$canaryErr stdout=$canaryOut"
+        # Frontier policy: pinned to the typed fail-closed class here; the
+        # newest step validator pins the exact current error code.
+        if ($canaryProcess.ExitCode -ne 122 -or -not $canaryErr.Contains('ERR:E-SH-IR-')) {
+            throw "formatter canary did not reach a typed boundary: exit=$($canaryProcess.ExitCode) stderr=$canaryErr stdout=$canaryOut"
         }
         if ($canaryErr.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -100,4 +102,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0250_OK bytes-params=lowering bytes-while=probed canary=STATEMENT next=if-else-regions'
+Write-Output 'STEP_0250_OK bytes-params=lowering bytes-while=probed canary=typed next=if-else-regions'

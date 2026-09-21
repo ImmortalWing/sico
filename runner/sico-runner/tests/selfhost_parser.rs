@@ -1097,7 +1097,7 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             &ScriptInput {
                 arguments: vec!["--emit-ir".to_owned()],
                 stdin:
-                    b"function bytes(value: Bytes) returns Bytes:\n  return value\nend function\n"
+                    b"function widget(value: Widget) returns Widget:\n  return value\nend function\n"
                         .to_vec(),
             },
             &RunnerLimits::default(),
@@ -1111,6 +1111,30 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
             message: "ERR:E-SH-IR-PARAMETER-TYPE".to_owned(),
         },
         "the declared scalar subset must refuse wider parameter types"
+    );
+
+    // STEP-0250 opened Bytes parameters: the previously-refused shape now
+    // lowers through the verifier with its Bytes parameter intact.
+    let bytes_parameter = prepared
+        .run(
+            &ScriptInput {
+                arguments: vec!["--emit-ir".to_owned()],
+                stdin:
+                    b"function bytes(value: Bytes) returns Bytes:\n  return value\nend function\n"
+                        .to_vec(),
+            },
+            &RunnerLimits::default(),
+            &CancelToken::new(),
+        )
+        .expect("input bounds hold");
+    let RunOutcome::Output(bytes_output) = bytes_parameter else {
+        panic!("Bytes parameters must lower after STEP-0250: {bytes_parameter:?}")
+    };
+    assert_eq!(bytes_output.exit_code, 0, "{:?}", bytes_output.stderr);
+    assert!(
+        String::from_utf8_lossy(&bytes_output.stdout)
+            .contains("\"name\":\"bytes\",\"parameters\":[{\"id\":0,\"name\":\"value\",\"ty\":{\"kind\":\"bytes\"}"),
+        "Bytes parameter must surface as a bytes-typed parameter"
     );
 
     let wrong_call_arity_source =
