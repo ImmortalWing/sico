@@ -8,20 +8,25 @@ $parser = Get-Content -LiteralPath (Join-Path $root 'selfhost\parser.sico') -Raw
 $compilerTest = Get-Content -LiteralPath (Join-Path $root 'runner\sico-runner\tests\selfhost_compiler.rs') -Raw -Encoding UTF8
 
 foreach ($marker in @(
-    'function gw_condition_packed(',
-    'let gcc_pack = while_bytes_at_rhs_packed(',
-    'let gw_pack = gw_condition_packed(',
-    'let gif_pack = gw_condition_packed(',
-    'sico_compiler_lowers_the_scan_ident_region_byte_exactly'
+    'function list_get_match_ir(',
+    'function nested_intrinsic_return_ir(',
+    'function list_aware_parameter_index(',
+    '"name\":\"sico.list.get\",\"arguments\":[',
+    '"name\":\"sico.list.append\",\"arguments\":[',
+    'sico_compiler_lowers_the_item_region_byte_exactly',
+    'sico_compiler_lowers_the_append_pair_region_byte_exactly'
 )) {
     if (-not $parser.Contains($marker)) {
-        if (-not $compilerTest.Contains($marker)) { throw "missing STEP-0252 marker: $marker" }
+        if (-not $compilerTest.Contains($marker)) { throw "missing STEP-0256 marker: $marker" }
     }
 }
 
 Push-Location $root
 try {
-    $env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
+    # This host's runner artifacts are built with the pinned MSVC toolchain
+    # (STEP-0254 environment note); the GNU flow lacks a C compiler for
+    # `ring` and msys2-binutils for dlltool on this machine.
+    $env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-msvc'
     & $CargoPath build --locked --offline -p sico-cli
     if ($LASTEXITCODE -ne 0) { throw 'sico CLI build failed' }
     & $CargoPath test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test selfhost_compiler -- --test-threads=1
@@ -32,7 +37,7 @@ try {
     $sico = Join-Path $root 'target\debug\sico.exe'
     $runner = Join-Path $root 'runner\sico-runner\target\debug\sico-runner.exe'
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-    $temp = Join-Path $tempRoot ("sico-step0252-" + [Guid]::NewGuid().ToString('N'))
+    $temp = Join-Path $tempRoot ("sico-step0256-" + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $temp)
     try {
         $compilerComponent = Join-Path $temp 'compiler.component.wasm'
@@ -54,12 +59,12 @@ try {
         $stdout = $process.StandardOutput.ReadToEnd()
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
-        # scan_ident is now byte-exact. The exact canary frontier moves
-        # with later steps (STEP-0253+ advanced it past scan_integer);
-        # this validator pins only the typed fail-closed class, per the
-        # STEP-0250 precedent.
-        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-')) {
-            throw "formatter canary did not reach a typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
+        # The formatter prefix through append_pair is byte-exact (fifteen
+        # functions). The next function, line_tokens, interleaves while
+        # bodies with multiple matches, which the general lowering still
+        # typed-refuses (multi-match control).
+        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-CONTROL')) {
+            throw "formatter canary did not reach the declared typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
         }
         if ($stderr.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -78,4 +83,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0252_OK scan-ident=byte-exact parity=9-functions canary=STATEMENT next=if-without-else'
+Write-Output 'STEP_0256_OK item=list-get-match-append-pair=nested-intrinsic parity=15-functions canary=CONTROL next=line-tokens-multi-match'

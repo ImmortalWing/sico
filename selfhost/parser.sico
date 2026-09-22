@@ -916,9 +916,28 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
       return "ERR:E-SH-IR-PARAMETERS"
     end if
     let parameter_item_type = word_at(words, parameter_type_idx)
-    let parameter_item_kind = scalar_type_kind(parameter_item_type)
-    if sico.text.starts_with(parameter_item_kind, "ERR:"):
-      return parameter_item_kind
+    let parameter_item_kind = ""
+    let parameter_is_list = I64.literal(0)
+    let parameter_element_kind = ""
+    if is_word(word_at(words, parameter_after_type_idx), "["):
+      let parameter_element_idx = next_index(parameter_after_type_idx, parameter_words_len)
+      let parameter_element_close_idx = next_index(parameter_element_idx, parameter_words_len)
+      if is_word(word_at(words, parameter_element_close_idx), "]"):
+        let parameter_bracket_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-PARAMETERS"
+      end if
+      set parameter_element_kind = scalar_type_kind(word_at(words, parameter_element_idx))
+      if sico.text.starts_with(parameter_element_kind, "ERR:"):
+        return parameter_element_kind
+      end if
+      set parameter_is_list = I64.literal(1)
+      set parameter_item_kind = "list"
+    else:
+      set parameter_item_kind = scalar_type_kind(parameter_item_type)
+      if sico.text.starts_with(parameter_item_kind, "ERR:"):
+        return parameter_item_kind
+      end if
     end if
     let parameter_item_start = find_text_from(src, parameter_item_name, parameter_search_from)
     if U64.equal(parameter_item_start, parameter_source_len):
@@ -950,17 +969,30 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
     set parameter_json = sico.text.concat(parameter_json, parameter_item_name)
     set parameter_json = sico.text.concat(parameter_json, "\",\"ty\":{\"kind\":\"")
     set parameter_json = sico.text.concat(parameter_json, parameter_item_kind)
-    set parameter_json = sico.text.concat(parameter_json, "\"},\"range\":{\"start\":")
+    if I64.equal(parameter_is_list, I64.literal(1)):
+      set parameter_json = sico.text.concat(parameter_json, "\",\"data\":{\"kind\":\"")
+      set parameter_json = sico.text.concat(parameter_json, parameter_element_kind)
+      set parameter_json = sico.text.concat(parameter_json, "\"}")
+    else:
+      set parameter_json = sico.text.concat(parameter_json, "\"")
+    end if
+    set parameter_json = sico.text.concat(parameter_json, "},\"range\":{\"start\":")
     set parameter_json = sico.text.concat(parameter_json, sico.u64.to_text(parameter_item_start))
     set parameter_json = sico.text.concat(parameter_json, ",\"end\":")
     set parameter_json = sico.text.concat(parameter_json, sico.u64.to_text(parameter_item_end))
     set parameter_json = sico.text.concat(parameter_json, "}}")
     set parameter_id = next_index(parameter_id, parameter_id)
-    if is_word(word_at(words, parameter_after_type_idx), ","):
-      set parameter_token_idx = next_index(parameter_after_type_idx, parameter_words_len)
+    let parameter_separator_idx = parameter_after_type_idx
+    if I64.equal(parameter_is_list, I64.literal(1)):
+      set parameter_separator_idx = next_index(parameter_after_type_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+    end if
+    if is_word(word_at(words, parameter_separator_idx), ","):
+      set parameter_token_idx = next_index(parameter_separator_idx, parameter_words_len)
     else:
-      if is_word(word_at(words, parameter_after_type_idx), ")"):
-        set parameter_token_idx = parameter_after_type_idx
+      if is_word(word_at(words, parameter_separator_idx), ")"):
+        set parameter_token_idx = parameter_separator_idx
       else:
         return "ERR:E-SH-IR-PARAMETERS"
       end if
@@ -2493,6 +2525,843 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   set out = sico.text.concat(out, sico.u64.to_text(fn_start))
   set out = sico.text.concat(out, ",\"end\":")
   set out = sico.text.concat(out, sico.u64.to_text(fn_end))
+  set out = sico.text.concat(out, "}}")
+  return out
+end function
+
+function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
+  let n = sico.list.length(words)
+  if U64.equal(parameter_count, U64.literal(2)):
+    let lgm_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let m = body_from
+  while U64.less_than(m, body_end):
+    if is_word(word_at(words, m), "match"):
+      break
+    end if
+    set m = next_index(m, body_end)
+  end while
+  let lgm_receiver = next_index(m, n)
+  let lgm_dot1 = next_index(lgm_receiver, n)
+  let lgm_list_seg = next_index(lgm_dot1, n)
+  let lgm_dot2 = next_index(lgm_list_seg, n)
+  let lgm_get_seg = next_index(lgm_dot2, n)
+  let lgm_open = next_index(lgm_get_seg, n)
+  let lgm_left = next_index(lgm_open, n)
+  let lgm_match_line_end = line_end(words, m)
+  let lgm_close = matching_close(words, lgm_open, lgm_match_line_end)
+  let lgm_comma = lgm_close
+  let lgm_operand_scan = lgm_left
+  while U64.less_than(lgm_operand_scan, lgm_close):
+    if is_word(word_at(words, lgm_operand_scan), "("):
+      set lgm_operand_scan = next_index(matching_close(words, lgm_operand_scan, lgm_close), lgm_close)
+    else:
+      if is_word(word_at(words, lgm_operand_scan), ","):
+        set lgm_comma = lgm_operand_scan
+        set lgm_operand_scan = lgm_close
+      else:
+        set lgm_operand_scan = next_index(lgm_operand_scan, lgm_close)
+      end if
+    end if
+  end while
+  let lgm_right = next_index(lgm_comma, n)
+  let lgm_colon = next_index(lgm_close, n)
+  let lgm_ok_case = next_index(line_end(words, m), n)
+  let lgm_ok_name = next_index(lgm_ok_case, n)
+  let lgm_ok_open = next_index(lgm_ok_name, n)
+  let lgm_binding = next_index(lgm_ok_open, n)
+  let lgm_ok_close = next_index(lgm_binding, n)
+  let lgm_ok_colon = next_index(lgm_ok_close, n)
+  let lgm_ok_return = next_index(line_end(words, lgm_ok_case), n)
+  let lgm_ok_value = next_index(lgm_ok_return, n)
+  let lgm_error_case = next_index(line_end(words, lgm_ok_return), n)
+  let lgm_error_name = next_index(lgm_error_case, n)
+  let lgm_error_open = next_index(lgm_error_name, n)
+  let lgm_wildcard = next_index(lgm_error_open, n)
+  let lgm_error_close = next_index(lgm_wildcard, n)
+  let lgm_error_colon = next_index(lgm_error_close, n)
+  let lgm_error_return = next_index(line_end(words, lgm_error_case), n)
+  let lgm_literal = next_index(lgm_error_return, n)
+  let lgm_end_word = next_index(line_end(words, lgm_error_return), n)
+  let lgm_end_match = next_index(lgm_end_word, n)
+  let lgm_after_match_line = next_index(line_end(words, lgm_end_word), n)
+  let lgm_after_end_word = next_index(lgm_after_match_line, n)
+  let lgm_after_function_word = next_index(lgm_after_end_word, n)
+  if U64.equal(lgm_after_function_word, body_end):
+    let lgm_complete = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_receiver), "sico"):
+    let lgm_receiver_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, lgm_dot1), "."):
+    let lgm_dot1_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, lgm_list_seg), "list"):
+    let lgm_list_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, lgm_dot2), "."):
+    let lgm_dot2_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, lgm_get_seg), "get"):
+    let lgm_get_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, lgm_open), "("):
+    let lgm_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_comma), ","):
+    let lgm_comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_close), ")"):
+    let lgm_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_colon), ":"):
+    let lgm_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let lgm_binding_name = word_at(words, lgm_binding)
+  if is_word(word_at(words, lgm_ok_case), "case"):
+    let lgm_ok_case_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_name), "ok"):
+    let lgm_ok_name_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_open), "("):
+    let lgm_ok_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_close), ")"):
+    let lgm_ok_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_colon), ":"):
+    let lgm_ok_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(lgm_binding_name, "_"):
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_return), "return"):
+    let lgm_ok_return_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_ok_value), lgm_binding_name):
+    let lgm_binding_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_case), "case"):
+    let lgm_error_case_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_name), "error"):
+    let lgm_error_name_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_open), "("):
+    let lgm_error_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_wildcard), "_"):
+    let lgm_wildcard_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_close), ")"):
+    let lgm_error_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_colon), ":"):
+    let lgm_error_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_error_return), "return"):
+    let lgm_error_return_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_end_word), "end"):
+    let lgm_end_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, lgm_end_match), "match"):
+    let lgm_end_match_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(return_kind, "string"):
+    let lgm_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-TYPE-MISMATCH"
+  end if
+  let lgm_decl_open = next_index(name_idx, n)
+  let lgm_decl_p0 = next_index(lgm_decl_open, n)
+  let lgm_decl_colon0 = next_index(lgm_decl_p0, n)
+  let lgm_decl_t0 = next_index(lgm_decl_colon0, n)
+  let lgm_decl_lbracket = next_index(lgm_decl_t0, n)
+  let lgm_decl_elem = next_index(lgm_decl_lbracket, n)
+  let lgm_decl_rbracket = next_index(lgm_decl_elem, n)
+  let lgm_decl_sep = next_index(lgm_decl_rbracket, n)
+  let lgm_decl_p1 = next_index(lgm_decl_sep, n)
+  let lgm_decl_colon1 = next_index(lgm_decl_p1, n)
+  let lgm_decl_t1 = next_index(lgm_decl_colon1, n)
+  let lgm_decl_close = next_index(lgm_decl_t1, n)
+  if is_word(word_at(words, lgm_decl_colon0), ":"):
+    let lgm_decl_colon0_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_t0), "List"):
+    let lgm_decl_t0_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_lbracket), "["):
+    let lgm_decl_lbracket_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_elem), "Text"):
+    let lgm_decl_elem_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_rbracket), "]"):
+    let lgm_decl_rbracket_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_sep), ","):
+    let lgm_decl_sep_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_colon1), ":"):
+    let lgm_decl_colon1_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_t1), "U64"):
+    let lgm_decl_t1_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_decl_close), ")"):
+    let lgm_decl_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-PARAMETERS"
+  end if
+  if is_word(word_at(words, lgm_left), word_at(words, lgm_decl_p0)):
+    let lgm_left_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  if is_word(word_at(words, lgm_right), word_at(words, lgm_decl_p1)):
+    let lgm_right_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  let lgm_left_value = U64.literal(0)
+  let lgm_right_value = U64.literal(1)
+  let lgm_fallback_is_parameter = I64.literal(0)
+  let lgm_fallback_parameter = binding_parameter_index(words, name_idx, word_at(words, lgm_literal))
+  if U64.less_than(lgm_fallback_parameter, parameter_count):
+    if U64.equal(next_index(lgm_literal, n), line_end(words, lgm_error_return)):
+      set lgm_fallback_is_parameter = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+  else:
+    if is_string_token(word_at(words, lgm_literal)):
+      let lgm_literal_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+  end if
+  let parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(parameters, "ERR:"):
+    return parameters
+  end if
+  let source_len = sico.bytes.length(src)
+  let match_start = find_text_from(src, "match", fn_start)
+  let lgm_receiver_start = find_text_from(src, "sico", match_start)
+  let lgm_close_start = word_span_offset(words, src, lgm_receiver_start, lgm_receiver, lgm_close)
+  let lgm_colon_start = find_text_from(src, ":", lgm_close_start)
+  let lgm_operation_end = next_index(lgm_close_start, source_len)
+  let lgm_match_end = next_index(lgm_colon_start, source_len)
+  let lgm_ok_case_start = find_text_from(src, "case", lgm_colon_start)
+  let lgm_ok_colon_start = find_text_from(src, ":", lgm_ok_case_start)
+  let lgm_ok_value_start = find_text_from(src, lgm_binding_name, lgm_ok_colon_start)
+  let lgm_ok_case_end = next_index(lgm_ok_colon_start, source_len)
+  let lgm_ok_value_end = lgm_ok_value_start
+  match U64.checked_add(lgm_ok_value_start, sico.bytes.length(sico.text.encode(lgm_binding_name))):
+    case ok(lgm_after_ok_value):
+      set lgm_ok_value_end = lgm_after_ok_value
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let lgm_error_case_start = find_text_from(src, "case", lgm_ok_value_end)
+  let lgm_error_colon_start = find_text_from(src, ":", lgm_error_case_start)
+  let lgm_error_case_end = next_index(lgm_error_colon_start, source_len)
+  let lgm_error_return_start = find_text_from(src, "return", lgm_error_colon_start)
+  let lgm_fallback_start = find_text_from(src, word_at(words, lgm_literal), lgm_error_colon_start)
+  let lgm_fallback_end = lgm_fallback_start
+  match U64.checked_add(lgm_fallback_start, sico.bytes.length(sico.text.encode(word_at(words, lgm_literal)))):
+    case ok(lgm_after_fallback):
+      set lgm_fallback_end = lgm_after_fallback
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let lgm_literal_start = word_span_offset(words, src, lgm_error_return_start, lgm_error_return, lgm_literal)
+  let lgm_error_block_end = lgm_fallback_end
+  let lgm_end_function_offset = find_text_from(src, "end function", fn_start)
+  let lgm_fn_end = fn_start
+  match U64.checked_add(lgm_end_function_offset, U64.literal(13)):
+    case ok(lgm_after_end_function):
+      set lgm_fn_end = lgm_after_end_function
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.less_than(source_len, lgm_fn_end):
+    set lgm_fn_end = source_len
+  end if
+  let lgm_subject = parameter_count
+  let lgm_write = next_index(lgm_subject, lgm_subject)
+  let lgm_read = next_index(lgm_write, lgm_write)
+  let lgm_project = next_index(lgm_read, lgm_read)
+  let lgm_error_value = next_index(lgm_project, lgm_project)
+  if I64.equal(lgm_fallback_is_parameter, I64.literal(1)):
+    set lgm_error_value = lgm_fallback_parameter
+  end if
+  let lgm_result_type = "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\"string\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}"
+  let out = "{\"id\":"
+  set out = sico.text.concat(out, sico.u64.to_text(function_ordinal))
+  set out = sico.text.concat(out, ",\"name\":\"")
+  set out = sico.text.concat(out, word_at(words, name_idx))
+  set out = sico.text.concat(out, "\",\"parameters\":")
+  set out = sico.text.concat(out, parameters)
+  set out = sico.text.concat(out, ",\"return_type\":{\"kind\":\"string\"},\"effects\":[],\"locals\":[{\"name\":\"#match0\",\"ty\":")
+  set out = sico.text.concat(out, lgm_result_type)
+  set out = sico.text.concat(out, ",\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(match_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_match_end))
+  set out = sico.text.concat(out, "}}],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[{\"result\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_subject))
+  set out = sico.text.concat(out, ",\"ty\":")
+  set out = sico.text.concat(out, lgm_result_type)
+  set out = sico.text.concat(out, ",\"operation\":{\"op\":\"intrinsic\",\"data\":{\"name\":\"sico.list.get\",\"arguments\":[")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_left_value))
+  set out = sico.text.concat(out, ",")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_right_value))
+  set out = sico.text.concat(out, "]}},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_receiver_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_operation_end))
+  set out = sico.text.concat(out, "}},{\"result\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_write))
+  set out = sico.text.concat(out, ",\"ty\":{\"kind\":\"unit\"},\"operation\":{\"op\":\"write_local\",\"data\":{\"local\":0,\"value\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_subject))
+  set out = sico.text.concat(out, "}},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(match_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_match_end))
+  set out = sico.text.concat(out, "}}],\"terminator\":{\"kind\":\"match\",\"data\":{\"values\":[")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_subject))
+  set out = sico.text.concat(out, "],\"arms\":[{\"patterns\":[{\"kind\":\"variant\",\"data\":{\"name\":\"ok\",\"payload\":[{\"kind\":\"binding\",\"data\":\"")
+  set out = sico.text.concat(out, lgm_binding_name)
+  set out = sico.text.concat(out, "\"}]}}],\"target\":1,\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_end))
+  set out = sico.text.concat(out, "}},{\"patterns\":[{\"kind\":\"variant\",\"data\":{\"name\":\"error\",\"payload\":[{\"kind\":\"wildcard\"}]}}],\"target\":2,\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_error_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_error_case_end))
+  set out = sico.text.concat(out, "}}]}},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(match_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_match_end))
+  set out = sico.text.concat(out, "}},{\"id\":1,\"instructions\":[{\"result\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_read))
+  set out = sico.text.concat(out, ",\"ty\":")
+  set out = sico.text.concat(out, lgm_result_type)
+  set out = sico.text.concat(out, ",\"operation\":{\"op\":\"read_local\",\"data\":{\"local\":0}},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_end))
+  set out = sico.text.concat(out, "}},{\"result\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_project))
+  set out = sico.text.concat(out, ",\"ty\":{\"kind\":\"string\"},\"operation\":{\"op\":\"project\",\"data\":{\"base\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_read))
+  set out = sico.text.concat(out, ",\"field\":\"ok\"}},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_end))
+  set out = sico.text.concat(out, "}}],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_project))
+  set out = sico.text.concat(out, "},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_ok_value_end))
+  set out = sico.text.concat(out, "}},{\"id\":2,\"instructions\":")
+  if I64.equal(lgm_fallback_is_parameter, I64.literal(1)):
+    set out = sico.text.concat(out, "[]")
+  else:
+    set out = sico.text.concat(out, "[{\"result\":")
+    set out = sico.text.concat(out, sico.u64.to_text(lgm_error_value))
+    set out = sico.text.concat(out, ",\"ty\":{\"kind\":\"string\"},\"operation\":{\"op\":\"const_string\",\"data\":")
+    set out = sico.text.concat(out, json_string_token(word_at(words, lgm_literal)))
+    set out = sico.text.concat(out, "},\"range\":{\"start\":")
+    set out = sico.text.concat(out, sico.u64.to_text(lgm_literal_start))
+    set out = sico.text.concat(out, ",\"end\":")
+    set out = sico.text.concat(out, sico.u64.to_text(lgm_fallback_end))
+    set out = sico.text.concat(out, "}}]")
+  end if
+  set out = sico.text.concat(out, ",\"terminator\":{\"kind\":\"return\",\"data\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_error_value))
+  set out = sico.text.concat(out, "},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_error_case_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_error_block_end))
+  set out = sico.text.concat(out, "}}],\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(fn_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(lgm_fn_end))
+  set out = sico.text.concat(out, "}}")
+  return out
+end function
+
+function list_aware_parameter_index(words: List[Text], function_name_idx: U64, binding: Text) returns U64:
+  let lap_len = sico.list.length(words)
+  let lap_open = next_index(function_name_idx, lap_len)
+  let lap_token = next_index(lap_open, lap_len)
+  let lap_id = U64.literal(0)
+  while U64.less_than(lap_token, lap_len):
+    if is_word(word_at(words, lap_token), ")"):
+      return lap_len
+    end if
+    if is_word(word_at(words, lap_token), binding):
+      return lap_id
+    end if
+    let lap_colon = next_index(lap_token, lap_len)
+    let lap_type = next_index(lap_colon, lap_len)
+    let lap_after_type = next_index(lap_type, lap_len)
+    let lap_step = lap_after_type
+    if is_word(word_at(words, lap_after_type), "["):
+      set lap_step = next_index(lap_after_type, lap_len)
+      set lap_step = next_index(lap_step, lap_len)
+      set lap_step = next_index(lap_step, lap_len)
+    end if
+    if is_word(word_at(words, lap_step), ","):
+      set lap_token = next_index(lap_step, lap_len)
+      set lap_id = next_index(lap_id, lap_id)
+    else:
+      return lap_len
+    end if
+  end while
+  return lap_len
+end function
+
+function nested_intrinsic_return_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, parameter_count: U64) returns Text:
+  let n = sico.list.length(words)
+  let nir_scan = body_from
+  while U64.less_than(nir_scan, body_end):
+    if is_word(word_at(words, nir_scan), "return"):
+      break
+    end if
+    set nir_scan = next_index(nir_scan, body_end)
+  end while
+  if U64.less_than(nir_scan, body_end):
+    let nir_return_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_expr = next_index(nir_scan, n)
+  if is_word(word_at(words, nir_expr), "sico"):
+    let nir_path_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_line = line_end(words, nir_scan)
+  let nir_after_line = next_index(nir_line, n)
+  let nir_after_end = next_index(nir_after_line, n)
+  if is_word(word_at(words, nir_after_line), "end"):
+    let nir_end_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_after_end), "function"):
+    let nir_function_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if U64.equal(next_index(nir_after_end, n), body_end):
+    let nir_complete = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if U64.equal(parameter_count, U64.literal(3)):
+    let nir_arity_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_paren_close = next_index(next_index(name_idx, n), n)
+  while U64.less_than(nir_paren_close, n):
+    if is_word(word_at(words, nir_paren_close), ")"):
+      break
+    end if
+    set nir_paren_close = next_index(nir_paren_close, n)
+  end while
+  let nir_w_returns = next_index(nir_paren_close, n)
+  let nir_w_list = next_index(nir_w_returns, n)
+  let nir_w_lbracket = next_index(nir_w_list, n)
+  let nir_w_text = next_index(nir_w_lbracket, n)
+  let nir_w_rbracket = next_index(nir_w_text, n)
+  let nir_w_colon = next_index(nir_w_rbracket, n)
+  if is_word(word_at(words, nir_w_returns), "returns"):
+    let nir_returns_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_w_list), "List"):
+    let nir_list_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_w_lbracket), "["):
+    let nir_lbracket_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_w_text), "Text"):
+    let nir_text_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_w_rbracket), "]"):
+    let nir_rbracket_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_w_colon), ":"):
+    let nir_colon_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_d0 = next_index(nir_expr, n)
+  let nir_s0 = next_index(nir_d0, n)
+  let nir_d1 = next_index(nir_s0, n)
+  let nir_n0 = next_index(nir_d1, n)
+  let nir_open0 = next_index(nir_n0, n)
+  if is_word(word_at(words, nir_d0), "."):
+    let nir_d0_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_s0), "list"):
+    let nir_s0_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_d1), "."):
+    let nir_d1_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_n0), "append"):
+    let nir_n0_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, nir_open0), "("):
+    let nir_open0_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_close0 = matching_close(words, nir_open0, nir_line)
+  let nir_comma0 = nir_close0
+  let nir_arg_scan = next_index(nir_open0, n)
+  while U64.less_than(nir_arg_scan, nir_close0):
+    if is_word(word_at(words, nir_arg_scan), "("):
+      set nir_arg_scan = next_index(matching_close(words, nir_arg_scan, nir_close0), nir_close0)
+    else:
+      if is_word(word_at(words, nir_arg_scan), ","):
+        set nir_comma0 = nir_arg_scan
+        set nir_arg_scan = nir_close0
+      else:
+        set nir_arg_scan = next_index(nir_arg_scan, nir_close0)
+      end if
+    end if
+  end while
+  if is_word(word_at(words, nir_comma0), ","):
+    let nir_comma0_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let nir_arg0 = next_index(nir_open0, n)
+  let nir_arg1 = next_index(nir_comma0, n)
+  let nir_has_inner = I64.literal(0)
+  let nir_inner_p0 = n
+  let nir_inner_p1 = n
+  let nir_arg0_value = U64.literal(0)
+  let nir_arg1_value = U64.literal(0)
+  let nir_inner_arg1_value = U64.literal(0)
+  if is_word(word_at(words, nir_arg0), "sico"):
+    set nir_has_inner = I64.literal(1)
+    let nir_id0 = next_index(nir_arg0, n)
+    let nir_is0 = next_index(nir_id0, n)
+    let nir_id1 = next_index(nir_is0, n)
+    let nir_in0 = next_index(nir_id1, n)
+    let nir_iopen = next_index(nir_in0, n)
+    if is_word(word_at(words, nir_id0), "."):
+      let nir_id0_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TARGET"
+    end if
+    if is_word(word_at(words, nir_is0), "list"):
+      let nir_is0_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TARGET"
+    end if
+    if is_word(word_at(words, nir_id1), "."):
+      let nir_id1_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TARGET"
+    end if
+    if is_word(word_at(words, nir_in0), "append"):
+      let nir_in0_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TARGET"
+    end if
+    if is_word(word_at(words, nir_iopen), "("):
+      let nir_iopen_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let nir_iclose = matching_close(words, nir_iopen, nir_close0)
+    let nir_icomma = next_index(next_index(nir_iopen, n), n)
+    if is_word(word_at(words, nir_icomma), ","):
+      let nir_icomma_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set nir_inner_p0 = next_index(nir_iopen, n)
+    set nir_inner_p1 = next_index(nir_icomma, n)
+    if U64.equal(next_index(nir_inner_p0, n), nir_icomma):
+      let nir_ip0_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    if U64.equal(next_index(nir_inner_p1, n), nir_iclose):
+      let nir_ip1_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    if U64.equal(next_index(nir_iclose, n), nir_comma0):
+      let nir_iclose_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let nir_ip0_value = list_aware_parameter_index(words, name_idx, word_at(words, nir_inner_p0))
+    if U64.less_than(nir_ip0_value, parameter_count):
+      let nir_ip0_binding = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
+    let nir_ip1_value = list_aware_parameter_index(words, name_idx, word_at(words, nir_inner_p1))
+    if U64.less_than(nir_ip1_value, parameter_count):
+      let nir_ip1_binding = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
+    if U64.equal(nir_ip0_value, U64.literal(0)):
+      let nir_ip0_list_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if U64.less_than(U64.literal(0), nir_ip1_value):
+      let nir_ip1_text_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    set nir_arg0_value = nir_ip0_value
+    set nir_inner_arg1_value = nir_ip1_value
+    let nir_a1 = list_aware_parameter_index(words, name_idx, word_at(words, nir_arg1))
+    if U64.less_than(nir_a1, parameter_count):
+      let nir_a1_binding = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
+    if U64.less_than(U64.literal(0), nir_a1):
+      let nir_a1_text_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if U64.equal(next_index(nir_arg1, n), nir_close0):
+      let nir_a1_single = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set nir_arg1_value = nir_a1
+  else:
+    let nir_a0 = list_aware_parameter_index(words, name_idx, word_at(words, nir_arg0))
+    if U64.less_than(nir_a0, parameter_count):
+      let nir_a0_binding = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
+    if U64.equal(nir_a0, U64.literal(0)):
+      let nir_a0_list_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if U64.equal(next_index(nir_arg0, n), nir_comma0):
+      let nir_a0_single = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set nir_arg0_value = nir_a0
+    let nir_oa1 = list_aware_parameter_index(words, name_idx, word_at(words, nir_arg1))
+    if U64.less_than(nir_oa1, parameter_count):
+      let nir_oa1_binding = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
+    if U64.less_than(U64.literal(0), nir_oa1):
+      let nir_oa1_text_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if U64.equal(next_index(nir_arg1, n), nir_close0):
+      let nir_oa1_single = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set nir_arg1_value = nir_oa1
+  end if
+  let parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(parameters, "ERR:"):
+    return parameters
+  end if
+  let source_len = sico.bytes.length(src)
+  let nir_return_start = find_text_from(src, "return", fn_start)
+  let nir_outer_start = word_span_offset(words, src, nir_return_start, nir_scan, nir_expr)
+  let nir_outer_close_off = word_span_offset(words, src, nir_return_start, nir_scan, nir_close0)
+  let nir_outer_end = next_index(nir_outer_close_off, source_len)
+  let nir_inner_start = nir_outer_start
+  let nir_inner_close_off = nir_outer_close_off
+  if I64.equal(nir_has_inner, I64.literal(1)):
+    set nir_inner_start = word_span_offset(words, src, nir_return_start, nir_scan, nir_arg0)
+    set nir_inner_close_off = word_span_offset(words, src, nir_return_start, nir_scan, next_index(nir_inner_p1, n))
+  end if
+  let nir_inner_end = next_index(nir_inner_close_off, source_len)
+  let nir_fn_end_offset = find_text_from(src, "end function", fn_start)
+  let nir_fn_end = fn_start
+  match U64.checked_add(nir_fn_end_offset, U64.literal(13)):
+    case ok(nir_after_end_function):
+      set nir_fn_end = nir_after_end_function
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.less_than(source_len, nir_fn_end):
+    set nir_fn_end = source_len
+  end if
+  let nir_list_ty = "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}"
+  let nir_inner_json = ""
+  let nir_inner_result = parameter_count
+  let nir_outer_result = parameter_count
+  if I64.equal(nir_has_inner, I64.literal(1)):
+    set nir_outer_result = next_index(parameter_count, parameter_count)
+    set nir_inner_json = "{\"result\":"
+    set nir_inner_json = sico.text.concat(nir_inner_json, sico.u64.to_text(nir_inner_result))
+    set nir_inner_json = sico.text.concat(nir_inner_json, ",\"ty\":")
+    set nir_inner_json = sico.text.concat(nir_inner_json, nir_list_ty)
+    set nir_inner_json = sico.text.concat(nir_inner_json, ",\"operation\":{\"op\":\"intrinsic\",\"data\":{\"name\":\"sico.list.append\",\"arguments\":[")
+    set nir_inner_json = sico.text.concat(nir_inner_json, sico.u64.to_text(nir_arg0_value))
+    set nir_inner_json = sico.text.concat(nir_inner_json, ",")
+    set nir_inner_json = sico.text.concat(nir_inner_json, sico.u64.to_text(nir_inner_arg1_value))
+    set nir_inner_json = sico.text.concat(nir_inner_json, "]}},\"range\":{\"start\":")
+    set nir_inner_json = sico.text.concat(nir_inner_json, sico.u64.to_text(nir_inner_start))
+    set nir_inner_json = sico.text.concat(nir_inner_json, ",\"end\":")
+    set nir_inner_json = sico.text.concat(nir_inner_json, sico.u64.to_text(nir_inner_end))
+    set nir_inner_json = sico.text.concat(nir_inner_json, "}}")
+  end if
+  let nir_outer_json = "{\"result\":"
+  set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_outer_result))
+  set nir_outer_json = sico.text.concat(nir_outer_json, ",\"ty\":")
+  set nir_outer_json = sico.text.concat(nir_outer_json, nir_list_ty)
+  set nir_outer_json = sico.text.concat(nir_outer_json, ",\"operation\":{\"op\":\"intrinsic\",\"data\":{\"name\":\"sico.list.append\",\"arguments\":[")
+  if I64.equal(nir_has_inner, I64.literal(1)):
+    set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_inner_result))
+  else:
+    set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_arg0_value))
+  end if
+  set nir_outer_json = sico.text.concat(nir_outer_json, ",")
+  set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_arg1_value))
+  set nir_outer_json = sico.text.concat(nir_outer_json, "]}},\"range\":{\"start\":")
+  set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_outer_start))
+  set nir_outer_json = sico.text.concat(nir_outer_json, ",\"end\":")
+  set nir_outer_json = sico.text.concat(nir_outer_json, sico.u64.to_text(nir_outer_end))
+  set nir_outer_json = sico.text.concat(nir_outer_json, "}}")
+  let out = "{\"id\":"
+  set out = sico.text.concat(out, sico.u64.to_text(function_ordinal))
+  set out = sico.text.concat(out, ",\"name\":\"")
+  set out = sico.text.concat(out, word_at(words, name_idx))
+  set out = sico.text.concat(out, "\",\"parameters\":")
+  set out = sico.text.concat(out, parameters)
+  set out = sico.text.concat(out, ",\"return_type\":")
+  set out = sico.text.concat(out, nir_list_ty)
+  set out = sico.text.concat(out, ",\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[")
+  if I64.equal(nir_has_inner, I64.literal(1)):
+    set out = sico.text.concat(out, nir_inner_json)
+    set out = sico.text.concat(out, ",")
+  end if
+  set out = sico.text.concat(out, nir_outer_json)
+  set out = sico.text.concat(out, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set out = sico.text.concat(out, sico.u64.to_text(nir_outer_result))
+  set out = sico.text.concat(out, "},\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(fn_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(nir_fn_end))
+  set out = sico.text.concat(out, "}}],\"range\":{\"start\":")
+  set out = sico.text.concat(out, sico.u64.to_text(fn_start))
+  set out = sico.text.concat(out, ",\"end\":")
+  set out = sico.text.concat(out, sico.u64.to_text(nir_fn_end))
   set out = sico.text.concat(out, "}}")
   return out
 end function
@@ -9302,14 +10171,30 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           continue
         end if
         if U64.equal(match_count, U64.literal(1)):
-          let checked_match_json = checked_arithmetic_match_ir(words, src, i, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
-          if sico.text.starts_with(checked_match_json, "ERR:"):
-            return checked_match_json
+          let lgm_route_probe = body_from
+          while U64.less_than(lgm_route_probe, body_end_word):
+            if is_word(word_at(words, lgm_route_probe), "match"):
+              break
+            end if
+            set lgm_route_probe = next_index(lgm_route_probe, body_end_word)
+          end while
+          let lgm_match_json = ""
+          if U64.less_than(lgm_route_probe, body_end_word):
+            if is_word(word_at(words, next_index(lgm_route_probe, n)), "sico"):
+              set lgm_match_json = list_get_match_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+            else:
+              set lgm_match_json = checked_arithmetic_match_ir(words, src, i, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+            end if
+          else:
+            set lgm_match_json = checked_arithmetic_match_ir(words, src, i, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+          end if
+          if sico.text.starts_with(lgm_match_json, "ERR:"):
+            return lgm_match_json
           end if
           if U64.less_than(U64.literal(1), function_count):
             set functions_json = sico.text.concat(functions_json, ",")
           end if
-          set functions_json = sico.text.concat(functions_json, checked_match_json)
+          set functions_json = sico.text.concat(functions_json, lgm_match_json)
           let checked_match_end_function_offset = find_text_from(src, "end function", fn_start)
           let checked_match_fn_end = fn_start
           match U64.checked_add(checked_match_end_function_offset, U64.literal(13)):
@@ -9322,6 +10207,33 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
             set checked_match_fn_end = source_len
           end if
           set source_cursor = checked_match_fn_end
+          set i = body_end_word
+          set prev = "function"
+          continue
+        end if
+        let nested_intrinsic_json = nested_intrinsic_return_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, parameter_count)
+        if is_word(nested_intrinsic_json, "SKIP"):
+          let no_nested_intrinsic = I64.literal(1)
+        else:
+          if sico.text.starts_with(nested_intrinsic_json, "ERR:"):
+            return nested_intrinsic_json
+          end if
+          if U64.less_than(U64.literal(1), function_count):
+            set functions_json = sico.text.concat(functions_json, ",")
+          end if
+          set functions_json = sico.text.concat(functions_json, nested_intrinsic_json)
+          let nested_intrinsic_end_offset = find_text_from(src, "end function", fn_start)
+          let nested_intrinsic_fn_end = fn_start
+          match U64.checked_add(nested_intrinsic_end_offset, U64.literal(13)):
+            case ok(nested_intrinsic_after_end):
+              set nested_intrinsic_fn_end = nested_intrinsic_after_end
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
+          if U64.less_than(source_len, nested_intrinsic_fn_end):
+            set nested_intrinsic_fn_end = source_len
+          end if
+          set source_cursor = nested_intrinsic_fn_end
           set i = body_end_word
           set prev = "function"
           continue

@@ -59,10 +59,11 @@ try {
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
         # The formatter prefix through punctuation_kind is byte-exact. The
-        # next function, item, reaches the list.get match intrinsic, which is
-        # still outside the self-host match lowering subset.
-        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-CALL-TARGET')) {
-            throw "formatter canary did not reach the declared typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
+        # exact canary frontier moves with later steps (STEP-0256 lowered
+        # item's list.get match); this validator pins only the typed
+        # fail-closed class, per the STEP-0250 precedent.
+        if ($process.ExitCode -ne 122 -or -not $stderr.Contains('ERR:E-SH-IR-')) {
+            throw "formatter canary did not reach a typed boundary: exit=$($process.ExitCode) stderr=$stderr stdout=$stdout"
         }
         if ($stderr.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }

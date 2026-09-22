@@ -445,6 +445,34 @@ fn sico_compiler_lowers_the_punctuation_kind_region_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_the_item_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function append_pair")
+        .expect("formatter keeps the item region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter item region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_append_pair_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function line_tokens")
+        .expect("formatter keeps the append_pair region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter append_pair region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
