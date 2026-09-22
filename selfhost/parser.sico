@@ -4334,6 +4334,114 @@ function gw_compare_packed(words: List[Text], src: Bytes, name_idx: U64, cond_id
   return gcp_pack
 end function
 
+function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_idx: U64, line_end: U64, cond_start: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  if is_word(word_at(words, cond_idx), "I64"):
+    return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  end if
+  if is_word(word_at(words, cond_idx), "U64"):
+    return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  end if
+  let gcc_words_len = sico.list.length(words)
+  let gcc_callee_idx = function_declaration_index(words, word_at(words, cond_idx))
+  if U64.equal(gcc_callee_idx, gcc_words_len):
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if U64.equal(count_params(words, gcc_callee_idx), U64.literal(1)):
+    let gcc_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  if is_word(parameter_kind_by_id(words, gcc_callee_idx, U64.literal(0)), "i64"):
+    let gcc_parameter_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gcc_kind = declared_return_kind(words, next_index(gcc_callee_idx, gcc_words_len))
+  if is_word(gcc_kind, "bool"):
+    let gcc_return_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gcc_open = next_index(cond_idx, line_end)
+  if is_word(word_at(words, gcc_open), "("):
+    let gcc_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gcc_close = matching_close(words, gcc_open, line_end)
+  let gcc_colon = next_index(gcc_close, line_end)
+  if is_word(word_at(words, gcc_colon), ":"):
+    if U64.equal(next_index(gcc_colon, line_end), line_end):
+      let gcc_complete = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gcc_argument = next_index(gcc_open, gcc_close)
+  if is_intrinsic_path(words, gcc_argument, "bytes", "at"):
+    let gcc_intrinsic_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  let gcc_member = next_index(next_index(next_index(next_index(gcc_argument, gcc_close), gcc_close), gcc_close), gcc_close)
+  let gcc_inner_open = next_index(gcc_member, gcc_close)
+  if is_word(word_at(words, gcc_inner_open), "("):
+    let gcc_inner_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gcc_inner_close = matching_close(words, gcc_inner_open, gcc_close)
+  if U64.equal(next_index(gcc_inner_close, gcc_close), gcc_close):
+    let gcc_single_argument = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  let gcc_intrinsic_start = word_span_offset(words, src, cond_start, cond_idx, gcc_argument)
+  let gcc_inner_close_offset = word_span_offset(words, src, gcc_intrinsic_start, gcc_argument, gcc_inner_close)
+  let gcc_intrinsic_end = gcc_inner_close_offset
+  match U64.checked_add(gcc_inner_close_offset, U64.literal(1)):
+    case ok(gcc_after_inner):
+      set gcc_intrinsic_end = gcc_after_inner
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gcc_inner_end = next_index(gcc_inner_close, line_end)
+  let gcc_pack = while_bytes_at_rhs_packed(words, src, name_idx, gcc_argument, gcc_inner_end, gcc_intrinsic_start, gcc_intrinsic_end, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  if sico.text.starts_with(gcc_pack, "ERR:"):
+    return gcc_pack
+  end if
+  let gcc_parts = sico.text.split_lines(gcc_pack)
+  if is_word(word_at(gcc_parts, U64.literal(0)), "i64"):
+    let gcc_inner_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gcc_inner_json = word_at(gcc_parts, U64.literal(1))
+  let gcc_inner_value = gw_decimal_value(word_at(gcc_parts, U64.literal(2)))
+  let gcc_result = base
+  match U64.checked_add(base, U64.literal(3)):
+    case ok(gcc_call_result):
+      set gcc_result = gcc_call_result
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gcc_close_offset = word_span_offset(words, src, cond_start, cond_idx, gcc_close)
+  let gcc_expr_end = gcc_close_offset
+  match U64.checked_add(gcc_close_offset, U64.literal(1)):
+    case ok(gcc_after_close):
+      set gcc_expr_end = gcc_after_close
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gcc_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(gcc_inner_value), "]"))
+  let gcc_callee = function_declaration_ordinal(words, gcc_callee_idx)
+  let gcc_call = call_instruction_json(gcc_result, "bool", gcc_callee, gcc_arguments, cond_start, gcc_expr_end)
+  let gcc_json = sico.text.concat(gcc_inner_json, sico.text.concat(",", gcc_call))
+  return sico.text.concat(sico.u64.to_text(gcc_result), sico.text.concat("\n3\n", gcc_json))
+end function
+
 function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
   let gws_multi = U64.less_than(next_index(receiver_idx, line_end), line_end)
   let gws_pieces = ""
@@ -4717,7 +4825,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gregion = "header"
         let gw_cond_idx = next_index(gi, gwl_end)
         let gw_cond_start = word_span_offset(words, src, gwhile_start, gi, gw_cond_idx)
-        let gw_pack = gw_compare_packed(words, src, name_idx, gw_cond_idx, gwl_end, gw_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
+        let gw_pack = gw_condition_packed(words, src, name_idx, gw_cond_idx, gwl_end, gw_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
         if sico.text.starts_with(gw_pack, "ERR:"):
           return gw_pack
         end if
@@ -4782,7 +4890,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       end if
       let gif_cond_idx = next_index(gi, gil_end)
       let gif_cond_start = word_span_offset(words, src, gif_offset, gi, gif_cond_idx)
-      let gif_pack = gw_compare_packed(words, src, name_idx, gif_cond_idx, gil_end, gif_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
+      let gif_pack = gw_condition_packed(words, src, name_idx, gif_cond_idx, gil_end, gif_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
       if sico.text.starts_with(gif_pack, "ERR:"):
         return gif_pack
       end if
