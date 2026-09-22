@@ -30,7 +30,7 @@ on top of the full M14–M24 evidence chain instead of partial audits:
 ## 2. Entry gate
 
 - M23 exit audit explicit (GO or NO-GO with deferrals recorded).
-- M24 block-game gate explicit (the M18 acceptance chain closed or
+- M24 application-pilot gate explicit (the M18 portfolio-4 pilot closed or
   honestly deferred with its external gate named).
 - M19 CI/release engineering green and current (run-ci green on the
   release candidate).

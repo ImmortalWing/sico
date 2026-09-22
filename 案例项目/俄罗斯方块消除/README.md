@@ -25,6 +25,12 @@ Get-Content -Raw .\sico\probe_input.json |
 board input accepted; solver backend is not available in Sico yet
 ```
 
+## M24 试点目标说明（2026-09-22 owner 指令，STEP-0258）
+
+Owner 指令「方块游戏pilot目标删除，改为带GUI界面的格式转换器，第一步可以先实现图片格式互相转换，例如jpg互转png」（同日早前「GUI+原生界面库」指令见 STEP-0257，已被本指令取代）：M18/M24 的试点目标不再是本案例——block-game 自动化试点从 M24 删除，capture→vision→solver→input 闭环不再属于该里程碑；M24 试点重定为带 GUI 界面的格式转换器应用（以 Sico 语言原生界面库编写，第一步 JPEG↔PNG 互转），登记见 [`M24 计划（GUI application pilot）`](../../docs/plans/M24-vision-closure-gui-application-pilot.md) §8.4–8.6（STEP-0258）。转换器试点不属于本案例项目。
+
+本目录保持 M14 纯 Sico 离线求解器验收 oracle（STEP-0138）与其 Python 案例 oracle：`gamebot`（微信小程序/ADB 流程）不退役、继续作为算法测试载体，但不再作为 M18/M24 验收载体。Sico 语言原生界面库当前不存在（M5 UI 为严格 companion model），其 RFC/ADR 前的任何表述均为 planned。
+
 这是一个按职责拆分的微信小程序方块消除原型：
 
 - `gamebot/model.py`：棋盘、图形、放置和消除规则。

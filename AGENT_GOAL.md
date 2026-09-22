@@ -443,9 +443,9 @@ AI 实验必须记录：
 
 所有者于 2026-09-17 以「继续完成sico，M22-M25」确认登记。逐项关闭 M22 计划 §8 记录的语言摩擦（中缀比较/逻辑运算符、表达式位置条件、裸字面量复测政策、text.chars），每项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断），实现等 M22 S7 出口审计。
 
-#### M24：视觉收口与方块游戏试点
+#### M24：视觉收口与 GUI 应用试点
 
-关闭 M17 剩余 gate（加速 provider ADR、model/provenance RFC、RFC-0043 roster 包）将 M17 翻 GO，随后俄罗斯方块案例在真实 Windows 窗口经 M14 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop 完整验收链；错误注入全部 fail closed，急停实测。
+关闭 M17 剩余 gate（加速 provider ADR、model/provenance RFC、RFC-0043 roster 包）将 M17 翻 GO，随后关闭 M18 应用试点（组合项 4）NO-GO：以 Sico 语言原生界面库（编译器可见 UI 绑定 + 桌面 Host 的 WinUI3/Fluent 风格确定性渲染）编写的带 GUI 格式转换器应用，第一步实现图片格式互转（JPEG↔PNG）。2026-09-22 owner 指令删除 block-game 自动化试点目标——俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138）与其 Python 案例 oracle，M16 证据停在 M16 GO 级别不再延伸；格式错误语料全部 fail closed、无静默回退、无原生逃逸。
 
 #### M25：v1.0 发布——平台广度、完成审计与产品退出
 

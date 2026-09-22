@@ -1,8 +1,8 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-22 (M22 STEP-0253 general-while no-else frames byte-exact; canary frontier at the list.get match region)
+> - updated: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（block-game 待 M24）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1/S2 GO；S3/S4/S5 partial；S6 未进入）；主线 = M22 自举闭环，随后 M23→M24→M25
+> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（组合项 4 application pilot 待 M24，2026-09-22 owner 指令删除 block-game pilot、改为 GUI 格式转换器）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1/S2 GO；S3/S4/S5 partial；S6 未进入）；主线 = M22 自举闭环，随后 M23→M24→M25
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -278,9 +278,9 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M18: Representative AI applications and external pilots（planned; refined 2026-09-13）
 
-状态：`GO（部分，STEP-0165 出口审计：组合 4/5 项 GO；external pilot 与 block-game 两项 NO-GO 诚实登记）——STEP-0164 交付 API agent / 流式工具 / Web/UI 应用 / 包消费者四类 pilot 证据`
+状态：`GO（部分，STEP-0165 出口审计：组合 4/5 项 GO；external pilot 与 application pilot（原 block-game 项）两项 NO-GO 诚实登记）——STEP-0164 交付 API agent / 流式工具 / Web/UI 应用 / 包消费者四类 pilot 证据；2026-09-22（STEP-0259）登记：试点重定不改已完成证据，M24 转换器试点过 gate 5 后执行 M18 出口审计增补翻转组合项 4，外部 pilot NO-GO 不变`
 
-以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。俄罗斯方块消除案例是原生视觉自动化基准：离线求解器必须先在 M14 完全由 Sico 执行，再依次接入 M16 capture/input 与 M17 vision，最后验证 dry-run、单步提交、画面校验和安全停止。2026-09-13 新增：pilot 必须经 M19 release bundle 安装/升级，不得直接使用 target/ 工件。
+以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。2026-09-13 新增：pilot 必须经 M19 release bundle 安装/升级，不得直接使用 target/ 工件。2026-09-22 owner 指令（STEP-0258）：删除 block-game 自动化试点目标——俄罗斯方块消除案例保持 M14 纯 Sico 离线求解器验收 oracle（STEP-0138）与其 Python 案例 oracle，不再作为 M18 组合项 4 验收载体；组合项 4 重定为带 GUI 界面的格式转换器应用（以 Sico 语言原生界面库编写，第一步 JPEG↔PNG 互转），在 M24 关闭。
 
 进入条件：M14 GO ✓（STEP-0141）；逐 pilot 平台前置——API（M12 GO）✓、流式（M9/M11 GO）✓、Web/UI（M15 7/7 GO）✓、原生视觉（M16 GO ✓ + M17 GO ✗ 为当前阻塞）；外部账号/设备/发布身份/凭据仅以 owner 明确授权进入。内部洁净室应用不能冒充第三方采用。
 
@@ -356,17 +356,17 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M23 Language v1 batch 3 — expression ergonomics`](./plans/M23-language-v1-batch-3.md)。
 
-## M24: Vision closure and block-game pilot（planned; 2026-09-17）
+## M24: Vision closure and GUI application pilot（planned; 2026-09-17）
 
-状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 block-game gate——俄罗斯方块案例在真实 Windows 窗口上以 M14 Sico 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop；细化：逐 gate 工作分解与 pilot 循环能力映射见计划 §8（STEP-0255）；no step numbers reserved yet`
+状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 组合项 4 application pilot NO-GO。2026-09-22 两次 owner 指令重定试点：(1)「方块游戏pilot改为GUI和原生界面库（风格类似winui3）」+「原生界面库是sico语言原生界面库」（STEP-0257，计划 §8.6.1）；(2)「方块游戏pilot目标删除，改为带GUI界面的格式转换器，第一步可以先实现图片格式互相转换，例如jpg互转png」（STEP-0258）——block-game pilot 从 M24 删除（capture→vision→solver→input 闭环不再属于本里程碑，M16 证据停在 M16 GO 级别不再延伸），试点目标改为以 Sico 语言原生界面库（WinUI3/Fluent 风格）编写的带 GUI 格式转换器应用，第一步实现 JPEG↔PNG 双向互转；细化：逐 gate 工作分解与试点工作包见计划 §8（STEP-0255/0257/0258）；no step numbers reserved yet`
 
-这是 案例项目 README 冻结的验收链最后两环：M14 纯 Sico 离线求解器 ✓（STEP-0138）→ M16 capture/input ✓（M16 GO）→ M17 vision（本里程碑）→ M18 完整应用试点 block-game gate（本里程碑）。pilot 证据运行使用 owner 明确指定的目标窗口，授权遵循 M16 capability 合同（scoped、可撤销、绝不全桌面）。
+本里程碑承载 M17 视觉收口与重定后的应用试点。俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138 ✓）与其 Python 案例 oracle，不再作为 M18/M24 验收载体（owner 指令 2026-09-22）。
 
-进入条件：M16 GO ✓；M17 gate 1 GO ✓；M18 组合 4/5 ✓（block-game 即登记的 NO-GO）；逐包/逐 gate RFC 先接受再实现；pilot 执行授权由 owner 显式给出。
+进入条件：M16 GO ✓；M17 gate 1 GO ✓；M18 组合 4/5 ✓（组合项 4 即登记的 NO-GO，目标已重定为 GUI 格式转换器）；逐包/逐 gate RFC 先接受再实现（含格式转换器 codec 合同 RFC）；试点作为本地应用在用户授权下运行，文件访问经既有文件能力 + 用户选定路径组合，不消费 capture/input 授权。
 
-退出条件：M17 gate 2（容差内一致 + provider 故障隔离）与 gate 4（digest 绑定加载、预算 limit+1 typed、推理中取消、恶意资产拒绝、provider 崩溃隔离）GO；roster 包确定性语料 byte-exact 且消费者经 M7 registry 路径安装；block-game pilot 真实窗口语料绿 + 错误注入（误识别/窗口漂移/重复画面/超时/取消/权限撤销）全部 fail closed + 急停实测 + 长时运行采样；证据标签严格分级；M0–M23 回归绿 + 显式出口审计。
+退出条件：M17 gate 2（容差内一致 + provider 故障隔离）与 gate 4（digest 绑定加载、预算 limit+1 typed、推理中取消、恶意资产拒绝、provider 崩溃隔离）GO；roster 包确定性语料 byte-exact 且消费者经 M7 registry 路径安装；GUI 格式转换器试点在 Windows 证据主机上以 Sico + Sico 语言原生界面库构建运行，第一步 JPEG↔PNG 双向互转冻结语料输出 byte-stable + §8.5 全部 fail-closed 语料绿（错误魔法数/截断/尾部数据/超限维度/不支持 profile/转换中取消/保存失败/重复转换 byte-stable/长时采样）+ 无静默回退、无原生逃逸、无核心补丁；证据标签严格分级；M0–M23 回归绿 + 显式出口审计。
 
-执行计划：[`M24 Vision closure and block-game pilot`](./plans/M24-vision-closure-block-game-pilot.md)。本里程碑不提供验证码/认证/反作弊绕过、隐藏监控、全桌面捕获或凭据/进程控制；macOS/Linux/Android 不产生无原生证据的声明。
+执行计划：[`M24 Vision closure and GUI application pilot`](./plans/M24-vision-closure-gui-application-pilot.md)。本里程碑不提供验证码/认证/反作弊绕过、隐藏监控、全桌面捕获或凭据/进程控制；macOS/Linux/Android 不产生无原生证据的声明。
 
 ## M25: Release v1.0 — platform breadth, completion audit and product exit（planned; 2026-09-17）
 
@@ -374,7 +374,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 以 AGENT_GOAL §13 为准发布版本化 v1.0 产品结论：语言 v1 freeze（batch 1–3 纳入版本化发布：规范/语料/诊断/格式化互洽 + 迁移说明）；§13 逐项审计以 M21–M24 全证据链重发（每项 GO 或显式 deferred + 外部门名称）；M19 残余 gate 在输入允许处收口（全范围签名安装演练、registry 对 v1.0 bundle 的发布演练——公网 rollout 仍 owner 门控，不作声明）；平台广度按 owner 实际提供的 runner 声明（无 runner 处 contract-verified；Android 按 M20 两路出口记录）；v1.0 release bundle 经 M19 管线可复现（两次独立构建字节相同）。
 
-进入条件：M23 出口审计显式；M24 block-game gate 显式（关闭或诚实 deferred + 外部门名称）；M19 CI 绿且对 release candidate 现行；生产/外部项的 owner 输入已提供或显式声明 deferred。
+进入条件：M23 出口审计显式；M24 application pilot gate 显式（关闭或诚实 deferred + 外部门名称）；M19 CI 绿且对 release candidate 现行；生产/外部项的 owner 输入已提供或显式声明 deferred。
 
 退出条件：§13 逐项审计发布（每项证据链接、总结论 `complete` 或 `complete-with-deferrals`，绝不暗示成功）；语言 v1 freeze 快照重跑全冻结语料 byte-exact；v1.0 bundle 两次干净构建字节相同 + 干净 Windows 主机 install/run/upgrade/uninstall 签名演练；平台矩阵诚实（无标签洗白）；双实现登记与 AI 工作流状态记录；M0–M24 一命令回归绿 + 文档审计通过；按 §13 发出产品退出结论与残余清单。
 
@@ -407,7 +407,7 @@ M20 cross-platform, language v1, completion audit
 M21 DX/stdlib batch 2  →  M22 compiler self-host (S6/S7)
           |                        |
           v                        v
-   M23 language v1 batch 3   M24 vision closure + block-game pilot
+   M23 language v1 batch 3   M24 vision closure + GUI application pilot
           \                        /
            v                      v
         M25 release v1.0 completion audit
