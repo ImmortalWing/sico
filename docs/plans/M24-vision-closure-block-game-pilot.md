@@ -101,3 +101,83 @@ First STEP is an inventory in the STEP-0129/0142 pattern: measured
 probe of the current image-vision@1 surface vs the roster needs, the
 M17 gate gaps, the M16 capability surface for the pilot loop, and the
 frozen corpus plan — before any new package lands.
+
+## 8. Gate-by-gate work breakdown (refined 2026-09-22; no STEP numbers reserved)
+
+Working labels for planning only; each gate keeps its §3 exit test as the
+authoritative bar. Nothing here reserves a STEP identifier or widens a
+capability contract.
+
+### 8.1 M17 gate 2 — accelerator provider ADR
+
+- ADR content: provider class and isolation home (smallest isolated
+  adapter crate per the AGENTS.md §4 FFI rule; compiler and shared
+  security cores stay free of platform-specific unsafe code);
+  declare-only, least-privilege capability surface; versioned, default-deny
+  activation.
+- Tolerance contract: defined per output on the frozen image-vision@1
+  corpus (grey8/threshold/occupancy/occupancy-mask) and the tetris
+  recognition chain — per-pixel/absolute bounds plus an aggregate bound
+  per fixture; the deterministic reference implementation remains the
+  default path; acceleration is opt-in and declared, never a silent
+  substitution.
+- Evidence set: reference-vs-accelerated agreement table on the frozen
+  corpus; crash and resource-exhaustion injection against the provider
+  (typed limit+1 refusals, fail-closed, host survives without restart).
+- Recorded deferral clause: if no accelerator is authorized on the
+  evidence host, gate 2 closes reference-only with the ADR recording the
+  deferral (§5 risk 3).
+
+### 8.2 M17 gate 4 — model/package provenance RFC
+
+- Asset manifest schema: pinned digest algorithm, provenance fields,
+  CPU/GPU/memory/time budget fields, versioned-package integration that
+  extends the existing M7 digest discipline (no parallel trust path).
+- Evidence set (a fixture model satisfies the gate): digest-verified load;
+  typed refusals for bad digest, truncated and oversized assets
+  (limit+1); budget enforcement refusals; cancellation mid-inference with
+  a typed outcome and no orphaned work; malicious-asset refusal;
+  provider-crash isolation without host restart.
+- Model inference stays an explicit, budgeted, provenance-bound path;
+  it never becomes a default dependency of deterministic vision (§4).
+
+### 8.3 Roster packages — template match, grid, contour
+
+- Per package: WIT surface under the versioned image-vision line;
+  deterministic reference implementation; content-asserting corpus
+  (byte-exact outputs on frozen inputs, including degenerate and limit+1
+  inputs); consumers install through the M7 registry path with zero
+  compiler/Runtime changes.
+- The existing tetris recognition chain extends as each package lands,
+  giving the pilot (§8.4) its recognition vocabulary incrementally.
+
+### 8.4 Block-game pilot loop — capability mapping
+
+Each phase maps to an already-GO capability; no new trust surface is
+invented inside the pilot:
+
+| Loop phase | Capability | Constraint |
+|---|---|---|
+| observe | M16 window-scoped capture | designated fixture window only; resolution, theme and window state pinned and recorded (§5 risk 1) |
+| recognize | image-vision@1 deterministic chain (+ roster packages as they land) | reference path only in the pilot unless gate 2 explicitly authorizes acceleration |
+| plan | M14 pure-Sico solver (STEP-0138) | frozen Python oracle stays the comparison oracle until the corresponding gate passes |
+| preview | dry-run emission of the single next action + expected post-state | consumes no input grant |
+| execute-one | exactly one M16 input action | scoped, revocable grant; never full-desktop |
+| verify | re-capture + deterministic recognition compare against the expected post-state | mismatch stops the loop; no auto-retry in v0 |
+| stop | emergency stop + cancel token | permission revocation takes effect before the next action |
+
+Budget record: end-to-end capture→recognize→plan→execute latency is
+sampled and recorded (no SLA claim; §5 risk 2). One loop iteration
+executes at most one input action — the loop shape itself is the M16
+safety contract.
+
+### 8.5 Error-injection corpus (all outcomes fail closed)
+
+Enumerated once so the exit audit can check it line by line:
+mis-recognition (corrupted/ambiguous board frame), window drift (moved or
+resized window), duplicate frames (no state change between observations),
+solver timeout (budget exceeded mid-plan), cancellation mid-action,
+permission revoked mid-loop, provider crash (if gate 2/4 paths are in the
+loop), emergency-stop latency measured, and long-run stability sampled at
+declared intervals. Every case produces a typed outcome; none may trap,
+hang or fall back silently.

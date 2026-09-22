@@ -102,3 +102,90 @@ STEP in the STEP-0129/0142 pattern: a measured probe of the current
 surface (operator/keyword absence, ceremony counts on the selfhost
 corpus), the RFC set, and the machine matrix extension — before any
 grammar change lands.
+
+## 8. Per-item work protocol (refined 2026-09-22; no STEP numbers reserved)
+
+Every item follows the same four-phase protocol. Phase names are working
+labels for planning, not allocated STEP identifiers.
+
+### 8.1 Item 1 — infix comparison and logical operators
+
+- **Measured consumer (inventory phase).** On the eleven `selfhost/*.sico`
+  files (14,018 lines) plus the frozen application corpora, count and
+  freeze a ceremony table: (a) `Result[Bool, NumericError]` match blocks
+  whose only purpose is one comparison (`less_than`/`greater_than`/…),
+  (b) nested-`if` conjunction/disjunction sites two or more levels deep,
+  (c) `checked_add`/`checked_sub` match blocks per arithmetic site. Report
+  density per 1,000 lines. No operator decision is argued from
+  recollection.
+- **RFC proof obligations.** Decide the smallest closed operator set
+  (evaluation candidates: `< <= > >= !=` and `&& || !`; the RFC decides,
+  the punctuation table is not grown ad hoc); give the explicit desugar to
+  existing match/intrinsic machinery with **no new IR operations**;
+  prove evaluation-order and short-circuit behavior for `&&`/`||` — v0 may
+  restrict to side-effect-free operands, and any restriction must be
+  enforced by a typed refusal, not a silent fallback; source-map identity
+  (operator spans map onto the desugared region, diagnostics point at the
+  operator); formatter idempotence with a canonical spacing table;
+  new typed diagnostic codes for every new refusal class, append-only (no
+  renumbering of existing stable codes); compatibility audit for
+  pre-existing identifiers against the new tokens.
+- **Bounded exit test.** New-shape corpus byte-exact end-to-end through
+  the real runner including limit+1 refusals; machine support matrix row +
+  validator; frozen snapshots unchanged (append-only); self-host
+  re-baseline entry recorded (§9).
+
+### 8.2 Item 2 — expression-position conditions
+
+- **Measured consumer.** Count the mutable-cell + all-return match +
+  join-read sites that exist only to bind one conditional value, in the
+  selfhost sources and the M14 solver corpus; freeze the count.
+- **RFC proof obligations.** Choose the smallest let-bound statement form
+  only (`let x = if …` / `let x = match …`); general nested expression
+  conditions stay out of v0; the desugar is the already-supported
+  cell + branches + join read with no new IR operation; formatter
+  canonical shape and idempotence; typed refusals for unsupported operand
+  shapes.
+- **Bounded exit test.** Same bar as 8.1 (corpus, matrix, snapshots,
+  re-baseline entry).
+
+### 8.3 Item 3 — bare-literal re-measurement (policy item)
+
+- **Corpus.** Owner-reviewed AI-generated Sico from the STEP-0175-era DX
+  audit method, plus the selfhost sources; the corpus is frozen before
+  counting.
+- **Metric.** Literal-ceremony tokens (`I64.literal(...)` and friends) per
+  expression and per KB, alongside the same counts for a hypothetical
+  typed-literal form.
+- **Output.** A decision record appended to the RFC-0046 outcome: either
+  "D3 stands" with the new measurement, or the smallest typed-literal RFC
+  carrying the full RFC-0033 evidence. No grammar change may precede this
+  record.
+
+### 8.4 Item 4 — `text.chars` (queued by RFC-0046 §2)
+
+- **Measured consumer.** Compare the composed
+  `text.length`/`char_at` loop against the candidate intrinsic on the
+  frozen word-scanning corpora (formatter `word_kind` region, checker
+  scans) — call count, allocation count and byte output.
+- **Decision rule.** The intrinsic lands only if measurably better on the
+  frozen corpora **and** it carries the same RFC-0033 evidence bar;
+  otherwise the composed form is recorded as final and the item closes.
+
+## 9. Sequencing and dependency map (refined 2026-09-22)
+
+- One kickoff inventory covers all four probes (§7); after that the items
+  are independent — each may proceed or close on its own RFC without
+  waiting for the others.
+- Ordering constraint that does not move: **implementation** of any item
+  waits for the M22 S7 exit audit (§2). RFC drafting and measurement may
+  run in parallel with M22 S5–S7.
+- M22 interaction per accepted item: an entry in the M22
+  dual-implementation register plus an explicit self-host re-baseline
+  decision — the Sico frontend either consumes the new surface or a
+  declared, disjoint subset is recorded; a wide operator set forces the
+  parser slices to re-freeze, which is exactly why the RFC must fix the
+  smallest closed set first (§5 risk 1).
+- Items 1 and 2 share one diagnostic-namespace decision (append-only
+  codes); landing them under one RFC-set review keeps the code registry
+  coherent, but they remain separately gated items.

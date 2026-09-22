@@ -330,6 +330,8 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 验证支持：STEP-0254 在测试进程内复用 PreparedProgram，每次 guest 执行仍创建独立 Store；13 项差分串行实测从 801.46s 降至 66.99s，降低后续自举迭代成本，不改变语言支持或 bootstrap 状态。
 
+规划支持：STEP-0255 细化 M22–M24 执行计划——M22 切片状态表（计划 §3.1）与执行队列（§3.2：item list.get match → formatter 尾 → selfhost 全源 → S5 → S6 → S7）、M23 逐项工作协议（§8）与排序依赖图（§9）、M24 逐 gate 工作分解与 pilot 循环映射（§8）；不预留未来 STEP 编号、不改任何 gate。
+
 状态：`in-progress：S1 formatter 已关闭；S2 声明式 checker 子集关闭（116 lexical / 34 identity / 65 accepted / 0 unsupported）。ADR-0016 冻结 SOA 与 compilation-unit 边界；STEP-0246 统一 parser/compiler lowering，STEP-0247 以 versioned-capacity List COW 消除完整源码 lexer trap，STEP-0248 将 typed user-call guard、literal 参数与 Text return 纳入 canonical CFG，formatter 前七函数至 word_kind 与 Rust byte-exact；STEP-0249 修复 256-local 构建越限（while_bytes_at_rhs_packed 抽取 + headroom 回归钉）、验证器落地 PowerShell 5.1、LF 语料冻结真实执行；STEP-0251 落地通用 while 体 if/else 语句区域（惰性块纪律）；STEP-0252 按 Rust oracle 顺序发射 nested sico.bytes.at + typed user call 条件；STEP-0253 以 parent-linked frame 与 deferred empty-else block 对齐 nested/sequential no-else CFG，并修复单指令/return-call SSA 计数，formatter 前十三函数至 punctuation_kind byte-exact，canary 前沿推进至 item 的 list.get result-match（typed E-SH-IR-CALL-TARGET）。S3/S4 仍 partial；S5 只有 bounded Core-Wasm seam，S6 A=B=C 未进入；后续 STEP 不预留`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
@@ -344,7 +346,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M23: Language v1 batch 3 — expression ergonomics（planned; 2026-09-17）
 
-状态：`planned / owner session directive（2026-09-17「继续完成sico，M22-M25」）；M22 计划 §8 记录的语言摩擦升格为本里程碑；no step numbers reserved yet；RFC/合同起草可与 M22 S6/S7 并行，实现等 M22 S7 出口审计`
+状态：`planned / owner session directive（2026-09-17「继续完成sico，M22-M25」）；M22 计划 §8 记录的语言摩擦升格为本里程碑；no step numbers reserved yet；RFC/合同起草可与 M22 S6/S7 并行，实现等 M22 S7 出口审计；细化：逐项工作协议见计划 §8、排序与依赖见 §9（STEP-0255）`
 
 关闭 RFC-0044/0045/0046 已实测但未移除的语言表面摩擦，逐项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断）：中缀比较/逻辑运算符（最小封闭算符集由 RFC 决定；实测消费者 = selfhost 源码本身的仪式密度）、表达式位置条件（`let x = if/match …`，记录在案的最大结构性冗余税）、裸字面量复称（按 RFC-0046 D3 记录的复测政策，先测后议、不改语法不做承诺）、`text.chars`（RFC-0046 §2 排队项，按消费者证据决定）。
 
@@ -356,7 +358,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M24: Vision closure and block-game pilot（planned; 2026-09-17）
 
-状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 block-game gate——俄罗斯方块案例在真实 Windows 窗口上以 M14 Sico 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop；no step numbers reserved yet`
+状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 block-game gate——俄罗斯方块案例在真实 Windows 窗口上以 M14 Sico 求解器 + M16 capture/input + M17 vision 走通 observe→plan→preview→execute-one→verify/stop；细化：逐 gate 工作分解与 pilot 循环能力映射见计划 §8（STEP-0255）；no step numbers reserved yet`
 
 这是 案例项目 README 冻结的验收链最后两环：M14 纯 Sico 离线求解器 ✓（STEP-0138）→ M16 capture/input ✓（M16 GO）→ M17 vision（本里程碑）→ M18 完整应用试点 block-game gate（本里程碑）。pilot 证据运行使用 owner 明确指定的目标窗口，授权遵循 M16 capability 合同（scoped、可撤销、绝不全桌面）。
 

@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0253: S1 and the declared S2 identity/outline subset complete; S3/S4/S5 partial; S6 not entered. ADR-0016 freezes SOA and compilation-unit roles; STEP-0246 unifies parser/compiler lowering without exact-source IR fallback; STEP-0247 removes quadratic List-builder exhaustion; STEP-0248 adds typed user-call guard chains, literal arguments and Text returns, advancing byte-exact IR through formatter `word_kind`; STEP-0249 repairs the 256-local build failure via `while_bytes_at_rhs_packed` extraction, makes the validators host-runnable (PowerShell 5.1), re-executes the canonical-LF corpus freeze and re-pins the canary frontier; STEP-0250 opens `Bytes` parameters to the while-path lowering; STEP-0251 lands `general_while_function_ir` with the canonical lazy-block discipline and gw_* helpers; STEP-0252 lowers `scan_ident`'s nested `ident_continue(sico.bytes.at(...))` condition; STEP-0253 adds parent-linked append-only if frames, deferred empty-else blocks and exact SSA counting for nested/sequential no-else regions. The formatter prefix is byte-exact through `punctuation_kind` (thirteen functions); the typed frontier is now `item`'s `sico.list.get` result match (`E-SH-IR-CALL-TARGET`). Full rendered diagnostic parity is not claimed; no STEP numbers reserved beyond the completed sequence.
+> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0253: S1 and the declared S2 identity/outline subset complete; S3/S4/S5 partial; S6 not entered. ADR-0016 freezes SOA and compilation-unit roles; STEP-0246 unifies parser/compiler lowering without exact-source IR fallback; STEP-0247 removes quadratic List-builder exhaustion; STEP-0248 adds typed user-call guard chains, literal arguments and Text returns, advancing byte-exact IR through formatter `word_kind`; STEP-0249 repairs the 256-local build failure via `while_bytes_at_rhs_packed` extraction, makes the validators host-runnable (PowerShell 5.1), re-executes the canonical-LF corpus freeze and re-pins the canary frontier; STEP-0250 opens `Bytes` parameters to the while-path lowering; STEP-0251 lands `general_while_function_ir` with the canonical lazy-block discipline and gw_* helpers; STEP-0252 lowers `scan_ident`'s nested `ident_continue(sico.bytes.at(...))` condition; STEP-0253 adds parent-linked append-only if frames, deferred empty-else blocks and exact SSA counting for nested/sequential no-else regions; STEP-0254 reuses the prepared compiler inside the differential harness only (fresh Store per run, refusal-recovery pinned; serial suite 801.46 s → 66.99 s, harness cost only). The formatter prefix is byte-exact through `punctuation_kind` (thirteen functions); the typed frontier is now `item`'s `sico.list.get` result match (`E-SH-IR-CALL-TARGET`). Full rendered diagnostic parity is not claimed; no STEP numbers reserved beyond the completed sequence.
 
 ## 1. Objective
 
@@ -72,6 +72,58 @@ language surface without an accepted RFC.
 - **S7 — exit audit**: evidence pack, budget tables, dual-implementation
   register, explicit GO/NO-GO.
 
+### 3.1 Slice status (measured 2026-09-22, through STEP-0254)
+
+| Slice | Status | Closed evidence | Remaining bounded work |
+|---|---|---|---|
+| S0 prereqs | complete | STEP-0174 / STEP-0175 | — |
+| S1 formatter (L1) | complete | frozen corpus byte-exact + idempotent; `formatter.sico` runs on its own sources through the real runner | — |
+| S2 checker subset (L1) | complete for the declared subset | frozen diagnostic partition 116 lexical / 34 identity / 65 accepted / 0 unsupported | widening the subset requires its own declared-contract update (no silent growth) |
+| S3 lexer + parser (L2) | partial | `lexer.sico` / `tokens.sico` / `declaration_parser.sico` differentials green; `parser.sico` exercised through driver paths (recursive return-expression trees; verifier-accepted scalar IR + noncanonical refusals) | full declared-shape coverage of `parser.sico` (9,826 lines, the largest selfhost unit) on the frozen corpus |
+| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `punctuation_kind` (13 of 30 functions); typed refusal-first discipline with re-pinned canary each step | the 17 remaining formatter functions (`item` … `main`), then the remaining selfhost sources lower byte-exactly |
+| S5 codegen (L2) | partial | bounded Core-Wasm seam: nonnegative `Int` constant emission byte-equal to Rust codegen; every other shape typed-refused (`unsupported codegen source shape`) | RFC-0011 deterministic backend subset over the frozen corpus |
+| S6 bootstrap closure | not entered | — | ADR-0015 contract: `A == B == C`, `.sapp` via the M7 trust chain, runner-executed self-compile, budget re-measurement |
+| S7 exit audit | not entered | — | evidence pack + explicit GO/NO-GO |
+
+### 3.2 Execution queue (planned ordering; no STEP numbers reserved)
+
+The queue is the planned convergence order from the current typed frontier.
+Each item lands under the standing discipline: observe the typed refusal,
+lower to byte-exactness, re-pin the canary at the next typed refusal, keep
+the refusal-recovery and local-bounds regressions green, and never emit a
+partial lowering that is unverifiable or semantically different.
+
+1. **`item` region** — extend self-host match lowering to a match subject
+   that consumes an intrinsic result (`sico.list.get` on a `List[Text]`
+   parameter indexed by `U64`); today this is typed-refused as
+   `E-SH-IR-CALL-TARGET`. Exit test: formatter prefix byte-exact through
+   `item`; canary re-pinned at the next declared refusal.
+2. **Formatter tail in source order** — `append_pair`, `line_tokens`,
+   `source_has_lex_error`, `no_space_before`/`no_space_after`, `call_left`,
+   `format_code`, `repeat_indent`, the `Map[Text,U64]` region
+   (`nearest_match`/`set_nearest_match`/`match_arm_levels`),
+   `close_code`/`direct_close`/`opener_close`, `normalize_source`, `main`.
+   Each region lands as its own byte-exact prefix differential. Exit test:
+   the complete `formatter.sico` lowers byte-exactly against the Rust
+   oracle with the full suite green.
+3. **Remaining selfhost sources** — lower `checker.sico`, `lexer.sico`,
+   `tokens.sico`, `declaration_parser.sico`, `parser.sico`,
+   `compiler*.sico` corpora byte-exactly (the S3/S4 convergence completes
+   together; `parser.sico` is the bounded largest unit). Exit test: every
+   selfhost source's frozen corpus differential is byte-exact and the
+   `E-SH-IR-*` refusal set shrinks only by declared regions.
+4. **S5 widening** — extend the Core-Wasm seam from nonnegative constants
+   to the RFC-0011 deterministic subset. Exit test: emitted bytes equal
+   the Rust backend on the frozen corpus; out-of-subset shapes stay
+   typed-refused, never silently fallen back.
+5. **S6 bootstrap closure** — per ADR-0015: `A == B == C` on the frozen
+   corpus, `.sapp` packaging through the M7 trust chain, runner-executed
+   self-compile, and the fuel/timeout/wall-time budget record (measured
+   with the STEP-0254 reused harness for iteration cost; the record itself
+   remains the only performance claim surface).
+6. **S7 exit audit** — evidence pack, budget tables, dual-implementation
+   register, explicit GO/NO-GO.
+
 ## 4. Exit gates
 
 1. L1: formatter differential byte-exact + idempotent on the frozen
@@ -102,6 +154,15 @@ runtime evidence when executed through a real runner; corpus presence
 alone stays `contract-verified`. No external-pilot or production claims
 arise from self-hosting.
 
+Validation-host note (recorded with STEP-0254): this evidence machine's
+runner artifacts build under the pinned `1.98.0-x86_64-pc-windows-msvc`
+toolchain; the documented GNU flow additionally needs a real gcc for
+`ring` (the rustup self-contained gcc is linker-only) and dlltool from
+`target/tooling/msys2-binutils`, which this host no longer has.
+Validators must pin the toolchain matching the local cache until the GNU
+path is re-provisioned; this is an environment repair, not a product
+support change.
+
 ## 6. Non-goals
 
 - Runner, Host providers, DAP, MCP server or desktop/web hosts in Sico.
@@ -123,6 +184,11 @@ arise from self-hosting.
   conditions 3–4 of the entry gate are closed.
 - Deep recursion in a Sico-written parser consumes the bounded recursion
   budget; parser depth is budgeted per corpus (limit+1 fixtures).
+- Host-toolchain reproducibility: the GNU evidence path depends on
+  msys2-binutils plus a C compiler that the evidence host lost after
+  2026-09-20; until re-provisioned, every M22 validator must pin the
+  toolchain that matches the cached artifacts (see §5), or a full rebuild
+  fails at `ring`/`windows-sys` and masks the actual differential result.
 
 ## 8. v1 batch 3 candidates — recorded language friction (owner session directive 2026-09-14)
 
