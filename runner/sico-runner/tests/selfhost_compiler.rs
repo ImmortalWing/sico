@@ -473,6 +473,13 @@ fn sico_compiler_lowers_the_append_pair_region_byte_exactly() {
 }
 
 #[test]
+fn dump_lt_region_ir() {
+    let end = FORMATTER_SOURCE.find("function source_has_lex_error").unwrap();
+    let source = &FORMATTER_SOURCE[..end];
+    println!("{}", rust_ir(source));
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
