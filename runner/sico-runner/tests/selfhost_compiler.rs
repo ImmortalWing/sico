@@ -373,6 +373,63 @@ fn sico_compiler_lowers_the_scan_ident_region_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_the_scan_integer_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function scan_comment")
+        .expect("formatter keeps the scan_integer region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let output = match run_guest(source) {
+        RunOutcome::Output(output) => output,
+        other => panic!("formatter scan_integer region must compile: {other:?}"),
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_scan_comment_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function scan_string")
+        .expect("formatter keeps the scan_comment region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter scan_comment region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_scan_string_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function punctuation_kind")
+        .expect("formatter keeps the scan_string region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter scan_string region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_punctuation_kind_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function item")
+        .expect("formatter keeps the punctuation_kind region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter punctuation_kind region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

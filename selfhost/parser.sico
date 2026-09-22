@@ -4065,6 +4065,9 @@ end function
 function gw_instr_count(text: Text) returns U64:
   let gic_bytes = sico.text.encode(text)
   let gic_n = sico.bytes.length(gic_bytes)
+  if U64.equal(gic_n, U64.literal(0)):
+    return U64.literal(0)
+  end if
   let gic_i = U64.literal(0)
   let gic_depth = U64.literal(0)
   let gic_commas = U64.literal(0)
@@ -4088,9 +4091,6 @@ function gw_instr_count(text: Text) returns U64:
     end if
     set gic_i = next_index(gic_i, gic_n)
   end while
-  if U64.equal(gic_commas, U64.literal(0)):
-    return U64.literal(0)
-  end if
   match U64.checked_add(gic_commas, U64.literal(1)):
     case ok(gic_total):
       return gic_total
@@ -4623,6 +4623,10 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gbr_cond = sico.list.empty[U64]()
   let gbr_then = sico.list.empty[U64]()
   let gbr_else = sico.list.empty[U64]()
+  let gbr_deferred = sico.list.empty[U64]()
+  let gdefer_to = sico.list.empty[U64]()
+  let gdefer_rs = sico.list.empty[U64]()
+  let gdefer_re = sico.list.empty[U64]()
   let gret_from = sico.list.empty[U64]()
   let gret_val = sico.list.empty[U64]()
   let gfr_then = sico.list.empty[U64]()
@@ -4632,6 +4636,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gfr_iend = sico.list.empty[U64]()
   let gfr_ttail = sico.list.empty[U64]()
   let gfr_tterm = sico.list.empty[U64]()
+  let gfr_parent = sico.list.empty[U64]()
   let gcell_names = sico.text.split_lines("")
   let gcell_kinds = sico.text.split_lines("")
   let gcell_locals = sico.list.empty[U64]()
@@ -4640,8 +4645,10 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gcell_count = U64.literal(0)
   let gseal_len = U64.literal(0)
   let gbr_len = U64.literal(0)
+  let gdefer_len = U64.literal(0)
   let gret_len = U64.literal(0)
   let gfr_len = U64.literal(0)
+  let gfr_current = U64.literal(0)
   let gcur_instrs = ""
   let gcur_blk = U64.literal(0)
   let gcur_rs = fn_start
@@ -4906,6 +4913,8 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       set gfr_cond = sico.list.append[U64](gfr_cond, gif_cond_value)
       set gfr_istart = sico.list.append[U64](gfr_istart, gif_offset)
       set gfr_iend = sico.list.append[U64](gfr_iend, gif_end)
+      set gfr_parent = sico.list.append[U64](gfr_parent, gfr_current)
+      set gfr_current = gfr_len
       set gdepth = next_index(gdepth, gdepth)
       set gfr_len = next_index(gfr_len, gfr_len)
       set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
@@ -4937,13 +4946,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         return "ERR:E-SH-IR-STATEMENT"
       end if
       if is_word(gregion, "then"):
-        let gif_top = gfr_len
-        match U64.checked_sub(gfr_len, U64.literal(1)):
-          case ok(gif_top_slot):
-            set gif_top = gif_top_slot
-          case error(_):
-            return "ERR:E-SH-IR-RANGE"
-        end match
+        let gif_top = gfr_current
         let gif_istart = u64_list_at(gfr_istart, gif_top, U64.literal(0))
         let gif_iend = u64_list_at(gfr_iend, gif_top, U64.literal(0))
         set gbr_from = sico.list.append[U64](gbr_from, u64_list_at(gfr_from, gif_top, U64.literal(0)))
@@ -4954,6 +4957,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
         let gelse_id = sico.list.length(gblk_instrs)
         set gbr_else = sico.list.append[U64](gbr_else, gelse_id)
+        set gbr_deferred = sico.list.append[U64](gbr_deferred, U64.literal(0))
         set gbr_len = next_index(gbr_len, gbr_len)
         set gfr_ttail = sico.list.append[U64](gfr_ttail, gcur_blk)
         if gcur_term:
@@ -4992,25 +4996,68 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
                 return "ERR:E-SH-IR-STATEMENT"
               end if
               if U64.less_than(U64.literal(0), gdepth):
-                let gif_top2 = gfr_len
-                match U64.checked_sub(gfr_len, U64.literal(1)):
-                  case ok(gif_top2_slot):
-                    set gif_top2 = gif_top2_slot
-                  case error(_):
-                    return "ERR:E-SH-IR-RANGE"
-                end match
+                let gif_top2 = gfr_current
                 let gif_istart2 = u64_list_at(gfr_istart, gif_top2, U64.literal(0))
                 let gif_iend2 = u64_list_at(gfr_iend, gif_top2, U64.literal(0))
+                if is_word(gregion, "then"):
+                  let gthen_tail = gcur_blk
+                  let gthen_term = gcur_term
+                  set gbr_from = sico.list.append[U64](gbr_from, u64_list_at(gfr_from, gif_top2, U64.literal(0)))
+                  set gbr_cond = sico.list.append[U64](gbr_cond, u64_list_at(gfr_cond, gif_top2, U64.literal(0)))
+                  set gbr_then = sico.list.append[U64](gbr_then, u64_list_at(gfr_then, gif_top2, U64.literal(0)))
+                  set gbr_else = sico.list.append[U64](gbr_else, gdefer_len)
+                  set gbr_deferred = sico.list.append[U64](gbr_deferred, U64.literal(1))
+                  set gbr_len = next_index(gbr_len, gbr_len)
+                  set gfr_ttail = sico.list.append[U64](gfr_ttail, gthen_tail)
+                  if gthen_term:
+                    set gfr_tterm = sico.list.append[U64](gfr_tterm, U64.literal(1))
+                  else:
+                    set gfr_tterm = sico.list.append[U64](gfr_tterm, U64.literal(0))
+                  end if
+                  set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
+                  set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
+                  set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
+                  set gcur_blk = sico.list.length(gblk_instrs)
+                  set gcur_instrs = ""
+                  set gcur_rs = gif_istart2
+                  set gcur_re = gif_iend2
+                  set gregion = "join"
+                  set gcur_term = false
+                  if gthen_term:
+                    let gnt = I64.literal(1)
+                  else:
+                    set gseal_from = sico.list.append[U64](gseal_from, gthen_tail)
+                    set gseal_to = sico.list.append[U64](gseal_to, gcur_blk)
+                    set gseal_len = next_index(gseal_len, gseal_len)
+                  end if
+                  set gdefer_to = sico.list.append[U64](gdefer_to, gcur_blk)
+                  set gdefer_rs = sico.list.append[U64](gdefer_rs, gif_istart2)
+                  set gdefer_re = sico.list.append[U64](gdefer_re, gif_iend2)
+                  set gdefer_len = next_index(gdefer_len, gdefer_len)
+                  set gfr_current = u64_list_at(gfr_parent, gif_top2, U64.literal(0))
+                  match U64.checked_sub(gdepth, U64.literal(1)):
+                    case ok(gdepth_noelse_after):
+                      set gdepth = gdepth_noelse_after
+                    case error(_):
+                      return "ERR:E-SH-IR-RANGE"
+                  end match
+                  set gcursor = return_expression_end(src, find_text_from(src, "end if", gcursor))
+                  let gein_after = next_index(gend_next, body_end)
+                  let geinnl = gein_after
+                  while U64.less_than(geinnl, body_end):
+                    if is_word(word_at(words, geinnl), "<nl>"):
+                      set geinnl = next_index(geinnl, body_end)
+                    else:
+                      break
+                    end if
+                  end while
+                  set gi = geinnl
+                  continue
+                end if
                 let gelse_tail = gcur_blk
                 let gelse_term = gcur_term
                 let gttail = u64_list_at(gfr_ttail, gif_top2, U64.literal(0))
                 let gttterm = u64_list_at(gfr_tterm, gif_top2, U64.literal(0))
-                match U64.checked_sub(gfr_len, U64.literal(1)):
-                  case ok(gfr_len_after):
-                    set gfr_len = gfr_len_after
-                  case error(_):
-                    return "ERR:E-SH-IR-RANGE"
-                end match
                 set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
                 set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
                 set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
@@ -5032,12 +5079,14 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
                   set gseal_to = sico.list.append[U64](gseal_to, gcur_blk)
                   set gseal_len = next_index(gseal_len, gseal_len)
                 end if
+                set gfr_current = u64_list_at(gfr_parent, gif_top2, U64.literal(0))
                 match U64.checked_sub(gdepth, U64.literal(1)):
                   case ok(gdepth_after):
                     set gdepth = gdepth_after
                   case error(_):
                     return "ERR:E-SH-IR-RANGE"
                 end match
+                set gcursor = return_expression_end(src, find_text_from(src, "end if", gcursor))
                 let gei_after = next_index(gend_next, body_end)
                 let geinl = gei_after
                 while U64.less_than(geinl, body_end):
@@ -5124,7 +5173,6 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       end if
       let gr_parts = sico.text.split_lines(gr_pack)
       let gr_value = gw_decimal_value(word_at(gr_parts, U64.literal(1)))
-      let gr_count = gw_decimal_value(word_at(gr_parts, U64.literal(0)))
       let gr_pieces = word_at(gr_parts, U64.literal(3))
       if is_word(gr_pieces, "-"):
         set gr_pieces = ""
@@ -5138,7 +5186,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       set gret_from = sico.list.append[U64](gret_from, gcur_blk)
       set gret_val = sico.list.append[U64](gret_val, gr_value)
       set gret_len = next_index(gret_len, gret_len)
-      match U64.checked_add(gr_value, gr_count):
+      match U64.checked_add(gr_value, U64.literal(1)):
         case ok(gr_next_value):
           set gnext = gr_next_value
         case error(_):
@@ -5196,7 +5244,16 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       let gbr_hit = false
       while U64.less_than(gbri, gbr_len):
         if U64.equal(u64_list_at(gbr_from, gbri, U64.literal(0)), gbi):
-          set gterm = sico.text.concat("{\"kind\":\"branch\",\"data\":{\"condition\":", sico.text.concat(sico.u64.to_text(u64_list_at(gbr_cond, gbri, U64.literal(0))), sico.text.concat(",\"then_block\":", sico.text.concat(sico.u64.to_text(u64_list_at(gbr_then, gbri, U64.literal(0))), sico.text.concat(",\"else_block\":", sico.text.concat(sico.u64.to_text(u64_list_at(gbr_else, gbri, U64.literal(0))), "}}"))))))
+          let gelse_target = u64_list_at(gbr_else, gbri, U64.literal(0))
+          if U64.equal(u64_list_at(gbr_deferred, gbri, U64.literal(0)), U64.literal(1)):
+            match U64.checked_add(gcount, gelse_target):
+              case ok(gdeferred_target):
+                set gelse_target = gdeferred_target
+              case error(_):
+                return "ERR:E-SH-IR-RANGE"
+            end match
+          end if
+          set gterm = sico.text.concat("{\"kind\":\"branch\",\"data\":{\"condition\":", sico.text.concat(sico.u64.to_text(u64_list_at(gbr_cond, gbri, U64.literal(0))), sico.text.concat(",\"then_block\":", sico.text.concat(sico.u64.to_text(u64_list_at(gbr_then, gbri, U64.literal(0))), sico.text.concat(",\"else_block\":", sico.text.concat(sico.u64.to_text(gelse_target), "}}"))))))
           set gbr_hit = true
           break
         end if
@@ -5252,6 +5309,30 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
     end if
     set gblocks = sico.text.concat(gblocks, gblock_json)
     set gbi = next_index(gbi, gbi)
+  end while
+  let gdi = U64.literal(0)
+  while U64.less_than(gdi, gdefer_len):
+    let gdefer_id = gcount
+    match U64.checked_add(gcount, gdi):
+      case ok(gdefer_block_id):
+        set gdefer_id = gdefer_block_id
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    let gdefer_json = "{\"id\":"
+    set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(gdefer_id))
+    set gdefer_json = sico.text.concat(gdefer_json, ",\"instructions\":[],\"terminator\":{\"kind\":\"jump\",\"data\":")
+    set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_to, gdi, U64.literal(0))))
+    set gdefer_json = sico.text.concat(gdefer_json, "},\"range\":{\"start\":")
+    set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_rs, gdi, U64.literal(0))))
+    set gdefer_json = sico.text.concat(gdefer_json, ",\"end\":")
+    set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_re, gdi, U64.literal(0))))
+    set gdefer_json = sico.text.concat(gdefer_json, "}}")
+    if U64.less_than(U64.literal(0), sico.text.length(gblocks)):
+      set gblocks = sico.text.concat(gblocks, ",")
+    end if
+    set gblocks = sico.text.concat(gblocks, gdefer_json)
+    set gdi = next_index(gdi, gdi)
   end while
   let gparameters = parameters_ir(words, name_idx, src, fn_start)
   if sico.text.starts_with(gparameters, "ERR:"):
