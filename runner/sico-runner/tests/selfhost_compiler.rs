@@ -4,7 +4,7 @@
 
 use sico_ir::{Module, canonical_json, lower_core, verify};
 use sico_runner::{
-    CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
+    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
 use sico_source::{SourceFile, SourceId};
 
@@ -87,11 +87,26 @@ fn compile_guest() -> &'static [u8] {
 }
 
 fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
-    let component = compile_guest();
-    let runner = Runner::new().expect("runner builds");
-    let prepared = runner
-        .prepare_program_with_net(component, &FsGrants::default(), &NetGrants::default())
-        .expect("compiler component links");
+    // Reuse native compilation, not guest execution state. PreparedProgram::run
+    // allocates a fresh Store, resources and fuel for every fixture. Serialize
+    // runs because timeout watchdogs advance the shared Engine's epoch.
+    static PREPARED: std::sync::OnceLock<std::sync::Mutex<PreparedProgram>> =
+        std::sync::OnceLock::new();
+    let prepared = PREPARED
+        .get_or_init(|| {
+            let runner = Runner::new().expect("runner builds");
+            std::sync::Mutex::new(
+                runner
+                    .prepare_program_with_net(
+                        compile_guest(),
+                        &FsGrants::default(),
+                        &NetGrants::default(),
+                    )
+                    .expect("compiler component links"),
+            )
+        })
+        .lock()
+        .expect("compiler execution lock is healthy");
     prepared
         .run(
             &ScriptInput {
@@ -440,6 +455,12 @@ fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
             message: "ERR:E-SH-IR-PARAMETER-TYPE".into(),
         }
     );
+    // The same prepared compiler must remain usable after a domain refusal.
+    let RunOutcome::Output(output) = run_guest(IDENTITY_SOURCE) else {
+        panic!("valid input after refusal must compile in a fresh Store")
+    };
+    assert_eq!(output.exit_code, 0);
+    assert_bytes_equal(&output.stdout, rust_ir(IDENTITY_SOURCE).as_bytes());
 }
 
 #[test]

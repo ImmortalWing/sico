@@ -328,6 +328,8 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 ## M22: Compiler self-host track（in-progress; entry satisfied 2026-09-14）
 
+验证支持：STEP-0254 在测试进程内复用 PreparedProgram，每次 guest 执行仍创建独立 Store；13 项差分串行实测从 801.46s 降至 66.99s，降低后续自举迭代成本，不改变语言支持或 bootstrap 状态。
+
 状态：`in-progress：S1 formatter 已关闭；S2 声明式 checker 子集关闭（116 lexical / 34 identity / 65 accepted / 0 unsupported）。ADR-0016 冻结 SOA 与 compilation-unit 边界；STEP-0246 统一 parser/compiler lowering，STEP-0247 以 versioned-capacity List COW 消除完整源码 lexer trap，STEP-0248 将 typed user-call guard、literal 参数与 Text return 纳入 canonical CFG，formatter 前七函数至 word_kind 与 Rust byte-exact；STEP-0249 修复 256-local 构建越限（while_bytes_at_rhs_packed 抽取 + headroom 回归钉）、验证器落地 PowerShell 5.1、LF 语料冻结真实执行；STEP-0251 落地通用 while 体 if/else 语句区域（惰性块纪律）；STEP-0252 按 Rust oracle 顺序发射 nested sico.bytes.at + typed user call 条件；STEP-0253 以 parent-linked frame 与 deferred empty-else block 对齐 nested/sequential no-else CFG，并修复单指令/return-call SSA 计数，formatter 前十三函数至 punctuation_kind byte-exact，canary 前沿推进至 item 的 list.get result-match（typed E-SH-IR-CALL-TARGET）。S3/S4 仍 partial；S5 只有 bounded Core-Wasm seam，S6 A=B=C 未进入；后续 STEP 不预留`
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。

@@ -92,6 +92,11 @@ language surface without an accepted RFC.
 
 ## 5. Evidence classes
 
+STEP-0254 reuses the prepared compiler only inside the differential harness.
+Every fixture still executes with a fresh Store and the original limits.
+Measured serial suite time is 66.99s versus STEP-0253's 801.46s; this is test
+harness overhead reduction, not guest self-compilation performance evidence.
+
 All M22 evidence is `internal-fixture`. Differential corpus runs are
 runtime evidence when executed through a real runner; corpus presence
 alone stays `contract-verified`. No external-pilot or production claims
