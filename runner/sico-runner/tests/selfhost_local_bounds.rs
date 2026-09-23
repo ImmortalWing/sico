@@ -74,11 +74,10 @@ fn selfhost_link_unit_stays_inside_ir_verifier_limits() {
         .iter()
         .map(|function| (function.locals.len(), function.name.as_str()))
         .collect();
-    ranked.sort_by(|a, b| b.0.cmp(&a.0));
+    ranked.sort_by_key(|&(locals, _)| std::cmp::Reverse(locals));
     for (locals, name) in ranked.iter().take(5) {
         println!("  {name}: {locals} locals");
-    }
-    assert!(
+    }    assert!(
         busiest + 16 <= sico_ir::MAX_LOCALS_PER_FUNCTION,
         "busiest function holds {busiest} locals; frontier work needs headroom"
     );
