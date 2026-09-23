@@ -1,6 +1,6 @@
 //! Temporary diagnostic: dump the Rust canonical IR for a prefix source.
 
-use sico_ir::{canonical_json, lower_core, Terminator};
+use sico_ir::{Terminator, canonical_json, lower_core};
 use sico_source::{SourceFile, SourceId};
 
 fn term_name(t: &Terminator) -> String {
@@ -64,10 +64,7 @@ fn dump_oracle_ir() {
                     sico_ir::Operation::ConstInt(value) => format!("ConstInt({value})"),
                     op => format!("{:?}", op),
                 };
-                println!(
-                    "    {} {:?} {}",
-                    instruction.result.0, instruction.ty, data
-                );
+                println!("    {} {:?} {}", instruction.result.0, instruction.ty, data);
             }
             println!("    -> {}", term_name(&block.terminator));
         }

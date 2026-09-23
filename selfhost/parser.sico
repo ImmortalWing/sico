@@ -4882,7 +4882,17 @@ function while_call_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
   end if
   let scl_open_idx = next_index(receiver_idx, line_end)
   let scl_close_idx = matching_close(words, scl_open_idx, line_end)
+  let scl_tail_ok = I64.literal(0)
   if U64.equal(next_index(scl_close_idx, line_end), line_end):
+    set scl_tail_ok = I64.literal(1)
+  end if
+  if is_word(word_at(words, next_index(scl_close_idx, words_len)), ")"):
+    set scl_tail_ok = I64.literal(1)
+  end if
+  if is_word(word_at(words, next_index(scl_close_idx, words_len)), ","):
+    set scl_tail_ok = I64.literal(1)
+  end if
+  if I64.equal(scl_tail_ok, I64.literal(1)):
     set swl_dummy = I64.literal(1)
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
@@ -5059,7 +5069,75 @@ function while_call_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
                     return "ERR:E-SH-IR-RANGE"
                 end match
               else:
-                return "ERR:E-SH-IR-CALL-ARGUMENT"
+                let scl_uc_callee = function_declaration_index(words, scl_atom)
+                if U64.equal(scl_uc_callee, words_len):
+                  return "ERR:E-SH-IR-CALL-ARGUMENT"
+                end if
+                let scl_uc_open = next_index(scl_seg_start, scl_close_idx)
+                if is_word(word_at(words, scl_uc_open), "("):
+                  let scl_uc_open_ok = I64.literal(1)
+                else:
+                  return "ERR:E-SH-IR-CALL-ARGUMENT"
+                end if
+                let scl_uc_close = matching_close(words, scl_uc_open, scl_close_idx)
+                if U64.equal(next_index(scl_uc_close, words_len), scl_seg_end):
+                  let scl_uc_shape_ok = I64.literal(1)
+                else:
+                  return "ERR:E-SH-IR-CALL-ARGUMENT"
+                end if
+                let scl_uc_close_off = word_span_offset(words, src, expr_start, receiver_idx, scl_uc_close)
+                let scl_uc_end = scl_uc_close_off
+                match U64.checked_add(scl_uc_close_off, U64.literal(1)):
+                  case ok(scl_uc_after_close):
+                    set scl_uc_end = scl_uc_after_close
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                let scl_uc_pack = while_call_rhs_packed(words, src, name_idx, scl_seg_start, line_end, scl_seg_offset, scl_uc_end, cell_names, cell_kinds, cell_locals, parameter_count, scl_base)
+                if sico.text.starts_with(scl_uc_pack, "ERR:"):
+                  return scl_uc_pack
+                end if
+                let scl_uc_parts = sico.text.split_lines(scl_uc_pack)
+                let scl_uc_kind = word_at(scl_uc_parts, U64.literal(0))
+                let scl_uc_args = word_at(scl_uc_parts, U64.literal(1))
+                let scl_uc_emit = word_at(scl_uc_parts, U64.literal(2))
+                if is_word(scl_uc_emit, "-"):
+                  set scl_uc_emit = ""
+                end if
+                let scl_uc_count = gw_instr_count(scl_uc_emit)
+                let scl_uc_result = scl_base
+                match U64.checked_add(scl_base, scl_uc_count):
+                  case ok(scl_uc_value):
+                    set scl_uc_result = scl_uc_value
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                let scl_uc_ordinal = function_declaration_ordinal(words, scl_uc_callee)
+                let scl_uc_instr = call_instruction_json(scl_uc_result, scl_uc_kind, scl_uc_ordinal, scl_uc_args, scl_seg_offset, scl_uc_end)
+                if U64.less_than(U64.literal(0), sico.text.length(scl_uc_emit)):
+                  set scl_arg_instr = sico.text.concat(scl_uc_emit, sico.text.concat(",", scl_uc_instr))
+                else:
+                  set scl_arg_instr = scl_uc_instr
+                end if
+                set scl_arg_kind = scl_uc_kind
+                set scl_arg_value = scl_uc_result
+                match U64.checked_add(scl_uc_count, U64.literal(1)):
+                  case ok(scl_uc_advance):
+                    set scl_advance = scl_uc_advance
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                match U64.checked_add(scl_uc_close, U64.literal(1)):
+                  case ok(scl_uc_past):
+                    match U64.checked_sub(scl_uc_past, scl_seg_start):
+                      case ok(scl_uc_width):
+                        set scl_width_override = scl_uc_width
+                      case error(_):
+                        return "ERR:E-SH-IR-RANGE"
+                    end match
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
               end if
             end if
           end if
@@ -5835,7 +5913,7 @@ function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_id
         if is_string_token(gws_sl_atom):
           let gws_sl_ok2 = I64.literal(1)
         else:
-          return "ERR:E-SH-IR-EXPRESSION"
+          return gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}", "sico.text.split_lines")
         end if
         let gws_sl_arg_off = word_span_offset(words, src, expr_start, receiver_idx, gws_sl_arg)
         let gws_sl_arg_end = gws_sl_arg_off
@@ -5906,6 +5984,9 @@ function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_id
           else:
             let gwf_op = fixed_op_name(word_at(words, gws_third))
             if U64.equal(sico.text.length(gwf_op), U64.literal(0)):
+              if is_intrinsic_path(words, receiver_idx, "list", "length"):
+                return gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "u64", "sico.list.length")
+              end if
               return "ERR:E-SH-IR-EXPRESSION"
             end if
             let gwf_open = next_index(gws_third, line_end)
@@ -6620,16 +6701,6 @@ end function
 
 function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
   let gok = I64.literal(0)
-  if U64.equal(count_until_end_function(words, body_from, "while"), U64.literal(1)):
-    set gok = I64.literal(1)
-  else:
-    return "SKIP:GENERAL-WHILE-NESTED"
-  end if
-  if U64.less_than(U64.literal(0), count_until_end_function(words, body_from, "if")):
-    set gok = I64.literal(1)
-  else:
-    set gok = I64.literal(1)
-  end if
   let gblk_instrs = sico.text.split_lines("")
   let gblk_rs = sico.list.empty[U64]()
   let gblk_re = sico.list.empty[U64]()
@@ -6684,8 +6755,11 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gwhile_end = fn_start
   let gwhile_cond = U64.literal(0)
   let ghdr_id = U64.literal(0)
-  let gbody_id = U64.literal(0)
   let gafter_id = U64.literal(0)
+  let gwh_frames = sico.text.split_lines("")
+  let gwh_len = U64.literal(0)
+  let gwt_entries = sico.text.split_lines("")
+  let gwf = sico.text.split_lines("")
   let gcursor = fn_start
   let gfn_end = find_text_from(src, "end function", fn_start)
   match U64.checked_add(gfn_end, U64.literal(13)):
@@ -6830,7 +6904,30 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       continue
     end if
     if is_word(gw_word, "while"):
+      set gok = I64.literal(0)
       if is_word(gregion, "entry"):
+        set gok = I64.literal(1)
+      end if
+      if is_word(gregion, "body"):
+        set gok = I64.literal(1)
+      end if
+      if is_word(gregion, "after"):
+        set gok = I64.literal(1)
+      end if
+      if is_word(gregion, "then"):
+        return "SKIP:GENERAL-WHILE-IF-REGION"
+      end if
+      if is_word(gregion, "else"):
+        return "SKIP:GENERAL-WHILE-IF-REGION"
+      end if
+      if is_word(gregion, "join"):
+        return "SKIP:GENERAL-WHILE-IF-REGION"
+      end if
+      if is_word(gregion, "header"):
+        return "ERR:E-SH-IR-STATEMENT"
+      end if
+      if I64.equal(gok, I64.literal(1)):
+        set gok = I64.literal(0)
         set gcursor = find_text_from(src, "while", gcursor)
         set gwhile_start = gcursor
         set gwhile_end = return_expression_end(src, gwhile_start)
@@ -6881,12 +6978,14 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
         set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
         set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
-        set gbody_id = sico.list.length(gblk_instrs)
-        set gcur_blk = gbody_id
+        set gafter_id = sico.list.length(gblk_instrs)
+        set gcur_blk = gafter_id
         set gcur_instrs = ""
         set gcur_rs = gwhile_start
         set gcur_re = gwhile_end
         set gregion = "body"
+        set gwh_frames = sico.list.append(gwh_frames, sico.text.concat(sico.u64.to_text(ghdr_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gafter_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_cond), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_start), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_end), sico.text.concat("\n", sico.u64.to_text(gbrk_len))))))))))))
+        set gwh_len = next_index(gwh_len, gwh_len)
         let gw_after_line = next_index(gwl_end, body_end)
         let gw_nl = gw_after_line
         while U64.less_than(gw_nl, body_end):
@@ -7231,41 +7330,59 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
               if is_word(gregion, "entry"):
                 return "ERR:E-SH-IR-STATEMENT"
               end if
-              if gcur_term:
-                set gok = I64.literal(1)
-              else:
-                set gseal_from = sico.list.append[U64](gseal_from, gcur_blk)
-                set gseal_to = sico.list.append[U64](gseal_to, ghdr_id)
-                set gseal_len = next_index(gseal_len, gseal_len)
-              end if
-              set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
-              set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
-              set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
-              set gafter_id = sico.list.length(gblk_instrs)
-              let gbsi = U64.literal(0)
-              while U64.less_than(gbsi, gbrk_len):
-                set gseal_from = sico.list.append[U64](gseal_from, u64_list_at(gbrk_from, gbsi, U64.literal(0)))
-                set gseal_to = sico.list.append[U64](gseal_to, gafter_id)
-                set gseal_len = next_index(gseal_len, gseal_len)
-                set gbsi = next_index(gbsi, gbsi)
-              end while
-              set gcur_blk = gafter_id
-              set gcur_instrs = ""
-              set gcur_rs = gwhile_start
-              set gcur_re = gwhile_end
-              set gregion = "after"
-              set gcur_term = false
-              let gew_after = next_index(gend_next, body_end)
-              let gewnl = gew_after
-              while U64.less_than(gewnl, body_end):
-                if is_word(word_at(words, gewnl), "<nl>"):
-                  set gewnl = next_index(gewnl, body_end)
-                else:
-                  break
-                end if
-              end while
-              set gi = gewnl
-              continue
+              match U64.checked_sub(gwh_len, U64.literal(1)):
+                case ok(gwfr_top):
+                  set gwf = sico.text.split_lines(word_at(gwh_frames, gwfr_top))
+                  set ghdr_id = gw_decimal_value(word_at(gwf, U64.literal(0)))
+                  if gcur_term:
+                    set gok = I64.literal(1)
+                  else:
+                    set gseal_from = sico.list.append[U64](gseal_from, gcur_blk)
+                    set gseal_to = sico.list.append[U64](gseal_to, ghdr_id)
+                    set gseal_len = next_index(gseal_len, gseal_len)
+                  end if
+                  set gblk_instrs = sico.list.append(gblk_instrs, gcur_instrs)
+                  set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
+                  set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
+                  set gafter_id = sico.list.length(gblk_instrs)
+                  let gbsi = gw_decimal_value(word_at(gwf, U64.literal(5)))
+                  while U64.less_than(gbsi, gbrk_len):
+                    set gseal_from = sico.list.append[U64](gseal_from, u64_list_at(gbrk_from, gbsi, U64.literal(0)))
+                    set gseal_to = sico.list.append[U64](gseal_to, gafter_id)
+                    set gseal_len = next_index(gseal_len, gseal_len)
+                    set gbsi = next_index(gbsi, gbsi)
+                  end while
+                  set gwt_entries = sico.list.append(gwt_entries, sico.text.concat(sico.u64.to_text(ghdr_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gw_decimal_value(word_at(gwf, U64.literal(2)))), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gw_decimal_value(word_at(gwf, U64.literal(1)))), sico.text.concat("\n", sico.u64.to_text(gafter_id))))))))
+                  set gcur_blk = gafter_id
+                  set gcur_instrs = ""
+                  set gcur_rs = gw_decimal_value(word_at(gwf, U64.literal(3)))
+                  set gcur_re = gw_decimal_value(word_at(gwf, U64.literal(4)))
+                  match U64.checked_sub(gwfr_top, U64.literal(1)):
+                    case ok(gwfr_next):
+                      set gwf = sico.text.split_lines(word_at(gwh_frames, gwfr_next))
+                      set ghdr_id = gw_decimal_value(word_at(gwf, U64.literal(0)))
+                      set gwhile_start = gw_decimal_value(word_at(gwf, U64.literal(3)))
+                      set gwhile_end = gw_decimal_value(word_at(gwf, U64.literal(4)))
+                      set gregion = "body"
+                    case error(_):
+                      set gregion = "after"
+                  end match
+                  set gwh_len = gwfr_top
+                  set gcur_term = false
+                  let gew_after = next_index(gend_next, body_end)
+                  let gewnl = gew_after
+                  while U64.less_than(gewnl, body_end):
+                    if is_word(word_at(words, gewnl), "<nl>"):
+                      set gewnl = next_index(gewnl, body_end)
+                    else:
+                      break
+                    end if
+                  end while
+                  set gi = gewnl
+                  continue
+                case error(_):
+                  return "ERR:E-SH-IR-STATEMENT"
+              end match
             end if
             if is_word(gend_kind, "function"):
               set gi = body_end
@@ -7534,8 +7651,16 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gbi = U64.literal(0)
   while U64.less_than(gbi, gcount):
     let gterm = ""
-    if U64.equal(gbi, ghdr_id):
-      set gterm = sico.text.concat("{\"kind\":\"branch\",\"data\":{\"condition\":", sico.text.concat(sico.u64.to_text(gwhile_cond), sico.text.concat(",\"then_block\":", sico.text.concat(sico.u64.to_text(gbody_id), sico.text.concat(",\"else_block\":", sico.text.concat(sico.u64.to_text(gafter_id), "}}"))))))
+    if U64.equal(sico.text.length(gterm), U64.literal(0)):
+      set gbsi = U64.literal(0)
+      while U64.less_than(gbsi, sico.list.length(gwt_entries)):
+        set gwf = sico.text.split_lines(word_at(gwt_entries, gbsi))
+        if U64.equal(gw_decimal_value(word_at(gwf, U64.literal(0))), gbi):
+          set gterm = sico.text.concat("{\"kind\":\"branch\",\"data\":{\"condition\":", sico.text.concat(sico.u64.to_text(gw_decimal_value(word_at(gwf, U64.literal(1)))), sico.text.concat(",\"then_block\":", sico.text.concat(sico.u64.to_text(gw_decimal_value(word_at(gwf, U64.literal(2)))), sico.text.concat(",\"else_block\":", sico.text.concat(sico.u64.to_text(gw_decimal_value(word_at(gwf, U64.literal(3)))), "}}"))))))
+          break
+        end if
+        set gbsi = next_index(gbsi, gbsi)
+      end while
     end if
     if U64.equal(sico.text.length(gterm), U64.literal(0)):
       let gmti = U64.literal(0)

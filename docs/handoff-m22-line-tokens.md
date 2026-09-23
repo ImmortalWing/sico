@@ -1,70 +1,83 @@
-# M22 format_code 嵌套 while 攻坚 — 交接手稿
+# M22 formatter 尾部攻坚 — 交接手稿
 
-> 状态：**STEP-0260 已提交并推送双远端（`c39b6d8`），line_tokens 区域 byte-exact，canary 钉在 `SKIP:GENERAL-WHILE-NESTED`**。下一前沿是 `format_code` 的嵌套 while。本文档交接给下一个 AI 继续。
-> 上一轮手稿（停在 else 悬空 blocker 的状态）在 git 历史中，提交 `7a274dd` 可查看。
+> 状态：**STEP-0261 已完成（嵌套 while 栈帧，formatter 前十七函数 byte-exact，canary 钉在 `call_left` 的 `ERR:E-SH-IR-EXPRESSION`）**。下一前沿有两个：`call_left`（guard-chain 机扩展）与 `format_code`（gw 机 body-if 用户调用条件）。本文档交接给下一个 AI 继续。
+> 更早的手稿在 git 历史中（`7a274dd` 停在 else 悬空、STEP-0260 基线见 `a43378e` 的上一版）。
 
 ## 一句话状态
 
-M22 仍 **NO-GO**（诚实）。S4 收敛推进中：formatter 前 16 个函数（52 个 block，至 `line_tokens` 为止）已自举 byte-exact；全量 `formatter.sico` canary 以 exit=122 + `SKIP:GENERAL-WHILE-NESTED` 停在 `format_code` 的第一个嵌套 while。基线提交 `c39b6d8`，工作树干净。
+M22 仍 **NO-GO**（诚实）。S4 收敛推进中：formatter 前 17 个函数（至 `source_has_lex_error`——首个嵌套 while 函数）已自举 byte-exact；全量 `formatter.sico` canary 以 exit=122 + `ERR:E-SH-IR-EXPRESSION` 停在 `call_left`。
 
-## 环境 / 快速迭代环
+## 环境 / 快速迭代环（**2026-09-23 换机，重要**）
 
 ```bash
-cd /d/SorftWare/sico
-# 工具链（本机缓存是 msvc，gnu 缺 gcc/dlltool——见 STEP-0254 注记）
-export RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-msvc'
+cd /e/github/sico
+# 本机（新证据机）没有 MSVC/VS；GNU 工具链 + 仓库自带 msys2 binutils（gcc/dlltool）
+export RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-gnu'
+export PATH="/e/github/sico/target/tooling/msys2-binutils/mingw64/bin:$USERPROFILE/.cargo/bin:$PATH"
 CARGO="$USERPROFILE/.cargo/bin/cargo.exe"
+# runner 测试还需：
+export SICO_TEST_WASMTIME="$(powershell -ExecutionPolicy Bypass -File tools/ensure-wasmtime.ps1 | tail -1)"
+
+# python 用仓库自带的（系统 python 是 WindowsApps 存根）：
+# /e/github/sico/target/tooling/python-3.12/python.exe
+# Git Bash 的 /tmp 与 Windows python 路径不互通——python 侧用 cygpath -w 转换
 
 # 快速环（不重编 Rust 测试；产物拒绝覆盖，先 rm）：
 rm -f /tmp/m22iter/compiler.component.wasm
 ./target/debug/sico.exe build --profile script-v0 --output /tmp/m22iter/compiler.component.wasm selfhost/compiler.sico
-cat /tmp/m22iter/<t>.sico | ./runner/sico-runner/target/debug/sico-runner.exe --fuel 2000000000 /tmp/m22iter/compiler.component.wasm > out.txt 2>err.txt
-# 错误 exit=122 + stderr JSON；typed 拒绝必须字节稳定（validator 钉了）
+cat /tmp/m22iter/<t>.sico | ./runner/sico-runner/target/debug/sico-runner.exe --fuel 5000000000 /tmp/m22iter/compiler.component.wasm
 ```
 
-- Grep/Read 工具走 Windows 路径访问不到 `/tmp`，用 bash grep 或 `cygpath -w` 转换；python 需 `C:\Users\SUN-OF~1\AppData\Local\Temp\m22iter\` 形式。
-- 校验脚本 `tools/validate-step-0260.ps1` 整跑超过 300s 前台上限，分段跑（钉检查→build→各测试套件→自举+fixture 比对+canary）。
+- 校验脚本 `tools/validate-step-0261.ps1` 整跑 ~5 分钟（本机 GNU 流可前台跑完；0260 版的 300s 限制是旧机 msvc 重建）。
 - 本机 PowerShell 5.1：`New-Item` 不支持 `-LiteralPath`，用 `-Path`。
+- Rust oracle dump 探针：`selfhost_compiler.rs` 的 `dump_shle_region_ir`（`-- --nocapture`），改边界字符串即可为下一个区域出 oracle。
 
-## STEP-0260 已落地（勿回滚）
+## STEP-0261 已落地（勿回滚）
 
-1. `gw_condition_packed` 通用调用条件：非 bytes.at 实参走 `while_call_rhs_packed(...)`，arity/i64 检查只守 bytes.at 分支。
-2. `gw_slice_subject_packed` 逗号扫描修复：`next_index` 连续扫，支持 3 实参 slice 主语。
-3. match 绑定注册为 `sico.text.concat("#match", <name>)`（oracle 要求 `#matchword_bytes` 式）；`local_binding_index` 回退查 `#match`+name；locals 类型判定走 `is_word(cell_kinds, "result")`。
-4. List 类型面：`declared_return_kind`/`binding_parameter_kind`/`parameter_kind_by_id` 返回完整 JSON `{"kind":"list","data":{"kind":"<elem>"}}`（elem_close 需 next×2，三处 off-by-one 已修）；`binding_parameter_index` 对 List 类型跨 4 词步进；新增 `type_json()` 辅助（kind 以 `{` 开头则逐字嵌入）；read_local/call/intrinsic 三个发射器 + gw 函数头 return_type/locals 全走 type_json；split_lines 分支 gws_kind 硬编码完整 list JSON。
-5. `gw_rhs_packed` 固定运算：`I64/U64.bit_and/bit_or/bit_xor/shl/shr` 的 set RHS（cell/param/literal 操作数，移植旧 swl 路径）。
-6. break/continue：删 general_while 入口 SKIP 守卫；合并 `gbc_*` locals；continue 立即 seal→ghdr_id，break 记入 `gbrk_from` 在 end while 拿到 gafter_id 后 seal；区域守卫拒 entry/after/terminator 后。
-7. locals 上限：MAX_LOCALS_PER_FUNCTION=256；25 个一次性 `let <x>_ok` 换成共享 `let gok`（**set 必须在 let 之后**）。
-8. 诊断后缀全清：729 处 `-L<n>` + 5 处 STATEMENT 实验后缀剥净。
+1. **while 帧栈**：`gwh_frames`（打包 `hdr\nbody\ncond\nstart\nend\nbrk_base`）+ `gwh_len` 弹帧计数；`ghdr_id`/`gwhile_start`/`gwhile_end` 是栈顶镜像（close 时恢复），`continue` 封到栈顶 header。while-open 合法区域 = entry/body/after；**if 臂内开 while = `SKIP:GENERAL-WHILE-IF-REGION`**（opener_close/normalize_source 在其后）。
+2. `end while` 弹帧：after 块在 emission 前沿分配（与 Rust `sort_by_key((never_current, became_current, creation))` 一致——盖章块按流序、空块沉底）；break 按 `brk_base` 作用域只 seal 本帧的；branch 终结子登记进 `gwt_entries`（hdr/cond/body/after），终结符组装扫描该表（优先级位置在最前）。
+3. `sico.list.length` 参数/cell 主语经 `gw_intrinsic_call_packed`（fixed_op 空名挡板处直通）；`sico.text.split_lines` 非字面量实参同样直通（ret kind = list-of-string JSON）。
+4. **嵌套用户调用实参**：`while_call_rhs_packed` 实参段若是声明函数调用，递归打包（内层 span 精确），内层 call 用 `function_declaration_ordinal`；call 尾随检查接受行尾/`)`/`,`。
+5. locals：`general_while_function_ir` **恰 240**（cap：busiest+16≤256）。回收手段：删 `gbody_id`、`gwf` 双用（帧字段+终结子字段）、`gbsi` 复用为终结子扫描下标。**再加 cell 前先看 `selfhost_local_bounds --nocapture` 的 top-5 输出**（本 STEP 加的常驻 println）。
+6. fixture：`tools/fixtures/step-0261/shle_expected.json`（117,109 字节，17 函数前缀）；校验器 `tools/validate-step-0261.ps1`（GNU 流 + call_left 前沿探针 + canary）。
 
-## 下一前沿：format_code 嵌套 while
+## 下一前沿（二选一入口，建议先 format_code 走 gw 机）
 
-- canary 事实：全量 `formatter.sico` stdin → exit=122，stderr `SKIP:GENERAL-WHILE-NESTED`（format_code 的嵌套 while），无 trap。
-- **设计方向**：现在 while 头/尾块 id 是全局单槽（`ghdr_id`/`gafter_id`），嵌套会互相覆盖。需要改成**栈**（List[U64] 头尾配对压栈/弹栈，或 packed frame 列表）。这是一轮中较大的结构性改动。
-- **locals 预算红线**：`general_while_function_ir` 已贴近 256 上限，任何新 let 必须先回收 dummy/合并现有 cell。
-- **oracle 要重新生成**：`tools/fixtures/step-0260/lt_expected.json` 是 445 行前缀的 dump（source_len 10873，与完整 827 行版不同）。做 format_code 时用 `runner/sico-runner/tests/selfhost_compiler.rs` 里的 `dump_lt_region_ir`（`-- --nocapture` 跑）打印 Rust 侧 IR，仿照 line_tokens 测试的做法新起一个 STEP（下一个号预计 STEP-0261）+ `tools/fixtures/step-0261/` + `tools/validate-step-0261.ps1`。
-- 嵌套 while 之后还剩 11 个函数：`source_has_lex_error`、`no_space_before/after`、`call_left`、`repeat_indent`、`Map[Text,U64]` 区域（`nearest_match`/`set_nearest_match`/`match_arm_levels`）、`close_code`/`direct_close`/`opener_close`、`normalize_source`、`main`。注意 **`Map[Text,U64]` 参数面未扩**：`scalar_type_kind` 不认 Map，参数类型面要专门补。
+### A. format_code（gw 机，推荐先做）
+- canary 探针事实：`no_space_before(item(tokens, cursor))` 作 body-if 条件 → `ERR:E-SH-IR-CALL-ARGUMENT`。gw 的 if 条件路径（`gw_condition_packed` 系）不支持用户调用（while 条件已支持，STEP-0260）。
+- 需要形状（见 oracle dump，`format_code` 16 块）：body 内 `let kind = item(tokens, cursor)`（✓ 已支持）、4 层嵌套 if/else（if 帧机制已有多级？需验证——line_tokens 只有链式）、`set output = sico.text.concat(output, raw)`（✓）、`set cursor = add(cursor, U64.literal(2))`（✓）、B15 after 读 output return（✓ 形）。
+- `repeat_indent` 无新形状（应随 format_code 一起绿）。
 
-## 验证矩阵（STEP-0260 基线全绿，重跑命令）
+### B. call_left（guard-chain 机扩展，量级更大）
+- 事实：`SKIP:ARITY`（2 参；机器只收 1 参）+ set 臂（`set left = true`，机器只收 return 字面量臂）+ 裸 cell 条件（`if left:`）+ then 臂内嵌套 guard 链 + bool 字面量尾（`return false`——机器尾只收 string 字面量或 call）。
+- oracle 布局：22 块；无 else 的 if（空 else 块沉底 jmp join）、`if left:` read_local 分支、链内 5 个 same-guard + `return same(previous,"RightBracket")` 尾、最终 `return false`。
+- 机器模板硬编码块数 = guard_count*2+jumps，扩展要先重读块布局公式。
+
+### 嵌套 while 之后的全景（执行队列）
+`call_left`、`format_code`、`repeat_indent` → `Map[Text,U64]` 参数面（nearest_match/set_nearest_match/match_arm_levels；`scalar_type_kind` 不认 Map，参数类型面专扩）→ `close_code`/`direct_close`/`opener_close`/`normalize_source`（其中 opener_close=while-in-if、normalize_source=嵌套+deep while，触及 `SKIP:GENERAL-WHILE-IF-REGION` 边界）→ `main`（无 while，纯调用编排）。
+
+## 验证矩阵（STEP-0261 基线全绿，重跑命令）
 
 ```bash
-export RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-msvc'
-"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_compiler -- --test-threads=1   # 17/17
-"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_parser   -- --test-threads=1   # 2/2
-"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_local_bounds -- --test-threads=1 # 1/1
-"$CARGO" test --locked --offline --workspace --all-targets --all-features  #  broader suite（control_flow/bit_ops/list_*/map_set/...）
+export RUSTUP_TOOLCHAIN='1.98.0-x86_64-pc-windows-gnu'
+export PATH="/e/github/sico/target/tooling/msys2-binutils/mingw64/bin:$USERPROFILE/.cargo/bin:$PATH"
+export SICO_TEST_WASMTIME="$(powershell -ExecutionPolicy Bypass -File tools/ensure-wasmtime.ps1 | tail -1)"
+"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_compiler -- --test-threads=1   # 19/19
+"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_parser   -- --test-threads=1   # 2/2（99 例）
+"$CARGO" test --locked --offline --manifest-path ./runner/sico-runner/Cargo.toml --test selfhost_local_bounds -- --test-threads=1 --nocapture  # 1/1 + top-5
+powershell -ExecutionPolicy Bypass -File tools/validate-step-0261.ps1   # 整链
 ```
 
 ## 纪律与已定决策（不要重开）
 
-- refusal-first、typed 拒绝、拒绝码字节稳定；scan_space 回归必须 exit=0。
-- 不要复活 `gjoin_else_ok` 标志方案（已回滚）；region 直接赋 then/else/join。
+- refusal-first、typed 拒绝、拒绝码字节稳定；每区域 = 新 STEP 号 + `tools/fixtures/step-0NNN/` + `tools/validate-step-0NNN.ps1`（下一个号 STEP-0262）。
+- oracle 生成：改 `dump_shle_region_ir` 的边界字符串（或新加 dump 测试）跑 `-- --nocapture`，python 解析块布局（`/tmp/m22iter/oracle_nm_raw.txt` 有现成的到 nearest_match 的 dump）。
 - Sico 对 elif 风格 else 链配对有限制（历史 blocker）：多分支 intrinsic 识别参考 5536 行 bytes.at 分支的 if/else/end if 布局。
-- 迭代中间文件全在 `/tmp/m22iter/`。
-- STEP 文档照 `docs/steps/STEP-0260-*.md` / STEP-0256 格式；提交信息风格 `feat(selfhost): STEP-0261 ...`；推送双远端（github 偶断，重试即可）。
+- 迭代中间文件全在 `/tmp/m22iter/`。提交信息风格 `feat(selfhost): STEP-0262 ...`；推送双远端（github 偶断，重试即可）。
+- 格式：owner 指令（2026-09-23）「完成M22-M23」+「简单任务的子代理使用GLM5.3flash」——简单子任务走 CreateWorkflow `subagent_model=account:bigmodel-individual-coding-plan/GLM-5.3-Flash`，设计/降级硬活留主模型。
 
 ## 缺口
 
 - S5（Core-Wasm seam 拓宽）、S6（A=B=C 自举闭环）未进；M22 S7 退出审计未进。
-- M23/M24 完全未动。
-- M14–M18 计划边界照 AGENTS.md：M14 实现须等 M12 full GO 与 M13 结论，不得提前。
+- M23 实现 gated on M22 S7；但 M23 的 kickoff 库存盘点 STEP（§7：四个探针的 ceremony 测量）可随时并行做（纯测量，不改语言面）。
+- M24/M25 未动。M14–M18 计划边界照 AGENTS.md。

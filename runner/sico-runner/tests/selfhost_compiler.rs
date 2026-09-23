@@ -494,6 +494,27 @@ fn dump_lt_region_ir() {
 }
 
 #[test]
+fn dump_shle_region_ir() {
+    let end = FORMATTER_SOURCE.find("function no_space_before").unwrap();
+    let source = &FORMATTER_SOURCE[..end];
+    println!("{}", rust_ir(source));
+}
+
+#[test]
+fn sico_compiler_lowers_the_source_has_lex_error_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function no_space_before")
+        .expect("formatter keeps the source_has_lex_error region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter source_has_lex_error region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

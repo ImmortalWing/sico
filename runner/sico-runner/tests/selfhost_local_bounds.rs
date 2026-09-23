@@ -58,6 +58,26 @@ fn selfhost_link_unit_stays_inside_ir_verifier_limits() {
         .map(|function| function.locals.len())
         .max()
         .unwrap_or(0);
+    let busiest_name = module
+        .functions
+        .iter()
+        .max_by_key(|function| function.locals.len())
+        .map(|function| function.name.as_str())
+        .unwrap_or("");
+    println!(
+        "busiest function: {busiest_name} at {busiest} locals (limit {}), headroom {}",
+        sico_ir::MAX_LOCALS_PER_FUNCTION,
+        sico_ir::MAX_LOCALS_PER_FUNCTION - busiest
+    );
+    let mut ranked: Vec<(usize, &str)> = module
+        .functions
+        .iter()
+        .map(|function| (function.locals.len(), function.name.as_str()))
+        .collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0));
+    for (locals, name) in ranked.iter().take(5) {
+        println!("  {name}: {locals} locals");
+    }
     assert!(
         busiest + 16 <= sico_ir::MAX_LOCALS_PER_FUNCTION,
         "busiest function holds {busiest} locals; frontier work needs headroom"
