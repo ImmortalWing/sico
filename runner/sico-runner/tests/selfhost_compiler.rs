@@ -473,6 +473,20 @@ fn sico_compiler_lowers_the_append_pair_region_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_the_line_tokens_region_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function source_has_lex_error")
+        .expect("formatter keeps the line_tokens region prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("formatter line_tokens region must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn dump_lt_region_ir() {
     let end = FORMATTER_SOURCE.find("function source_has_lex_error").unwrap();
     let source = &FORMATTER_SOURCE[..end];
