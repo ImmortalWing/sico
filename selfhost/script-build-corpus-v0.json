@@ -1,9 +1,9 @@
 {
   "schema": "sico.m22.script-build-corpus.v0",
-  "source_manifest_sha256": "351e91d117cf6ba65da17d2807e8d3501b35dc18d70cd48600b1be4b0660251d",
-  "entry_count": 215,
-  "accepted_count": 37,
-  "refused_count": 178,
+  "source_manifest_sha256": "7ff05ff4eace76537021bbcb7fd3e1fffbb0857db5c790fce355a07819cb8ad4",
+  "entry_count": 235,
+  "accepted_count": 42,
+  "refused_count": 193,
   "entries": [
     {
       "path": "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
@@ -1026,6 +1026,68 @@
       "build_diagnostic_sha256": "4e18d312b8204680d82d25c304720e34f33c5b41c9273d02847be0cc26654334"
     },
     {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-recovery-declaration.sico",
+      "source_sha256": "932667296121d4716415301ab02e6858971c0f665a1b6122940d0bfe7b63200a",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E1001"
+      ],
+      "build_diagnostic_sha256": "a544cd5755ea37435a6fae5d9c85a30aca6ece5e9a477bb07a8778ee2ec82612"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-stale-result.sico",
+      "source_sha256": "c7e683bb590478c7bf197329a1f4b6db9b46aaff6cbaa491b4c69f948fe47744",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E7002"
+      ],
+      "build_diagnostic_sha256": "0a2c6f7361c57f80b8a182a160be069bc9affc58bdde49a09de8c601ddb20d31"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-undeclared-capability.sico",
+      "source_sha256": "67ef33f37778e3d7c6bf735f0ee20e4223872ca0c453ca9ab5d889fad92657bc",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2031",
+        "E4001",
+        "E4002"
+      ],
+      "build_diagnostic_sha256": "91a3d88776fa1ef3a56b11206b45a8f62752227a2f0183171f4aeaaea32f08bc"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/valid/zero-indent-mid-statement.sico",
+      "source_sha256": "71cae7f9658e7d3fb3ca04691e6e6bfbf9c26566919dbdd0c4a368cfa2406366",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 2,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "SCRIPT_ABI"
+      ],
+      "build_diagnostic_sha256": "8069e54782b754c75ade29f633824809800c4701ac1dc722c36ac5680d3a1722"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/valid/zero-indent-return.sico",
+      "source_sha256": "0892ca20fe8e4dcb3a367235857c771efe5745949cd511ed59fe079948d32268",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 2,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "SCRIPT_ABI"
+      ],
+      "build_diagnostic_sha256": "b6c245d3aed6ff00b91270858a8055bb0ad1ed23012f55cc4889a33b21dcbea1"
+    },
+    {
       "path": "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico",
       "source_sha256": "04f1fae06008d0a42476501a97c99bfc01daf064c078d0a1328b800320cc6760",
       "rust_script_build": "refused",
@@ -1302,6 +1364,18 @@
       "build_diagnostic_sha256": "5e5f72d3893ab8483abc9db7ee3d826df0b84f4a4e12a67ecb7182d1caab88bd"
     },
     {
+      "path": "syntax-candidates/b/revision/invalid/cross-payload-guard-stale-result.sico",
+      "source_sha256": "1c627e6999d0bb318ac0b68d88b5cfb3d6704296c7fc37f7ce528f2bb739c5cd",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E7002"
+      ],
+      "build_diagnostic_sha256": "2ef7b20110199be89a1ce41aabab7a0aee2d4af89cad372520fe1948898fa8b4"
+    },
+    {
       "path": "syntax-candidates/b/revision/invalid/missing-commit-revision.sico",
       "source_sha256": "4fe16c6bddfa9829b9487a9bdb9b57b8213bd2202e53b3f35f24a6761779af44",
       "rust_script_build": "refused",
@@ -1314,6 +1388,18 @@
       "build_diagnostic_sha256": "eb0a69e632f2554981629df7b32182d2a57d27a0875bf7993ce3187b7d0638fe"
     },
     {
+      "path": "syntax-candidates/b/revision/invalid/unchecked-stale-result-renamed.sico",
+      "source_sha256": "a51bc41fcdbf19fadb462fa4709476568bc944f8c99d8d0ee94c54071ddb0e7e",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E7002"
+      ],
+      "build_diagnostic_sha256": "be8d8b2ac0114866ee90b0961a107a0e3e7b6bc3275c8a9bf3a0720b83fe0cc7"
+    },
+    {
       "path": "syntax-candidates/b/revision/invalid/unchecked-stale-result.sico",
       "source_sha256": "ccb843af39b9a9a56fa0a7f2ba03d86c119b1a134d8902ae59bec45d1bad4baf",
       "rust_script_build": "refused",
@@ -1324,6 +1410,18 @@
         "E7002"
       ],
       "build_diagnostic_sha256": "2d2efdf31059a89fa25e388d74cd340978c1bfe302085f696b6b8ac525d17817"
+    },
+    {
+      "path": "syntax-candidates/b/revision/valid/stale-load-ignored-renamed.sico",
+      "source_sha256": "e34105d57f5020107bd25c3b0095c581917d4a5edb33e459d7185919438f9dc3",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 2,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "SCRIPT_ABI"
+      ],
+      "build_diagnostic_sha256": "e7c8f08448bd103b4c566e06149b2bfd596e23f7cd96e2c6418a52dfe0a4b992"
     },
     {
       "path": "syntax-candidates/b/revision/valid/stale-load-ignored.sico",
@@ -2286,6 +2384,140 @@
       "component_reproducible": true,
       "build_diagnostic_ids": [],
       "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-basic.sico",
+      "source_sha256": "0e9fa21403a12cd8716ad211da18cb5fe8c646818c8a167f3480954175ccc514",
+      "rust_script_build": "accepted",
+      "rust_script_build_exit": 0,
+      "component_sha256": "5549ab003829af13c247c1206c4d0704b19cdf297fc46f1db120fd53afc6669c",
+      "component_reproducible": true,
+      "build_diagnostic_ids": [],
+      "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-copy-on-write.sico",
+      "source_sha256": "82d119983a138cb1e6dc8a748f5d9777172283cfe0f2ff70cabb03868729d280",
+      "rust_script_build": "accepted",
+      "rust_script_build_exit": 0,
+      "component_sha256": "ed7f202200ad9df4940f69ec6edb73060202e3145626778ef15e07d3bf6ba0ac",
+      "component_reproducible": true,
+      "build_diagnostic_ids": [],
+      "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-list-field.sico",
+      "source_sha256": "353ae3f752ff27f150e9584a012125ff77dd85c6389fd16fa14acb912809a224",
+      "rust_script_build": "accepted",
+      "rust_script_build_exit": 0,
+      "component_sha256": "450d5529858743d766fef5184970b7c72366471e3d3450fa690b3f056e9505a6",
+      "component_reproducible": true,
+      "build_diagnostic_ids": [],
+      "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-list-of-records.sico",
+      "source_sha256": "14b2f01b96edb7f69ae246a89dd7b6a176492bd6c7f90e089b662e1d94e3c067",
+      "rust_script_build": "accepted",
+      "rust_script_build_exit": 0,
+      "component_sha256": "0c05659aedb61fe00acfdee6c2a315fa52aa77efe1ef919e53fc7684d5e79453",
+      "component_reproducible": true,
+      "build_diagnostic_ids": [],
+      "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-nested.sico",
+      "source_sha256": "0b300449650f50baf2558d51d9a9fe3ddd7a81b46db35d53c39051555dc204f4",
+      "rust_script_build": "accepted",
+      "rust_script_build_exit": 0,
+      "component_sha256": "27b51a32acdf6879cd0dff16e832a69a38e355d2950958c9f2b66c09b79f2a2e",
+      "component_reproducible": true,
+      "build_diagnostic_ids": [],
+      "build_diagnostic_sha256": "cb72777f3c9a69472f86e3bf3005d270dba7d115307fc58e65cfd71a7a202b75"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-duplicate-field.sico",
+      "source_sha256": "0cd6a8da94db772e91d9cb45cdd7e9dd6be7309917c6c31a58bba0866740a389",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2021"
+      ],
+      "build_diagnostic_sha256": "7bd7720320593aa40b04a44bde9f9d347b49201e43da726f2b1c3beaa8923194"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-empty.sico",
+      "source_sha256": "4831920569c8f02d576ea0ee1ce1d13b10154d8d79a64ccbbbbb1d4339da95a7",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2022"
+      ],
+      "build_diagnostic_sha256": "16e2858440b5c1508691cfb04f037d6d66cf543ced122457185f6417dbd7fb40"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-equality.sico",
+      "source_sha256": "a61d438a9c0d88261f05b8412e5cfc5837c8f7abf62008847ff0706065d63e88",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2024"
+      ],
+      "build_diagnostic_sha256": "6841f38e3e0ecf2dc327b4bba3cd83669073366c9028f4b096d79ced39255b95"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-field-set.sico",
+      "source_sha256": "3141aa3a93d6d26c293c66c2254eb4ab1198c53cd9c52c0f995ebd6686da201f",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2023"
+      ],
+      "build_diagnostic_sha256": "3f9a54616bbc88443d94123bb69ae6d83f3dcd9679db34579acb906b3314f523"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-missing-field.sico",
+      "source_sha256": "f7a96af367acbd25a56ba237ec6b543b8fbd243632e438346e5d545a2dbbb829",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2010"
+      ],
+      "build_diagnostic_sha256": "07530cc14fe25ead484e6e7a7b34b1160caec73055bb28e4e4cb56c3e5d1100e"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-nominal.sico",
+      "source_sha256": "850d0e2e009d4265136a8f238491177bbc3abd8d00284eec5fe60044afa09d15",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2001"
+      ],
+      "build_diagnostic_sha256": "859974c4952419932b2596aec61fc70ee76f896d8dd5451e4c344600b84d6402"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-unknown-access.sico",
+      "source_sha256": "35db2d167ddab382ea2c1ec6ef222ab2e13afbc5bf1e2852b4403d4fec1c2235",
+      "rust_script_build": "refused",
+      "rust_script_build_exit": 1,
+      "component_sha256": null,
+      "component_reproducible": false,
+      "build_diagnostic_ids": [
+        "E2011"
+      ],
+      "build_diagnostic_sha256": "36868b77b0db45c1430dd611e615c99724e6b5fd99ae81cab9e17f6b654920c1"
     },
     {
       "path": "tests/end-to-end/recursion-depth.sico",

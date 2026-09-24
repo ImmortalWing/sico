@@ -161,7 +161,7 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
         manifest.roots,
         ["semantic-cases", "syntax-candidates", "tests/end-to-end"]
     );
-    assert_eq!(manifest.entry_count, 215);
+    assert_eq!(manifest.entry_count, 235);
     assert_eq!(manifest.entries.len(), manifest.entry_count);
 
     let mut discovered = Vec::new();

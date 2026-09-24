@@ -1,0 +1,29 @@
+// case: REV-202
+// syntax: B
+// expect: accept
+// semantics: SEM-030, SEM-113
+// note: renamed variant of REV-002; the revision guard stays structural.
+
+newtype Revision from Int
+
+record Old:
+  field text: Text
+  field revision: Revision
+end record
+
+record Fresh:
+  field text: Text
+  field revision: Revision
+end record
+
+enum ApplyFresh:
+  case Applied(old: Old)
+  case IgnoredStale
+end enum
+
+function apply_fresh(old: Old, fresh: Fresh) returns ApplyFresh:
+  if fresh.revision == old.revision:
+    return ApplyFresh.Applied(Old(text: fresh.text, revision: old.revision))
+  end if
+  return ApplyFresh.IgnoredStale
+end function

@@ -1,0 +1,12 @@
+// case: IND-002
+// syntax: B
+// expect: accept
+// semantics: none
+// note: mixed indentation — an indented statement followed by a column-0
+// statement; both are legal statements in the Rust oracle.
+
+function main() returns Int:
+  let x = 1
+let y = 2
+  return x
+end function

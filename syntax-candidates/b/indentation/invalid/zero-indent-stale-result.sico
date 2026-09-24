@@ -1,0 +1,24 @@
+// case: IND-005
+// syntax: B
+// expect: reject(UNCHECKED_STALE_RESULT)
+// semantics: SEM-113
+// note: a column-0 return carrying a stale-result read still triggers E7002
+// in the Rust oracle. The guest checker currently skips column-0 body lines,
+// so it diverges here — registered as an indent divergence waiver
+// (STEP-0280); the structural fix lands with the W2 guest re-authorization.
+
+newtype Revision from Int
+
+record Model:
+  field text: Text
+  field revision: Revision
+end record
+
+record Loaded:
+  field text: Text
+  field revision: Revision
+end record
+
+function apply_loaded(model: Model, loaded: Loaded) returns Model:
+return Model(text: loaded.text, revision: model.revision)
+end function

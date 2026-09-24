@@ -1,0 +1,30 @@
+// case: REV-203
+// syntax: B
+// expect: reject(UNCHECKED_STALE_RESULT)
+// semantics: SEM-113
+// note: a revision guard scopes to the payload it compares; guarding old and
+// other leaves fresh unguarded, so the stale-result read must still refuse.
+
+newtype Revision from Int
+
+record Old:
+  field text: Text
+  field revision: Revision
+end record
+
+record Fresh:
+  field text: Text
+  field revision: Revision
+end record
+
+enum ApplyFresh:
+  case Applied(old: Old)
+  case IgnoredStale
+end enum
+
+function apply_fresh(old: Old, fresh: Fresh, other: Fresh) returns ApplyFresh:
+  if old.revision == other.revision:
+    return ApplyFresh.Applied(Old(text: fresh.text, revision: old.revision))
+  end if
+  return ApplyFresh.IgnoredStale
+end function

@@ -1,0 +1,12 @@
+// case: IND-003
+// syntax: B
+// expect: reject(MISSING_FUNCTION_CLOSE)
+// semantics: none
+// note: a column-0 declaration keyword inside a function body is a recovery
+// declaration — the enclosing function is reported unclosed (E1001).
+
+function main() returns Int:
+  return 42
+record X:
+  field a: Int
+end record

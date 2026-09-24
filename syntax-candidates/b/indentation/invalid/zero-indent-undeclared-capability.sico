@@ -1,0 +1,14 @@
+// case: IND-004
+// syntax: B
+// expect: reject(UNDECLARED_CAPABILITY)
+// semantics: SEM-041
+// note: a column-0 statement still triggers semantic checks in the Rust
+// oracle (E4001 first). The guest checker currently skips column-0 body
+// lines, so it diverges here — registered as an indent divergence waiver
+// (STEP-0280); the structural fix lands with the W2 guest re-authorization.
+
+function main() returns Int:
+  effects: none
+  capabilities: none
+return stdout.write("x")
+end function

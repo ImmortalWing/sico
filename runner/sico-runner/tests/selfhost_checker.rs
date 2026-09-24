@@ -1,6 +1,11 @@
 //! M22 S2: the Sico-written checker runs end-to-end. STEP-0245 closes the
-//! declared identity-level diagnostic subset on all 215 frozen sources while
-//! keeping full rendered Rust diagnostics outside the claim.
+//! declared identity-level diagnostic subset on all frozen sources while
+//! keeping full rendered Rust diagnostics outside the claim. STEP-0279
+//! grows the freeze to 230 entries (three renamed revision guards plus the
+//! twelve tracked record cases that the batch commit had not re-frozen).
+//! STEP-0282 re-authorized the 8 record entries to strict matching and
+//! STEP-0283 closed the last divergence (IND-004 E2031 first-diagnostic
+//! identity): the partition is 116/46/73/0 with an empty waiver registry.
 
 use sha2::{Digest, Sha256};
 use sico_runner::{
@@ -132,7 +137,7 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
         serde_json::from_slice(&std::fs::read(repository.join("selfhost/corpus-v0.json")).unwrap())
             .unwrap();
     let entries = manifest["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 215);
+    assert_eq!(entries.len(), 235);
 
     let component = compile_checker();
     let runner = Runner::new().expect("runner builds");
@@ -148,6 +153,15 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
     let mut semantic = 0;
     let mut accepted = 0;
     let mut unsupported = 0;
+
+    // STEP-0283: the last divergence (IND-004, oracle-first E2031) is
+    // closed — the guest now emits E2031 (unresolved call target) before
+    // E4001 on the same line. The waiver registry stays as the explicit
+    // registration point for future guest/oracle divergences: a waived
+    // entry must keep diverging, and if the guest ever matches the oracle
+    // the test fails loudly so the entry is reclassified instead of
+    // rotting here.
+    const DIVERGENCE_WAIVER: [&str; 0] = [];
 
     for entry in entries {
         let path = entry["path"].as_str().unwrap();
@@ -176,6 +190,24 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
                 &CancelToken::new(),
             )
             .expect("frozen source fits runner input bounds");
+        if DIVERGENCE_WAIVER.contains(&path) {
+            unsupported += 1;
+            match diagnostic {
+                Some(code) => assert!(
+                    outcome
+                        != RunOutcome::Domain {
+                            code: "invalid-input".to_owned(),
+                            message: code.to_owned(),
+                        },
+                    "waived entry no longer diverges, reclassify it: {path}"
+                ),
+                _ => assert!(
+                    !matches!(outcome, RunOutcome::Output(ref output) if output.stdout.starts_with(b"check ok")),
+                    "waived entry no longer diverges, reclassify it: {path}"
+                ),
+            }
+            continue;
+        }
         match diagnostic {
             Some("LEXICAL") => {
                 lexical += 1;
@@ -189,11 +221,11 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
                 );
             }
             Some(
-                code @ ("E2001" | "E2002" | "E2010" | "E2011" | "E2020" | "E3001" | "E3002"
-                | "E3003" | "E3101" | "E3102" | "E3103" | "E3104" | "E4001" | "E4002"
-                | "E5001" | "E5002" | "E5003" | "E5101" | "E5102" | "E5103" | "E5104"
-                | "E5105" | "E5201" | "E5202" | "E6001" | "E6002" | "E7001" | "E7002"
-                | "E8010"),
+                code @ ("E1001" | "E2001" | "E2002" | "E2010" | "E2011" | "E2020" | "E2021"
+                | "E2022" | "E2023" | "E2024" | "E2031" | "E3001" | "E3002" | "E3003"
+                | "E3101" | "E3102" | "E3103" | "E3104" | "E4001" | "E4002" | "E5001"
+                | "E5002" | "E5003" | "E5101" | "E5102" | "E5103" | "E5104" | "E5105"
+                | "E5201" | "E5202" | "E6001" | "E6002" | "E7001" | "E7002" | "E8010"),
             ) => {
                 semantic += 1;
                 assert_eq!(
@@ -222,7 +254,7 @@ fn sico_checker_matches_the_complete_frozen_diagnostic_partition() {
         }
     }
 
-    assert_eq!((lexical, semantic, accepted, unsupported), (116, 34, 65, 0));
+    assert_eq!((lexical, semantic, accepted, unsupported), (116, 46, 73, 0));
 }
 
 #[test]

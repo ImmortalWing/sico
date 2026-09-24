@@ -122,6 +122,76 @@ function owner_count(owners: List[Text], target: Text) returns U64:
   return count
 end function
 
+function record_has_field(owners: List[Text], names: List[Text], record_name: Text, field: Text) returns Bool:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(owners)):
+    if same(item(owners, index), record_name):
+      if same(item(names, index), field):
+        return true
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return false
+end function
+
+function record_lacks_field(owners: List[Text], names: List[Text], record_name: Text, field: Text) returns Bool:
+  if record_has_field(owners, names, record_name, field):
+    return false
+  end if
+  return true
+end function
+
+function record_field_type(owners: List[Text], names: List[Text], types: List[Text], record_name: Text, field: Text) returns Text:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(owners)):
+    if same(item(owners, index), record_name):
+      if same(item(names, index), field):
+        return item(types, index)
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function
+
+function is_versioned_record(record_names: List[Text], field_owners: List[Text], field_names: List[Text], field_types: List[Text], type_name: Text) returns Bool:
+  if list_missing(record_names, type_name):
+    return false
+  end if
+  if different(record_field_type(field_owners, field_names, field_types, type_name, "revision"), "Revision"):
+    return false
+  end if
+  return record_has_field(field_owners, field_names, type_name, "text")
+end function
+
+function versioned_payloads_for(parameter_owners: List[Text], parameter_names: List[Text], parameter_types: List[Text], record_names: List[Text], field_owners: List[Text], field_names: List[Text], field_types: List[Text], function_name: Text) returns List[Text]:
+  let payloads = sico.text.split_lines("")
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(parameter_owners)):
+    if same(item(parameter_owners, index), function_name):
+      if is_versioned_record(record_names, field_owners, field_names, field_types, item(parameter_types, index)):
+        set payloads = sico.list.append(payloads, item(parameter_names, index))
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return payloads
+end function
+
+function words_adjacent(items: List[Text], left: Text, right: Text) returns Bool:
+  let index = U64.literal(0)
+  while U64.less_than(add(index, U64.literal(1)), sico.list.length(items)):
+    if same(item(items, index), left):
+      if same(item(items, add(index, U64.literal(1))), right):
+        return true
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return false
+end function
+
 function count_byte(text: Text, target: I64) returns U64:
   let bytes = sico.text.encode(text)
   let index = U64.literal(0)
@@ -240,6 +310,226 @@ function implicit_integer_float(value: Text) returns Bool:
   return false
 end function
 
+function word_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(95)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(48)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(58)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(65)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(91)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(97)):
+    return false
+  end if
+  return I64.less_than(b, I64.literal(123))
+end function
+
+function letter_byte(b: I64) returns Bool:
+  if I64.less_than(b, I64.literal(65)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(91)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(97)):
+    return false
+  end if
+  return I64.less_than(b, I64.literal(123))
+end function
+
+function dot_before_equal(line: Text) returns Bool:
+  let source = sico.text.encode(line)
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.bytes.length(source)):
+    let b = sico.bytes.at(source, index, I64.literal(-1))
+    if I64.equal(b, I64.literal(46)):
+      return true
+    end if
+    if I64.equal(b, I64.literal(61)):
+      return false
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return false
+end function
+
+function count_field_label(line: Text, field: Text) returns U64:
+  let source = sico.text.encode(line)
+  let needle = sico.text.encode(sico.text.concat(field, ":"))
+  let start = U64.literal(0)
+  let count = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(needle)), sico.bytes.length(source)):
+    match sico.bytes.slice(source, start, sico.bytes.length(needle)):
+      case ok(part):
+        if sico.bytes.equal(part, needle):
+          set count = add(count, U64.literal(1))
+        end if
+      case error(_):
+        return count
+    end match
+    set start = add(start, U64.literal(1))
+  end while
+  return count
+end function
+
+function has_dot_call(line: Text, root: Text) returns Bool:
+  let source = sico.text.encode(line)
+  let needle = sico.text.encode(root)
+  let start = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(needle)), sico.bytes.length(source)):
+    match sico.bytes.slice(source, start, sico.bytes.length(needle)):
+      case ok(part):
+        if sico.bytes.equal(part, needle):
+          if at_word_boundary(source, start):
+            if outside_quotes(source, start):
+              let after = add(start, sico.bytes.length(needle))
+              if I64.equal(sico.bytes.at(source, after, I64.literal(-1)), I64.literal(46)):
+                let field_start = add(after, U64.literal(1))
+                if letter_byte(sico.bytes.at(source, field_start, I64.literal(-1))):
+                  let cursor = field_start
+                  let stop = I64.literal(0)
+                  while I64.equal(stop, I64.literal(0)):
+                    if U64.less_than(cursor, sico.bytes.length(source)):
+                      if word_byte(sico.bytes.at(source, cursor, I64.literal(-1))):
+                        set cursor = add(cursor, U64.literal(1))
+                      else:
+                        set stop = I64.literal(1)
+                      end if
+                    else:
+                      set stop = I64.literal(1)
+                    end if
+                  end while
+                  if I64.equal(sico.bytes.at(source, cursor, I64.literal(-1)), I64.literal(40)):
+                    return true
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      case error(_):
+        return false
+    end match
+    set start = add(start, U64.literal(1))
+  end while
+  return false
+end function
+
+function builtin_call_root(name: Text) returns Bool:
+  if same(name, "I64"):
+    return true
+  end if
+  if same(name, "U64"):
+    return true
+  end if
+  if same(name, "Float64"):
+    return true
+  end if
+  if same(name, "sico"):
+    return true
+  end if
+  return false
+end function
+
+function bare_field_line(line: Text) returns Bool:
+  if sico.text.starts_with(line, "field "):
+    return false
+  end if
+  if sico.text.starts_with(line, "invariant "):
+    return false
+  end if
+  if sico.text.starts_with(line, "end "):
+    return false
+  end if
+  return true
+end function
+
+function at_word_boundary(source: Bytes, start: U64) returns Bool:
+  if U64.equal(start, U64.literal(0)):
+    return true
+  end if
+  if word_byte(sico.bytes.at(source, sub(start, U64.literal(1)), I64.literal(-1))):
+    return false
+  end if
+  if I64.equal(sico.bytes.at(source, sub(start, U64.literal(1)), I64.literal(-1)), I64.literal(46)):
+    return false
+  end if
+  return true
+end function
+
+function outside_quotes(source: Bytes, position: U64) returns Bool:
+  let scan = U64.literal(0)
+  let inside = I64.literal(0)
+  while U64.less_than(scan, position):
+    if I64.equal(sico.bytes.at(source, scan, I64.literal(-1)), I64.literal(34)):
+      if I64.equal(inside, I64.literal(0)):
+        set inside = I64.literal(1)
+      else:
+        set inside = I64.literal(0)
+      end if
+    end if
+    set scan = add(scan, U64.literal(1))
+  end while
+  if I64.equal(inside, I64.literal(0)):
+    return true
+  end if
+  return false
+end function
+
+function dot_access_field(line: Text, root: Text) returns Text:
+  let source = sico.text.encode(line)
+  let needle = sico.text.encode(root)
+  let start = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(needle)), sico.bytes.length(source)):
+    match sico.bytes.slice(source, start, sico.bytes.length(needle)):
+      case ok(part):
+        if sico.bytes.equal(part, needle):
+          if at_word_boundary(source, start):
+            if outside_quotes(source, start):
+              let after = add(start, sico.bytes.length(needle))
+              if I64.equal(sico.bytes.at(source, after, I64.literal(-1)), I64.literal(46)):
+                let field_start = add(after, U64.literal(1))
+                if letter_byte(sico.bytes.at(source, field_start, I64.literal(-1))):
+                  let cursor = field_start
+                  let stop = I64.literal(0)
+                  while I64.equal(stop, I64.literal(0)):
+                    if U64.less_than(cursor, sico.bytes.length(source)):
+                      if word_byte(sico.bytes.at(source, cursor, I64.literal(-1))):
+                        set cursor = add(cursor, U64.literal(1))
+                      else:
+                        set stop = I64.literal(1)
+                      end if
+                    else:
+                      set stop = I64.literal(1)
+                    end if
+                  end while
+                  match sico.bytes.slice(source, field_start, sub(cursor, field_start)):
+                    case ok(word_bytes):
+                      return sico.bytes.utf8_decode(word_bytes)
+                    case error(_):
+                      return ""
+                  end match
+                end if
+              end if
+            end if
+          end if
+        end if
+      case error(_):
+        return ""
+    end match
+    set start = add(start, U64.literal(1))
+  end while
+  return ""
+end function
+
 function semantic_diagnostic(source: Text) returns Text:
   let lines = sico.text.split_lines(source)
   let nominal_names = sico.text.split_lines("")
@@ -249,6 +539,7 @@ function semantic_diagnostic(source: Text) returns Text:
   let variant_owners = sico.text.split_lines("")
   let field_owners = sico.text.split_lines("")
   let field_names = sico.text.split_lines("")
+  let field_types = sico.text.split_lines("")
   let invariant_owners = sico.text.split_lines("")
   let invariant_left = sico.text.split_lines("")
   let invariant_right = sico.text.split_lines("")
@@ -262,6 +553,7 @@ function semantic_diagnostic(source: Text) returns Text:
   let parameter_types = sico.text.split_lines("")
   let active_record = ""
   let active_enum = ""
+  let imported_roots = sico.text.split_lines("")
   let index = U64.literal(0)
 
   while U64.less_than(index, sico.list.length(lines)):
@@ -271,6 +563,11 @@ function semantic_diagnostic(source: Text) returns Text:
     if same(raw, line):
       if sico.text.starts_with(line, "module "):
         return "E8010"
+      end if
+      if sico.text.starts_with(line, "use "):
+        if U64.less_than(U64.literal(1), sico.list.length(parts)):
+          set imported_roots = sico.list.append(imported_roots, compiler_parser.at(parts, U64.literal(1)))
+        end if
       end if
       if sico.text.starts_with(line, "newtype "):
         if U64.equal(sico.list.length(parts), U64.literal(4)):
@@ -289,6 +586,9 @@ function semantic_diagnostic(source: Text) returns Text:
         set enum_names = sico.list.append(enum_names, active_enum)
       end if
       if same(line, "end record"):
+        if U64.equal(owner_count(field_owners, active_record), U64.literal(0)):
+          return "E2022"
+        end if
         set active_record = ""
       end if
       if same(line, "end enum"):
@@ -333,9 +633,10 @@ function semantic_diagnostic(source: Text) returns Text:
     else:
       if U64.less_than(U64.literal(0), sico.text.length(active_record)):
         if sico.text.starts_with(line, "field "):
-          if U64.equal(sico.list.length(parts), U64.literal(3)):
+          if U64.less_than(U64.literal(2), sico.list.length(parts)):
             set field_owners = sico.list.append(field_owners, active_record)
             set field_names = sico.list.append(field_names, compiler_parser.at(parts, U64.literal(1)))
+            set field_types = sico.list.append(field_types, compiler_parser.at(parts, U64.literal(2)))
           end if
         end if
         if sico.text.starts_with(line, "invariant "):
@@ -343,6 +644,13 @@ function semantic_diagnostic(source: Text) returns Text:
             set invariant_owners = sico.list.append(invariant_owners, active_record)
             set invariant_left = sico.list.append(invariant_left, compiler_parser.at(parts, U64.literal(1)))
             set invariant_right = sico.list.append(invariant_right, compiler_parser.at(parts, U64.literal(2)))
+          end if
+        end if
+        if U64.less_than(U64.literal(1), sico.list.length(parts)):
+          if bare_field_line(line):
+            set field_owners = sico.list.append(field_owners, active_record)
+            set field_names = sico.list.append(field_names, compiler_parser.at(parts, U64.literal(0)))
+            set field_types = sico.list.append(field_types, compiler_parser.at(parts, U64.literal(1)))
           end if
         end if
       end if
@@ -375,12 +683,18 @@ function semantic_diagnostic(source: Text) returns Text:
   let task_depth = U64.literal(0)
   let spawned_tasks = sico.text.split_lines("")
   let consumed_tasks = sico.text.split_lines("")
-  let revision_guard = I64.literal(0)
+  let local_names = sico.text.split_lines("")
+  let local_types = sico.text.split_lines("")
+  let versioned_payloads = sico.text.split_lines("")
+  let guard_payloads = sico.text.split_lines("")
+  let guard_depths = sico.text.split_lines("")
+  let if_depth = U64.literal(0)
   set index = U64.literal(0)
   while U64.less_than(index, sico.list.length(lines)):
     let body_raw = item(lines, index)
     let body_line = sico.text.trim(body_raw)
     let body_parts = compiler_parser.words(body_line)
+    let process_body_line = I64.literal(0)
     if same(body_raw, body_line):
       if compiler_parser.syntax_function_header(body_line):
         let body_function_index = compiler_parser.find(body_parts, "function")
@@ -398,7 +712,12 @@ function semantic_diagnostic(source: Text) returns Text:
         set task_depth = U64.literal(0)
         set spawned_tasks = sico.text.split_lines("")
         set consumed_tasks = sico.text.split_lines("")
-        set revision_guard = I64.literal(0)
+        set local_names = sico.text.split_lines("")
+        set local_types = sico.text.split_lines("")
+        set versioned_payloads = versioned_payloads_for(parameter_owners, parameter_names, parameter_types, record_names, field_owners, field_names, field_types, body_function_name)
+        set guard_payloads = sico.text.split_lines("")
+        set guard_depths = sico.text.split_lines("")
+        set if_depth = U64.literal(0)
         if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(64))):
           return "E6001"
         end if
@@ -410,191 +729,27 @@ function semantic_diagnostic(source: Text) returns Text:
         set active_function_name = ""
         set active_return = ""
         set active_result_error = ""
+        set local_names = sico.text.split_lines("")
+        set local_types = sico.text.split_lines("")
+        set versioned_payloads = sico.text.split_lines("")
+        set guard_payloads = sico.text.split_lines("")
+        set guard_depths = sico.text.split_lines("")
+        set if_depth = U64.literal(0)
+      end if
+      if U64.less_than(U64.literal(0), sico.text.length(active_function_name)):
+        if different(body_line, "end function"):
+          if compiler_parser.syntax_function_header(body_line):
+            set process_body_line = I64.literal(0)
+          else:
+            set process_body_line = I64.literal(1)
+          end if
+        end if
       end if
     else:
       if U64.less_than(U64.literal(0), sico.text.length(active_function_name)):
-        if same(body_line, "effects: none"):
-          set declared_effect_none = I64.literal(1)
-        end if
-        if same(body_line, "capabilities: none"):
-          set declared_capability_none = I64.literal(1)
-        end if
-
-        let close_index = compiler_parser.find(body_parts, "close")
-        if U64.less_than(U64.literal(0), close_index):
-          if U64.less_than(close_index, sico.list.length(body_parts)):
-            let close_receiver = compiler_parser.at(body_parts, sub(close_index, U64.literal(1)))
-            if list_has(moved_resources, close_receiver):
-              return "E5001"
-            end if
-            if list_has(closed_resources, close_receiver):
-              return "E5002"
-            end if
-            set closed_resources = sico.list.append(closed_resources, close_receiver)
-          end if
-        end if
-        let read_index = compiler_parser.find(body_parts, "read")
-        if U64.less_than(U64.literal(0), read_index):
-          if U64.less_than(read_index, sico.list.length(body_parts)):
-            let read_receiver = compiler_parser.at(body_parts, sub(read_index, U64.literal(1)))
-            if list_has(moved_resources, read_receiver):
-              return "E5001"
-            end if
-            if list_has(closed_resources, read_receiver):
-              return "E5002"
-            end if
-          end if
-        end if
-
-        let move_index = compiler_parser.find(body_parts, "move")
-        if U64.less_than(move_index, sico.list.length(body_parts)):
-          let move_source = compiler_parser.at(body_parts, add(move_index, U64.literal(1)))
-          let move_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, move_source)
-          if list_has(resource_names, move_type):
-            set moved_resources = sico.list.append(moved_resources, move_source)
-          end if
-        end if
-        let borrow_index = compiler_parser.find(body_parts, "borrow")
-        if U64.less_than(borrow_index, sico.list.length(body_parts)):
-          let borrow_source = compiler_parser.at(body_parts, add(borrow_index, U64.literal(1)))
-          let borrow_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, borrow_source)
-          if list_has(resource_names, borrow_type):
-            set borrow_live = I64.literal(1)
-          end if
-        end if
-
-        let await_index = compiler_parser.find(body_parts, "await")
-        if U64.less_than(await_index, sico.list.length(body_parts)):
-          if I64.equal(borrow_live, I64.literal(1)):
-            return "E5003"
-          end if
-          let await_scan = U64.literal(0)
-          while U64.less_than(await_scan, sico.list.length(body_parts)):
-            if same(compiler_parser.at(body_parts, await_scan), "await"):
-              let await_name = compiler_parser.at(body_parts, add(await_scan, U64.literal(1)))
-              if list_has(future_names, await_name):
-                if list_has(awaited_names, await_name):
-                  return "E5101"
-                end if
-                set awaited_names = sico.list.append(awaited_names, await_name)
-              else:
-                if list_has(spawned_tasks, await_name):
-                  if list_has(awaited_names, await_name):
-                    return "E5101"
-                  end if
-                  set awaited_names = sico.list.append(awaited_names, await_name)
-                  set consumed_tasks = sico.list.append(consumed_tasks, await_name)
-                end if
-              end if
-            end if
-            set await_scan = add(await_scan, U64.literal(1))
-          end while
-        end if
-
-        if U64.less_than(compiler_parser.find(body_parts, "collect_tasks"), sico.list.length(body_parts)):
-          let collected_index = U64.literal(0)
-          while U64.less_than(collected_index, sico.list.length(spawned_tasks)):
-            let collected_name = item(spawned_tasks, collected_index)
-            if list_has(body_parts, collected_name):
-              set consumed_tasks = sico.list.append(consumed_tasks, collected_name)
-            end if
-            set collected_index = add(collected_index, U64.literal(1))
-          end while
-        end if
-
-        let spawn_index = compiler_parser.find(body_parts, "spawn")
-        if U64.less_than(spawn_index, sico.list.length(body_parts)):
-          if U64.equal(task_depth, U64.literal(0)):
-            return "E5104"
-          end if
-          if sico.text.starts_with(body_line, "return "):
-            return "E5102"
-          end if
-          if sico.text.starts_with(body_line, "let "):
-            set spawned_tasks = sico.list.append(spawned_tasks, compiler_parser.at(body_parts, U64.literal(1)))
-          end if
-        else:
-          if sico.text.starts_with(body_line, "let "):
-            if U64.equal(sico.list.length(body_parts), U64.literal(3)):
-              let future_callee = compiler_parser.at(body_parts, U64.literal(2))
-              if list_has(async_function_names, future_callee):
-                set future_names = sico.list.append(future_names, compiler_parser.at(body_parts, U64.literal(1)))
-              end if
-            end if
-          end if
-        end if
-
-        if same(body_line, "task group:"):
-          set task_depth = add(task_depth, U64.literal(1))
-          if U64.less_than(U64.literal(64), task_depth):
-            return "E5105"
-          end if
-        end if
-        if same(body_line, "end task"):
-          set task_depth = sub(task_depth, U64.literal(1))
-        end if
-
-        let next_index = compiler_parser.find(body_parts, "next")
-        if U64.less_than(U64.literal(0), next_index):
-          if U64.less_than(next_index, sico.list.length(body_parts)):
-            let next_receiver = compiler_parser.at(body_parts, sub(next_index, U64.literal(1)))
-            if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, next_receiver), "Stream"):
-              if U64.equal(await_index, sico.list.length(body_parts)):
-                return "E5202"
-              end if
-            end if
-          end if
-        end if
-        let collect_index = compiler_parser.find(body_parts, "collect")
-        if U64.less_than(U64.literal(0), collect_index):
-          if U64.less_than(collect_index, sico.list.length(body_parts)):
-            let collect_receiver = compiler_parser.at(body_parts, sub(collect_index, U64.literal(1)))
-            if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, collect_receiver), "Stream"):
-              if U64.equal(compiler_parser.find(body_parts, "limit"), sico.list.length(body_parts)):
-                return "E5201"
-              end if
-            end if
-          end if
-        end if
-
-        if sico.text.starts_with(body_line, "return "):
-          if I64.equal(declared_capability_none, I64.literal(1)):
-            if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
-              return "E4001"
-            end if
-          end if
-          if I64.equal(declared_effect_none, I64.literal(1)):
-            if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
-              return "E4002"
-            end if
-          end if
-          if U64.less_than(compiler_parser.find(body_parts, "call"), sico.list.length(body_parts)):
-            if same(active_return, "Result"):
-              return "E6002"
-            end if
-          end if
-          let commit_index = compiler_parser.find(body_parts, "commit")
-          if U64.less_than(commit_index, sico.list.length(body_parts)):
-            if missing_two_arguments(body_parts, commit_index):
-              return "E7001"
-            end if
-          end if
-          if same(compiler_parser.at(body_parts, U64.literal(1)), "Model"):
-            if same(word_after(body_parts, "text"), "loaded"):
-              if same(word_after(body_parts, "revision"), "model"):
-                if I64.equal(revision_guard, I64.literal(0)):
-                  return "E7002"
-                end if
-              end if
-            end if
-          end if
-        end if
-        if sico.text.starts_with(body_line, "if "):
-          if U64.less_than(U64.literal(1), owner_count(body_parts, "revision")):
-            set revision_guard = I64.literal(1)
-          end if
-        end if
+        set process_body_line = I64.literal(1)
       end if
+
 
       if sico.text.starts_with(body_line, "return "):
         if U64.less_than(compiler_parser.find(body_parts, "map_error"), sico.list.length(body_parts)):
@@ -741,6 +896,372 @@ function semantic_diagnostic(source: Text) returns Text:
             end if
           end if
         end if
+      end if
+    end if
+    if I64.equal(process_body_line, I64.literal(1)):
+      let payload_scan = U64.literal(0)
+      while U64.less_than(payload_scan, sico.list.length(versioned_payloads)):
+        let payload_name = item(versioned_payloads, payload_scan)
+        if words_adjacent(body_parts, payload_name, "text"):
+          if list_missing(guard_payloads, payload_name):
+            return "E7002"
+          end if
+        end if
+        set payload_scan = add(payload_scan, U64.literal(1))
+      end while
+
+      if sico.text.starts_with(body_line, "let "):
+        let let_ctor = compiler_parser.at(body_parts, U64.literal(2))
+        if list_has(record_names, let_ctor):
+          if list_missing(local_names, compiler_parser.at(body_parts, U64.literal(1))):
+            set local_names = sico.list.append(local_names, compiler_parser.at(body_parts, U64.literal(1)))
+            set local_types = sico.list.append(local_types, let_ctor)
+          end if
+        end if
+        if same(let_ctor, "move"):
+          if list_missing(local_names, compiler_parser.at(body_parts, U64.literal(1))):
+            set local_names = sico.list.append(local_names, compiler_parser.at(body_parts, U64.literal(1)))
+            set local_types = sico.list.append(local_types, parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, compiler_parser.at(body_parts, U64.literal(3))))
+          end if
+        end if
+        if same(let_ctor, "borrow"):
+          if list_missing(local_names, compiler_parser.at(body_parts, U64.literal(1))):
+            set local_names = sico.list.append(local_names, compiler_parser.at(body_parts, U64.literal(1)))
+            set local_types = sico.list.append(local_types, parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, compiler_parser.at(body_parts, U64.literal(3))))
+          end if
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "set "):
+        if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(61))):
+          if dot_before_equal(body_line):
+            return "E2023"
+          end if
+        end if
+      end if
+
+      let e2031_index = U64.literal(0)
+      while U64.less_than(e2031_index, sico.list.length(body_parts)):
+        let e2031_root = compiler_parser.at(body_parts, e2031_index)
+        if builtin_call_root(e2031_root):
+          let e2031_skip = I64.literal(1)
+        else:
+          if U64.equal(sico.text.length(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, e2031_root)), U64.literal(0)):
+            if list_missing(local_names, e2031_root):
+              if list_missing(enum_names, e2031_root):
+                if list_missing(record_names, e2031_root):
+                  if list_missing(nominal_names, e2031_root):
+                    if list_missing(resource_names, e2031_root):
+                      if list_missing(imported_roots, e2031_root):
+                        if has_dot_call(body_line, e2031_root):
+                          return "E2031"
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+        set e2031_index = add(e2031_index, U64.literal(1))
+      end while
+
+      if sico.text.starts_with(body_line, "let "):
+        let ctor_name = compiler_parser.at(body_parts, U64.literal(2))
+        if list_has(record_names, ctor_name):
+          let dup_index = U64.literal(0)
+          while U64.less_than(dup_index, sico.list.length(field_owners)):
+            if same(item(field_owners, dup_index), ctor_name):
+              if U64.less_than(U64.literal(1), count_field_label(body_line, item(field_names, dup_index))):
+                return "E2021"
+              end if
+            end if
+            set dup_index = add(dup_index, U64.literal(1))
+          end while
+          let miss_index = U64.literal(0)
+          while U64.less_than(miss_index, sico.list.length(field_owners)):
+            if same(item(field_owners, miss_index), ctor_name):
+              if missing_field_label(body_line, item(field_names, miss_index)):
+                return "E2010"
+              end if
+            end if
+            set miss_index = add(miss_index, U64.literal(1))
+          end while
+        end if
+        let let_callee = compiler_parser.at(body_parts, U64.literal(2))
+        let let_expected = map_get(function_names, function_params, let_callee)
+        if U64.less_than(U64.literal(0), sico.text.length(let_expected)):
+          let let_actual = compiler_parser.at(body_parts, U64.literal(3))
+          let let_actual_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, let_actual)
+          if U64.equal(sico.text.length(let_actual_type), U64.literal(0)):
+            set let_actual_type = map_get(local_names, local_types, let_actual)
+          end if
+          if list_has(record_names, let_actual_type):
+            if different(let_expected, let_actual_type):
+              return "E2001"
+            end if
+          else:
+            if list_has(nominal_names, let_actual_type):
+              if different(let_expected, let_actual_type):
+                return "E2001"
+              end if
+            end if
+          end if
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "if "):
+        if U64.equal(sico.list.length(body_parts), U64.literal(3)):
+          let cmp_left = compiler_parser.at(body_parts, U64.literal(1))
+          let cmp_right = compiler_parser.at(body_parts, U64.literal(2))
+          let cmp_left_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, cmp_left)
+          if U64.equal(sico.text.length(cmp_left_type), U64.literal(0)):
+            set cmp_left_type = map_get(local_names, local_types, cmp_left)
+          end if
+          let cmp_right_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, cmp_right)
+          if U64.equal(sico.text.length(cmp_right_type), U64.literal(0)):
+            set cmp_right_type = map_get(local_names, local_types, cmp_right)
+          end if
+          if list_has(record_names, cmp_left_type):
+            return "E2024"
+          end if
+          if list_has(record_names, cmp_right_type):
+            return "E2024"
+          end if
+        end if
+      end if
+
+      let access_index = U64.literal(0)
+      while U64.less_than(access_index, sico.list.length(local_names)):
+        let access_root = item(local_names, access_index)
+        let access_type = item(local_types, access_index)
+        if list_has(record_names, access_type):
+          let access_field = dot_access_field(body_line, access_root)
+          if U64.less_than(U64.literal(0), sico.text.length(access_field)):
+            if list_missing(record_names, access_field):
+              if record_lacks_field(field_owners, field_names, access_type, access_field):
+                return "E2011"
+              end if
+            end if
+          end if
+        end if
+        set access_index = add(access_index, U64.literal(1))
+      end while
+
+      let param_access_index = U64.literal(0)
+      while U64.less_than(param_access_index, sico.list.length(parameter_owners)):
+        if same(item(parameter_owners, param_access_index), active_function_name):
+          let param_access_type = item(parameter_types, param_access_index)
+          if list_has(record_names, param_access_type):
+            let param_access_field = dot_access_field(body_line, item(parameter_names, param_access_index))
+            if U64.less_than(U64.literal(0), sico.text.length(param_access_field)):
+              if list_missing(record_names, param_access_field):
+                if record_lacks_field(field_owners, field_names, param_access_type, param_access_field):
+                  return "E2011"
+                end if
+              end if
+            end if
+          end if
+        end if
+        set param_access_index = add(param_access_index, U64.literal(1))
+      end while
+
+      if same(body_line, "effects: none"):
+        set declared_effect_none = I64.literal(1)
+      end if
+      if same(body_line, "capabilities: none"):
+        set declared_capability_none = I64.literal(1)
+      end if
+
+      let close_index = compiler_parser.find(body_parts, "close")
+      if U64.less_than(U64.literal(0), close_index):
+        if U64.less_than(close_index, sico.list.length(body_parts)):
+          let close_receiver = compiler_parser.at(body_parts, sub(close_index, U64.literal(1)))
+          if list_has(moved_resources, close_receiver):
+            return "E5001"
+          end if
+          if list_has(closed_resources, close_receiver):
+            return "E5002"
+          end if
+          set closed_resources = sico.list.append(closed_resources, close_receiver)
+        end if
+      end if
+      let read_index = compiler_parser.find(body_parts, "read")
+      if U64.less_than(U64.literal(0), read_index):
+        if U64.less_than(read_index, sico.list.length(body_parts)):
+          let read_receiver = compiler_parser.at(body_parts, sub(read_index, U64.literal(1)))
+          if list_has(moved_resources, read_receiver):
+            return "E5001"
+          end if
+          if list_has(closed_resources, read_receiver):
+            return "E5002"
+          end if
+        end if
+      end if
+
+      let move_index = compiler_parser.find(body_parts, "move")
+      if U64.less_than(move_index, sico.list.length(body_parts)):
+        let move_source = compiler_parser.at(body_parts, add(move_index, U64.literal(1)))
+        let move_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, move_source)
+        if list_has(resource_names, move_type):
+          set moved_resources = sico.list.append(moved_resources, move_source)
+        end if
+      end if
+      let borrow_index = compiler_parser.find(body_parts, "borrow")
+      if U64.less_than(borrow_index, sico.list.length(body_parts)):
+        let borrow_source = compiler_parser.at(body_parts, add(borrow_index, U64.literal(1)))
+        let borrow_type = parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, borrow_source)
+        if list_has(resource_names, borrow_type):
+          set borrow_live = I64.literal(1)
+        end if
+      end if
+
+      let await_index = compiler_parser.find(body_parts, "await")
+      if U64.less_than(await_index, sico.list.length(body_parts)):
+        if I64.equal(borrow_live, I64.literal(1)):
+          return "E5003"
+        end if
+        let await_scan = U64.literal(0)
+        while U64.less_than(await_scan, sico.list.length(body_parts)):
+          if same(compiler_parser.at(body_parts, await_scan), "await"):
+            let await_name = compiler_parser.at(body_parts, add(await_scan, U64.literal(1)))
+            if list_has(future_names, await_name):
+              if list_has(awaited_names, await_name):
+                return "E5101"
+              end if
+              set awaited_names = sico.list.append(awaited_names, await_name)
+            else:
+              if list_has(spawned_tasks, await_name):
+                if list_has(awaited_names, await_name):
+                  return "E5101"
+                end if
+                set awaited_names = sico.list.append(awaited_names, await_name)
+                set consumed_tasks = sico.list.append(consumed_tasks, await_name)
+              end if
+            end if
+          end if
+          set await_scan = add(await_scan, U64.literal(1))
+        end while
+      end if
+
+      if U64.less_than(compiler_parser.find(body_parts, "collect_tasks"), sico.list.length(body_parts)):
+        let collected_index = U64.literal(0)
+        while U64.less_than(collected_index, sico.list.length(spawned_tasks)):
+          let collected_name = item(spawned_tasks, collected_index)
+          if list_has(body_parts, collected_name):
+            set consumed_tasks = sico.list.append(consumed_tasks, collected_name)
+          end if
+          set collected_index = add(collected_index, U64.literal(1))
+        end while
+      end if
+
+      let spawn_index = compiler_parser.find(body_parts, "spawn")
+      if U64.less_than(spawn_index, sico.list.length(body_parts)):
+        if U64.equal(task_depth, U64.literal(0)):
+          return "E5104"
+        end if
+        if sico.text.starts_with(body_line, "return "):
+          return "E5102"
+        end if
+        if sico.text.starts_with(body_line, "let "):
+          set spawned_tasks = sico.list.append(spawned_tasks, compiler_parser.at(body_parts, U64.literal(1)))
+        end if
+      else:
+        if sico.text.starts_with(body_line, "let "):
+          if U64.equal(sico.list.length(body_parts), U64.literal(3)):
+            let future_callee = compiler_parser.at(body_parts, U64.literal(2))
+            if list_has(async_function_names, future_callee):
+              set future_names = sico.list.append(future_names, compiler_parser.at(body_parts, U64.literal(1)))
+            end if
+          end if
+        end if
+      end if
+
+      if same(body_line, "task group:"):
+        set task_depth = add(task_depth, U64.literal(1))
+        if U64.less_than(U64.literal(64), task_depth):
+          return "E5105"
+        end if
+      end if
+      if same(body_line, "end task"):
+        set task_depth = sub(task_depth, U64.literal(1))
+      end if
+
+      let next_index = compiler_parser.find(body_parts, "next")
+      if U64.less_than(U64.literal(0), next_index):
+        if U64.less_than(next_index, sico.list.length(body_parts)):
+          let next_receiver = compiler_parser.at(body_parts, sub(next_index, U64.literal(1)))
+          if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, next_receiver), "Stream"):
+            if U64.equal(await_index, sico.list.length(body_parts)):
+              return "E5202"
+            end if
+          end if
+        end if
+      end if
+      let collect_index = compiler_parser.find(body_parts, "collect")
+      if U64.less_than(U64.literal(0), collect_index):
+        if U64.less_than(collect_index, sico.list.length(body_parts)):
+          let collect_receiver = compiler_parser.at(body_parts, sub(collect_index, U64.literal(1)))
+          if same(parameter_type(parameter_owners, parameter_names, parameter_types, active_function_name, collect_receiver), "Stream"):
+            if U64.equal(compiler_parser.find(body_parts, "limit"), sico.list.length(body_parts)):
+              return "E5201"
+            end if
+          end if
+        end if
+      end if
+
+      if sico.text.starts_with(body_line, "return "):
+        if I64.equal(declared_capability_none, I64.literal(1)):
+          if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
+            return "E4001"
+          end if
+        end if
+        if I64.equal(declared_effect_none, I64.literal(1)):
+          if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(46))):
+            return "E4002"
+          end if
+        end if
+        if U64.less_than(compiler_parser.find(body_parts, "call"), sico.list.length(body_parts)):
+          if same(active_return, "Result"):
+            return "E6002"
+          end if
+        end if
+        let commit_index = compiler_parser.find(body_parts, "commit")
+        if U64.less_than(commit_index, sico.list.length(body_parts)):
+          if missing_two_arguments(body_parts, commit_index):
+            return "E7001"
+          end if
+        end if
+      end if
+      if sico.text.starts_with(body_line, "if "):
+        set if_depth = add(if_depth, U64.literal(1))
+        if U64.less_than(U64.literal(1), count_byte(body_line, I64.literal(61))):
+          let guard_scan = U64.literal(0)
+          while U64.less_than(guard_scan, sico.list.length(versioned_payloads)):
+            let guard_name = item(versioned_payloads, guard_scan)
+            if words_adjacent(body_parts, guard_name, "revision"):
+              set guard_payloads = sico.list.append(guard_payloads, guard_name)
+              set guard_depths = sico.list.append(guard_depths, sico.u64.to_text(if_depth))
+            end if
+            set guard_scan = add(guard_scan, U64.literal(1))
+          end while
+        end if
+      end if
+      if same(body_line, "end if"):
+        let kept_payloads = sico.text.split_lines("")
+        let kept_depths = sico.text.split_lines("")
+        let keep_scan = U64.literal(0)
+        while U64.less_than(keep_scan, sico.list.length(guard_payloads)):
+          if decimal_less_equal(item(guard_depths, keep_scan), sico.u64.to_text(sub(if_depth, U64.literal(1)))):
+            set kept_payloads = sico.list.append(kept_payloads, item(guard_payloads, keep_scan))
+            set kept_depths = sico.list.append(kept_depths, item(guard_depths, keep_scan))
+          end if
+          set keep_scan = add(keep_scan, U64.literal(1))
+        end while
+        set guard_payloads = kept_payloads
+        set guard_depths = kept_depths
+        set if_depth = sub(if_depth, U64.literal(1))
       end if
     end if
     set index = add(index, U64.literal(1))

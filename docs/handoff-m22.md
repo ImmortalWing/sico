@@ -1,17 +1,21 @@
-# M22 交接手稿（living handoff，基线 STEP-0278）
+# M22 交接手稿（living handoff，基线 STEP-0283）
 
-> - 更新：2026-09-24（STEP-0278 落地后、owner 指令「提交推送」批次）
-> - 前一份：[`handoff-m22-line-tokens.md`](./handoff-m22-line-tokens.md)（STEP-0260 基线，已被本文取代，同批删除）
+> - 更新：2026-09-24（STEP-0283 落地后；0279–0283 五批已随本条提交进库并推送）
+> - 前一份：[`handoff-m22-line-tokens.md`](./handoff-m22-line-tokens.md)（STEP-0260 基线，已被 0278 版取代，同批删除）
 > - 权威事实仍以 [`docs/steps`](./steps/README.md) / [`docs/STATUS.md`](./STATUS.md) 为准；本文只管「下一刀从哪下、哪些验证还没闭环」
 
 ## 0. 一句话状态
 
-M22 处于 **R 阶段后半 + W1 合并债偿还中**：R0 已拍板（Option A，ADR-0017），
-records v0 全封（STEP-0271..0275），在途 WIP 已吸收、STEP-0272 微分回归已修
-（STEP-0276），W1 四债已完成 2/4（sha 门关闭 + legacy 三件套退役，STEP-0278）。
-下一刀 = W1 片 C（E7002 指纹改结构性）。
+M22 处于 **R 阶段后半 + W2 已收官**：R0 已拍板（Option A，ADR-0017），
+records v0 全封（STEP-0271..0275），**W1 合并债四片全清已关闭**
+（0278/0279/0280），**W2 三片全落地已收官**（0281 indent structural /
+0282 records 重授权 / 0283 E2031 identity）：**DIVERGENCE_WAIVER 清零
+（机制留空表），分区 (116,46,73,0)——235 条语料全部 strict，本机零豁免
+全量探针 235/235**，R3 止损计数停止。
+**下一波次 = S3/S4 records re-baseline；W2 收尾小项 = record-nested
+多行字面量 + EC-3 canonical IR JSON 快照。**
 
-## 1. 本批已落地（自 fd802c4 / STEP-0262 起，全部随本次提交进库）
+## 1. 本批已落地（自 fd802c4 / STEP-0262 起；0279–0283 五批已提交推送）
 
 | STEP | 内容 | 证据 |
 |---|---|---|
@@ -22,23 +26,36 @@ records v0 全封（STEP-0271..0275），在途 WIP 已吸收、STEP-0272 微分
 | 0271–0275 | records v0 全封：EC-1 语料/前端、ABI 扁平化 + `Module.records`、EC-2 拒绝面 + EC-5 矩阵、D5 `List[record]` 列式单态、for 迭代 + 深度核对 | record_types.rs + 11 个 end-to-end 语料；三 crate test/clippy/fmt 绿 |
 | 0276 | WIP 吸收（`Map[K,V]` 参数面 +228 行）+ guest `records` 表发射修复（6 新函数） | 本机 CLI 微分：formatter 前缀 14/16、driver --emit-ir 16/16、拒绝面 3 例 |
 | 0277 | W1 四债计划 + 实测侦察 | planning-only |
-| 0278 | W1 片 A+B：sha 门验证关闭（早已随 0246 落地）；legacy 三件套退役（删 947 行 + 3 单测；0215/0216/0219 改退役登记；0243-0245 suite 同步） | 本机：引用清扫 + ps1 语法 + 集成链 check 绿；CI 待裁决 |
+| 0278 | W1 片 A+B：sha 门验证关闭；legacy 三件套退役（删 947 行 + 3 单测；0215/0216/0219 改退役登记；0243-0245 suite 同步） | 本机引用清扫/ps1 语法/check 绿；CI 待裁决（随 0e4cbb9 已推） |
+| 0279 | W1 片 C：E7002 关键词指纹 → 结构性判定（versioned payload + if `==` 深度配对守卫 + 任意行 apply）；rename-safety 语料 3 条（oracle 实取）；语料 215→230（吸收 12 条 record-* 漏冻结）；8 条 diverge 豁免 | 本机 230/230 探针绿（197s）；CI 待裁决 |
+| 0280 | W1 片 D（末片）：0-indent 语料先行——实测 oracle 顶格语句照常语义分析、guest 静默跳过（false-accept）；structural 方向登记 W2（typed refusal 否决）；语料 230→235；waiver 合并 DIVERGENCE_WAIVER(10)；**W1 关闭** | 本机 235/235 探针绿（202s）；CI 待裁决 |
+| 0281 | W2 片 1：indent structural 修复——semantics 第二遍顶格非声明行按语句处理（process_body_line + body 检查块搬出 if/else）；IND-005→strict E7002、IND-004→E4001（首码 E2031 待补）、waiver 10→9、分区 (116,38,72,9) | 本机 235/235 零回归（208s）；CI 待裁决 |
+| 0282 | W2 主片：records 重授权——裸字段注册（bare_field_line）+ `field` 形放宽 parts>2（修 `List[Text]` 字段静默丢失）+ E2022 + local 类型表 + E2023 dot_before_equal + let 行 E2021(count_field_label)/E2010/E2001 + E2024(words==3) + E2011 dot_access_field（子串+词边界 at_word_boundary+引号外 outside_quotes）；误伤面三次实证修复；8 条豁免全关、waiver 9→1、分区 (116,45,73,1)；途中修复 0280 批次测试不自洽（语义臂补 E1001） | 本机 strict 235/235（263s）+ 12 条 record 逐一 12/12；selfhost_checker.rs rustfmt 绿；CI 待裁决 |
+| 0283 | W2 收官片：IND-004 首码 E2031 identity——`use` 行注册 imported_roots + move/borrow 形注册 resource 型 local + E2031 body 检查（内建/形参/local/enum/record/nominal/imported 七重排除 + has_dot_call 词边界〔前字节非`.`〕+引号外+`(`）；两处误伤实证修复（`sico.text.encode` 中段组件 → at_word_boundary 收 `.` 前字节；resource 型 local 被 E2011 误扫 → E2011 仅扫 record 型）；DIVERGENCE_WAIVER 1→0（机制留空表）、分区 (116,46,73,0)——235 条全部 strict，**W2 收官** | 本机零豁免 235/235（296s）+ 关键 8 条 8/8；CI 待裁决 |
 
-代码面汇总：`sico-ir`/`sico-semantics`/`sico-codegen-wasm` records v0 +
-script-v0 ABI 扁平化；`selfhost/parser.sico`（+WIP +records 发射，约 13,000
-行）；`selfhost/` 删 legacy 三件套；`runner` 测试 +record_types.rs、
-+7 行 dump_nm_region_ir 探针、删 3 个 legacy 单测；`tests/language-matrix`
-+records-v0 行；工具脚本 6 个改写/更新 + 3 个 R1 仪器化脚本。
+代码面汇总（0279–0283 批已提交）：`selfhost/compiler_semantics.sico`
+（E7002 结构性 + records 全族：第一遍裸字段/field 放宽/E2022，第二遍
+local 表/E2023/E2021/E2010/E2001 let 形/E2024/E2011，新 helper
+bare_field_line/word_byte/letter_byte/dot_before_equal/count_field_label/
+at_word_boundary/outside_quotes/dot_access_field/record_lacks_field）；
+8 个新语料源（3 revision + 5 indentation）；
+`selfhost/corpus-v0.json` + `script-build-corpus-v0.json` 重冻结（235 条）；
+`runner/sico-runner/tests/selfhost_checker.rs`（235 + DIVERGENCE_WAIVER(1)
++ 分区 (116,45,73,1) + 语义臂补 E1001/E2021–E2024）；
+`bootstrap_bundle.rs` 235；STEP-0279/0280/0281/0282/0283 文档 + README + STATUS。
 
 ## 2. 验证状态（重要：两部分没闭环）
 
-**本机已绿**：workspace 三 crate test/clippy/fmt（0275 批次实跑）；
-records 语料 check/build/run；sico check 集成链（compiler/checker/formatter）；
-STEP-0276 微分框架全套（formatter 前缀、driver 例、拒绝面）。
+**本机已绿**：sico check 集成链；checker 组件构建成功；**235 条全量探针
+零豁免（WAIVER 已清零）strict 235/235**（预构建 runner CLI 8 路并行约 263 s；驱动
+`target/w1c-probe/run_corpus230.py`，结果 `results235.json`）；12 条
+record 语料逐一核对 12/12；validate-step-0124 + git diff --check；
+selfhost_checker.rs rustfmt --check 绿。
 
 **待 CI 裁决（本机跑不了，勿在本地重试白等）**：
-1. runner 测试仓全量（`cargo test --manifest-path runner/...`）——本机缺
-   gcc/dlltool（ring/windows-sys 编译失败），**不是代码问题**；
+1. runner 测试仓全量（selfhost_checker 235 条 + waiver 首跑、
+   bootstrap_bundle 235）——本机缺 gcc/dlltool（ring/windows-sys 编译
+   失败，9-20 产物指纹与今构不一致会触发全量重编译），**不是代码问题**；
 2. 改写后的 0215/0216/0219（首次以「退役登记 + selfhost_checker」模式跑 CI）；
 3. 0243/0244/0245 suite 列表变更后的 canary；
 4. selfhost_compiler / selfhost_parser 全量断言（0276 只实测了代表子集：
@@ -47,36 +64,61 @@ STEP-0276 微分框架全套（formatter 前缀、driver 例、拒绝面）。
 
 ## 3. 下一刀（按序）
 
-1. **W1 片 C**：E7002 关键词指纹（`compiler_semantics.sico:582-590`）改结构
-   性 + rename-safety 语料；行为期望先钉语料再动语义；改不完可退登记
-   declared-subset（0277 §5 片 C）。
-2. **W1 片 D**：0-indent corpus case 先行定 `same(raw, line)` 行为
-   （`compiler_parser.sico:489/650`），再定 refused/structural。
-3. W1 出口 → W2（Option A：selfhost 源层 records 重授权 + S3/S4 re-baseline，
-   R3 止损计数在 W2 起算：连续 4 个实现 STEP canary 零增长且前沿不动即切换）。
-4. guest 降阶前沿（独立于 W 波次，可做 R2 内容）：`close_code`/`direct_close`
+1. **S3/S4 records re-baseline**（W2 收官后的下一波次；SOA 不变式
+   ADR-0016 在 re-baseline 前持续强制）。
+2. W2 收尾小项：record-nested 多行字面量 + EC-3 canonical IR JSON 快照。
+3. guest 降阶前沿（独立可做 R2 内容）：`close_code`/`direct_close`
    的 while-in-if（SKIP:GENERAL-WHILE-IF-REGION）。
+4. 候选 declared-subset：parser 顶格行语法检查；match/try/E2001-E2020
+   块（缩进行限定）扩到顶格行；E2031 裸调用（无点）与跨行调用近似.
 
-注意：0277/0278 是合并债机械片，按 replan 规则**不计入** R3 止损窗口
-（canary 未动是预期）；但连续只做这类片也会拖慢收敛，片 C/D 后应回主线。
+## 4. 新发现（0279–0283 途中，已登记未扩大化）
 
-## 4. 环境备忘
+- **0280 批次测试不自洽（0282 已修）**：zero-indent-recovery-declaration
+  首码 E1001 落 `_` 臂（要求 Output），与 guest 实际拒绝矛盾；语义臂补
+  E1001 关闭。教训：加语料后必须按分类逻辑复算分区，不能照抄旧数。
+- **E2011 子串扫描的三重防线**：词边界（防 `lis**t.**append`）+ 引号外
+  （防 `"input.txt"`）+ 弃用词邻接（防 `(origin, I64)` 误判）；字符串内
+  转义引号未建模，登记 declared-subset 观察项。
+- **关键字参数名缝隙**：参数命名 `record` 时 `sico check` 通过、script-v0
+  lowering 报 `unsupported atomic expression`——check/build 暗隙候选，
+  已规避（改 `record_name`），登记为 M14「check/build/run 无暗隙」gate 的
+  候修项。
+- **guest `words()` 词对近似**：字段访问判定用 `[P, text]` 词对近似
+  oracle 的 `[P, Dot, text]` token 窗（`fresh . text`、
+  `x.fresh.textual` 不可区分），当前冻结面无损，declared-subset 已写入
+  STEP-0279 §2.1。
+- **0-indent false-accept 类**：0281 结构性修复 + 0283 E2031 identity
+  关闭，全部清零。
+- **E2031 已知近似**：裸调用（无点）unresolved target 未实现（语料无
+  首码用例）；跨行调用未建模——declared-subset 观察项。
+
+## 5. 环境备忘
 
 - `RUSTUP_TOOLCHAIN=1.98.0-x86_64-pc-windows-gnu`；cargo =
   `$USERPROFILE/.cargo/bin/cargo.exe`；CLI 在 `target/debug/sico.exe`。
+- runner 测试仓本机不可 cargo 构建（gcc/dlltool 缺失；self-contained 的
+  x86_64-w64-mingw32-gcc 无 `as`，dlltool 无法建 import lib——勿再试）。
 - `sico check` 不能直查 module 文件：用入口
-  `target/debug/sico.exe check selfhost/compiler.sico`（会带上 parser 模块）。
+  `target/debug/sico.exe check selfhost/checker.sico`（会带上 parser 模块）。
 - runner CLI 预构建可用：`runner/sico-runner/target/debug/sico-runner.exe`
-  （`--fuel 5000000000 prog.component.wasm [-- ARGS]`；guest 单跑约 40s 正常）。
-- STEP-0276 微分框架（oracle dump + guest 组件构建 + diff 脚本）已按 0276 §5
-  清理；重建命令见 STEP-0276 文档 §4（oracle = `dump_oracle_ir` 测试 +
-  ORACLE_SOURCE/ORACLE_OUT 环境变量；guest = `sico build --profile script-v0`）。
-- 语料冻结：corpus-v0.json 逐入口 bytes+sha256 由 selfhost_checker 守卫
-  （改语料必须同步 sha）。
+  （`--fuel 5000000000 prog.component.wasm`；诊断码在 **stderr** 的
+  outcome JSON `detail` 里，且引号是 `\"` 转义的）。
+- checker 组件构建：`sico build --profile script-v0 selfhost/checker.sico`
+  → `selfhost/checker.component.wasm`（CLI 拒绝覆盖，先删旧文件）。
+- 语料冻结：改/加语料源后跑 `tools/update-m22-corpus.ps1`（本机无 rg——
+  需临时把 `rg --files` 行换成 Get-ChildItem 枚举，生成后还原；枚举结果
+  与 git tracked+untracked 集合核对一致即可）。corpus-v0.json 逐入口
+  bytes+sha256 由 selfhost_checker 守卫。
+- 语料探针驱动：`target/w1c-probe/run_corpus230.py`（断点续跑
+  results235.json，8 路并行约 263–296s/235 条；WAIVER 集已清零，strict
+  模式）。
+- 分区复算：改语料/测试后先用 python 按分类逻辑独立复算
+  (lexical, semantic, accepted, unsupported) 再写断言（0282 教训）。
 
-## 5. 纪律提醒
+## 6. 纪律提醒
 
-- 不主动 commit/push（AGENTS.md §9）；本批系 owner 2026-09-24 显式指令
-  「先写个交接手稿，提交推送一下」进库。
+- 不主动 commit/push（AGENTS.md §9）；0278 批（0e4cbb9）与 0279–0283
+  五批均系 owner 显式指令进库并推送。
 - 冻结合同（语言/WIT）动前走 RFC；跨组件架构动前走 ADR。
-- W2 之前 S3/S4 源层维持 SOA 不变式（ADR-0016 仍强制）。
+- W2 收官前 S3/S4 源层维持 SOA 不变式（ADR-0016 仍强制）。

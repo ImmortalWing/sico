@@ -1,0 +1,22 @@
+// case: REV-201
+// syntax: B
+// expect: reject(UNCHECKED_STALE_RESULT)
+// semantics: SEM-113
+// note: renamed variant of REV-102; the structural E7002 must not depend on
+// the literal identifiers Model/loaded/model.
+
+newtype Revision from Int
+
+record Old:
+  field text: Text
+  field revision: Revision
+end record
+
+record Fresh:
+  field text: Text
+  field revision: Revision
+end record
+
+function apply_fresh(old: Old, fresh: Fresh) returns Old:
+  return Old(text: fresh.text, revision: old.revision)
+end function

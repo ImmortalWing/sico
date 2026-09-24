@@ -1,0 +1,10 @@
+// case: IND-001
+// syntax: B
+// expect: accept
+// semantics: none
+// note: a body statement at column 0 is legal in the Rust oracle (indentation
+// is conventional, not enforced); the guest checker must accept it too.
+
+function main() returns Int:
+return 42
+end function

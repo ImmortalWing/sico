@@ -5,7 +5,7 @@
     "syntax-candidates",
     "tests/end-to-end"
   ],
-  "entry_count": 215,
+  "entry_count": 235,
   "entries": [
     {
       "path": "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
@@ -1176,6 +1176,74 @@
       "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
     },
     {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-recovery-declaration.sico",
+      "bytes": 318,
+      "source_sha256": "932667296121d4716415301ab02e6858971c0f665a1b6122940d0bfe7b63200a",
+      "rust_format": "refused",
+      "formatted_sha256": null,
+      "format_idempotent": false,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E1001"
+      ],
+      "diagnostic_sha256": "8688ca5c2d522ddaf164e68c581e9f5b69facf6c019ed63b865fc3d3b1038d98"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-stale-result.sico",
+      "bytes": 706,
+      "source_sha256": "c7e683bb590478c7bf197329a1f4b6db9b46aaff6cbaa491b4c69f948fe47744",
+      "rust_format": "accepted",
+      "formatted_sha256": "7384e41a3837f8f201ed08a9fe457687844dfdc238760af304e4f0de5fb2cf01",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E7002"
+      ],
+      "diagnostic_sha256": "ec84b5d9b853e1fe020dfd7f4101c6d0b0d93b9221ee06e22607e2357b7bc564"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/invalid/zero-indent-undeclared-capability.sico",
+      "bytes": 497,
+      "source_sha256": "67ef33f37778e3d7c6bf735f0ee20e4223872ca0c453ca9ab5d889fad92657bc",
+      "rust_format": "accepted",
+      "formatted_sha256": "2867d6960f7c9437152fd14c8a0537fbb1ad355d5ff1b057957f9c66fdc20448",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2031",
+        "E4001",
+        "E4002"
+      ],
+      "diagnostic_sha256": "a0127b1876f55bce19aa3a2d86ae2557286a48b89caeaeb134340a2ac50d3e72"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/valid/zero-indent-mid-statement.sico",
+      "bytes": 279,
+      "source_sha256": "71cae7f9658e7d3fb3ca04691e6e6bfbf9c26566919dbdd0c4a368cfa2406366",
+      "rust_format": "accepted",
+      "formatted_sha256": "f285d44af11f5551666c1cc896c208c11f41396cb8f945955675eee41e180564",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "syntax-candidates/b/indentation/valid/zero-indent-return.sico",
+      "bytes": 272,
+      "source_sha256": "0892ca20fe8e4dcb3a367235857c771efe5745949cd511ed59fe079948d32268",
+      "rust_format": "accepted",
+      "formatted_sha256": "89361c15d400f388f34d45323cc3c30f2e5257b96f0ae036d23cf3f3a1c2bdde",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
       "path": "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico",
       "bytes": 251,
       "source_sha256": "04f1fae06008d0a42476501a97c99bfc01daf064c078d0a1328b800320cc6760",
@@ -1478,6 +1546,20 @@
       "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
     },
     {
+      "path": "syntax-candidates/b/revision/invalid/cross-payload-guard-stale-result.sico",
+      "bytes": 739,
+      "source_sha256": "1c627e6999d0bb318ac0b68d88b5cfb3d6704296c7fc37f7ce528f2bb739c5cd",
+      "rust_format": "accepted",
+      "formatted_sha256": "1c627e6999d0bb318ac0b68d88b5cfb3d6704296c7fc37f7ce528f2bb739c5cd",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E7002"
+      ],
+      "diagnostic_sha256": "5f423d83ee66d3ae523dd2759f1ad2990455cf15d956f7ac95a54dd324327b27"
+    },
+    {
       "path": "syntax-candidates/b/revision/invalid/missing-commit-revision.sico",
       "bytes": 503,
       "source_sha256": "4fe16c6bddfa9829b9487a9bdb9b57b8213bd2202e53b3f35f24a6761779af44",
@@ -1492,6 +1574,20 @@
       "diagnostic_sha256": "f403a594c131c524260763a7b9cb1b936a785197aef330c8a82c3afe991fe5ab"
     },
     {
+      "path": "syntax-candidates/b/revision/invalid/unchecked-stale-result-renamed.sico",
+      "bytes": 514,
+      "source_sha256": "a51bc41fcdbf19fadb462fa4709476568bc944f8c99d8d0ee94c54071ddb0e7e",
+      "rust_format": "accepted",
+      "formatted_sha256": "a51bc41fcdbf19fadb462fa4709476568bc944f8c99d8d0ee94c54071ddb0e7e",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E7002"
+      ],
+      "diagnostic_sha256": "b8f755f8f567ecd0c64465b0c6c01ec3a15c01b87c5feee9b1f972aa45735fa6"
+    },
+    {
       "path": "syntax-candidates/b/revision/invalid/unchecked-stale-result.sico",
       "bytes": 407,
       "source_sha256": "ccb843af39b9a9a56fa0a7f2ba03d86c119b1a134d8902ae59bec45d1bad4baf",
@@ -1504,6 +1600,18 @@
         "E7002"
       ],
       "diagnostic_sha256": "e0e7e86ddaba80d02583d31ea1e336efae1fabd0860a7fdb2cc9a7cc7bd29a48"
+    },
+    {
+      "path": "syntax-candidates/b/revision/valid/stale-load-ignored-renamed.sico",
+      "bytes": 629,
+      "source_sha256": "e34105d57f5020107bd25c3b0095c581917d4a5edb33e459d7185919438f9dc3",
+      "rust_format": "accepted",
+      "formatted_sha256": "e34105d57f5020107bd25c3b0095c581917d4a5edb33e459d7185919438f9dc3",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
     },
     {
       "path": "syntax-candidates/b/revision/valid/stale-load-ignored.sico",
@@ -2622,6 +2730,164 @@
       "rust_check_exit": 0,
       "diagnostic_ids": [],
       "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-basic.sico",
+      "bytes": 1358,
+      "source_sha256": "0e9fa21403a12cd8716ad211da18cb5fe8c646818c8a167f3480954175ccc514",
+      "rust_format": "accepted",
+      "formatted_sha256": "2a92b565929df7acc9cdc66641a52188f0c9d302265d88be25728eb7288151af",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-copy-on-write.sico",
+      "bytes": 1097,
+      "source_sha256": "82d119983a138cb1e6dc8a748f5d9777172283cfe0f2ff70cabb03868729d280",
+      "rust_format": "accepted",
+      "formatted_sha256": "bac1ca7db9718e7d9385b528fdb3740d1f75924569fb9cb9c49d21c9ca7f360d",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-list-field.sico",
+      "bytes": 934,
+      "source_sha256": "353ae3f752ff27f150e9584a012125ff77dd85c6389fd16fa14acb912809a224",
+      "rust_format": "accepted",
+      "formatted_sha256": "353ae3f752ff27f150e9584a012125ff77dd85c6389fd16fa14acb912809a224",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-list-of-records.sico",
+      "bytes": 3863,
+      "source_sha256": "14b2f01b96edb7f69ae246a89dd7b6a176492bd6c7f90e089b662e1d94e3c067",
+      "rust_format": "accepted",
+      "formatted_sha256": "b8249848d7596fba5ab1df854dd3a6994b1664ffad82cdd462593a8aec588a49",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-nested.sico",
+      "bytes": 1186,
+      "source_sha256": "0b300449650f50baf2558d51d9a9fe3ddd7a81b46db35d53c39051555dc204f4",
+      "rust_format": "accepted",
+      "formatted_sha256": "df88f247e266a93bf74579b9bc10efe1b02f456924ee064cabfe749f328d5276",
+      "format_idempotent": true,
+      "rust_check": "accepted",
+      "rust_check_exit": 0,
+      "diagnostic_ids": [],
+      "diagnostic_sha256": "0a75f9193cae5ac30de8d278cb82c38b2916be914ad09abab575a9a088381535"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-duplicate-field.sico",
+      "bytes": 170,
+      "source_sha256": "0cd6a8da94db772e91d9cb45cdd7e9dd6be7309917c6c31a58bba0866740a389",
+      "rust_format": "accepted",
+      "formatted_sha256": "0cd6a8da94db772e91d9cb45cdd7e9dd6be7309917c6c31a58bba0866740a389",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2021"
+      ],
+      "diagnostic_sha256": "155b907a08b00d88f06eb9d57344ce4eed77872d040b11975309800bfc92cc07"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-empty.sico",
+      "bytes": 79,
+      "source_sha256": "4831920569c8f02d576ea0ee1ce1d13b10154d8d79a64ccbbbbb1d4339da95a7",
+      "rust_format": "accepted",
+      "formatted_sha256": "4831920569c8f02d576ea0ee1ce1d13b10154d8d79a64ccbbbbb1d4339da95a7",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2022"
+      ],
+      "diagnostic_sha256": "4ac440e1278672a5b5894684a2b20a0cbc757b0b59659087fe8f728d10946a75"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-equality.sico",
+      "bytes": 250,
+      "source_sha256": "a61d438a9c0d88261f05b8412e5cfc5837c8f7abf62008847ff0706065d63e88",
+      "rust_format": "accepted",
+      "formatted_sha256": "61be8a4291793242629b3f4479824e6461de2f91ee1e11c30eaede4b285c99d2",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2024"
+      ],
+      "diagnostic_sha256": "b15d32e35af5fdbe5f38bf7c4d2256d466bab70fb8ca5d1a066b9395d8fdeb0c"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-field-set.sico",
+      "bytes": 178,
+      "source_sha256": "3141aa3a93d6d26c293c66c2254eb4ab1198c53cd9c52c0f995ebd6686da201f",
+      "rust_format": "accepted",
+      "formatted_sha256": "3141aa3a93d6d26c293c66c2254eb4ab1198c53cd9c52c0f995ebd6686da201f",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2023"
+      ],
+      "diagnostic_sha256": "d17ebbe167095077f6bf306e16dcd64af627779d358e147097ae4d99aa04388c"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-missing-field.sico",
+      "bytes": 132,
+      "source_sha256": "f7a96af367acbd25a56ba237ec6b543b8fbd243632e438346e5d545a2dbbb829",
+      "rust_format": "accepted",
+      "formatted_sha256": "f7a96af367acbd25a56ba237ec6b543b8fbd243632e438346e5d545a2dbbb829",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2010"
+      ],
+      "diagnostic_sha256": "c8f7b95766304b3a06dde6898038bfb572b364769124ac89ef0d7dffcd1448d0"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-nominal.sico",
+      "bytes": 285,
+      "source_sha256": "850d0e2e009d4265136a8f238491177bbc3abd8d00284eec5fe60044afa09d15",
+      "rust_format": "accepted",
+      "formatted_sha256": "850d0e2e009d4265136a8f238491177bbc3abd8d00284eec5fe60044afa09d15",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2001"
+      ],
+      "diagnostic_sha256": "c8810a77349b259268622a464b77f58d49b9dac07356802ff7fb116ecebe4500"
+    },
+    {
+      "path": "tests/end-to-end/record-refusal-unknown-access.sico",
+      "bytes": 154,
+      "source_sha256": "35db2d167ddab382ea2c1ec6ef222ab2e13afbc5bf1e2852b4403d4fec1c2235",
+      "rust_format": "accepted",
+      "formatted_sha256": "35db2d167ddab382ea2c1ec6ef222ab2e13afbc5bf1e2852b4403d4fec1c2235",
+      "format_idempotent": true,
+      "rust_check": "refused",
+      "rust_check_exit": 1,
+      "diagnostic_ids": [
+        "E2011"
+      ],
+      "diagnostic_sha256": "8170118345af962ba8c7d3bac12aa210cfd264d18fbef355d38078d9f1284136"
     },
     {
       "path": "tests/end-to-end/recursion-depth.sico",
