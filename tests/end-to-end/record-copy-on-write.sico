@@ -1,0 +1,42 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+record Point:
+  x: I64
+  y: I64
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let original = Point(x: I64.literal(1), y: I64.literal(2))
+  let alias = original
+  let replaced = Point(x: original.x, y: I64.literal(99))
+  if I64.equal(alias.x, I64.literal(1)):
+    if I64.equal(replaced.y, I64.literal(99)):
+      return ok(ScriptOutput(stdout: sico.text.encode("record-cow-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    else:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "replacement leaked"))
+    end if
+  else:
+    return error(ScriptError(code: ScriptErrorCode.DomainError, message: "alias mutated"))
+  end if
+end function

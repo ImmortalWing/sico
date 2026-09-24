@@ -1,0 +1,38 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+record Task:
+  title: Text
+  tags: List[Text]
+  done: Bool
+end record
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let t = Task(title: "ship", tags: sico.list.append(sico.text.split_lines(""), "m22"), done: false)
+  match t.done:
+    case false:
+      return ok(ScriptOutput(stdout: sico.text.encode("record-list-field-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case true:
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "done should be false"))
+  end match
+end function

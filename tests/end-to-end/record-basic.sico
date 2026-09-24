@@ -1,0 +1,52 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+record Point:
+  x: I64
+  y: I64
+end record
+
+function move_right(p: Point, dx: I64) returns Point:
+  match I64.checked_add(p.x, dx):
+    case ok(v):
+      return Point(x: v, y: p.y)
+    case error(_):
+      return p
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let origin = Point(x: I64.literal(1), y: I64.literal(2))
+  let shifted = move_right(origin, I64.literal(10))
+  set shifted = Point(x: shifted.x, y: I64.literal(99))
+  match I64.checked_add(shifted.x, shifted.y):
+    case ok(total):
+      if I64.equal(total, I64.literal(110)):
+        return ok(ScriptOutput(stdout: sico.text.encode("record-basic-ok"), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+      else:
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "sum mismatch"))
+      end if
+    case error(_):
+      return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+  end match
+end function

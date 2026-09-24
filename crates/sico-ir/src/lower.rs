@@ -294,6 +294,7 @@ pub fn lower_core_modules(
     let mut functions = Vec::new();
     let mut task_scopes = BTreeMap::new();
     let mut module_import_signatures = BTreeMap::new();
+    let mut module_records: BTreeMap<String, Vec<crate::RecordField>> = BTreeMap::new();
     for (index, ((prefix, decls), base)) in declarations.iter().zip(&bases).enumerate() {
         let mut definitions = Definitions::from_declarations(decls, *prefix, *base);
         for package in packages {
@@ -359,6 +360,50 @@ pub fn lower_core_modules(
             }
             functions.push(function);
         }
+        // RFC-0047 D4 (STEP-0272): declared record types enter the module
+        // contract in canonical declaration order, so codegen can flatten
+        // record values to their field sequence. Both the bare `name: Type`
+        // surface and the pre-existing `field name: Type` surface collect;
+        // import-file records take the qualified `module.Name` key.
+        for declaration in decls {
+            if declaration.kind != DeclarationKind::Record {
+                continue;
+            }
+            let mut fields: Vec<crate::RecordField> = Vec::new();
+            for line in &declaration.lines {
+                let bare_field = line.kind == LineKind::Expression
+                    && line.tokens.len() >= 3
+                    && line.tokens[0].kind == TokenKind::Identifier
+                    && line.tokens[1].kind == TokenKind::Colon;
+                let (name, ty) = if line.kind == LineKind::Field && line.tokens.len() >= 4 {
+                    (
+                        line.tokens[1].text.clone(),
+                        definitions.resolve_type(parse_type(&line.tokens[3..])),
+                    )
+                } else if bare_field {
+                    (
+                        line.tokens[0].text.clone(),
+                        definitions.resolve_type(parse_type(&line.tokens[2..])),
+                    )
+                } else {
+                    continue;
+                };
+                match fields.iter_mut().find(|field| field.name == name) {
+                    Some(existing) => existing.ty = ty,
+                    None => fields.push(crate::RecordField { name, ty }),
+                }
+            }
+            let key = if index > 0 {
+                format!(
+                    "{}.{}",
+                    prefix.expect("import files carry a module prefix"),
+                    declaration.name
+                )
+            } else {
+                declaration.name.clone()
+            };
+            module_records.insert(key, fields);
+        }
     }
 
     let mut module = Module::new(entry.name(), entry.len().into());
@@ -373,6 +418,9 @@ pub fn lower_core_modules(
         .expect("combined source length stays inside the u32 source bound");
     module.functions = functions;
     module.import_signatures = module_import_signatures;
+    if !module_records.is_empty() {
+        module.records = module_records;
+    }
     if !task_scopes.is_empty() {
         module.task_scopes = Some(task_scopes);
     }
@@ -391,6 +439,9 @@ pub fn lower_core_modules(
 }
 
 impl Definitions {
+    // The declaration walk is one linear registry pass; splitting it would
+    // scatter the per-kind registration rules without buying testability.
+    #[allow(clippy::too_many_lines)]
     fn from_declarations(
         declarations: &[Declaration],
         module_prefix: Option<&str>,
@@ -428,10 +479,23 @@ impl Definitions {
                 DeclarationKind::Newtype | DeclarationKind::Record => {
                     if declaration.kind == DeclarationKind::Record {
                         for line in &declaration.lines {
+                            // RFC-0047 D1 (STEP-0271): bare `name: Type`
+                            // field lines join the pre-existing
+                            // `field name: Type` surface.
+                            let bare_field = line.kind == LineKind::Expression
+                                && line.tokens.len() >= 3
+                                && line.tokens[0].kind == TokenKind::Identifier
+                                && line.tokens[1].kind == TokenKind::Colon;
                             if line.kind == LineKind::Field && line.tokens.len() >= 4 {
                                 let ty = definitions.resolve_type(parse_type(&line.tokens[3..]));
                                 definitions.fields.insert(
                                     (declaration.name.clone(), line.tokens[1].text.clone()),
+                                    ty,
+                                );
+                            } else if bare_field {
+                                let ty = definitions.resolve_type(parse_type(&line.tokens[2..]));
+                                definitions.fields.insert(
+                                    (declaration.name.clone(), line.tokens[0].text.clone()),
                                     ty,
                                 );
                             }
@@ -1197,7 +1261,7 @@ impl GeneralLowering<'_, '_> {
                     let subject_ty = Type::List(Box::new(element_ty.clone()));
                     // `Text` lists keep the frozen plain intrinsic names;
                     // numeric lists use the RFC-0046 D4 bracket monomorphs.
-                    let (length_name, get_name) = match element_ty {
+                    let (length_name, get_name) = match &element_ty {
                         Type::String => ("sico.list.length".to_owned(), "sico.list.get".to_owned()),
                         Type::I64 => (
                             "sico.list.length[I64]".to_owned(),
@@ -1206,6 +1270,19 @@ impl GeneralLowering<'_, '_> {
                         Type::U64 => (
                             "sico.list.length[U64]".to_owned(),
                             "sico.list.get[U64]".to_owned(),
+                        ),
+                        // RFC-0047 D5 (STEP-0275): record elements ride the
+                        // D5 bracket monomorphs; the check phase has already
+                        // established the record is declared and flat.
+                        Type::Named(record) => (
+                            crate::record_list_intrinsic_name(
+                                crate::RecordListOperation::Length,
+                                record,
+                            ),
+                            crate::record_list_intrinsic_name(
+                                crate::RecordListOperation::Get,
+                                record,
+                            ),
                         ),
                         _ => {
                             return Err(unsupported_error(
@@ -2598,9 +2675,11 @@ impl FunctionBuilder<'_> {
         if let Some(open) = top_level_call_open(tokens) {
             return self.call(tokens, open, expected, output);
         }
-        if tokens.len() == 3 && tokens[1].kind == TokenKind::Dot {
+        if tokens.len() >= 3 && tokens.len() % 2 == 1 && tokens[1].kind == TokenKind::Dot {
             let joined = format!("{}.{}", tokens[0].text, tokens[2].text);
-            if let Some(ty) = self.definitions.variants.get(&joined).cloned() {
+            if tokens.len() == 3
+                && let Some(ty) = self.definitions.variants.get(&joined).cloned()
+            {
                 let value = self.emit(
                     ty.clone(),
                     Operation::Variant {
@@ -2612,53 +2691,48 @@ impl FunctionBuilder<'_> {
                 );
                 return Ok((value, ty));
             }
-            if self.cells.contains_key(&tokens[0].text) {
-                let (base, base_type) =
+            // RFC-0047 EC-1 (STEP-0272): dot access chains
+            // (`seg.b.x`) lower as iterated field projections; every
+            // intermediate base must be a named record with the field.
+            if self.cells.contains_key(&tokens[0].text)
+                || self.bindings.contains_key(&tokens[0].text)
+            {
+                let (mut base, mut base_type) =
                     self.resolve_name(&tokens[0].text, tokens[0].range, output)?;
-                let Type::Named(record) = base_type else {
-                    return unsupported("field projection", token_range(tokens));
-                };
-                let Some(ty) = self
-                    .definitions
-                    .fields
-                    .get(&(record, tokens[2].text.clone()))
-                    .cloned()
-                else {
-                    return unsupported("unknown field projection", token_range(tokens));
-                };
-                let value = self.emit(
-                    ty.clone(),
-                    Operation::Project {
-                        base,
-                        field: tokens[2].text.clone(),
-                    },
-                    token_range(tokens),
-                    output,
-                );
-                return Ok((value, ty));
-            }
-            if let Some((base, base_type)) = self.bindings.get(&tokens[0].text).cloned() {
-                let Type::Named(record) = base_type else {
-                    return unsupported("field projection", token_range(tokens));
-                };
-                let Some(ty) = self
-                    .definitions
-                    .fields
-                    .get(&(record, tokens[2].text.clone()))
-                    .cloned()
-                else {
-                    return unsupported("unknown field projection", token_range(tokens));
-                };
-                let value = self.emit(
-                    ty.clone(),
-                    Operation::Project {
-                        base,
-                        field: tokens[2].text.clone(),
-                    },
-                    token_range(tokens),
-                    output,
-                );
-                return Ok((value, ty));
+                let mut index = 1;
+                while index < tokens.len() {
+                    if tokens[index].kind != TokenKind::Dot
+                        || tokens
+                            .get(index + 1)
+                            .is_none_or(|t| t.kind != TokenKind::Identifier)
+                    {
+                        return unsupported("field projection", token_range(tokens));
+                    }
+                    let field = tokens[index + 1].text.clone();
+                    let Type::Named(record) = base_type else {
+                        return unsupported("field projection", token_range(tokens));
+                    };
+                    let Some(ty) = self
+                        .definitions
+                        .fields
+                        .get(&(record, field.clone()))
+                        .cloned()
+                    else {
+                        return unsupported("unknown field projection", token_range(tokens));
+                    };
+                    base = self.emit(
+                        ty.clone(),
+                        Operation::Project {
+                            base,
+                            field: field.clone(),
+                        },
+                        token_range(&tokens[index..index + 2]),
+                        output,
+                    );
+                    base_type = ty;
+                    index += 2;
+                }
+                return Ok((base, base_type));
             }
         }
         Err(unsupported_error("core expression", token_range(tokens)))

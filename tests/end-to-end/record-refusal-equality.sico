@@ -1,0 +1,14 @@
+record Point:
+  x: I64
+  y: I64
+end record
+
+function main() returns Int:
+  let a = Point(x: I64.literal(1), y: I64.literal(2))
+  let b = Point(x: I64.literal(1), y: I64.literal(2))
+  if a == b:
+    return 1
+  else:
+    return 0
+  end if
+end function

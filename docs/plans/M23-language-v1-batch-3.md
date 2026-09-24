@@ -1,6 +1,6 @@
 # M23 Language v1 batch 3 — expression ergonomics
 
-> Status: planned (owner session directive 「继续完成sico，M22-M25」, 2026-09-17); no STEP numbers reserved; contract drafting may proceed before M22 S7 closes, implementation may not
+> Status: planned (owner session directive 「继续完成sico，M22-M25」, 2026-09-17); no STEP numbers reserved; contract drafting may proceed before M22 S7 closes, implementation may not; amended 2026-09-24 (STEP-0264, M22–M26 route replan v1 §4): the implementation gate becomes dual-exit — Route A after an M22 S7 GO, Route B immediately after an M22 R3 stop-loss declaration (S6 convergence declared not demonstrated on the current surface); the mid-flight-churn rationale is preserved because Route B never fires while a closure attempt is in flight
 
 ## 1. Objective
 
@@ -39,10 +39,26 @@ Items, exactly as recorded in the M22 plan §8:
 
 ## 2. Entry gate
 
-- M22 S7 exit audit explicit (GO or honest NO-GO). Language churn
-  invalidates a mid-flight bootstrap closure; implementation of batch 3
-  waits for M22 closure. Only RFC/contract drafting and measured-consumer
-  evidence may proceed earlier.
+- **Dual-exit M22 gate (STEP-0264, 2026-09-24; supersedes the single
+  "waits for M22 closure" condition).** Implementation may start under
+  either route:
+  - **Route A — M22 S7 exit audit GO.** Batch 3 implements on a proven
+    closure; the self-host re-baseline decision (exit gate 5) follows.
+  - **Route B — M22 R3 stop-loss declared** (M22 plan R-phase: 4
+    consecutive implementation STEPs with zero `formatter.sico` canary
+    growth and an unmoved refusal frontier; see
+    [`M22–M26 route replan v1`](./M22-M26-route-replan-v1.md) §3–§4).
+    Batch 3 implements immediately — its measured consumers already
+    exist (§8) and the richer surface is the registered re-baseline
+    target for a restarted M22 after this milestone's exit audit. The
+    prior M22 stop-loss verdict stays in the dual-implementation
+    register; M22 re-entry re-runs S1/S2 differentials on the new
+    surface under the unchanged ADR-0015 contract.
+  - The original churn rationale survives in both routes: language
+    churn must not invalidate a mid-flight bootstrap closure, so Route
+    B fires only after convergence is declared absent, never during a
+    closure attempt. Only RFC/contract drafting and measured-consumer
+    evidence proceed while M22 is mid-flight regardless of route.
 - Per-item accepted RFC (RFC-0033 gate): measured consumer, explicit
   desugar, source-map identity, formatter idempotence, typed
   diagnostics for pre-existing identifiers that used the new keywords/

@@ -573,6 +573,7 @@ function count_params(words: List[Text], from_idx: U64) returns U64:
   let n = sico.list.length(words)
   let i = from_idx
   let seen_open = I64.literal(0)
+  let seen_bracket = U64.literal(0)
   let commas = U64.literal(0)
   let seen_any = I64.literal(0)
   while U64.less_than(i, n):
@@ -581,29 +582,44 @@ function count_params(words: List[Text], from_idx: U64) returns U64:
         if is_word(w, "("):
           set seen_open = I64.literal(1)
         else:
-          if is_word(w, ")"):
-            if I64.equal(seen_open, I64.literal(1)):
-              if I64.equal(seen_any, I64.literal(1)):
-                match U64.checked_add(commas, U64.literal(1)):
-                  case ok(params):
-                    return params
-                  case error(_):
-                    return commas
-                end match
-              end if
-              return commas
-            end if
+          if is_word(w, "["):
+            set seen_bracket = next_index(seen_bracket, seen_bracket)
           else:
-            if I64.equal(seen_open, I64.literal(1)):
-              if is_word(w, ","):
-                match U64.checked_add(commas, U64.literal(1)):
-                  case ok(next):
-                    set commas = next
-                  case error(_):
-                    return commas
-                end match
+            if is_word(w, "]"):
+              match U64.checked_sub(seen_bracket, U64.literal(1)):
+                case ok(cp_less):
+                  set seen_bracket = cp_less
+                case error(_):
+                  set seen_bracket = U64.literal(0)
+              end match
+            else:
+              if is_word(w, ")"):
+                if I64.equal(seen_open, I64.literal(1)):
+                  if I64.equal(seen_any, I64.literal(1)):
+                    match U64.checked_add(commas, U64.literal(1)):
+                      case ok(params):
+                        return params
+                      case error(_):
+                        return commas
+                    end match
+                  end if
+                  return commas
+                end if
               else:
-                set seen_any = I64.literal(1)
+                if I64.equal(seen_open, I64.literal(1)):
+                  if is_word(w, ","):
+                    if U64.equal(seen_bracket, U64.literal(0)):
+                      match U64.checked_add(commas, U64.literal(1)):
+                        case ok(next):
+                          set commas = next
+                        case error(_):
+                          return commas
+                      end match
+                    end if
+                  else:
+                    set seen_any = I64.literal(1)
+                  end if
+                end if
               end if
             end if
           end if
@@ -918,25 +934,61 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
     let parameter_item_type = word_at(words, parameter_type_idx)
     let parameter_item_kind = ""
     let parameter_is_list = I64.literal(0)
+    let parameter_is_map = I64.literal(0)
     let parameter_element_kind = ""
-    if is_word(word_at(words, parameter_after_type_idx), "["):
-      let parameter_element_idx = next_index(parameter_after_type_idx, parameter_words_len)
-      let parameter_element_close_idx = next_index(parameter_element_idx, parameter_words_len)
-      if is_word(word_at(words, parameter_element_close_idx), "]"):
-        let parameter_bracket_ok = I64.literal(1)
+    let parameter_map_key_kind = ""
+    let parameter_map_val_kind = ""
+    if is_word(parameter_item_type, "Map"):
+      let parameter_map_open_idx = parameter_after_type_idx
+      let parameter_map_key_idx = next_index(parameter_map_open_idx, parameter_words_len)
+      let parameter_map_comma_idx = next_index(parameter_map_key_idx, parameter_words_len)
+      let parameter_map_val_idx = next_index(parameter_map_comma_idx, parameter_words_len)
+      let parameter_map_close_idx = next_index(parameter_map_val_idx, parameter_words_len)
+      if is_word(word_at(words, parameter_map_open_idx), "["):
+        let parameter_map_open_ok = I64.literal(1)
       else:
         return "ERR:E-SH-IR-PARAMETERS"
       end if
-      set parameter_element_kind = scalar_type_kind(word_at(words, parameter_element_idx))
-      if sico.text.starts_with(parameter_element_kind, "ERR:"):
-        return parameter_element_kind
+      if is_word(word_at(words, parameter_map_comma_idx), ","):
+        let parameter_map_comma_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-PARAMETERS"
       end if
-      set parameter_is_list = I64.literal(1)
-      set parameter_item_kind = "list"
+      if is_word(word_at(words, parameter_map_close_idx), "]"):
+        let parameter_map_close_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-PARAMETERS"
+      end if
+      set parameter_map_key_kind = scalar_type_kind(word_at(words, parameter_map_key_idx))
+      if sico.text.starts_with(parameter_map_key_kind, "ERR:"):
+        return parameter_map_key_kind
+      end if
+      set parameter_map_val_kind = scalar_type_kind(word_at(words, parameter_map_val_idx))
+      if sico.text.starts_with(parameter_map_val_kind, "ERR:"):
+        return parameter_map_val_kind
+      end if
+      set parameter_is_map = I64.literal(1)
+      set parameter_item_kind = "map"
     else:
-      set parameter_item_kind = scalar_type_kind(parameter_item_type)
-      if sico.text.starts_with(parameter_item_kind, "ERR:"):
-        return parameter_item_kind
+      if is_word(word_at(words, parameter_after_type_idx), "["):
+        let parameter_element_idx = next_index(parameter_after_type_idx, parameter_words_len)
+        let parameter_element_close_idx = next_index(parameter_element_idx, parameter_words_len)
+        if is_word(word_at(words, parameter_element_close_idx), "]"):
+          let parameter_bracket_ok = I64.literal(1)
+        else:
+          return "ERR:E-SH-IR-PARAMETERS"
+        end if
+        set parameter_element_kind = scalar_type_kind(word_at(words, parameter_element_idx))
+        if sico.text.starts_with(parameter_element_kind, "ERR:"):
+          return parameter_element_kind
+        end if
+        set parameter_is_list = I64.literal(1)
+        set parameter_item_kind = "list"
+      else:
+        set parameter_item_kind = scalar_type_kind(parameter_item_type)
+        if sico.text.starts_with(parameter_item_kind, "ERR:"):
+          return parameter_item_kind
+        end if
       end if
     end if
     let parameter_item_start = find_text_from(src, parameter_item_name, parameter_search_from)
@@ -969,12 +1021,20 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
     set parameter_json = sico.text.concat(parameter_json, parameter_item_name)
     set parameter_json = sico.text.concat(parameter_json, "\",\"ty\":{\"kind\":\"")
     set parameter_json = sico.text.concat(parameter_json, parameter_item_kind)
+    if I64.equal(parameter_is_map, I64.literal(1)):
+      set parameter_json = sico.text.concat(parameter_json, "\",\"data\":{\"key\":{\"kind\":\"")
+      set parameter_json = sico.text.concat(parameter_json, parameter_map_key_kind)
+      set parameter_json = sico.text.concat(parameter_json, "\"},\"value\":{\"kind\":\"")
+      set parameter_json = sico.text.concat(parameter_json, parameter_map_val_kind)
+      set parameter_json = sico.text.concat(parameter_json, "\"}}")
+    else:
     if I64.equal(parameter_is_list, I64.literal(1)):
       set parameter_json = sico.text.concat(parameter_json, "\",\"data\":{\"kind\":\"")
       set parameter_json = sico.text.concat(parameter_json, parameter_element_kind)
       set parameter_json = sico.text.concat(parameter_json, "\"}")
     else:
       set parameter_json = sico.text.concat(parameter_json, "\"")
+    end if
     end if
     set parameter_json = sico.text.concat(parameter_json, "},\"range\":{\"start\":")
     set parameter_json = sico.text.concat(parameter_json, sico.u64.to_text(parameter_item_start))
@@ -983,10 +1043,18 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
     set parameter_json = sico.text.concat(parameter_json, "}}")
     set parameter_id = next_index(parameter_id, parameter_id)
     let parameter_separator_idx = parameter_after_type_idx
+    if I64.equal(parameter_is_map, I64.literal(1)):
+      set parameter_separator_idx = next_index(parameter_after_type_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+      set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+    else:
     if I64.equal(parameter_is_list, I64.literal(1)):
       set parameter_separator_idx = next_index(parameter_after_type_idx, parameter_words_len)
       set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
       set parameter_separator_idx = next_index(parameter_separator_idx, parameter_words_len)
+    end if
     end if
     if is_word(word_at(words, parameter_separator_idx), ","):
       set parameter_token_idx = next_index(parameter_separator_idx, parameter_words_len)
@@ -1018,6 +1086,11 @@ function binding_parameter_index(words: List[Text], function_name_idx: U64, bind
     let binding_separator_idx = next_index(binding_type_idx, binding_words_len)
     if is_word(word_at(words, binding_type_idx), "List"):
       set binding_separator_idx = next_index(next_index(next_index(binding_separator_idx, binding_words_len), binding_words_len), binding_words_len)
+    end if
+    if is_word(word_at(words, binding_type_idx), "Map"):
+      set binding_separator_idx = next_index(next_index(binding_separator_idx, binding_words_len), binding_words_len)
+      set binding_separator_idx = next_index(next_index(binding_separator_idx, binding_words_len), binding_words_len)
+      set binding_separator_idx = next_index(binding_separator_idx, binding_words_len)
     end if
     if is_word(word_at(words, binding_separator_idx), ","):
       set binding_token_idx = next_index(binding_separator_idx, binding_words_len)
@@ -1054,11 +1127,38 @@ function binding_parameter_kind(words: List[Text], function_name_idx: U64, bindi
         end if
         return "ERR:E-SH-IR-PARAMETER-TYPE"
       end if
+      if is_word(word_at(words, binding_kind_type_idx), "Map"):
+        let bkk_map_key_idx = next_index(next_index(binding_kind_type_idx, binding_kind_words_len), binding_kind_words_len)
+        let bkk_map_comma_idx = next_index(bkk_map_key_idx, binding_kind_words_len)
+        let bkk_map_val_idx = next_index(bkk_map_comma_idx, binding_kind_words_len)
+        let bkk_map_close_idx = next_index(bkk_map_val_idx, binding_kind_words_len)
+        if is_word(word_at(words, next_index(binding_kind_type_idx, binding_kind_words_len)), "["):
+          if is_word(word_at(words, bkk_map_comma_idx), ","):
+            if is_word(word_at(words, bkk_map_close_idx), "]"):
+              let bkk_map_key_kind = scalar_type_kind(word_at(words, bkk_map_key_idx))
+              if sico.text.starts_with(bkk_map_key_kind, "ERR:"):
+                return bkk_map_key_kind
+              end if
+              let bkk_map_val_kind = scalar_type_kind(word_at(words, bkk_map_val_idx))
+              if sico.text.starts_with(bkk_map_val_kind, "ERR:"):
+                return bkk_map_val_kind
+              end if
+              return sico.text.concat("{\"kind\":\"map\",\"data\":{\"key\":{\"kind\":\"", sico.text.concat(bkk_map_key_kind, sico.text.concat("\"},\"value\":{\"kind\":\"", sico.text.concat(bkk_map_val_kind, "\"}}"))))
+            end if
+          end if
+        end if
+        return "ERR:E-SH-IR-PARAMETER-TYPE"
+      end if
       return scalar_type_kind(word_at(words, binding_kind_type_idx))
     end if
     let binding_kind_separator_idx = next_index(binding_kind_type_idx, binding_kind_words_len)
     if is_word(word_at(words, binding_kind_type_idx), "List"):
       set binding_kind_separator_idx = next_index(next_index(next_index(binding_kind_separator_idx, binding_kind_words_len), binding_kind_words_len), binding_kind_words_len)
+    end if
+    if is_word(word_at(words, binding_kind_type_idx), "Map"):
+      set binding_kind_separator_idx = next_index(next_index(binding_kind_separator_idx, binding_kind_words_len), binding_kind_words_len)
+      set binding_kind_separator_idx = next_index(next_index(binding_kind_separator_idx, binding_kind_words_len), binding_kind_words_len)
+      set binding_kind_separator_idx = next_index(binding_kind_separator_idx, binding_kind_words_len)
     end if
     if is_word(word_at(words, binding_kind_separator_idx), ","):
       set binding_kind_token_idx = next_index(binding_kind_separator_idx, binding_kind_words_len)
@@ -1095,11 +1195,38 @@ function parameter_kind_by_id(words: List[Text], function_name_idx: U64, wanted_
         end if
         return "ERR:E-SH-IR-PARAMETER-TYPE"
       end if
+      if is_word(word_at(words, kind_id_type_idx), "Map"):
+        let pki_map_key_idx = next_index(next_index(kind_id_type_idx, kind_id_words_len), kind_id_words_len)
+        let pki_map_comma_idx = next_index(pki_map_key_idx, kind_id_words_len)
+        let pki_map_val_idx = next_index(pki_map_comma_idx, kind_id_words_len)
+        let pki_map_close_idx = next_index(pki_map_val_idx, kind_id_words_len)
+        if is_word(word_at(words, next_index(kind_id_type_idx, kind_id_words_len)), "["):
+          if is_word(word_at(words, pki_map_comma_idx), ","):
+            if is_word(word_at(words, pki_map_close_idx), "]"):
+              let pki_map_key_kind = scalar_type_kind(word_at(words, pki_map_key_idx))
+              if sico.text.starts_with(pki_map_key_kind, "ERR:"):
+                return pki_map_key_kind
+              end if
+              let pki_map_val_kind = scalar_type_kind(word_at(words, pki_map_val_idx))
+              if sico.text.starts_with(pki_map_val_kind, "ERR:"):
+                return pki_map_val_kind
+              end if
+              return sico.text.concat("{\"kind\":\"map\",\"data\":{\"key\":{\"kind\":\"", sico.text.concat(pki_map_key_kind, sico.text.concat("\"},\"value\":{\"kind\":\"", sico.text.concat(pki_map_val_kind, "\"}}"))))
+            end if
+          end if
+        end if
+        return "ERR:E-SH-IR-PARAMETER-TYPE"
+      end if
       return scalar_type_kind(word_at(words, kind_id_type_idx))
     end if
     let kind_id_separator_idx = next_index(kind_id_type_idx, kind_id_words_len)
     if is_word(word_at(words, kind_id_type_idx), "List"):
       set kind_id_separator_idx = next_index(next_index(next_index(kind_id_separator_idx, kind_id_words_len), kind_id_words_len), kind_id_words_len)
+    end if
+    if is_word(word_at(words, kind_id_type_idx), "Map"):
+      set kind_id_separator_idx = next_index(next_index(kind_id_separator_idx, kind_id_words_len), kind_id_words_len)
+      set kind_id_separator_idx = next_index(next_index(kind_id_separator_idx, kind_id_words_len), kind_id_words_len)
+      set kind_id_separator_idx = next_index(kind_id_separator_idx, kind_id_words_len)
     end if
     if is_word(word_at(words, kind_id_separator_idx), ","):
       set kind_id_token_idx = next_index(kind_id_separator_idx, kind_id_words_len)
@@ -1196,6 +1323,39 @@ function declared_return_kind(words: List[Text], body_from: U64) returns Text:
                               set sig_kind = ""
                             else:
                               set sig_kind = sico.text.concat("{\"kind\":\"list\",\"data\":{\"kind\":\"", sico.text.concat(sig_elem_kind, "\"}}"))
+                            end if
+                          else:
+                            set sig_kind = ""
+                          end if
+                        else:
+                          set sig_kind = ""
+                        end if
+                      else:
+                        set sig_kind = ""
+                      end if
+                    end if
+                    if is_word(type_word, "Map"):
+                      let sig_map_key_idx = next_index(next_index(type_idx, sig_end), sig_end)
+                      let sig_map_comma_idx = next_index(sig_map_key_idx, sig_end)
+                      let sig_map_val_idx = next_index(sig_map_comma_idx, sig_end)
+                      let sig_map_close_idx = next_index(sig_map_val_idx, sig_end)
+                      if is_word(word_at(words, next_index(type_idx, sig_end)), "["):
+                        if is_word(word_at(words, sig_map_comma_idx), ","):
+                          if U64.less_than(sig_map_close_idx, sig_end):
+                            if is_word(word_at(words, sig_map_close_idx), "]"):
+                              let sig_map_key_kind = scalar_type_kind(word_at(words, sig_map_key_idx))
+                              if sico.text.starts_with(sig_map_key_kind, "ERR:"):
+                                set sig_kind = ""
+                              else:
+                                let sig_map_val_kind = scalar_type_kind(word_at(words, sig_map_val_idx))
+                                if sico.text.starts_with(sig_map_val_kind, "ERR:"):
+                                  set sig_kind = ""
+                                else:
+                                  set sig_kind = sico.text.concat("{\"kind\":\"map\",\"data\":{\"key\":{\"kind\":\"", sico.text.concat(sig_map_key_kind, sico.text.concat("\"},\"value\":{\"kind\":\"", sico.text.concat(sig_map_val_kind, "\"}}"))))
+                                end if
+                              end if
+                            else:
+                              set sig_kind = ""
                             end if
                           else:
                             set sig_kind = ""
@@ -11727,6 +11887,262 @@ function fixed_guard_chain_ir(words: List[Text], src: Bytes, name_idx: U64, fn_s
   return sico.text.concat(json, "}}")
 end function
 
+function record_scalar_kind(w: Text) returns Text:
+  if is_word(w, "Int"):
+    return "int"
+  end if
+  if is_word(w, "Bool"):
+    return "bool"
+  end if
+  if is_word(w, "Text"):
+    return "string"
+  end if
+  if is_word(w, "I64"):
+    return "i64"
+  end if
+  if is_word(w, "U64"):
+    return "u64"
+  end if
+  if is_word(w, "Float64"):
+    return "float64"
+  end if
+  if is_word(w, "Bytes"):
+    return "bytes"
+  end if
+  return "ERR:E-SH-IR-RECORD-TYPE"
+end function
+
+function record_named_type(w: Text) returns Bool:
+  let named_bytes = sico.text.encode(w)
+  if U64.equal(sico.bytes.length(named_bytes), U64.literal(0)):
+    return false
+  end if
+  return is_ident_byte(sico.bytes.at(named_bytes, U64.literal(0), I64.literal(0)))
+end function
+
+function record_close_bracket(words: List[Text], open_idx: U64, end_idx: U64) returns U64:
+  let i = open_idx
+  let depth = U64.literal(0)
+  while U64.less_than(i, end_idx):
+    let w = word_at(words, i)
+    if is_word(w, "["):
+      match U64.checked_add(depth, U64.literal(1)):
+        case ok(next_depth):
+          set depth = next_depth
+        case error(_):
+          return end_idx
+      end match
+    else:
+      if is_word(w, "]"):
+        match U64.checked_sub(depth, U64.literal(1)):
+          case ok(next_depth):
+            set depth = next_depth
+            if U64.equal(next_depth, U64.literal(0)):
+              return i
+            end if
+          case error(_):
+            return end_idx
+        end match
+      end if
+    end if
+    set i = next_index(i, end_idx)
+  end while
+  return end_idx
+end function
+
+function record_map_comma(words: List[Text], from_idx: U64, end_idx: U64) returns U64:
+  let i = from_idx
+  let depth = U64.literal(0)
+  while U64.less_than(i, end_idx):
+    let w = word_at(words, i)
+    if is_word(w, "["):
+      match U64.checked_add(depth, U64.literal(1)):
+        case ok(next_depth):
+          set depth = next_depth
+        case error(_):
+          return end_idx
+      end match
+    else:
+      if is_word(w, "]"):
+        match U64.checked_sub(depth, U64.literal(1)):
+          case ok(next_depth):
+            set depth = next_depth
+          case error(_):
+            return end_idx
+        end match
+      else:
+        if is_word(w, ","):
+          if U64.equal(depth, U64.literal(0)):
+            return i
+          end if
+        end if
+      end if
+    end if
+    set i = next_index(i, end_idx)
+  end while
+  return end_idx
+end function
+
+function record_type_json(words: List[Text], i: U64, end_idx: U64) returns Text:
+  if U64.less_than(i, end_idx):
+    let w = word_at(words, i)
+    let scalar = record_scalar_kind(w)
+    if sico.text.starts_with(scalar, "ERR:"):
+      if is_word(w, "List"):
+        let open_idx = next_index(i, end_idx)
+        if U64.equal(open_idx, end_idx):
+          return "ERR:E-SH-IR-RECORD-TYPE"
+        end if
+        if is_word(word_at(words, open_idx), "["):
+          let close_idx = record_close_bracket(words, open_idx, end_idx)
+          if U64.equal(close_idx, end_idx):
+            return "ERR:E-SH-IR-RECORD-TYPE"
+          end if
+          let inner = record_type_json(words, next_index(open_idx, end_idx), close_idx)
+          if sico.text.starts_with(inner, "ERR:"):
+            return inner
+          end if
+          return sico.text.concat(sico.text.concat("{\"kind\":\"list\",\"data\":", inner), "}")
+        end if
+        return "ERR:E-SH-IR-RECORD-TYPE"
+      end if
+      if is_word(w, "Map"):
+        let map_open_idx = next_index(i, end_idx)
+        if U64.equal(map_open_idx, end_idx):
+          return "ERR:E-SH-IR-RECORD-TYPE"
+        end if
+        if is_word(word_at(words, map_open_idx), "["):
+          let map_close_idx = record_close_bracket(words, map_open_idx, end_idx)
+          if U64.equal(map_close_idx, end_idx):
+            return "ERR:E-SH-IR-RECORD-TYPE"
+          end if
+          let comma_idx = record_map_comma(words, next_index(map_open_idx, end_idx), map_close_idx)
+          if U64.equal(comma_idx, map_close_idx):
+            return "ERR:E-SH-IR-RECORD-TYPE"
+          end if
+          let key_json = record_type_json(words, next_index(map_open_idx, end_idx), comma_idx)
+          if sico.text.starts_with(key_json, "ERR:"):
+            return key_json
+          end if
+          let value_json = record_type_json(words, next_index(comma_idx, end_idx), map_close_idx)
+          if sico.text.starts_with(value_json, "ERR:"):
+            return value_json
+          end if
+          let pair_json = sico.text.concat("{\"kind\":\"map\",\"data\":{\"key\":", key_json)
+          set pair_json = sico.text.concat(pair_json, ",\"value\":")
+          set pair_json = sico.text.concat(pair_json, value_json)
+          return sico.text.concat(pair_json, "}}")
+        end if
+        return "ERR:E-SH-IR-RECORD-TYPE"
+      end if
+      if record_named_type(w):
+        let named_json = sico.text.concat("{\"kind\":\"named\",\"data\":\"", w)
+        return sico.text.concat(named_json, "\"}")
+      end if
+    else:
+      let scalar_json = sico.text.concat("{\"kind\":\"", scalar)
+      return sico.text.concat(scalar_json, "\"}")
+    end if
+  end if
+  return "ERR:E-SH-IR-RECORD-TYPE"
+end function
+
+function records_table_json(words: List[Text]) returns Text:
+  let n = sico.list.length(words)
+  let i = U64.literal(0)
+  let prev = ""
+  let entries = sico.text.split_lines("")
+  while U64.less_than(i, n):
+    let token = word_at(words, i)
+    if is_word(token, "record"):
+      let at_line_start = false
+      if is_word(prev, ""):
+        set at_line_start = true
+      end if
+      if is_word(prev, "<nl>"):
+        set at_line_start = true
+      end if
+      if at_line_start:
+        let name_idx = next_index(i, n)
+        if U64.equal(name_idx, n):
+          return "ERR:E-SH-IR-RECORD-NAME"
+        end if
+        let record_name = word_at(words, name_idx)
+        let j = next_index(name_idx, n)
+        if is_word(word_at(words, j), ":"):
+          set j = next_index(j, n)
+        end if
+        let fields_json = ""
+        let field_count = U64.literal(0)
+        let record_done = false
+        while U64.less_than(j, n):
+          if record_done:
+            break
+          end if
+          let fw = word_at(words, j)
+          if is_word(fw, "end"):
+            let end_next = word_at(words, next_index(j, n))
+            if is_word(end_next, "record"):
+              set j = next_index(next_index(j, n), n)
+              set record_done = true
+              break
+            end if
+          end if
+          let fname_idx = j
+          let is_field_line = false
+          if is_word(fw, "field"):
+            set fname_idx = next_index(j, n)
+            set is_field_line = true
+          end if
+          let colon_idx = next_index(fname_idx, n)
+          if is_word(word_at(words, colon_idx), ":"):
+            set is_field_line = true
+          end if
+          if is_field_line:
+            let type_start = next_index(colon_idx, n)
+            let type_end = line_end(words, type_start)
+            let ty_json = record_type_json(words, type_start, type_end)
+            if sico.text.starts_with(ty_json, "ERR:"):
+              return ty_json
+            end if
+            if U64.less_than(U64.literal(0), field_count):
+              set fields_json = sico.text.concat(fields_json, ",")
+            end if
+            let field_json = sico.text.concat("{\"name\":\"", word_at(words, fname_idx))
+            set field_json = sico.text.concat(field_json, "\",\"ty\":")
+            set field_json = sico.text.concat(field_json, ty_json)
+            set field_json = sico.text.concat(field_json, "}")
+            set fields_json = sico.text.concat(fields_json, field_json)
+            set field_count = next_index(field_count, field_count)
+            set j = type_end
+          else:
+            set j = next_index(j, n)
+          end if
+        end while
+        if record_done:
+          let entry = sico.text.concat("\"", record_name)
+          set entry = sico.text.concat(entry, "\":[")
+          set entry = sico.text.concat(entry, fields_json)
+          set entry = sico.text.concat(entry, "]")
+          set entries = sico.list.append(entries, entry)
+          set i = j
+          set prev = "record"
+          continue
+        end if
+        return "ERR:E-SH-IR-RECORD-END"
+      end if
+    end if
+    set prev = token
+    set i = next_index(i, n)
+  end while
+  if U64.equal(sico.list.length(entries), U64.literal(0)):
+    return ""
+  end if
+  set entries = sico.list.sort(entries)
+  let records_body = sico.text.join(entries, ",")
+  return sico.text.concat(sico.text.concat("\"records\":{", records_body), "}")
+end function
+
 function scalar_ir(words: List[Text], src: Bytes) returns Text:
   let source_len = sico.bytes.length(src)
   let n = sico.list.length(words)
@@ -11737,6 +12153,10 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
     if is_word(word_at(words, U64.literal(0)), "ERR-string"):
       return "ERR:E-SH-IR-STRING-UNCLOSED"
     end if
+  end if
+  let records_json = records_table_json(words)
+  if sico.text.starts_with(records_json, "ERR:"):
+    return records_json
   end if
   let i = U64.literal(0)
   let prev = ""
@@ -12574,6 +12994,12 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
   set json = sico.text.concat(json, sico.u64.to_text(source_len))
   set json = sico.text.concat(json, ",\"functions\":[")
   set json = sico.text.concat(json, functions_json)
-  set json = sico.text.concat(json, "]}")
+  if U64.equal(sico.text.length(records_json), U64.literal(0)):
+    set json = sico.text.concat(json, "]}")
+  else:
+    set json = sico.text.concat(json, "],")
+    set json = sico.text.concat(json, records_json)
+    set json = sico.text.concat(json, "}")
+  end if
   return json
 end function

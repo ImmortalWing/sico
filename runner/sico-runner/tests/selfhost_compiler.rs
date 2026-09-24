@@ -501,6 +501,13 @@ fn dump_shle_region_ir() {
 }
 
 #[test]
+fn dump_nm_region_ir() {
+    let end = FORMATTER_SOURCE.find("function close_code").unwrap();
+    let source = &FORMATTER_SOURCE[..end];
+    println!("{}", rust_ir(source));
+}
+
+#[test]
 fn sico_compiler_lowers_the_source_has_lex_error_region_byte_exactly() {
     let end = FORMATTER_SOURCE
         .find("function no_space_before")

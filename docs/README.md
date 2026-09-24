@@ -32,6 +32,8 @@
 - [M24 视觉收口与 GUI 应用试点计划](./plans/M24-vision-closure-gui-application-pilot.md)
 - [M25 v1.0 发布——平台广度、完成审计与产品退出计划](./plans/M25-release-v1-completion.md)
 - [M26 PDF 文档处理计划](./plans/M26-pdf-document-processing.md)
+- [M22–M26 路线重划片 v1](./plans/M22-M26-route-replan-v1.md)
+- [M22 重启评估 v1](./plans/M22-restart-assessment-v1.md)
 - [M9 exit audit](./reports/m9-exit-audit-v0.md)
 - [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)

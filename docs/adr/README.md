@@ -20,6 +20,7 @@ ADR 记录工程与架构决定，例如 Component Runtime 引擎、`.sapp` 物�
 | [ADR-0014](./ADR-0014-web-hosting-substrate-v0.md) | accepted | M15 Web 宿主形态 v0：JS canonical-ABI shim 承载编译组件内嵌核心模块（稳定浏览器默认不提供 Component Model），HTTP authority 按 RFC-0037 shim 侧执行且连接池声明为不可代表，M10 三元组降级如实声明，一载一 Store，限额降级声明化，DOM 控件树走 RFC-0042；2026-09-10 owner 接受 |
 | [ADR-0015](./ADR-0015-compiler-bootstrap-closure-v0.md) | accepted | M22 编译器自举闭环：Rust seed `A`、两代自编译 `B/C` 字节一致，Rust verifier 永久 oracle，`.sapp` 信任链与预算证据固定 |
 | [ADR-0016](./ADR-0016-selfhost-soa-compilation-unit-v0.md) | accepted | M22 SOA 前端与 compilation-unit 边界：共享 lowering 模块、显式 entry/module 角色、canonical LF 身份与 fail-closed 对齐约束 |
+| [ADR-0017](./ADR-0017-selfhost-data-model-architecture-v0.md) | proposed | M22 自举数据模型架构 R0 决议（草案；**推荐 Option A**：records RFC 先行，2026-09-24 按 owner 标准「最终效果/稳定性/长期可维护性」修订——B 不避免重写只增加总维护，A 终局单一数据模型；B 降为 fallback；records 最小封闭集走 RFC-0033 全门，SOA 不变式在 re-baseline 前持续强制） |
 
 下一可用编号：`ADR-0017`。
 

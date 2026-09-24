@@ -1,8 +1,8 @@
 {
   "schema": "sico.application-profile.v0",
   "step": "STEP-0131..0203",
-  "rfc": "RFC-0038;RFC-0039;RFC-0045;RFC-0046",
-  "updated": "2026-09-17",
+  "rfc": "RFC-0038;RFC-0039;RFC-0045;RFC-0046;RFC-0047",
+  "updated": "2026-09-24",
   "profile": "script-v0",
   "matrix": {
     "executable": {
@@ -217,6 +217,15 @@
         "build": true,
         "run": true,
         "notes": "RFC-0046 D2 (STEP-0175): let y = expr? desugars to match/return forwarding the NumericError payload (E3101 family)"
+      },
+      "records-v0-user-records": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0271..0273",
+        "rfc": "RFC-0047",
+        "semantics": "user-declared nominal records: bare `name: Type` declarations, named literals, dot field access incl. chains, whole-record replacement via set (fields immutable), copy-on-write value semantics; typed refusals E2010 missing field / E2011 unknown field / E2021 duplicate field / E2022 empty record / E2023 field set / E2024 record comparison / E2001 nominal mismatch; `List[record]` (D5) not executable yet",
+        "notes": "e2e record-basic/nested/list-field/copy-on-write run through the real runner with content-asserting markers; refusal corpus record-refusal-*.sico; `List[record]` stays gated (E2031) until the D5 slice"
       }
     },
     "refused": {

@@ -49,7 +49,12 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0040`](./RFC-0040-native-automation-capabilities-v0.md) | accepted | Native Automation Host 能力面 v0（observe/capture/pointer/keyboard/audit/stop 六接口、preview/commit 令牌、审计流与紧急停止的 guest 不可见设计、E9xxx 拒绝语料规划）；2026-09-10 owner 接受（指令“完成M15-17”），威胁模型 F-1 判为声明式敏感区策略、F-2 判为 Host 本地按运行追加 JSONL |
 | [`RFC-0041`](./RFC-0041-image-data-contract-v0.md) | accepted | 可移植图像数据合同 v0（bitmap/region、步距/格式/方向、四项决策 D1–D4、构造 limit+1 错误分类与出口语料）；2026-09-10 owner 接受（D1–D4 如案通过，D4 初始上限 2^28 字节） |
 | [`RFC-0042`](./RFC-0042-web-ui-controls-v0.md) | accepted | Web UI 控件与事件合同 v0：封闭控件集+稳定 id、确定性 stack/flow/grid 布局、类型化 FIFO 事件、显式属性赋值、ARIA/焦点为合同字段、敌意内容语料规则；2026-09-10 owner 接受 |
+| [`RFC-0043`](./RFC-0043-deterministic-vision-packages-v0.md) | draft | 确定性视觉包（template match/grid/contour）WIT 面、确定性参考实现与 limit+1 语料；M17/M24 roster 的合同基础 |
+| [`RFC-0044`](./RFC-0044-language-v1-batch1.md) | accepted | 语言 v1 batch 1：中缀 `==` lowering、保留字与冻结快照 append-only；2026-09-13 owner 会话指令接受 |
+| [`RFC-0045`](./RFC-0045-stdlib-batch2-byte-text-collections-v0.md) | accepted | stdlib batch 2：byte/text 访问、排序/格式化与集合扩展；2026-09-14 随 STEP-0174 落地 |
+| [`RFC-0046`](./RFC-0046-language-v1-batch2-for-loops-error-propagation-list-elements-v0.md) | accepted | 语言 v1 batch 2：for-loops、`expr?` 错误传播、裸字面量决策记录（不改语法）、`List[I64]`/`[U64]`；2026-09-14 owner 会话指令接受 |
+| [`RFC-0047`](./RFC-0047-record-types-v0.md) | accepted | record 类型最小封闭集（声明/具名字面量/字段访问/`List[record]`）：M22 R0 产出（ADR-0017 Option A），服务自举 re-baseline、M14 应用 profile 与 M23 人机工学；2026-09-24 owner 会话指令接受，冻结 gate 见 STEP-0270 |
 
-下一可用编号：`RFC-0042`。
+下一可用编号：`RFC-0048`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

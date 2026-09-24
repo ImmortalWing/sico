@@ -106,6 +106,22 @@ pub struct Module {
     /// byte-identical.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub import_signatures: BTreeMap<String, (Vec<Type>, Type)>,
+    /// RFC-0047 D4 (STEP-0272): declared record types in canonical
+    /// declaration order (field order = declaration order, nominal identity
+    /// by declaration). Populated for Script-profile record programs; empty
+    /// for programs without record declarations, so frozen serializations
+    /// are byte-identical. Codegen flattens a record value to exactly this
+    /// field sequence (the ADR-0016 parallel-array representation at the
+    /// List boundary).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub records: BTreeMap<String, Vec<RecordField>>,
+}
+
+/// RFC-0047 D4: one declared record field, in canonical declaration order.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RecordField {
+    pub name: String,
+    pub ty: Type,
 }
 
 impl Module {
@@ -118,6 +134,7 @@ impl Module {
             functions: Vec::new(),
             task_scopes: None,
             import_signatures: BTreeMap::new(),
+            records: BTreeMap::new(),
         }
     }
 }
@@ -1544,7 +1561,12 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
                 key,
                 value,
             }) => collection_signature(operation, key, value),
-            None => return None,
+            None => match record_list_intrinsic(name) {
+                Some(RecordListIntrinsic { operation, record }) => {
+                    record_list_signature(operation, &record)
+                }
+                None => return None,
+            },
         },
     };
     Some((parameters, result))
@@ -1798,6 +1820,96 @@ pub fn collection_intrinsic_name(
     }
     name.push(']');
     name
+}
+
+/// RFC-0047 D5 (STEP-0274): one executable `List[record]` monomorph
+/// operation. The element is a user-declared record type (never a scalar
+/// `CollectionElement`; scalar spellings stay on the closed
+/// [`collection_intrinsic`] grammar).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordListIntrinsic {
+    pub operation: RecordListOperation,
+    pub record: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordListOperation {
+    Empty,
+    Length,
+    Get,
+    Append,
+}
+
+impl RecordListOperation {
+    fn parse(operation: &str) -> Option<Self> {
+        match operation {
+            "empty" => Some(Self::Empty),
+            "length" => Some(Self::Length),
+            "get" => Some(Self::Get),
+            "append" => Some(Self::Append),
+            _ => None,
+        }
+    }
+
+    fn operation(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::Length => "length",
+            Self::Get => "get",
+            Self::Append => "append",
+        }
+    }
+}
+
+/// Parses one `sico.list.{empty,length,get,append}[<record>]` monomorph name.
+/// The element must be an identifier outside the scalar collection elements
+/// (those stay on the closed scalar grammar); anything else returns `None`
+/// so the name keeps its typed unknown-callee refusal.
+#[must_use]
+pub fn record_list_intrinsic(name: &str) -> Option<RecordListIntrinsic> {
+    let path = name.strip_prefix("sico.list.")?;
+    let (operation, suffix) = path.split_once('[')?;
+    if !suffix.ends_with(']') {
+        return None;
+    }
+    let record = &suffix[..suffix.len() - 1];
+    let mut chars = record.chars();
+    let first = chars.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        || matches!(record, "Text" | "Bytes" | "Bool" | "I64" | "U64")
+    {
+        return None;
+    }
+    Some(RecordListIntrinsic {
+        operation: RecordListOperation::parse(operation)?,
+        record: record.to_owned(),
+    })
+}
+
+/// Composes the canonical record-list monomorph name.
+#[must_use]
+pub fn record_list_intrinsic_name(operation: RecordListOperation, record: &str) -> String {
+    format!("sico.list.{}[{}]", operation.operation(), record)
+}
+
+/// RFC-0047 D5 (STEP-0274): one executable `List[record]` monomorph
+/// signature. The element is always the user record type named by the
+/// intrinsic; `length` reports U64 and `get` reports `Result[record,
+/// NumericError]` exactly like the scalar list monomorphs.
+fn record_list_signature(operation: RecordListOperation, record: &str) -> (Vec<Type>, Type) {
+    let element = Type::Named(record.to_owned());
+    let list_of = Type::List(Box::new(element.clone()));
+    let result_of = |ok: Type| Type::Result {
+        ok: Box::new(ok),
+        error: Box::new(Type::Named(NUMERIC_ERROR_TYPE.to_owned())),
+    };
+    match operation {
+        RecordListOperation::Empty => (Vec::new(), list_of),
+        RecordListOperation::Length => (vec![list_of], Type::U64),
+        RecordListOperation::Get => (vec![list_of.clone(), Type::U64], result_of(element)),
+        RecordListOperation::Append => (vec![list_of.clone(), element], list_of),
+    }
 }
 
 fn collection_signature(

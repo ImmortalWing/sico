@@ -62,7 +62,7 @@ fn dump_oracle_ir() {
             for instruction in &block.instructions {
                 let data = match &instruction.operation {
                     sico_ir::Operation::ConstInt(value) => format!("ConstInt({value})"),
-                    op => format!("{:?}", op),
+                    op => format!("{op:?}"),
                 };
                 println!("    {} {:?} {}", instruction.result.0, instruction.ty, data);
             }

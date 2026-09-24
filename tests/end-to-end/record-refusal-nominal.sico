@@ -1,0 +1,19 @@
+record Point:
+  x: I64
+  y: I64
+end record
+
+record Size:
+  x: I64
+  y: I64
+end record
+
+function take_size(s: Size) returns I64:
+  return s.x
+end function
+
+function main() returns Int:
+  let p = Point(x: I64.literal(1), y: I64.literal(2))
+  let q = take_size(p)
+  return 0
+end function

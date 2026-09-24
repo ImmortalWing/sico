@@ -5,12 +5,28 @@
 
 use wasm_encoder::{BlockType, Function, Instruction, MemArg, ValType};
 
-use sico_ir::{CollectionElement, CollectionIntrinsic, CollectionOperation};
+use sico_ir::{
+    CollectionElement, CollectionIntrinsic, CollectionOperation, RecordListIntrinsic,
+    RecordListOperation,
+};
 
-/// Core signature of one emitted helper.
-pub(crate) fn helper_signature(name: &str) -> (Vec<ValType>, Vec<ValType>) {
+use crate::canonical::ScriptAbi;
+
+/// Core signature of one emitted helper. `abi` is required exactly for the
+/// RFC-0047 D5 record-list monomorphs (the field count is part of the core
+/// signature); every other helper ignores it.
+pub(crate) fn helper_signature(
+    name: &str,
+    abi: Option<&ScriptAbi>,
+) -> (Vec<ValType>, Vec<ValType>) {
     if let Some(intrinsic) = sico_ir::collection_intrinsic(name) {
         return collection_helper_signature(intrinsic);
+    }
+    if let Some(intrinsic) = sico_ir::record_list_intrinsic(name) {
+        return record_list_helper_signature(
+            &intrinsic,
+            abi.expect("record list signature needs the script ABI"),
+        );
     }
     let i32s = |count: usize| vec![ValType::I32; count];
     match name {
@@ -67,9 +83,21 @@ pub(crate) fn emit_helper(
     name: &str,
     alloc: u32,
     helpers: &std::collections::BTreeMap<&'static str, u32>,
+    abi: Option<&ScriptAbi>,
 ) -> Function {
     if let Some(intrinsic) = sico_ir::collection_intrinsic(name) {
         return emit_collection_helper(intrinsic, alloc);
+    }
+    if let Some(intrinsic) = sico_ir::record_list_intrinsic(name) {
+        let fields = abi
+            .and_then(|abi| abi.user_records.get(&intrinsic.record))
+            .map_or(0, |record| record.fields.len());
+        return match intrinsic.operation {
+            RecordListOperation::Empty => emit_collection_empty(),
+            RecordListOperation::Length => emit_collection_length(),
+            RecordListOperation::Get => emit_record_list_get(fields),
+            RecordListOperation::Append => emit_record_list_append(alloc, fields),
+        };
     }
     // `list.min`/`list.max` share one body shape with a boolean flip, so
     // they are dispatched here instead of as duplicate match arms.
@@ -888,6 +916,40 @@ fn collection_helper_signature(intrinsic: CollectionIntrinsic) -> (Vec<ValType>,
         SetAdd => {
             let mut params = vec![ValType::I32, ValType::I32];
             params.extend(key_params());
+            (params, vec![ValType::I32, ValType::I32])
+        }
+    }
+}
+
+/// RFC-0047 D5 (STEP-0274): core signature of one `List[record]` monomorph.
+/// The element spreads into one `I64` cell per flat record field; `get`
+/// returns the general `Result[record, NumericError]` flat shape
+/// `[tag, field..., error-tag]`.
+fn record_list_helper_signature(
+    intrinsic: &RecordListIntrinsic,
+    abi: &ScriptAbi,
+) -> (Vec<ValType>, Vec<ValType>) {
+    let fields = abi
+        .user_records
+        .get(&intrinsic.record)
+        .map_or(0, |record| record.fields.len());
+    let mut element = vec![ValType::I64; fields];
+    match intrinsic.operation {
+        RecordListOperation::Empty => (vec![], vec![ValType::I32, ValType::I32]),
+        RecordListOperation::Length => (
+            vec![ValType::I32, ValType::I32],
+            vec![ValType::I32, ValType::I32],
+        ),
+        RecordListOperation::Get => {
+            let params = vec![ValType::I32, ValType::I32, ValType::I64];
+            let mut results = vec![ValType::I32];
+            results.extend(element);
+            results.push(ValType::I32);
+            (params, results)
+        }
+        RecordListOperation::Append => {
+            let mut params = vec![ValType::I32, ValType::I32];
+            params.append(&mut element);
             (params, vec![ValType::I32, ValType::I32])
         }
     }
@@ -1924,6 +1986,181 @@ fn emit_list_sort_scalar(alloc: u32, signed: bool) -> Function {
         Instruction::LocalSet(3),
         Instruction::Br(0), Instruction::End, Instruction::End,
         Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::End,
+    );
+    body
+}
+
+// ---------------------------------------------------------------------------
+// RFC-0047 D5 (STEP-0274): `List[record]` column layout. The list value is
+// the same `(table, count)` pair, but the table strides `C` columns of
+// 8-byte little-endian cells — column `f` starts at `table + f*capacity*8`
+// (ADR-0016 parallel arrays; the capacity stride, not the count stride, is
+// what keeps an in-place append from clobbering the next column). The
+// 16-byte header at `table-16` carries the list magic, count, capacity and
+// tail marker exactly like the scalar numeric lists.
+// ---------------------------------------------------------------------------
+
+/// `[tag, field..., error-tag] = list.get[Record](table, count, index)`: the
+/// general `Result[record, NumericError]` flat shape. The out-of-range error
+/// reports payload zeros; the error-tag slot is 0 (unspecified in v0 — the
+/// corpus matches `case error(_)` by tag only).
+fn emit_record_list_get(fields: usize) -> Function {
+    let fields = u32::try_from(fields).unwrap_or(u32::MAX);
+    let base = 6_u32;
+    let mut body = Function::new(vec![(3, ValType::I32), (fields, ValType::I64)]);
+    // params: table(0), count(1), index(2 i64)
+    // i32 locals: tag(3), header(4), capacity(5); i64 locals(6..): field values
+    ops!(body;
+        Instruction::LocalGet(2), Instruction::LocalGet(1), Instruction::I64ExtendI32U,
+        Instruction::I64GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::I32Const(1), Instruction::LocalSet(3),
+    );
+    for field in 0..fields {
+        ops!(body; Instruction::I64Const(0), Instruction::LocalSet(base + field));
+    }
+    ops!(body;
+        Instruction::Else,
+        Instruction::I32Const(0), Instruction::LocalSet(3),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32Sub,
+        Instruction::LocalSet(4),
+        Instruction::LocalGet(4), Instruction::I32Load(mem(8, 2)),
+        Instruction::LocalSet(5),
+    );
+    for field in 0..fields {
+        // field_f = load64(table + (f*capacity + index)*8)
+        ops!(body;
+            Instruction::LocalGet(0), Instruction::LocalGet(5),
+            Instruction::I32Const((field * 8).cast_signed()), Instruction::I32Mul, Instruction::I32Add,
+            Instruction::LocalGet(2), Instruction::I32WrapI64,
+            Instruction::I32Const(3), Instruction::I32Shl, Instruction::I32Add,
+            Instruction::I64Load(mem(0, 3)), Instruction::LocalSet(base + field),
+        );
+    }
+    ops!(body;
+        Instruction::End,
+        Instruction::LocalGet(3),
+    );
+    for field in 0..fields {
+        ops!(body; Instruction::LocalGet(base + field));
+    }
+    ops!(body; Instruction::I32Const(0), Instruction::End);
+    body
+}
+
+/// `(table, count) = list.append[Record](table, count, field...)`: copy-on-
+/// write into a geometrically sized column table, mirroring the scalar
+/// numeric append with per-column copies (old stride = old capacity).
+#[allow(clippy::too_many_lines)]
+fn emit_record_list_append(alloc: u32, fields: usize) -> Function {
+    let fields = u32::try_from(fields).unwrap_or(u32::MAX);
+    let params = 2 + fields;
+    let ncount = params;
+    let header = params + 1;
+    let ocap = params + 2;
+    let ncap = params + 3;
+    let nhdr = params + 4;
+    let ntable = params + 5;
+    let mut body = Function::new(vec![(6, ValType::I32)]);
+    // params: table(0), count(1), field_0..(2..2+fields i64)
+    // i32 locals: ncount, header, ocap, ncap, nhdr, ntable
+    ops!(body;
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(ncount),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32GeU,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32Sub,
+        Instruction::LocalSet(header),
+        Instruction::LocalGet(header), Instruction::I32Load(mem(0, 2)),
+        Instruction::I32Const(0x5349_4c4e), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(header), Instruction::I32Load(mem(12, 2)),
+        Instruction::I32Const(0x4c49_5354), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(header), Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalGet(1), Instruction::I32Eq,
+        Instruction::If(BlockType::Empty),
+        Instruction::LocalGet(header), Instruction::I32Load(mem(8, 2)),
+        Instruction::LocalTee(ocap),
+        Instruction::LocalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty),
+    );
+    // In-place append: one store per column at (f*capacity + count)*8.
+    for field in 0..fields {
+        ops!(body;
+            Instruction::LocalGet(0), Instruction::LocalGet(ocap),
+            Instruction::I32Const((field * 8).cast_signed()), Instruction::I32Mul, Instruction::I32Add,
+            Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+            Instruction::I32Add,
+            Instruction::LocalGet(2 + field), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    ops!(body;
+        Instruction::LocalGet(header), Instruction::LocalGet(ncount),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(0), Instruction::LocalGet(ncount), Instruction::Return,
+        Instruction::End, Instruction::End, Instruction::End,
+        Instruction::End, Instruction::End,
+        // Geometric growth: first capacity >= ncount, starting at 1.
+        Instruction::I32Const(1), Instruction::LocalSet(ncap),
+        Instruction::Block(BlockType::Empty), Instruction::Loop(BlockType::Empty),
+        Instruction::LocalGet(ncap), Instruction::LocalGet(ncount), Instruction::I32GeU,
+        Instruction::BrIf(1),
+        Instruction::LocalGet(ncap), Instruction::I32Const(1), Instruction::I32Shl,
+        Instruction::LocalSet(ncap), Instruction::Br(0),
+        Instruction::End, Instruction::End,
+        // nhdr = alloc(ncap*C*8 + 16); header + C columns.
+        Instruction::LocalGet(ncap), Instruction::I32Const((fields * 8).cast_signed()), Instruction::I32Mul,
+        Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::Call(alloc), Instruction::LocalSet(nhdr),
+        Instruction::LocalGet(nhdr), Instruction::I32Const(0x5349_4c4e),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(nhdr), Instruction::LocalGet(ncount),
+        Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(nhdr), Instruction::LocalGet(ncap),
+        Instruction::I32Store(mem(8, 2)),
+        Instruction::LocalGet(nhdr), Instruction::I32Const(0x4c49_5354),
+        Instruction::I32Store(mem(12, 2)),
+        Instruction::LocalGet(nhdr), Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::LocalSet(ntable),
+        // Copy each column only when there is something to copy (a fresh
+        // list has table 0, whose "header" would fault).
+        Instruction::LocalGet(1), Instruction::I32Const(0), Instruction::I32Ne,
+        Instruction::If(BlockType::Empty),
+    );
+    if fields > 0 {
+        ops!(body;
+            Instruction::LocalGet(0), Instruction::I32Const(16), Instruction::I32Sub,
+            Instruction::I32Load(mem(8, 2)),
+            Instruction::LocalSet(ocap),
+        );
+        for field in 0..fields {
+            ops!(body;
+                Instruction::LocalGet(ntable),
+                Instruction::LocalGet(ncap), Instruction::I32Const((field * 8).cast_signed()), Instruction::I32Mul,
+                Instruction::I32Add,
+                Instruction::LocalGet(0),
+                Instruction::LocalGet(ocap), Instruction::I32Const((field * 8).cast_signed()), Instruction::I32Mul,
+                Instruction::I32Add,
+                Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+                Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+            );
+        }
+    }
+    ops!(body; Instruction::End);
+    // Append the new element: one store per column at (f*ncap + count)*8.
+    // Outside the copy guard — a fresh list (count 0) still stores it.
+    for field in 0..fields {
+        ops!(body;
+            Instruction::LocalGet(ntable), Instruction::LocalGet(ncap),
+            Instruction::I32Const((field * 8).cast_signed()), Instruction::I32Mul, Instruction::I32Add,
+            Instruction::LocalGet(1), Instruction::I32Const(3), Instruction::I32Shl,
+            Instruction::I32Add,
+            Instruction::LocalGet(2 + field), Instruction::I64Store(mem(0, 3)),
+        );
+    }
+    ops!(body;
+        Instruction::LocalGet(ntable), Instruction::LocalGet(ncount), Instruction::End,
     );
     body
 }

@@ -473,6 +473,12 @@ pub(crate) struct ScriptAbi {
     pub error_tags: BTreeMap<String, i32>,
     pub result_size: u32,
     pub result_payload_offset: u32,
+    /// RFC-0047 D4 (STEP-0272): user-declared record types keyed by their
+    /// (possibly module-qualified) declaration name. A record value lowers
+    /// to exactly its field sequence; element storage matches the
+    /// ADR-0016 parallel-array representation, so guest runtime cost at
+    /// the List boundary is unchanged.
+    pub user_records: BTreeMap<String, RecordLayout>,
 }
 
 impl ScriptAbi {
@@ -567,6 +573,55 @@ impl ScriptAbi {
             error_tags,
             result_size,
             result_payload_offset,
+            user_records: BTreeMap::new(),
+        }
+    }
+
+    /// RFC-0047 D4 (STEP-0272): register the module's declared record types
+    /// so `flat_ir_types`/`record` flatten user records to their declared
+    /// field sequence. Declaration order is preserved by the caller (IR
+    /// `Module.records`); a field whose type does not flatten (for example
+    /// a record used before its declaration, or a field type outside the
+    /// Script v0 boundary shapes) leaves the whole record unregistered, so
+    /// every consumer keeps the honest typed refusal instead of guessing a
+    /// layout.
+    pub(crate) fn register_user_records(
+        &mut self,
+        records: &BTreeMap<String, Vec<sico_ir::RecordField>>,
+    ) {
+        for (name, fields) in records {
+            if self.user_records.contains_key(name) {
+                continue;
+            }
+            let mut flat = Vec::new();
+            let mut layouts = Vec::new();
+            let mut flattenable = true;
+            for field in fields {
+                if let Some(field_flat) = self.flat_ir_types(&field.ty) {
+                    let slot_start = flat.len();
+                    flat.extend(field_flat.iter().copied());
+                    layouts.push(FieldLayout {
+                        name: field.name.clone(),
+                        byte_offset: u32::try_from(slot_start * 8).unwrap_or(u32::MAX),
+                        slot_start,
+                        slot_len: field_flat.len(),
+                    });
+                } else {
+                    flattenable = false;
+                    break;
+                }
+            }
+            if flattenable {
+                self.user_records.insert(
+                    name.clone(),
+                    RecordLayout {
+                        size: u32::try_from(flat.len() * 8).unwrap_or(u32::MAX),
+                        align: 8,
+                        flat,
+                        fields: layouts,
+                    },
+                );
+            }
         }
     }
 
@@ -598,11 +653,20 @@ impl ScriptAbi {
                 // A list value is the `(table, count)` pair for every
                 // executable element; numeric tables stride one 8-byte
                 // little-endian slot per element (RFC-0046 D4).
-                matches!(
-                    element,
-                    sico_ir::Type::String | sico_ir::Type::I64 | sico_ir::Type::U64
-                )
-                .then(|| vec![Flat::I32, Flat::I32])
+                match element {
+                    sico_ir::Type::String | sico_ir::Type::I64 | sico_ir::Type::U64 => {
+                        Some(vec![Flat::I32, Flat::I32])
+                    }
+                    // RFC-0047 D5 (STEP-0274): `List[record]` rides the same
+                    // `(table, count)` pair; the table is the ADR-0016
+                    // column layout whose fields are all one `I64` cell.
+                    sico_ir::Type::Named(name) => self
+                        .user_records
+                        .get(name)
+                        .filter(|record| record.flat.iter().all(|flat| matches!(flat, Flat::I64)))
+                        .map(|_| vec![Flat::I32, Flat::I32]),
+                    _ => None,
+                }
             }
             // `sico.list.get`/`sico.map.get[K,I64]` results as spill cells:
             // tag, ok payload (ptr/len), and the numeric error tag. The
@@ -617,16 +681,21 @@ impl ScriptAbi {
             sico_ir::Type::Named(name) if name == sico_ir::NUMERIC_ERROR_TYPE => {
                 Some(vec![Flat::I32])
             }
-            sico_ir::Type::Named(name) => match name.as_str() {
-                "ScriptInput" => Some(self.input.flat.clone()),
-                "ScriptOutput" => Some(self.output.flat.clone()),
-                "ScriptError" => Some(self.error.flat.clone()),
-                "HttpResponse" => Some(self.http_response.flat.clone()),
-                "Http2Response" => Some(self.http2_response.flat.clone()),
-                // RFC-0030 stream handles are Canonical ABI resource indices.
-                "ScriptErrorCode" | "InputStream" | "OutputStream" => Some(vec![Flat::I32]),
-                _ => None,
-            },
+            sico_ir::Type::Named(name) => {
+                if let Some(record) = self.user_records.get(name) {
+                    return Some(record.flat.clone());
+                }
+                match name.as_str() {
+                    "ScriptInput" => Some(self.input.flat.clone()),
+                    "ScriptOutput" => Some(self.output.flat.clone()),
+                    "ScriptError" => Some(self.error.flat.clone()),
+                    "HttpResponse" => Some(self.http_response.flat.clone()),
+                    "Http2Response" => Some(self.http2_response.flat.clone()),
+                    // RFC-0030 stream handles are Canonical ABI resource indices.
+                    "ScriptErrorCode" | "InputStream" | "OutputStream" => Some(vec![Flat::I32]),
+                    _ => None,
+                }
+            }
             sico_ir::Type::Result { ok, error } => {
                 let mut flat = vec![Flat::I32];
                 flat.extend(self.flat_ir_types(ok)?);
@@ -639,6 +708,9 @@ impl ScriptAbi {
 
     /// Record field layout for a named Script record type.
     pub(crate) fn record(&self, name: &str) -> Option<&RecordLayout> {
+        if let Some(record) = self.user_records.get(name) {
+            return Some(record);
+        }
         match name {
             "ScriptInput" => Some(&self.input),
             "ScriptOutput" => Some(&self.output),

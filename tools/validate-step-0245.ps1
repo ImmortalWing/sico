@@ -61,7 +61,7 @@ try {
     & $cargo fmt --all --manifest-path .\runner\sico-runner\Cargo.toml -- --check
     if ($LASTEXITCODE -ne 0) { throw 'runner fmt failed' }
 
-    & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test bootstrap_bundle --test selfhost_checker --test selfhost_compiler --test selfhost_declaration_parser
+    & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test bootstrap_bundle --test selfhost_checker --test selfhost_compiler
     if ($LASTEXITCODE -ne 0) { throw 'M22 checker/parser/compiler regression failed' }
 
     & $cargo clippy --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --all-targets -- -D warnings

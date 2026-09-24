@@ -1,0 +1,10 @@
+record Point:
+  x: I64
+  y: I64
+end record
+
+function main() returns Int:
+  let p = Point(x: I64.literal(1), y: I64.literal(2))
+  set p.x = I64.literal(9)
+  return 0
+end function

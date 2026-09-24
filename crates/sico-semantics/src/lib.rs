@@ -378,6 +378,15 @@ fn build_model(
                 let mut fields = BTreeMap::new();
                 let mut invariant = None;
                 for line in &declaration.lines {
+                    // RFC-0047 D1 (STEP-0271): the script-profile surface
+                    // uses bare `name: Type` field lines; the pre-existing
+                    // component/WIT surface uses `field name: Type`. Both
+                    // collect into the same nominal record; a bare line is
+                    // an Expression-classified `Identifier : Type…` shape.
+                    let bare_field = line.kind == LineKind::Expression
+                        && line.tokens.len() >= 3
+                        && line.tokens[0].kind == TokenKind::Identifier
+                        && line.tokens[1].kind == TokenKind::Colon;
                     if line.kind == LineKind::Field && line.tokens.len() >= 4 {
                         let name = line.tokens[1].text.clone();
                         let ty = parse_type(&line.tokens[3..]);
@@ -398,9 +407,41 @@ fn build_model(
                             ty: Some(ty),
                             range: line.range,
                         });
+                    } else if bare_field {
+                        let name = line.tokens[0].text.clone();
+                        let ty = parse_type(&line.tokens[2..]);
+                        fields.insert(
+                            name.clone(),
+                            FieldDefinition {
+                                ty: ty.clone(),
+                                range: line.range,
+                            },
+                        );
+                        facts.push(SemanticFact {
+                            id: FactId {
+                                node: line.id,
+                                slot: 0,
+                            },
+                            kind: SemanticFactKind::Field,
+                            name: format!("{}.{}", declaration.name, name),
+                            ty: Some(ty),
+                            range: line.range,
+                        });
                     } else if line.kind == LineKind::Invariant {
                         invariant = parse_invariant(&line.tokens);
                     }
+                }
+                // RFC-0047 EC-1: an empty record declaration is a typed
+                // refusal (E2022), never a vacuous type.
+                if fields.is_empty() {
+                    push_diagnostic(
+                        diagnostics,
+                        "E2022",
+                        "EMPTY_RECORD",
+                        format!("record {} declares no fields", declaration.name),
+                        [("record", declaration.name.as_str())],
+                        declaration.range,
+                    );
                 }
                 model.types.insert(
                     declaration.name.clone(),
@@ -970,6 +1011,14 @@ fn analyze_function(
                     matches!(
                         ty,
                         Type::Named(name) if matches!(name.as_str(), "Text" | "I64" | "U64")
+                    ) || matches!(
+                        ty,
+                        Type::Named(name)
+                            if matches!(
+                                model.types.get(name),
+                                Some(TypeDefinition::Record { fields, .. })
+                                    if fields.values().all(|field| matches!(&field.ty, Type::Named(n) if n == "I64" || n == "U64"))
+                            )
                     )
                 };
                 let binding_ty = match &subject.ty {
@@ -999,7 +1048,7 @@ fn analyze_function(
                             diagnostics,
                             "E2001",
                             "TYPE_MISMATCH",
-                            "for-loop subject must be an executable iterable (List[Text|I64|U64], Map, Set)".to_owned(),
+                            "for-loop subject must be an executable iterable (List[Text|I64|U64], List[record] with I64/U64 fields, Map, Set)".to_owned(),
                             [],
                             subject.range,
                         );
@@ -1021,6 +1070,31 @@ fn analyze_function(
                 else {
                     continue;
                 };
+                // RFC-0047 D3 (STEP-0273): per-field `set p.x = …` is a
+                // typed refusal (E2023) — fields are immutable in v0; the
+                // misleading whole-cell type check stands down.
+                if line
+                    .tokens
+                    .get(2)
+                    .is_some_and(|token| token.kind == TokenKind::Dot)
+                    && let Some(field) = line.tokens.get(3)
+                {
+                    push_diagnostic(
+                        diagnostics,
+                        "E2023",
+                        "FIELD_IMMUTABLE",
+                        format!(
+                            "field {}.{} is immutable; replace the whole record with set",
+                            line.tokens[1].text, field.text
+                        ),
+                        [
+                            ("record", line.tokens[1].text.as_str()),
+                            ("field", field.text.as_str()),
+                        ],
+                        field.range,
+                    );
+                    continue;
+                }
                 let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
                 let declared = locals.get(name).cloned();
                 let value =
@@ -2673,8 +2747,33 @@ fn infer_expression(
         };
     }
     if let Some(index) = top_level_any(tokens, &[TokenKind::EqualEqual, TokenKind::LessEqual]) {
-        let _left = infer_expression(&tokens[..index], locals, model, diagnostics);
-        let _right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
+        let left = infer_expression(&tokens[..index], locals, model, diagnostics);
+        let right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
+        // RFC-0047 D3 (STEP-0273): record equality/ordering is refused in
+        // v0 (no consumer; field-wise comparison composes explicitly).
+        // One diagnostic per comparison, on the first record-typed side.
+        let record_side = [&left, &right].into_iter().find(|side| {
+            matches!(&side.ty, Type::Named(name) if matches!(model.types.get(name), Some(TypeDefinition::Record { .. })))
+        });
+        if let Some(side) = record_side
+            && let Type::Named(name) = &side.ty
+        {
+            push_diagnostic(
+                diagnostics,
+                "E2024",
+                "RECORD_COMPARISON",
+                format!(
+                    "records do not support {}; compare fields explicitly",
+                    if tokens[index].kind == TokenKind::EqualEqual {
+                        "=="
+                    } else {
+                        "<="
+                    }
+                ),
+                [("type", name.as_str())],
+                side.range,
+            );
+        }
         return Value {
             ty: Type::named("Bool"),
             range,
@@ -2772,6 +2871,22 @@ fn infer_expression(
                 range,
                 integer: None,
             };
+        }
+        // RFC-0047 D7 (STEP-0271): dot access on a record-typed value with
+        // an unknown field is a typed refusal (E2011), never a silent
+        // unknown-type hole.
+        if let Type::Named(type_name) = &base.ty
+            && let Some(TypeDefinition::Record { .. }) = model.types.get(type_name)
+        {
+            push_diagnostic(
+                diagnostics,
+                "E2011",
+                "UNKNOWN_FIELD",
+                format!("unknown field: {}", tokens[2].text),
+                [("field", tokens[2].text.as_str())],
+                tokens[2].range,
+            );
+            return unknown(range);
         }
     }
     unknown(range)
@@ -2928,6 +3043,7 @@ fn float_from_int_call(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn infer_call(
     tokens: &[HirToken],
     left: usize,
@@ -2963,6 +3079,19 @@ fn infer_call(
 
     if let Some(value) = infer_stdlib_call(&callee, &values, range, diagnostics) {
         return value;
+    }
+
+    // RFC-0047 D5 (STEP-0274): `List[record]` monomorphs. Only record
+    // types whose fields are all flat `I64`/`U64` get an executable
+    // typing here; anything else keeps its typed unknown-callee refusal
+    // (no check/build gap, mirroring `flat_ir_types`).
+    if let Some((operation, record)) = parse_record_list_suffix(&callee)
+        && let Some(TypeDefinition::Record { fields, .. }) = model.types.get(record)
+        && fields
+            .values()
+            .all(|field| matches!(&field.ty, Type::Named(name) if name == "I64" || name == "U64"))
+    {
+        return infer_record_list_call(operation, record, &values, range, diagnostics);
     }
 
     if callee == "collect_tasks" {
@@ -3236,6 +3365,80 @@ fn infer_fixed_width_call(
 /// (non-fixed-width `map.get` values, non-`Text` `keys`/`to_list` key
 /// elements) returns `None` so the call falls through to the unknown-callee
 /// diagnostic instead of an undeclared check/build gap.
+/// RFC-0047 D5 (STEP-0274): parses `sico.list.{empty,length,get,append}[Ident]`
+/// into its operation and record element. The five scalar element names are
+/// excluded so they stay on the closed scalar grammar; anything else returns
+/// `None` and keeps its typed unknown-callee refusal.
+fn parse_record_list_suffix(callee: &str) -> Option<(&str, &str)> {
+    const OPERATIONS: &[&str] = &["empty", "length", "get", "append"];
+    let path = callee.strip_prefix("sico.list.")?;
+    let (operation, suffix) = path.split_once('[')?;
+    if !OPERATIONS.contains(&operation) || !suffix.ends_with(']') {
+        return None;
+    }
+    let record = &suffix[..suffix.len() - 1];
+    let mut chars = record.chars();
+    let first = chars.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+        || matches!(record, "Text" | "Bytes" | "Bool" | "I64" | "U64")
+    {
+        return None;
+    }
+    Some((operation, record))
+}
+
+/// RFC-0047 D5 (STEP-0274): executable typing for one
+/// `sico.list.{empty,length,get,append}[Record]` monomorph. The caller has
+/// already established that the record exists and is flat (`I64`/`U64`
+/// fields only), so every operand shape materializes here.
+fn infer_record_list_call(
+    operation: &str,
+    record: &str,
+    values: &[Value],
+    range: TextRange,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Value {
+    let named = |name: &str| Type::Named(name.to_owned());
+    let element = named(record);
+    let list_of = Type::Generic {
+        name: "List".to_owned(),
+        arguments: vec![element.clone()],
+    };
+    let numeric_result = Type::Generic {
+        name: "Result".to_owned(),
+        arguments: vec![element.clone(), named("NumericError")],
+    };
+    let (parameters, result) = match operation {
+        "empty" => (Vec::new(), list_of),
+        "length" => (vec![list_of], named("U64")),
+        "get" => (vec![list_of.clone(), named("U64")], numeric_result),
+        "append" => (vec![list_of.clone(), element], list_of),
+        _ => unreachable!("parse_record_list_suffix only yields the four list operations"),
+    };
+    if parameters.len() != values.len() {
+        let expected = format!("{} arguments", parameters.len());
+        let found = format!("{} arguments", values.len());
+        push_diagnostic(
+            diagnostics,
+            "E2001",
+            "TYPE_MISMATCH",
+            format!("expected {expected}, found {found}"),
+            [("expected", expected.as_str()), ("found", found.as_str())],
+            range,
+        );
+        return unknown(range);
+    }
+    for (parameter, value) in parameters.iter().zip(values) {
+        require_type(parameter, value, diagnostics);
+    }
+    Value {
+        ty: result,
+        range,
+        integer: None,
+    }
+}
+
 fn infer_collection_call(
     callee: &str,
     values: &[Value],
@@ -3600,8 +3803,19 @@ fn check_record_constructor(
             continue;
         };
         if let Some(field) = fields.get(name) {
+            // RFC-0047 D7 (STEP-0271): a duplicate literal field is a
+            // typed refusal (E2021), never a silent last-write-wins.
+            if provided.insert(name.clone(), value.clone()).is_some() {
+                push_diagnostic(
+                    diagnostics,
+                    "E2021",
+                    "DUPLICATE_FIELD",
+                    format!("duplicate field: {name}"),
+                    [("field", name.as_str())],
+                    argument.tokens.first().map_or(range, |token| token.range),
+                );
+            }
             require_type(&field.ty, value, diagnostics);
-            provided.insert(name.clone(), value.clone());
         } else {
             push_diagnostic(
                 diagnostics,

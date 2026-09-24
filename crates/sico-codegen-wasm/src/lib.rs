@@ -509,7 +509,12 @@ fn helper_dependencies(name: &str) -> &'static [&'static str] {
     // STEP-0131 collection helpers are monomorphized per instantiation; each
     // self-contained helper leaks its own canonical name once (bounded by the
     // closed `collection_intrinsic` grammar: 11 operations × ≤25 instantiations).
-    if sico_ir::collection_intrinsic(name).is_some() {
+    if sico_ir::collection_intrinsic(name).is_some()
+        || sico_ir::record_list_intrinsic(name).is_some()
+    {
+        // RFC-0047 D5 (STEP-0274): record-list monomorphs join the scalar
+        // monomorphs — each self-contained helper leaks its canonical name
+        // once (bounded by the module's declared flat record types).
         let leaked: &'static str = Box::leak(name.to_owned().into_boxed_str());
         return Box::leak(vec![leaked].into_boxed_slice());
     }
@@ -839,7 +844,7 @@ fn compile_script_program_parts(
                 })
         })
         .collect::<Result<BTreeMap<&'static str, u32>, _>>()?;
-    let emit = ScriptEmit {
+    let mut emit = ScriptEmit {
         abi: ScriptAbi::load(),
         data_offsets,
         data_bytes,
@@ -860,6 +865,9 @@ fn compile_script_program_parts(
         user_imports,
         user_indices,
     };
+    // RFC-0047 D4 (STEP-0272): user record declarations flatten to their
+    // field sequence before any layout planning consumes the ABI.
+    emit.abi.register_user_records(&module.records);
     let variant_tags = VariantTags::new(module, Some(&emit.abi))?;
     let core = build_script_core(module, run, &emit, &function_indices, &variant_tags)?;
     let component = canonical::wrap_script_component(
@@ -1166,10 +1174,10 @@ fn build_script_core(
         ));
     }
     for name in emit.helpers.keys() {
-        let (params, results) = stdlib::helper_signature(name);
+        let (params, results) = stdlib::helper_signature(name, Some(&emit.abi));
         types.ty().function(params, results);
         functions.function(emit.helpers[name]);
-        let helper = stdlib::emit_helper(name, emit.alloc_index, &emit.helpers);
+        let helper = stdlib::emit_helper(name, emit.alloc_index, &emit.helpers, Some(&emit.abi));
         code.function(&helper);
         debug_functions.push(generated_debug_function(
             &format!("generated.helper.{name}"),
@@ -2094,6 +2102,18 @@ fn record_fields<'a>(abi: &'a ScriptAbi, ty: &Type) -> Option<&'a canonical::Rec
 /// Adds the synthetic `ok`/`error` field maps (plus record payload fields)
 /// to a Result-typed value layout (M14 STEP-0130 local-cell reads).
 fn apply_result_fields(layout: &mut ValueLayout, script: Option<&ScriptAbi>, ty: &Type) {
+    // RFC-0047 D4 (STEP-0272): a record-typed local cell reads back with
+    // its declared field map so dot access can project by slot range.
+    if let (Some(abi), Type::Named(_)) = (script, ty)
+        && let Some(record) = record_fields(abi, ty)
+    {
+        for field in &record.fields {
+            layout.fields.insert(
+                ir_field_name(&field.name),
+                (field.slot_start..field.slot_start + field.slot_len).collect(),
+            );
+        }
+    }
     if let (Some(abi), Type::Result { ok, error }) = (script, ty)
         && let Some(ok_flat) = abi.flat_ir_types(ok)
     {
@@ -4312,7 +4332,9 @@ fn emit_intrinsic(
         _ if name.starts_with("sico:user/") => {
             emit_user_call(context, body, instruction, name, arguments)?;
         }
-        _ if sico_ir::collection_intrinsic(name).is_some() => {
+        _ if sico_ir::collection_intrinsic(name).is_some()
+            || sico_ir::record_list_intrinsic(name).is_some() =>
+        {
             emit_collection_call(context, body, instruction, name, arguments)?;
         }
         "sico.fs.read" | "sico.fs.exists" | "sico.fs.write" => {
@@ -4880,6 +4902,12 @@ fn emit_collection_call(
             operation: sico_ir::CollectionOperation::MapLength
                 | sico_ir::CollectionOperation::SetLength
                 | sico_ir::CollectionOperation::ListLength,
+            ..
+        })
+    ) || matches!(
+        sico_ir::record_list_intrinsic(name),
+        Some(sico_ir::RecordListIntrinsic {
+            operation: sico_ir::RecordListOperation::Length,
             ..
         })
     ) {
