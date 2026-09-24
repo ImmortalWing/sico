@@ -31,6 +31,7 @@
 - [M23 语言 v1 第三批（表达式人机工学）计划](./plans/M23-language-v1-batch-3.md)
 - [M24 视觉收口与 GUI 应用试点计划](./plans/M24-vision-closure-gui-application-pilot.md)
 - [M25 v1.0 发布——平台广度、完成审计与产品退出计划](./plans/M25-release-v1-completion.md)
+- [M26 PDF 文档处理计划](./plans/M26-pdf-document-processing.md)
 - [M9 exit audit](./reports/m9-exit-audit-v0.md)
 - [M7 与项目退出审计](./reports/m7-exit-audit.md)
 - [Android、鸿蒙与 Linux 平台开发手册](./platforms/README.md)

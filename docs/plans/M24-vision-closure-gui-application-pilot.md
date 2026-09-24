@@ -253,6 +253,14 @@ AGENT_GOAL desktop-host item 「最小 UI WIT/SDK」:
   any UI binding exists today. Nothing in this workstream changes M15's
   GO state or Web scope, and no implementation claim is made until its
   own STEP lands with evidence.
+- Dependent consumer (owner directive 2026-09-24): the M26 GUI PDF tool
+  (M26 plan, STEP-0263) is authored over this library; the M26 kickoff
+  inventory measures this surface against the PDF tool's control needs
+  (file open/save dialogs, page list, metadata view, rotate/merge
+  actions, progress), and any measured gap is closed in this workstream
+  under its existing contract-first discipline before the M26 GUI gate
+  starts. This cross-reference changes no M24 gate numbering, evidence
+  class or capability contract, and reserves no STEP number.
 
 #### 8.6.2 First-party GUI pilot target app
 

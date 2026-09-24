@@ -1,8 +1,9 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
+> - updated: 2026-09-24 (STEP-0263: M26 registered per owner directive — PDF document processing: structural reading, merge, rotate as a versioned package, plus a GUI PDF tool authored over the Sico-language native UI library; no STEP numbers reserved)
+> - previous update: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（组合项 4 application pilot 待 M24，2026-09-22 owner 指令删除 block-game pilot、改为 GUI 格式转换器）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1/S2 GO；S3/S4/S5 partial；S6 未进入）；主线 = M22 自举闭环，随后 M23→M24→M25
+> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（组合项 4 application pilot 待 M24，2026-09-22 owner 指令删除 block-game pilot、改为 GUI 格式转换器）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1/S2 GO；S3/S4/S5 partial；S6 未进入）；主线 = M22 自举闭环，随后 M23→M24→M25；M26 planned（PDF document processing，owner 指令 2026-09-24，GUI 须用 Sico 语言原生界面库，排在 M25 之后）
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -380,7 +381,19 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 执行计划：[`M25 Release v1.0 — platform breadth, completion audit and product exit`](./plans/M25-release-v1-completion.md)。
 
-### M14–M25 dependency shape
+## M26: PDF document processing（planned; 2026-09-24）
+
+状态：`planned / owner directive（2026-09-24「确认，要使用sico原生UI库」+「如果原生UI库不完善那就完善M24」，STEP-0263 登记）；no step numbers reserved yet`
+
+以 versioned package（RFC-0043 roster 模式）提供 PDF 结构化阅读（对象模型、xref table/stream、对象流、页树、元数据、页面几何、内容流原始访问）、合并（页树嫁接、对象重编号、xref 重建、字节稳定输出）与旋转（`/Rotate` 90° 步进读写、继承解析）。GUI 试点为以 Sico 语言原生界面库（M24 计划 §8.6.1，WinUI 3-like Fluent）编写的 PDF 工具应用：文件打开/保存对话框、页列表/元数据视图、旋转与合并操作，authority 沿用 M24 格式转换器先例（本地应用 + 用户选定路径 + 既有文件能力）。纯能力里程碑：不进核心语言语义，不新增宿主 authority，标准库/包助手只收窄不扩权。
+
+进入条件：M14 GO ✓；M7 versioned 二进制承载边界实测 ✓（M17 gate 1）；PDF 数据合同 RFC 与限额/拒绝合同 RFC 先接受再实现（加密/损坏/超限/不支持特性全部 typed fail-closed，无静默回退）；GUI 部分的界面库合同（RFC 源码绑定 + ADR 渲染架构，M24 §8.6.1）先冻结——owner 调度规则（2026-09-24）：开工盘点实测界面库不足以承载 PDF 工具时，缺口先回 M24 §8.6.1 完善（该工作流 RFC+ADR 先行纪律不变），M26 包切片不等 GUI、不回退 web UI；inflate 路线（纯 Sico vs 确定性 Host provider）由 kickoff 盘点实测后在 RFC 中冻结。
+
+退出条件：阅读/合并/旋转切片在冻结合成语料（固定 writer 生成、Python 参考 oracle，ISO 32000-2 钉住接受子集）上 byte-exact/byte-stable 且恶意语料 100% typed 拒绝；GUI 试点在 Windows 证据主机上以 Sico + Sico 语言原生界面库构建运行、帧语料确定性、失败全 typed；消费者经 M7 registry 路径安装不改 compiler/Runtime；M0–M25 回归绿 + 显式出口审计。页面光栅化、内容流编辑、表单、签名、OCR、加密文档打开（typed 拒绝）均为 non-goals；证据等级限 internal-fixture 与 clean-room-consumer。
+
+执行计划：[`M26 PDF document processing`](./plans/M26-pdf-document-processing.md)。
+
+### M14–M26 dependency shape
 
 ```text
 M12 full GO + M13 closure
@@ -411,6 +424,10 @@ M21 DX/stdlib batch 2  →  M22 compiler self-host (S6/S7)
           \                        /
            v                      v
         M25 release v1.0 completion audit
+                    |
+                    v
+        M26 PDF document processing
+        （GUI 部分另依赖 M24 §8.6.1 界面库合同与真实渲染证据）
 ```
 
 ## Immediate dependency chain
