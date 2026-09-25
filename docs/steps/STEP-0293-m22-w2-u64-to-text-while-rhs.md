@@ -1,6 +1,6 @@
 # STEP-0293: M22 W2 S3/S4 — u64.to_text in a while-body RHS
 
-> - status: implementation and local real-runner exit complete; independent CI pending
+> - status: complete / S1 GO on the isolated branch after independent CI
 > - phase: M22 compiler self-host, execution card 22-C S1
 > - date: 2026-09-25
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -51,14 +51,22 @@ After the repair, `validate-step-0262.ps1`, `validate-step-0245.ps1`, and
 passed; `validate-step-0124.ps1 -SelfTest`, runner fmt, and `git diff --check`
 also passed.
 
-## Gate accounting
+## Independent CI and gate accounting
 
-S1's local shape exit and typed frontier movement are measured. The R3
+The repaired source and permanent negative probes were pushed as
+`cb371c57f208d3ba485c5935c633442168eb782b`. [GitHub Actions run
+36090403437](https://github.com/ImmortalWing/sico/actions/runs/36090403437)
+completed **success** on a fresh Windows 2025 GNU runner at 2026-09-25
+03:45:23 UTC. The workflow ran the repository's full `tools/run-ci.ps1` and
+its 11 stages; the job and CI command both exited successfully. This is the
+independent result for the repaired version. The earlier `f148b87` run also
+passed but lacked the wrong-type assertions and is not used for the verdict.
+
+**S1 GO on this branch.** The local shape exit and typed frontier movement
+are measured and the repaired commit passed independent CI. The R3
 consecutive-stall count remains **0** after this first implementation STEP.
 The next frontier is the `sico.map.get[Text,U64]` match subject, the predeclared
-22-C S2. M22 remains NO-GO. This STEP is not finally adjudicated until its
-own pushed commit receives independent CI; STEP-0292's run covers the W1
-snapshot only.
+22-C S2. M22 remains NO-GO. STEP-0292's separate run covers the W1 snapshot.
 
 The current branch remains separate from `origin/dev`, whose parallel
 STEP-0279–0283 content conflicts with this branch. No merge into `dev` or

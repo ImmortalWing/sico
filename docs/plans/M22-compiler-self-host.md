@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0293. S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified the pushed W1 snapshot e8495f9 on a fresh Windows GNU GitHub runner: W1 GO on codex/m22-w1-ci. STEP-0293 locally lowers while-body u64.to_text byte-exactly and moves the formatter frontier from GWPACK-OTHER to CALL-TARGET at 22/30; its own independent CI is pending. The first R3 implementation STEP made frontier progress, so the consecutive stall count is 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0293. S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, and STEP-0293 independently verified 22-C S1 on repaired cb371c5, both on the isolated codex/m22-w1-ci branch. The formatter frontier moved from GWPACK-OTHER to CALL-TARGET at 22/30; R3 consecutive stall count is 0. The next slice is the map.get match subject. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -127,8 +127,8 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    8-source / 16,390-line tracked selfhost tree by SHA256; stack
    high-water is recorded as unmeasured. STEP-0293 is the first W2 S3/S4
    implementation STEP: its local runner result moves the frontier to
-   `ERR:E-SH-IR-CALL-TARGET` with 22/30 functions, and its own independent
-   CI remains pending. This starts the R3 counter with zero consecutive
+   `ERR:E-SH-IR-CALL-TARGET` with 22/30 functions, and independent CI
+   succeeded on repaired commit `cb371c5`. This starts the R3 counter with zero consecutive
    stagnant steps. The parallel `origin/dev` history is not adjudicated by
    this branch's CI.
 2. **Formatter tail from the current frontier** — the
