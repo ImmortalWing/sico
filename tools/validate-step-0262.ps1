@@ -101,7 +101,7 @@ try {
         }
 
         # STEP-0293 lowers u64.to_text as a while-body RHS. The current
-        # nearest_match frontier advances to the map.get match subject.
+        # nearest_match frontier advances to match-arm control after map.get.
         $boundary2 = $full.IndexOf('function set_nearest_match')
         if ($boundary2 -lt 0) { throw 'nearest_match boundary marker missing' }
         $probe = Join-Path $temp 'nearest-match-probe.sico'
@@ -114,7 +114,7 @@ try {
         $null = $process1.StandardOutput.ReadToEnd()
         $stderr1 = $process1.StandardError.ReadToEnd()
         $process1.WaitForExit()
-        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-CALL-TARGET')) {
+        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-STATEMENT')) {
             throw "nearest_match frontier probe changed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
@@ -127,7 +127,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-TARGET')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-STATEMENT')) {
             throw "formatter canary did not reach the declared nearest_match boundary: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
@@ -147,4 +147,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-CALL-TARGET repinned-by=STEP-0293'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-STATEMENT repinned-by=STEP-0294'

@@ -587,6 +587,66 @@ fn sico_compiler_lowers_u64_to_text_in_while_body_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_map_get_match_subject_in_while_body_byte_exactly() {
+    let source = "function lookup(blocks: Map[Text,U64]) returns U64:\n  let cursor = U64.literal(1)\n  while U64.less_than(U64.literal(0), cursor):\n    match sico.map.get[Text,U64](blocks, \"0\"):\n      case ok(close):\n        set cursor = close\n      case error(_):\n        set cursor = U64.literal(0)\n    end match\n  end while\n  return cursor\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("map.get match subject must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let local_key = source
+        .replace(
+            "  while U64.less_than",
+            "  let key = \"0\"\n  while U64.less_than",
+        )
+        .replace("(blocks, \"0\")", "(blocks, key)");
+    let RunOutcome::Output(local_output) = run_guest(&local_key) else {
+        panic!("map.get with a Text local key must compile")
+    };
+    assert_eq!(local_output.exit_code, 0, "{:?}", local_output.stderr);
+    assert_bytes_equal(&local_output.stdout, rust_ir(&local_key).as_bytes());
+
+    for malformed in [
+        source.replace("(blocks, \"0\")", "(blocks, \"0\", \"1\")"),
+        source.replace("get[Text,U64]", "get[Text,U64,U64]"),
+    ] {
+        assert_eq!(
+            run_guest(&malformed),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+            }
+        );
+    }
+
+    let wrong_map = source.replace("blocks: Map[Text,U64]", "blocks: Map[Text,I64]");
+    assert_eq!(
+        run_guest(&wrong_map),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let wrong_key = source
+        .replace("blocks: Map[Text,U64]", "blocks: Map[Text,U64], key: U64")
+        .replace("(blocks, \"0\")", "(blocks, key)");
+    assert_eq!(
+        run_guest(&wrong_key),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid map.get input must compile after refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
