@@ -7789,7 +7789,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
                 set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
                 let gem_join_id = sico.list.length(gblk_instrs)
                 let gem_f = sico.text.split_lines(gmt_p_pack)
-                set gseal_from = sico.list.append[U64](gseal_from, gw_decimal_value(word_at(gem_f, U64.literal(2))))
+                set gseal_from = sico.list.append[U64](gseal_from, gw_decimal_value(word_at(gem_f, U64.literal(11))))
                 set gseal_to = sico.list.append[U64](gseal_to, gem_join_id)
                 set gseal_len = next_index(gseal_len, gseal_len)
                 set gseal_from = sico.list.append[U64](gseal_from, gw_decimal_value(word_at(gem_f, U64.literal(8))))
@@ -8101,6 +8101,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gmt_p_pack = sico.text.concat(gmt_p_pack, sico.text.concat("\n", sico.u64.to_text(gce_err_id)))
         set gmt_p_pack = sico.text.concat(gmt_p_pack, sico.text.concat("\n", sico.u64.to_text(gce_off)))
         set gmt_p_pack = sico.text.concat(gmt_p_pack, sico.text.concat("\n", sico.u64.to_text(gce_span_end)))
+        set gmt_p_pack = sico.text.concat(gmt_p_pack, sico.text.concat("\n", sico.u64.to_text(gcur_blk)))
         set gcur_blk = gce_err_id
         set gcur_instrs = ""
         set gcur_rs = gce_off

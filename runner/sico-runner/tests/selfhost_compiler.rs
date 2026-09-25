@@ -660,6 +660,38 @@ fn sico_compiler_lowers_map_get_match_subject_in_while_body_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_nearest_match_prefix_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function set_nearest_match")
+        .expect("formatter keeps the nearest_match prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("nearest_match prefix must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let unreachable_arm_statement = source.replace(
+        "          return sico.text.concat(\":\", key)\n        end if",
+        "          return sico.text.concat(\":\", key)\n          set cursor = cursor\n        end if",
+    );
+    assert_ne!(unreachable_arm_statement, source);
+    assert_eq!(
+        run_guest(&unreachable_arm_statement),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-STATEMENT".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid nested match arm must compile after a refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

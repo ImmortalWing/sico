@@ -100,8 +100,8 @@ try {
             }
         }
 
-        # STEP-0293 lowers u64.to_text as a while-body RHS. The current
-        # nearest_match frontier advances to match-arm control after map.get.
+        # STEP-0295 connects a nested-if join to the match join. The prefix
+        # through nearest_match now lowers byte-exactly in the Rust differential.
         $boundary2 = $full.IndexOf('function set_nearest_match')
         if ($boundary2 -lt 0) { throw 'nearest_match boundary marker missing' }
         $probe = Join-Path $temp 'nearest-match-probe.sico'
@@ -111,16 +111,18 @@ try {
         $process1.StandardInput.BaseStream.Write($probeBytes, 0, $probeBytes.Length)
         $process1.StandardInput.BaseStream.Flush()
         $process1.StandardInput.BaseStream.Close()
-        $null = $process1.StandardOutput.ReadToEnd()
+        $stdout1 = $process1.StandardOutput.ReadToEnd()
         $stderr1 = $process1.StandardError.ReadToEnd()
         $process1.WaitForExit()
-        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-STATEMENT')) {
-            throw "nearest_match frontier probe changed: exit=$($process1.ExitCode) stderr=$stderr1"
+        if ($process1.ExitCode -ne 0 -or -not $stdout1.Contains('"name":"nearest_match"')) {
+            throw "nearest_match prefix did not compile: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Full-source canary: fail-closed at the declared nearest_match boundary.
+        # The next function remains a typed refusal, not an implied supported shape.
+        $boundary3 = $full.IndexOf('function match_arm_levels')
+        if ($boundary3 -lt 0) { throw 'set_nearest_match boundary marker missing' }
         $process2 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
+        $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary3))
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
         $process2.StandardInput.BaseStream.Flush()
         $process2.StandardInput.BaseStream.Close()
@@ -128,9 +130,9 @@ try {
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
         if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-STATEMENT')) {
-            throw "formatter canary did not reach the declared nearest_match boundary: exit=$($process2.ExitCode) stderr=$stderr2"
+            throw "set_nearest_match frontier probe changed: exit=$($process2.ExitCode) stderr=$stderr2"
         }
-        if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
+        if ($stderr2.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
     finally {
         $resolvedTemp = [IO.Path]::GetFullPath($temp)
@@ -147,4 +149,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-STATEMENT repinned-by=STEP-0294'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact nearest-match=byte-exact canary=SET-NEAREST-MATCH-STATEMENT repinned-by=STEP-0295'

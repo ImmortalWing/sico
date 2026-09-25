@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0294 (S2 GO). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, and STEP-0294 verified 22-C S2 on 5a6d0bb, all on the isolated codex/m22-w1-ci branch. The formatter frontier moved from CALL-TARGET to STATEMENT at 22/30; R3 consecutive stall count is 0. The next slice is match-arm nested if/return control flow. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0295 local evidence (S3 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, and STEP-0294 verified 22-C S2 on 5a6d0bb, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30 and set_nearest_match / STATEMENT with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -80,7 +80,7 @@ language surface without an accepted RFC.
 | S1 formatter (L1) | complete | frozen corpus byte-exact + idempotent; `formatter.sico` runs on its own sources through the real runner | — |
 | S2 checker subset (L1) | complete for the declared subset | frozen diagnostic partition 116 lexical / 34 identity / 65 accepted / 0 unsupported | widening the subset requires its own declared-contract update (no silent growth) |
 | S3 lexer + parser (L2) | partial | `lexer.sico` / `tokens.sico` / `declaration_parser.sico` differentials green; `parser.sico` exercised through driver paths (recursive return-expression trees; verifier-accepted scalar IR + noncanonical refusals) | full declared-shape coverage of `parser.sico` (12,202 lines, the largest selfhost unit) on the frozen corpus |
-| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `repeat_indent` (22 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 8 remaining formatter functions (`nearest_match` … `main`), then the remaining selfhost sources lower byte-exactly |
+| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `nearest_match` (23 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 7 remaining formatter functions (`set_nearest_match` … `main`), then the remaining selfhost sources lower byte-exactly |
 | S5 codegen (L2) | partial | bounded Core-Wasm seam: nonnegative `Int` constant emission byte-equal to Rust codegen; every other shape typed-refused (`unsupported codegen source shape`) | RFC-0011 deterministic backend subset over the frozen corpus |
 | S6 bootstrap closure | not entered | — | ADR-0015 contract: `A == B == C`, `.sapp` via the M7 trust chain, runner-executed self-compile, budget re-measurement |
 | S7 exit audit | not entered | — | evidence pack + explicit GO/NO-GO |
@@ -133,8 +133,12 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    `sico.map.get[Text,U64]` match subject passes local byte-exact differential
    and refusal regressions, moving the frontier to `ERR:E-SH-IR-STATEMENT`
    at 22/30; independent CI succeeded on `5a6d0bb`, giving S2 GO with the
-   consecutive-stall count still zero. The parallel `origin/dev` history is
-   not adjudicated by this branch's CI.
+   consecutive-stall count still zero. STEP-0295 locally lowers nested `if`
+   with a conditional `return` in the match `ok` arm; the formatter prefix
+   through `nearest_match` is byte-exact against Rust, moving the canary to
+   23/30 and the typed frontier to `set_nearest_match` / `STATEMENT`.
+   Independent CI for S3 remains pending. The parallel `origin/dev` history
+   is not adjudicated by this branch's CI.
 2. **Formatter tail from the current frontier** — the
    `Map[Text,U64]` region (`nearest_match`/`set_nearest_match`/
    `match_arm_levels`),
