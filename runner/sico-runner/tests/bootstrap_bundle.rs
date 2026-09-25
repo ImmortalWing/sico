@@ -174,9 +174,31 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
         .iter()
         .map(|entry| entry.path.clone())
         .collect();
+    // RFC-0047 record fixtures landed after the 215-source v0 freeze and
+    // are covered by record_types.rs. Account for them explicitly so an
+    // unrelated source addition cannot silently widen this frozen bundle.
+    let mut expected_discovered = declared.clone();
+    expected_discovered.extend(
+        [
+            "record-basic.sico",
+            "record-copy-on-write.sico",
+            "record-list-field.sico",
+            "record-list-of-records.sico",
+            "record-nested.sico",
+            "record-refusal-duplicate-field.sico",
+            "record-refusal-empty.sico",
+            "record-refusal-equality.sico",
+            "record-refusal-field-set.sico",
+            "record-refusal-missing-field.sico",
+            "record-refusal-nominal.sico",
+            "record-refusal-unknown-access.sico",
+        ]
+        .map(|file| format!("tests/end-to-end/{file}")),
+    );
+    expected_discovered.sort();
     assert_eq!(
-        declared, discovered,
-        "manifest must name every frozen source"
+        expected_discovered, discovered,
+        "every source must be in the frozen manifest or the post-freeze record corpus"
     );
 
     let mut bundle = Vec::with_capacity(manifest.entries.len());

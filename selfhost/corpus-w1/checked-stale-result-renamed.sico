@@ -1,0 +1,24 @@
+// W1 rename-safety: payload guard remains valid after parameter renaming.
+newtype Revision from Int
+
+record Model:
+  field text: Text
+  field revision: Revision
+end record
+
+record Loaded:
+  field text: Text
+  field revision: Revision
+end record
+
+enum ApplyLoaded:
+  case Applied(model: Model)
+  case IgnoredStale
+end enum
+
+function apply_loaded(current: Model, candidate: Loaded) returns ApplyLoaded:
+  if candidate.revision == current.revision:
+    return ApplyLoaded.Applied(Model(text: candidate.text, revision: current.revision))
+  end if
+  return ApplyLoaded.IgnoredStale
+end function

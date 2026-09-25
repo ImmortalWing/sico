@@ -6,7 +6,7 @@
 
 - 棋盘求解需要通用循环/递归、动态集合遍历、位运算或可变搜索状态，当前 Script codegen 只覆盖受限的 Text/Bytes/List/JSON/文件/HTTP intrinsics 和特定控制流；
 - 截图、像素/图像处理、窗口查找和鼠标拖动没有 Sico Host capability；
-- M5 的 UI 是严格 companion model，尚无 compiler-facing Sico binding；本案例已进入路线图验收链：M14 纯 Sico 离线求解器、M16 capture/input、M17 vision、M18 完整应用试点，当前均未预留实现 STEP。
+- M5 的 UI 是严格 companion model，尚无 compiler-facing Sico binding；本案例保留 M14 纯 Sico 离线求解器验收 oracle（STEP-0138）。M16 capture/input 与 M17 vision 的历史证据各按自己的 STEP 声明；M18/M24 的方块游戏应用试点已由 STEP-0258 删除。
 
 因此当前可运行实现仍由 Python 承担视觉、求解和控制。Sico 探针可这样验证：
 

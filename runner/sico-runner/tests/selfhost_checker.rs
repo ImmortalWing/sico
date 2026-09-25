@@ -1,6 +1,7 @@
 //! M22 S2: the Sico-written checker runs end-to-end. STEP-0245 closes the
-//! declared identity-level diagnostic subset on all 215 frozen sources while
-//! keeping full rendered Rust diagnostics outside the claim.
+//! declared identity-level diagnostic subset on all 215 frozen sources plus
+//! W1 structural/zero-indent regressions, while keeping full rendered Rust
+//! diagnostics outside the claim.
 
 use sha2::{Digest, Sha256};
 use sico_runner::{
@@ -495,5 +496,94 @@ fn sico_checker_matches_remaining_frozen_semantic_and_module_identities() {
             },
             "{path}"
         );
+    }
+}
+
+#[test]
+fn sico_checker_matches_w1_revision_and_zero_indent_corpus() {
+    let repository = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let cases = [
+        (
+            "checked-stale-result-renamed.sico",
+            "65944dbaf8e9627fef372fc82a6f2a48c4dcbb628c84cd7ad873d2eb1d95b43b",
+            None,
+        ),
+        (
+            "unchecked-after-guard.sico",
+            "fa1a8ea097120396866be16e55c557fd76b660b51580e97e46c7584752776f15",
+            Some("E7002"),
+        ),
+        (
+            "unchecked-stale-result-renamed.sico",
+            "ab29e491e2bb6491036a13ab0f9ca4667edf6b19b98f2b2ab89bd87149203ec3",
+            Some("E7002"),
+        ),
+        (
+            "unchecked-stale-result-zero-indent.sico",
+            "3b1e7cfdd52bfee0f7c3159a4f3d8d369d306af8bc5b9ef8cc83c8186e3374cb",
+            Some("E7002"),
+        ),
+        (
+            "zero-indent-function-body.sico",
+            "557780cd8e840143f0e1e0ac3cc6c355fd9b06c8fad5a97d1ad38c9299da4bb2",
+            None,
+        ),
+    ];
+    let component = compile_checker();
+    let runner = Runner::new().expect("runner builds");
+    let prepared = runner
+        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+        .expect("checker component links");
+
+    for (file, source_sha256, expected) in cases {
+        let path = repository.join("selfhost/corpus-w1").join(file);
+        let source = canonical_source(std::fs::read(&path).unwrap(), file);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(&source)),
+            source_sha256,
+            "W1 source digest drifted: {file}"
+        );
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let rust_exit = sico_cli::run(
+            [
+                std::ffi::OsString::from("sico"),
+                std::ffi::OsString::from("check"),
+                std::ffi::OsString::from("--json"),
+                path.as_os_str().to_owned(),
+            ],
+            &mut std::io::empty(),
+            &mut stdout,
+            &mut stderr,
+        );
+        let report: serde_json::Value = serde_json::from_slice(&stdout)
+            .unwrap_or_else(|error| panic!("Rust oracle JSON for {file}: {error}: {stderr:?}"));
+        let actual = report["diagnostics"]
+            .as_array()
+            .and_then(|diagnostics| diagnostics.first())
+            .and_then(|diagnostic| diagnostic["code"].as_str());
+        assert_eq!(actual, expected, "Rust oracle: {file}");
+        assert_eq!(
+            rust_exit,
+            i32::from(expected.is_some()),
+            "Rust exit: {file}"
+        );
+
+        let outcome = run_checker(&prepared, &source);
+        if let Some(code) = expected {
+            assert_eq!(
+                outcome,
+                RunOutcome::Domain {
+                    code: "invalid-input".to_owned(),
+                    message: code.to_owned(),
+                },
+                "guest: {file}"
+            );
+        } else {
+            let RunOutcome::Output(output) = outcome else {
+                panic!("guest accepted source was refused: {file}: {outcome:?}");
+            };
+            assert!(output.stdout.starts_with(b"check ok"), "guest: {file}");
+        }
     }
 }

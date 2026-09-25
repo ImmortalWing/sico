@@ -1,6 +1,6 @@
 # M21 Developer experience, standard-library batch 2 and ecosystem activation
 
-> Status: planned; owner session directive (2026-09-13); no STEP numbers reserved
+> Status: historical GO 6/6 per STEP-0177, with later M20–M21 quality-review findings requiring focused reproduction before v1 freeze; no STEP numbers reserved
 
 ## 1. Objective
 
@@ -16,7 +16,7 @@ through the registry rather than the compiler.
 | # | Condition | Status (measured 2026-09-13) |
 |---|---|---|
 | 1 | M19 CI + release engineering green | **satisfied** — STEP-0168: run-ci green (9 steps), reproducible-build rehearsal OK, registry rehearsal OK |
-| 2 | M18 portfolio runs without core patches | **satisfied (4/5)** — STEP-0165; block-game deferred pending M17 full GO |
+| 2 | M18 portfolio runs without core patches | **satisfied for four applications** — STEP-0165; unfinished item 4 was later re-designated as the M24 native GUI format converter (STEP-0258) |
 | 3 | M20 language v1 decisions landed | **partial** — infix equality landed (RFC-0044); bare-literal typing and for-loops/closures RFCs remain the entry work |
 | 4 | Live-model credentials for AI-DX measurement | owner-gated, as M13/M14 |
 

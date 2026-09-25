@@ -72,16 +72,28 @@ principle* — its items remain the technical content, but they now run
   - Compilation-unit context: the bounded entry-plus-imports source-set
     contract (review P0-1) is drafted here so the selfhost sources can
     enter the canary corpus as a set, not rejected per-file as `E8010`.
+- **R1 measured limit (STEP-0266).** The canary report and fuel-cap intervals
+  landed. Runner CLI did not expose consumed-fuel exact values or stack
+  high-water; the report records intervals and an unavailable stack value.
+  S6 must record ADR-0015's actual peak guest memory and fixed limits before
+  a qualifying run. Do not treat the missing stack measurement as observed.
 - **R2 — convergence under the gate.** The §3.2 queue resumes. Every
-  implementation STEP must either advance canary function coverage or
-  move the typed refusal frontier; a STEP that does neither is a
-  process violation, not progress.
-- **R3 — stop-loss (pre-registered, numbers fixed here).** If **4
-  consecutive implementation STEPs** produce zero `formatter.sico`
-  canary growth AND an unmoved refusal frontier, M22 S6 convergence is
-  declared *not demonstrated on the current surface* — a typed, honest
-  verdict recorded in the dual-implementation register. This triggers
-  Route B (§4). The stop-loss count is evaluated at each R-review;
+  implementation STEP records before/after canary coverage and the typed
+  refusal frontier, plus pending or executed CI evidence. The canary starts
+  with byte-exact `formatter.sico` functions / 30. Once that reaches 30/30,
+  it switches to byte-exact differential progress across the remaining
+  frozen selfhost source set; S5 uses its own byte-equal codegen corpus.
+- **R3 — stop-loss (pre-registered, numbers fixed here).** Starting with W2
+  S3/S4 implementation after the records-surface canary is re-pinned, **4
+  consecutive implementation STEPs** with zero current-phase canary growth
+  AND an unmoved typed refusal frontier require a stop-loss declaration:
+  S6 convergence is *not demonstrated on the current surface*. Record it in
+  the dual-implementation register and trigger Route B (§4). A stalled
+  implementation STEP counts; documentation and measurement-only STEPs do
+  not. CI-pending work is unadjudicated: it receives neither progress credit
+  nor a stall count until the required runner evidence arrives. This R3
+  counter does not substitute for S5's independent codegen exit gate.
+  The counter is evaluated after each eligible STEP;
   budget-curve evidence (fuel superlinear beyond the 4k→8k step by an
   order of magnitude against runner limits) may trigger the same review
   early.
@@ -135,25 +147,33 @@ registered — and either satisfies the entry gate. A missing M22 verdict
 satisfies nothing (M25's existing rule: missing owner inputs are named
 deferrals, never implied success).
 
+This permits a **release audit** to begin; it does not grant v1.0 release GO.
+M23 batch 3 and the M24 native GUI converter must each be GO for the v1.0
+release verdict. M25 separately records project §13 completion; external
+deferrals never count as that completion.
+
 ## 7. M26: unchanged
 
-M26 (STEP-0263) keeps its gates, including the 2026-09-24 owner
+M26 (STEP-0263) keeps its product target and the 2026-09-24 owner
 scheduling rule that UI-library gaps close under M24 §8.6.1 before the
-GUI gate starts. This replan adds nothing to it.
+GUI gate starts. Kickoff inventory and RFC drafting may run early;
+implementation waits for M25 v1.0 release GO, so PDF work does not delay
+that verdict. Any UI extension after v1.0 is versioned and checked against
+the frozen v1.0 compatibility corpus.
 
-## 8. First executable action per milestone (落实到工程实现)
+## 8. Next bounded action per milestone (current after STEP-0279)
 
-| Milestone | First action | Blocked by |
+| Milestone | Next action | Blocked by |
 |---|---|---|
-| M22 R0 | Draft the SOA-freeze vs `List[record]`-RFC decision document | nothing (document work) |
-| M22 R1 | Extend the STEP-0261 validator with canary coverage reporting; land the 1k/4k/8k budget probe | R0 direction (instrumentation shape) |
+| M22 | STEP-0280 finished W1 C/D locally (215+5 and canaries green); resolve STEP-0278/0280 independent CI, then re-pin W2 records-surface canary | W2 implementation waits for W1 and an executed canary baseline; R0 accepted, R1 measured with stack high-water unavailable |
 | M23 | Kickoff inventory STEP (four probes, M23 plan §7) | nothing (measurement only) |
-| M24 | Kickoff inventory STEP (M24 plan §7), then UI-library RFC | nothing |
-| M25 | Inventory diff of the §13 table (M25 plan §7) | M23/M24 exit audits for the real run; drafting may proceed |
-| M26 | Kickoff inventory STEP (M26 plan §7) | nothing for the package slices; GUI gate rides M24 §8.6.1 |
+| M24 | Kickoff inventory of M17 evidence host, native UI controls and codec surface; then RFC/ADR | nothing for inventory; implementation requires accepted contracts |
+| M25 | Inventory diff of the §13 table and release composition (M25 plan §7) | audit drafting may proceed; release GO waits for M23/M24 internal gates and release evidence |
+| M26 | Kickoff PDF/UI inventory and draft RFCs (M26 plan §7) | implementation waits for M25 v1.0 release GO; GUI also rides M24 §8.6.1 |
 
-The intent: after this replan, every milestone has an unblocked,
-bounded, executable next action that is not a STEP-number reservation.
+Every milestone has an unblocked bounded inventory or preparation action;
+implementation still respects the listed entry gates. No future STEP
+number is reserved by this table.
 
 ## 9. Entry gate / Exit gates / Non-goals
 
@@ -181,9 +201,9 @@ instrumentation landed before any post-replan lowering STEP.
 
 - **Stop-loss gaming.** A STEP could "advance the frontier" with a
   trivial shape while the hard region stalls. Mitigation: the R-review
-  reads coverage growth *and* refusal-frontier identity, and the
-  reviewer's judgment stays in the loop; the 4-STEP window is a
-  trigger for review, not an automatic verdict.
+  reads coverage growth *and* refusal-frontier identity and records the
+  before/after corpus evidence. Four eligible stalled STEPs require the
+  Route-B verdict; a reviewer cannot omit a stalled implementation STEP.
 - **Route B doubles re-baseline work.** Batch 3 lands, then the
   self-host re-freezes. This is the declared cost of breaking the
   feedback loop, and it is bounded: S1/S2 differentials are corpus

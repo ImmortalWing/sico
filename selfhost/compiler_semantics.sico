@@ -164,6 +164,138 @@ function word_after(items: List[Text], target: Text) returns Text:
   return ""
 end function
 
+function record_field_type(owners: List[Text], names: List[Text], types: List[Text], record_name: Text, field_name: Text) returns Text:
+  let index = U64.literal(0)
+  while U64.less_than(index, sico.list.length(owners)):
+    if same(item(owners, index), record_name):
+      if same(item(names, index), field_name):
+        return item(types, index)
+      end if
+    end if
+    set index = add(index, U64.literal(1))
+  end while
+  return ""
+end function
+
+function versioned_payload(owners: List[Text], names: List[Text], types: List[Text], record_name: Text) returns Bool:
+  if same(record_field_type(owners, names, types, record_name, "text"), ""):
+    return false
+  end if
+  return same(record_field_type(owners, names, types, record_name, "revision"), "Revision")
+end function
+
+function has_bytes(source: Text, needle: Text) returns Bool:
+  let bytes = sico.text.encode(source)
+  let wanted = sico.text.encode(needle)
+  let start = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(wanted)), sico.bytes.length(bytes)):
+    match sico.bytes.slice(bytes, start, sico.bytes.length(wanted)):
+      case ok(part):
+        if sico.bytes.equal(part, wanted):
+          return true
+        end if
+      case error(_):
+        return false
+    end match
+    set start = add(start, U64.literal(1))
+  end while
+  return false
+end function
+
+function is_word_byte(b: I64) returns Bool:
+  if I64.equal(b, I64.literal(95)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(48)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(58)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(65)):
+    return false
+  end if
+  if I64.less_than(b, I64.literal(91)):
+    return true
+  end if
+  if I64.less_than(b, I64.literal(97)):
+    return false
+  end if
+  return I64.less_than(b, I64.literal(123))
+end function
+
+function has_field_access(line: Text, base: Text, field: Text) returns Bool:
+  let bytes = sico.text.encode(line)
+  let wanted = sico.text.encode(sico.text.concat(sico.text.concat(base, "."), field))
+  let start = U64.literal(0)
+  while less_equal(add(start, sico.bytes.length(wanted)), sico.bytes.length(bytes)):
+    match sico.bytes.slice(bytes, start, sico.bytes.length(wanted)):
+      case ok(part):
+        if sico.bytes.equal(part, wanted):
+          let before = sico.bytes.at(bytes, sub(start, U64.literal(1)), I64.literal(-1))
+          let after = sico.bytes.at(bytes, add(start, sico.bytes.length(wanted)), I64.literal(-1))
+          if U64.equal(start, U64.literal(0)):
+            set before = I64.literal(-1)
+          end if
+          if is_word_byte(before):
+            set start = add(start, U64.literal(1))
+          else:
+            if is_word_byte(after):
+              set start = add(start, U64.literal(1))
+            else:
+              return true
+            end if
+          end if
+        else:
+          set start = add(start, U64.literal(1))
+        end if
+      case error(_):
+        return false
+    end match
+  end while
+  return false
+end function
+
+function revision_guarded(lines: List[Text], use_index: U64, payload: Text) returns Bool:
+  let guard_index = U64.literal(0)
+  while U64.less_than(guard_index, use_index):
+    let guard_raw = item(lines, guard_index)
+    let guard_line = sico.text.trim(guard_raw)
+    if sico.text.starts_with(guard_line, "if "):
+      if has_field_access(guard_line, payload, "revision"):
+        if has_bytes(guard_line, "=="):
+          let close_index = add(guard_index, U64.literal(1))
+          let depth = U64.literal(1)
+          while U64.less_than(close_index, use_index):
+            if U64.less_than(U64.literal(0), depth):
+              let close_line = sico.text.trim(item(lines, close_index))
+              if sico.text.starts_with(close_line, "if "):
+                set depth = add(depth, U64.literal(1))
+              end if
+              if same(close_line, "end if"):
+                set depth = sub(depth, U64.literal(1))
+              end if
+            end if
+            set close_index = add(close_index, U64.literal(1))
+          end while
+          if U64.less_than(U64.literal(0), depth):
+            return true
+          end if
+        end if
+      end if
+    end if
+    set guard_index = add(guard_index, U64.literal(1))
+  end while
+  return false
+end function
+
+function revision_unguarded(lines: List[Text], use_index: U64, payload: Text) returns Bool:
+  if revision_guarded(lines, use_index, payload):
+    return false
+  end if
+  return true
+end function
+
 function decimal_less_equal(left: Text, right: Text) returns Bool:
   let left_bytes = sico.text.encode(left)
   let right_bytes = sico.text.encode(right)
@@ -240,6 +372,13 @@ function implicit_integer_float(value: Text) returns Bool:
   return false
 end function
 
+function is_function_boundary(line: Text) returns Bool:
+  if compiler_parser.syntax_function_header(line):
+    return true
+  end if
+  return same(line, "end function")
+end function
+
 function semantic_diagnostic(source: Text) returns Text:
   let lines = sico.text.split_lines(source)
   let nominal_names = sico.text.split_lines("")
@@ -249,6 +388,7 @@ function semantic_diagnostic(source: Text) returns Text:
   let variant_owners = sico.text.split_lines("")
   let field_owners = sico.text.split_lines("")
   let field_names = sico.text.split_lines("")
+  let field_types = sico.text.split_lines("")
   let invariant_owners = sico.text.split_lines("")
   let invariant_left = sico.text.split_lines("")
   let invariant_right = sico.text.split_lines("")
@@ -336,6 +476,7 @@ function semantic_diagnostic(source: Text) returns Text:
           if U64.equal(sico.list.length(parts), U64.literal(3)):
             set field_owners = sico.list.append(field_owners, active_record)
             set field_names = sico.list.append(field_names, compiler_parser.at(parts, U64.literal(1)))
+            set field_types = sico.list.append(field_types, compiler_parser.at(parts, U64.literal(2)))
           end if
         end if
         if sico.text.starts_with(line, "invariant "):
@@ -375,13 +516,12 @@ function semantic_diagnostic(source: Text) returns Text:
   let task_depth = U64.literal(0)
   let spawned_tasks = sico.text.split_lines("")
   let consumed_tasks = sico.text.split_lines("")
-  let revision_guard = I64.literal(0)
   set index = U64.literal(0)
   while U64.less_than(index, sico.list.length(lines)):
     let body_raw = item(lines, index)
     let body_line = sico.text.trim(body_raw)
     let body_parts = compiler_parser.words(body_line)
-    if same(body_raw, body_line):
+    if is_function_boundary(body_line):
       if compiler_parser.syntax_function_header(body_line):
         let body_function_index = compiler_parser.find(body_parts, "function")
         let body_function_name = compiler_parser.at(body_parts, add(body_function_index, U64.literal(1)))
@@ -398,7 +538,6 @@ function semantic_diagnostic(source: Text) returns Text:
         set task_depth = U64.literal(0)
         set spawned_tasks = sico.text.split_lines("")
         set consumed_tasks = sico.text.split_lines("")
-        set revision_guard = I64.literal(0)
         if U64.less_than(U64.literal(0), count_byte(body_line, I64.literal(64))):
           return "E6001"
         end if
@@ -579,21 +718,22 @@ function semantic_diagnostic(source: Text) returns Text:
               return "E7001"
             end if
           end if
-          if same(compiler_parser.at(body_parts, U64.literal(1)), "Model"):
-            if same(word_after(body_parts, "text"), "loaded"):
-              if same(word_after(body_parts, "revision"), "model"):
-                if I64.equal(revision_guard, I64.literal(0)):
+        end if
+        let payload_index = U64.literal(0)
+        while U64.less_than(payload_index, sico.list.length(parameter_owners)):
+          if same(item(parameter_owners, payload_index), active_function_name):
+            let payload_type = item(parameter_types, payload_index)
+            if versioned_payload(field_owners, field_names, field_types, payload_type):
+              let payload_name = item(parameter_names, payload_index)
+              if has_field_access(body_line, payload_name, "text"):
+                if revision_unguarded(lines, index, payload_name):
                   return "E7002"
                 end if
               end if
             end if
           end if
-        end if
-        if sico.text.starts_with(body_line, "if "):
-          if U64.less_than(U64.literal(1), owner_count(body_parts, "revision")):
-            set revision_guard = I64.literal(1)
-          end if
-        end if
+          set payload_index = add(payload_index, U64.literal(1))
+        end while
       end if
 
       if sico.text.starts_with(body_line, "return "):

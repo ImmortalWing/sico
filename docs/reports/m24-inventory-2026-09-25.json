@@ -1,0 +1,87 @@
+{
+  "schema": "sico.m24.inventory.v0",
+  "step": "STEP-0287",
+  "card": "24-A",
+  "purpose": "M24 kickoff inventory (M24 plan section 7): measured listing of what exists vs what is missing across the five inventory lines; no contract drafted, no capability claimed, no gate moved.",
+  "m17_gate2_accelerator_evidence_host": {
+    "named_hardware_or_provider": "none recorded",
+    "workspace_references_to_acceleration_or_gpu": 0,
+    "implemented_paths": [
+      "deterministic reference only (image-vision@1 pure functions)"
+    ],
+    "gate2_status": "NO-GO/deferred per M24 plan 8.1 recorded-deferral clause; reference-only results cannot flip GO",
+    "missing_input": "owner must name the evidence host (device/provider) before the accelerator ADR comparison evidence can exist"
+  },
+  "m17_gate4_model_assets": {
+    "model_assets_in_repo": 0,
+    "scanned_extensions": [
+      ".onnx",
+      ".tflite",
+      ".safetensors"
+    ],
+    "asset_manifest_schema_implementation": "none",
+    "contracts": {
+      "RFC-0041_image_data": "accepted",
+      "RFC-0043_vision_packages": "draft (accepted-by-session-directive pending completion evidence)"
+    },
+    "evidence_path": "M24 plan 8.2 fixture-model evidence set (digest load, typed refusals, budgets, cancellation, malicious asset) — nothing built"
+  },
+  "roster_packages": {
+    "existing": {
+      "package": "sico:user/image-vision@1",
+      "home": "crates/sico-codegen-wasm/src/package_builder.rs:2003 (image_vision_package)",
+      "functions": [
+        "to-grey8",
+        "threshold",
+        "occupancy",
+        "occupancy-mask"
+      ],
+      "domain": "pure deterministic CV primitives over BGRA8 byte buffers (RFC-0041 contract; RFC-0043 roster)",
+      "codec_io": "none (honest gap, M24 plan 8.4)"
+    },
+    "missing": [
+      "template match",
+      "grid",
+      "contour"
+    ],
+    "historical_evidence_not_queue_items": [
+      "crates/sico-cli/tests/tetris_vision_chain.rs",
+      "pilots/tetris-vision/ (pilot deleted by owner directive STEP-0258)"
+    ],
+    "registry_path": "M7 binary carrying measured (STEP-0161); consumers install through M7 with zero compiler/Runtime changes"
+  },
+  "native_ui_surface": {
+    "existing": {
+      "wit": "crates/sico-host-core/wit/sico-ui-v0.wit (sico:ui@0.1.0 desktop-app world; node kinds window/column/row/text/button/input/status; render/next-event host interface)",
+      "web_renderer": "M15 declared-scope GO: RFC-0042 renderer corpus, cross-host browser matrix (STEP-0156/0162)",
+      "console_control": "M16 typed cancellation console evidence (Windows native)"
+    },
+    "missing": {
+      "sico_language_native_ui_library": "none exists (WinUI 3-like Fluent per STEP-0258 owner directive)",
+      "source_binding_rfc": "not drafted",
+      "renderer_adr": "not drafted",
+      "native_windows_renderer_for_sico_ui": "none",
+      "deterministic_frame_corpus": "none"
+    },
+    "exclusions": "web/webview frames, M15 Web binding and a native Rust companion cannot count as the Sico-language native library (card 24-C stop rule)",
+    "contract_home": "M24 plan 8.6.1 workstream; contracts frozen via RFC/ADR before any UI implementation"
+  },
+  "codec_surface": {
+    "codec_dependencies_in_any_workspace": 0,
+    "scanned": [
+      "image",
+      "png",
+      "jpeg decoder/encoder crates in root, crates/*, runner Cargo.toml"
+    ],
+    "decode_encode_capability": "none",
+    "refusal_corpus_files": "none exist (M24 plan 8.5 enumerates the contract: bad magic, truncated, trailing data, oversized limit+1, unsupported color/JPEG profile, cancellation, save failure, byte-stable repeat, batch sampling)",
+    "contract_home": "codec RFC must freeze accepted JPEG/PNG profiles, output parameters, determinism guarantees (PNG byte-stable per input; JPEG encoder settings frozen by corpus) before any decoder work"
+  },
+  "determinism_note": "counts verified by direct scan of the current tree; no timestamps; recomputable",
+  "gates": {
+    "M17": "NO-GO unchanged (gate 1 GO; gate 2/4 and roster open)",
+    "M24": "planned; inventory done; contracts next (accelerator ADR owner-gated, provenance RFC, UI source-binding RFC + renderer ADR, codec RFC)",
+    "M22_M23": "unaffected; this STEP is measurement/inventory only, not counted toward R3"
+  },
+  "ok": "M24_INVENTORY_OK"
+}

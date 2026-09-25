@@ -26,8 +26,17 @@ Page rasterization is explicitly out of scope (§4): the GUI shows
 structured document information and hosts file operations, it does not
 render page pixels.
 
+Delivery order within this milestone is contract → bounded structural
+reader subset → extended accepted PDF forms (xref streams, object streams,
+incremental updates) → merge/rotate → native GUI. Each slice has a frozen
+positive and refusal corpus; the full §3 exit remains required for M26 GO.
+
 ## 2. Entry gate
 
+- M25 v1.0 release verdict GO before the first M26 package or GUI
+  implementation STEP, keeping PDF work out of the v1.0 critical path.
+  Inventory and RFC drafting may run earlier without an implementation
+  or support claim.
 - M14 GO ✓（STEP-0141）: byte/text access, streams, bounded recursion,
   dynamic collections and the file capability are executable end to end.
 - M7 package/trust/update boundary measured to carry versioned binaries ✓
@@ -49,6 +58,10 @@ render page pixels.
   implementation) is unchanged — and the M26 package slices (exit
   gates 1–5, 7) proceed independently while the GUI gate (gate 6)
   waits; no web-UI fallback is permitted at any point.
+- Post-v1 compatibility: any M24 native UI library work needed after M25's
+  v1.0 snapshot is released as a new version with a compatibility corpus
+  against that snapshot. The historical M25 verdict and bundle are not
+  retroactively changed; M26 records the exact new UI-library version.
 - Authority: the application runs as a local application under the
   user's authority on the evidence host; file access composes existing
   file capabilities with user-selected paths (dialogs, least-privilege);
@@ -141,3 +154,19 @@ micro-benchmark of the pure-Sico inflate candidate vs the provider
 candidate; the UI-library surface readiness vs the PDF tool's control
 needs; and the frozen corpus generation plan (writer version pinned,
 oracle documented).
+
+The inventory also pins the first reader subset and the later xref/object-
+stream/incremental-update extension corpora separately, plus the versioned
+native UI control gaps. Each implementation STEP closes one of these
+bounded slices without claiming general PDF interoperability.
+
+> Status 2026-09-25 (card 26-A): inventory frozen at
+> [`m26-inventory-2026-09-25.json`](../reports/m26-inventory-2026-09-25.json)
+> (language surface fits the v0 subset; no PDF oracle installed — pikepdf
+> named as the owner-gated candidate; inflate candidates unimplemented so
+> the filters decision stays deferred; UI gap = scrolling/viewport absent
+> from RFC-0052 v0, home M24 §8.6.1). Reader subset
+> [`RFC-0053`](../rfc/RFC-0053-pdf-structural-reading-v0.md) and
+> limits/refusals/writer [`RFC-0054`](../rfc/RFC-0054-pdf-limits-refusals-writer-v0.md)
+> drafted — acceptance owner-gated, and implementation additionally waits
+> for M25 v1.0 release GO.

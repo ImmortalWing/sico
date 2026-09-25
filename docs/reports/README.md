@@ -71,6 +71,11 @@
 | [`production-deployment-origin-v0`](./production-deployment-origin-v0.md) | complete-local | STEP-0074 | 只读 registry origin、operator bundle、release 集成与单命令源码 Runtime `42` |
 | [`m7-exit-audit`](./m7-exit-audit.md) | blocked-external-evidence | STEP-0069 | M7 本地轨完成、产品 NO-GO 与七项外部 gate |
 | [`project-completion-audit`](./project-completion-audit.md) | blocked-external-evidence | STEP-0069 | 仓库本地闭环和支持产品未完成边界 |
+| [`m14-m26-milestone-audit-2026-09-24`](./m14-m26-milestone-audit-2026-09-24.md) | planning audit | STEP-0279 | M14–M26 gate register、M22/23 双路径、M24 并行与 M25 双结论；不提升 runtime 证据 |
+| [`m22-w2-baseline-2026-09-25`](./m22-w2-baseline-2026-09-25.json) | frozen measurement baseline | STEP-0282 | W2 records-surface 基线（schema `sico.m22.w2.baseline.v0`）：canary 22/30 + `nearest_match`/`GWPACK-OTHER` 前沿、四档燃料区间复验一致、8 源 16,390 行 SHA256 盘点、栈高水位未测得；纯测量不计 R3 |
+| [`m23-ceremony-census-2026-09-25`](./m23-ceremony-census-2026-09-25.json) | frozen measurement census | STEP-0284 | M23 开工仪式普查（schema `sico.m23.ceremony.v0`，工具两次运行字节一致）：selfhost 比较谓词 978 行、嵌套比较 if≥2 位点 79、checked 算术 match 263/bind 型 248、literal 构造器 2,169、chars 调用 153；AI 语料与运行时计数为登记缺口；纯测量，不作语法决定 |
+| [`m24-inventory-2026-09-25`](./m24-inventory-2026-09-25.json) | frozen kickoff inventory | STEP-0287 | M24 五条线盘点（schema `sico.m24.inventory.v0`）：加速主机未命名（gate 2 延期）、模型资产 0、roster 三包缺、原生 UI 库缺、codec 依赖 0；四份前置合同待起草；纯盘点不改 gate |
+| [`m26-inventory-2026-09-25`](./m26-inventory-2026-09-25.json) | frozen kickoff inventory | STEP-0290 | M26 五线盘点（schema `sico.m26.inventory.v0`）：字节面适配 v0、oracle 缺失（pikepdf 候选 owner 门控）、inflate 不可测、UI 滚动缺口、classic-xref 子集钉定；纯盘点不改 gate |
 | [`m3-exit-audit`](./m3-exit-audit.md) | complete | STEP-0037 | M3 determinism/property/limits/performance、全阶段 regression 与 GO |
 | [`sapp-builder-loader-v0`](./sapp-builder-loader-v0.md) | complete | STEP-0039 | canonical `.sapp` builder、strict loader、hash/path/limit verification |
 | [`package-cli-cache-v0`](./package-cli-cache-v0.md) | accepted | STEP-0044 | `.sapp` build/run/inspect、explicit trust、source cache 与 args/stdio |

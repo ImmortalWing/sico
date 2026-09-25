@@ -1,6 +1,6 @@
 # M20 Cross-platform runtime, language v1 and completion audit
 
-> Status: planned; owner session directive "规划M18-M20" (2026-09-13); refined 2026-09-13 after M17 gate-1 GO (STEP-0166) and the M18 exit audit (STEP-0165) — entry gates re-measured, language v1 candidates grounded in the measured pilot friction log; no STEP numbers reserved
+> Status: overall NO-GO per STEP-0170 (batch 1 landed, language freeze and platform breadth open); M23/M25 carry language/release work and owner-gated runners remain external; no STEP numbers reserved
 
 ## 1. Objective
 

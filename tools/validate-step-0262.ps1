@@ -100,9 +100,8 @@ try {
             }
         }
 
-        # Frontier pin: the region through nearest_match (the Map[Text,U64]
-        # parameter surface) must refuse with the exact typed identity this
-        # step leaves behind.
+        # STEP-0276 absorbed the Map-parameter WIP. The current frontier
+        # remains nearest_match, now at GWPACK-OTHER rather than UNRESOLVED.
         $boundary2 = $full.IndexOf('function set_nearest_match')
         if ($boundary2 -lt 0) { throw 'nearest_match boundary marker missing' }
         $probe = Join-Path $temp 'nearest-match-probe.sico'
@@ -115,7 +114,7 @@ try {
         $null = $process1.StandardOutput.ReadToEnd()
         $stderr1 = $process1.StandardError.ReadToEnd()
         $process1.WaitForExit()
-        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-UNRESOLVED')) {
+        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
             throw "nearest_match frontier probe changed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
@@ -128,7 +127,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-UNRESOLVED')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
             throw "formatter canary did not reach the declared nearest_match boundary: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
@@ -148,4 +147,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-UNRESOLVED next=map-text-u64-parameter-surface'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-GWPACK-OTHER repinned-by=STEP-0280'

@@ -1,6 +1,6 @@
 # M17 Vision and model package ecosystem
 
-> Status: planned; plan refined 2026-09-07 at owner request after M14 GO; no STEP numbers reserved
+> Status: overall NO-GO (STEP-0160 audit; gate 1 later GO per STEP-0166; gates 2/4 and remaining roster evidence open); original plan refined 2026-09-07; no STEP numbers reserved
 
 ## 1. Objective
 

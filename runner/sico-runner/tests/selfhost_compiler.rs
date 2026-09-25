@@ -4,7 +4,8 @@
 
 use sico_ir::{Module, canonical_json, lower_core, verify};
 use sico_runner::{
-    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits, ScriptInput,
+    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
+    ScriptInput,
 };
 use sico_source::{SourceFile, SourceId};
 
@@ -488,7 +489,9 @@ fn sico_compiler_lowers_the_line_tokens_region_byte_exactly() {
 
 #[test]
 fn dump_lt_region_ir() {
-    let end = FORMATTER_SOURCE.find("function source_has_lex_error").unwrap();
+    let end = FORMATTER_SOURCE
+        .find("function source_has_lex_error")
+        .unwrap();
     let source = &FORMATTER_SOURCE[..end];
     println!("{}", rust_ir(source));
 }

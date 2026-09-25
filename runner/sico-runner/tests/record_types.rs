@@ -84,8 +84,11 @@ fn run_component(component: &[u8]) -> RunOutcome {
 fn expect_stdout(tag: &str, source: &str, marker: &str) {
     let component = compile_source(tag, source).expect("record source builds");
     let outcome = run_component(&component);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("{tag}: expected output, got {outcome:?}");
+    };
     assert_eq!(
-        outcome.stdout,
+        output.stdout,
         marker.as_bytes(),
         "{tag}: stdout marker mismatch"
     );
@@ -111,7 +114,11 @@ fn record_nested_fields_and_access_chain_run() {
 
 #[test]
 fn record_with_list_and_bool_fields_runs() {
-    expect_stdout("list-field", RECORD_LIST_FIELD_SOURCE, "record-list-field-ok");
+    expect_stdout(
+        "list-field",
+        RECORD_LIST_FIELD_SOURCE,
+        "record-list-field-ok",
+    );
 }
 
 #[test]

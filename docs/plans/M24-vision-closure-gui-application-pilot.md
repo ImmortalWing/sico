@@ -59,7 +59,8 @@ directive, 2026-09-22).
 3. Roster packages (template match/grid/contour) deterministic corpora
    byte-exact vs reference; consumers install them through the M7
    registry path without compiler/Runtime changes.
-4. M17 flipped to GO by an explicit audit (or honest residual register).
+4. Explicit M17 audit: GO only if all required gates have executed evidence;
+   otherwise retain overall NO-GO with a named residual register.
 5. GUI format-converter pilot (portfolio item 4, re-designated
    2026-09-22): the converter application authored in Sico over the
    Sico-language native UI library runs on the Windows evidence host;
@@ -71,8 +72,15 @@ directive, 2026-09-22).
    and refusal fixtures, `clean-room-consumer` for the pilot
    application; any external observation stays owner-gated and is not
    implied by this milestone.
-7. M0–M23 regression green + explicit exit audit for the M17 flip and
-   the M18 application-pilot gate.
+7. Regression green over M0–M22 and every M23 change already landed at
+   the M24 audit revision; explicit, separate verdicts for M17 gate 2,
+   M17 gate 4/roster, the native UI library, the converter pilot and the
+   later M18 portfolio addendum. M24 may close before M23; M25 reruns
+   M0–M24 after both are complete.
+
+The kickoff inventory, contracts, native UI library and converter pilot may
+proceed in parallel with M22/M23. M17 overall GO is claimed only when all
+its actual exit gates have evidence; a converter GO does not imply M17 GO.
 
 ## 4. Non-goals
 
@@ -101,9 +109,9 @@ directive, 2026-09-22).
   are contract-pinned before implementation; untrusted-image bounds
   (dimension/pixel ceilings, memory/time budgets) must be typed, or the
   increment does not close.
-- Accelerator availability on the evidence host: gate 2 may close
-  reference-only with the ADR recording the acceleration deferral if no
-  accelerator is authorized.
+- Accelerator availability on the evidence host: without an authorized
+  accelerator, record a reference-only result and a named gate-2 deferral;
+  do not record accelerated parity or M17 overall GO.
 
 ## 6. Evidence classes
 
@@ -114,10 +122,13 @@ milestone constitutes external adoption or production deployment.
 
 ## 7. Kickoff requirement
 
-First STEP is an inventory in the STEP-0129/0142 pattern: measured
-probe of the current image-vision@1 surface vs the roster needs, the
-M17 gate gaps, and the frozen corpus plan — before any new package
-lands.
+First STEP is an inventory in the STEP-0129/0142 pattern: measure the
+current image-vision@1 surface against roster needs, name the actual
+accelerator/model evidence host or record the missing input, and probe
+the Sico-native UI controls and JPEG↔PNG codec surface against the
+converter. Freeze separate corpus plans for M17, the native renderer and
+the converter before any new package or UI implementation lands. This
+inventory may run while M22/M23 work continues.
 
 ## 8. Gate-by-gate work breakdown (refined 2026-09-22; no STEP numbers reserved)
 
@@ -140,11 +151,19 @@ capability contract.
 - Evidence set: reference-vs-accelerated agreement table on the frozen
   corpus; crash and resource-exhaustion injection against the provider
   (typed limit+1 refusals, fail-closed, host survives without restart).
-- Recorded deferral clause: if no accelerator is authorized on the
-  evidence host, gate 2 closes reference-only with the ADR recording the
-  deferral (§5 risk 3).
+- Recorded deferral clause: if no accelerator is authorized on the evidence
+  host, M17 gate 2 remains NO-GO/deferred. The reference path may be
+  evidenced with the missing named hardware/provider input recorded.
+  An ADR or reference-only corpus does not replace the real comparison
+  required by §3 gate 1; M17 overall cannot flip GO on that basis.
 
 ### 8.2 M17 gate 4 — model/package provenance RFC
+
+> Status 2026-09-25 (post 24-A): drafted —
+> [`RFC-0051`](../rfc/RFC-0051-model-provenance-manifest-v0.md)
+> (draft, owner acceptance required): closed manifest schema over the M7
+> SHA-256 discipline, typed budget enforcement, five-item fixture
+> evidence set; no live-model claim arises.
 
 - Asset manifest schema: pinned digest algorithm, provenance fields,
   CPU/GPU/memory/time budget fields, versioned-package integration that
@@ -185,6 +204,12 @@ work package maps each concern to its contract home:
 - Increments: step 1 (§3 gate 5) converts JPEG ↔ PNG in both
   directions; further formats, options or batch features take their own
   RFC + STEP.
+- Conversion-engine contract drafted 2026-09-25 (post 24-A):
+  [`RFC-0050`](../rfc/RFC-0050-image-codec-jpeg-png-v0.md) (draft, owner
+  acceptance required) freezes `sico:user/image-codec@1` — four pure
+  functions over the RFC-0041 BGRA8 contract, accepted profiles and
+  encoder settings frozen by name, byte-stable outputs, the §8.5 refusal
+  surface typed end to end.
 - The first increment's scope is frozen by the codec contract (RFC):
   accepted JPEG/PNG profiles, output parameters, and determinism
   guarantees (PNG outputs byte-stable for fixed input; JPEG encoder
@@ -219,6 +244,14 @@ Beyond the re-designation itself, no §3 gate numbering, no evidence
 class and no capability contract changes; no STEP number is reserved.
 
 #### 8.6.1 Sico-language native UI library (prerequisite workstream)
+
+> Status 2026-09-25 (post 24-A): contracts drafted — source side
+> [`RFC-0052`](../rfc/RFC-0052-native-ui-source-binding-v0.md) (draft:
+> `sico:user/ui@1`, zero grammar growth) and renderer side
+> [`ADR-0018`](../adr/ADR-0018-native-renderer-fluent-subset-v0.md)
+> (proposed: Direct2D+DirectWrite Fluent-token subset, isolated adapter
+> crate, frame determinism, default-deny UI authority). Both require
+> owner acceptance before any UI implementation STEP.
 
 Today the M5 desktop host UI is a strict companion model with no
 compiler-facing Sico binding (recorded in the 案例项目 README), and M15's

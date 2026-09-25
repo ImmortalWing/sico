@@ -1,0 +1,4 @@
+// W1 zero-indent body: explicit end function determines the scope.
+function main() returns Int:
+return 42
+end function

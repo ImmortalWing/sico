@@ -1,0 +1,59 @@
+{
+  "schema": "sico.m26.inventory.v0",
+  "step": "STEP-0290",
+  "card": "26-A",
+  "purpose": "M26 kickoff inventory (M26 plan section 7): measured probes before any package or RFC implementation; pre-M25 inventory and RFC drafting explicitly allowed; no capability claimed.",
+  "byte_text_list_map_surface": {
+    "bytes": "sico.bytes.length / sico.bytes.at exist (used by selfhost parser.sico:71-82); byte-at returns I64 with default",
+    "text": "sico.text length/concat/encode/split_lines/char_at in executable surface (RFC-0045 batch 2)",
+    "list": "List[Text]/List[I64]/List[U64] executable (RFC-0046); List[record] columnar monomorphs (RFC-0047 D5)",
+    "map": "Map[K,V] parameter surface landed in selfhost parser (STEP-0276); executable map ops exist in app profile (sico.map.*)",
+    "pdf_parsing_fit": "byte-level scanning (header/xref/object headers) maps onto bytes.at/length; dict/array model maps onto Map/List — no language gap for the v0 classic-xref reading subset; xref-stream parsing needs binary field reads (fits bytes.at)"
+  },
+  "corpus_generator_and_oracle": {
+    "pinned_python": "CPython 3.12.10 embeddable (target/tooling/python-3.12, ensure-python.ps1)",
+    "pdf_libraries_available": [
+      "pikepdf: no",
+      "PyPDF2: no",
+      "pypdf: no",
+      "fitz: no",
+      "reportlab: no",
+      "zlib(stdlib): yes"
+    ],
+    "generator_plan": "repo-local deterministic generator (stdlib only) producing classic-xref, uncompressed-object PDFs 1.4-1.7 across the frozen slice matrix; version pinned to the ensure-python toolchain",
+    "oracle_status": "MISSING INPUT: no independent PDF oracle installed; pikepdf (pinned version, owner-gated install) named as the oracle candidate; until installed the oracle is generator-roundtrip + manual inspection, evidence class stays internal-fixture and no interoperability claim is made"
+  },
+  "inflate_candidates": {
+    "references_in_workspace": 0,
+    "pure_sico_candidate": "unimplemented (DEFLATE decompressor authored in Sico; large bounded slice, cost not measurable before authoring)",
+    "provider_candidate": "unimplemented (versioned default-deny host capability wrapping stdlib-grade inflate)",
+    "micro_benchmark": "not measurable now (neither exists); decision deferred to the filters slice with the measured comparison the plan requires"
+  },
+  "ui_control_gaps_for_pdf_tool": {
+    "needs": [
+      "page list",
+      "metadata view",
+      "rotate action",
+      "merge action",
+      "progress",
+      "file open/save dialogs"
+    ],
+    "rfc0052_composition": "page list = column of text rows + click events OR dropdown; metadata view = text; rotate/merge = buttons; progress = progress; dialogs = existing file capabilities",
+    "named_gap": "scrolling/viewport is absent from RFC-0052 v0; long page lists do not compose without it",
+    "gap_home": "M24 plan 8.6.1 workstream (new RFC-0052 version) or v0 confines page selection to dropdown; decided at the M26 GUI gate, no web fallback"
+  },
+  "reader_slice_pinning": {
+    "v0_subset": "PDF 1.4-1.7 classic files: %PDF-1.n header, classic xref TABLE + trailer + startxref, uncompressed indirect objects; streams parsed structurally but any stream filter is typed-refused in v0 (inflate decision pending); encryption refused",
+    "extension_corpora_separate": [
+      "xref streams (PDF 1.5+)",
+      "object streams",
+      "incremental updates"
+    ]
+  },
+  "gates": {
+    "M26": "planned; inventory done; two RFCs drafted same STEP (acceptance owner-gated); implementation waits for M25 v1.0 release GO per route replan",
+    "M22_M25": "unaffected; measurement/inventory/contract only, not counted toward R3"
+  },
+  "determinism_note": "scans over the current tree and pinned toolchain; no timestamps; recomputable",
+  "ok": "M26_INVENTORY_OK"
+}

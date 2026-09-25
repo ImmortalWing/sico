@@ -1,0 +1,40 @@
+name: M22 W1 independent CI
+
+on:
+  push:
+    branches:
+      - codex/m22-w1-ci
+  workflow_dispatch:
+
+jobs:
+  windows-gnu:
+    runs-on: windows-2025
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GNU build tools
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
+      - name: Run repository CI on a fresh runner
+        shell: powershell
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
+          rustup toolchain install $env:RUSTUP_TOOLCHAIN --component clippy --component rustfmt
+          $gnuBin = Join-Path $env:MSYS2_LOCATION 'mingw64\bin'
+          if (-not (Test-Path -LiteralPath (Join-Path $gnuBin 'dlltool.exe'))) {
+            throw "GNU dlltool missing from $gnuBin"
+          }
+          $env:Path = "$gnuBin;$env:Path"
+          $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe'
+          & $cargo fetch --locked
+          if ($LASTEXITCODE -ne 0) { throw 'root cargo fetch failed' }
+          & $cargo fetch --locked --manifest-path .\runner\sico-runner\Cargo.toml
+          if ($LASTEXITCODE -ne 0) { throw 'runner cargo fetch failed' }
+          & powershell -ExecutionPolicy Bypass -File .\tools\run-ci.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

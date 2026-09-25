@@ -1,0 +1,157 @@
+{
+  "schema": "sico.m22.w2.baseline.v0",
+  "generated_utc": "2026-09-24T16:33:19.6784800Z",
+  "purpose": "W2 records-surface measurement baseline, frozen by execution card 22-B (STEP-0282) before any W2 S3/S4 implementation STEP; measurement only, no R3 credit, no capability claim.",
+  "worktree": {
+    "head": "0e4cbb9b3180cb60a69aa36f74692c735ce74f36",
+    "branch": "dev",
+    "note": "measured tree includes uncommitted STEP-0279/0280 documentation+implementation changes; legacy lexer.sico/tokens.sico/declaration_parser.sico retired by STEP-0278 are absent and are not queue items."
+  },
+  "source_tree": {
+    "total_lines": 16390,
+    "files": [
+      {
+        "path": "selfhost/checker.sico",
+        "lines": 42,
+        "sha256": "87adb974e4118a89c037bfddab24a1bbf8eed4cf7dcc2ab6b75b305fd2a4e2de",
+        "role": "integration checker entry"
+      },
+      {
+        "path": "selfhost/compiler.sico",
+        "lines": 430,
+        "sha256": "2bd38a9a2a8e01d2101a1cd37c77d4a0d3d1df2f90cb108c79ac03e89be251bd",
+        "role": "selfhost compiler root (module wiring)"
+      },
+      {
+        "path": "selfhost/compiler_lexer.sico",
+        "lines": 462,
+        "sha256": "0e62587d120c8058f627b7f511065dbbad82c06f6ed8a6ff525673b74a7e0c9b",
+        "role": "S3 lexer source"
+      },
+      {
+        "path": "selfhost/compiler_parser.sico",
+        "lines": 686,
+        "sha256": "aa5f9cc1d4b9a532f3760dc67c7a662424b2544cd14cd8e3741caeff8e65d493",
+        "role": "S3 parser source"
+      },
+      {
+        "path": "selfhost/compiler_semantics.sico",
+        "lines": 889,
+        "sha256": "543612b242db5c505fa4a27e5f8aec393b189a5c508e01e57bedb8ad4329ceb6",
+        "role": "S3/S4 semantics source (STEP-0280 structural E7002)"
+      },
+      {
+        "path": "selfhost/formatter.sico",
+        "lines": 827,
+        "sha256": "9e2f2bc16e971a678c341f7652f2554accff2b03c557456ebab77ddd724e9e02",
+        "role": "declared canary unit (30 functions)"
+      },
+      {
+        "path": "selfhost/parser.sico",
+        "lines": 13005,
+        "sha256": "a2d7f3d5551c0ffed31037c1b674b8c080c7e57d1dc07780c505d40bc5505064",
+        "role": "S3/S4 largest unit"
+      },
+      {
+        "path": "selfhost/parser_driver.sico",
+        "lines": 49,
+        "sha256": "67b7bf175ced4ea83b1ef5b8dc430f3605c09fd8f9d1624884e481b5c38e994c",
+        "role": "parser driver entry"
+      }
+    ]
+  },
+  "canary": {
+    "schema": "sico.m22.canary.v0",
+    "generated_utc": "2026-09-24T16:33:19.6784800Z",
+    "formatter_lines": 828,
+    "functions_total": 30,
+    "functions_covered": 22,
+    "coverage_pct": 73.3,
+    "frontier_function": "nearest_match",
+    "frontier_code": "ERR:E-SH-IR-GWPACK-OTHER",
+    "full_source_exit": 122,
+    "function_list": [
+      "add",
+      "sub",
+      "same",
+      "ascii_letter",
+      "ident_start",
+      "ident_continue",
+      "word_kind",
+      "scan_space",
+      "scan_ident",
+      "scan_integer",
+      "scan_comment",
+      "scan_string",
+      "punctuation_kind",
+      "item",
+      "append_pair",
+      "line_tokens",
+      "source_has_lex_error",
+      "no_space_before",
+      "no_space_after",
+      "call_left",
+      "format_code",
+      "repeat_indent",
+      "nearest_match",
+      "set_nearest_match",
+      "match_arm_levels",
+      "close_code",
+      "direct_close",
+      "opener_close",
+      "normalize_source",
+      "main"
+    ],
+    "evidence": {
+      "component_path": "C:\\Users\\64473\\AppData\\Local\\Temp\\sico-canary-ff76961ca4e9474780d57b3395a6ffa3\\compiler.component.wasm",
+      "fuel_cap": 5000000000,
+      "host_note": "replan-v1 R1 canary report; ABI variant per local build cache (STEP-0261 host note)"
+    }
+  },
+  "budget_probe": {
+    "tool": "tools/probe-m22-budget.ps1",
+    "schema": "sico.m22.budget.v0",
+    "inputs": [
+      {
+        "input_lines": 1054,
+        "copies": 36,
+        "consumed_fuel_bracket": "(1e8,1e9]",
+        "min_cap": 1000000000,
+        "baseline_wall_ms": 24
+      },
+      {
+        "input_lines": 4128,
+        "copies": 142,
+        "consumed_fuel_bracket": "(1e8,1e9]",
+        "min_cap": 1000000000,
+        "baseline_wall_ms": 51
+      },
+      {
+        "input_lines": 8217,
+        "copies": 283,
+        "consumed_fuel_bracket": "(1e9,5e9]",
+        "min_cap": 5000000000,
+        "baseline_wall_ms": 86
+      },
+      {
+        "input_lines": 16395,
+        "copies": 565,
+        "consumed_fuel_bracket": "(1e9,5e9]",
+        "min_cap": 5000000000,
+        "baseline_wall_ms": 141
+      }
+    ],
+    "comparison_to_step_0266": "fuel brackets identical (1k/4k in (1e8,1e9]; 8k/16k in (1e9,5e9]); no cliff; 8k/16k min_cap saturates the 5e9 ladder top"
+  },
+  "runner_identity": {
+    "platform": "Windows x64 GNU",
+    "runner": "runner/sico-runner/target/debug/sico-runner.exe (debug build)",
+    "cli": "target/debug/sico.exe (debug build)",
+    "toolchain": "1.98.0-x86_64-pc-windows-gnu",
+    "binutils_path": "target/tooling/msys2-binutils/mingw64/bin",
+    "fuel_cap": 5000000000
+  },
+  "stack_high_water": "not measured (未测得); runner CLI does not expose stack high-water (probe-m22-budget.ps1 evidence note); observable ceiling remains the StackLimit outcome class",
+  "natural_input_wall_time": "not re-measured this step; STEP-0266 debug-runner values (22-fn prefix 45.9 s, full formatter 41.9 s) remain the recorded numbers; release-runner wall re-measure still open",
+  "evidence_class": "internal-fixture, real runner"
+}

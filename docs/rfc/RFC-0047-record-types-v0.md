@@ -30,10 +30,11 @@ the Script WIT surface.
   layer is 16,931 lines of which `parser.sico` alone is 12,739 (75%); the
   S2 semantic table simulates one struct with 18 parallel `List[Text>`
   columns and a 507-line single function; review P2 documents the
-  duplication and fingerprint-rule debts. A column-shape census of the
-  selfhost sources (exit corpus EC-4) measures the projected authored-size
-  reduction; the working estimate is that the SOA simulation is the
-  dominant share of the lowering parser's line count.
+  duplication and fingerprint-rule debts. The later frozen EC-4 census
+  (STEP-0270) measured 360 direct list-ceremony lines in 16,931 selfhost
+  lines (2.13% ceiling proxy); it does not support the early estimate of
+  dramatic line-count reduction. The consumer case is typed invariants and
+  long-term maintenance, not source-size savings.
 - **Consumer 2 — the application profile.** RFC-0038's application corpus
   (M14 end-to-end sources) and the M22 plan §8 friction list (AI-generation
   ceremony per line) measure record-less cost on ordinary application code;

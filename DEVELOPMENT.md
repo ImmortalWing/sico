@@ -1293,7 +1293,7 @@ M10–M12 是在 production domain/identity/credentials、third-party pilots、l
 
 ### M18：Representative AI Applications and External Pilots
 
-交付：API agent、流式数据工具、Web/UI 应用、原生视觉自动化和独立 package/Component 消费者。俄罗斯方块案例按 M14 纯 Sico 求解器 → M16 capture/input → M17 vision → M18 长期、安全、独立复现的顺序验收。
+交付：API agent、流式数据工具、Web/UI 应用、Sico 原生 GUI 格式转换器和独立 package/Component 消费者。俄罗斯方块案例保留 M14 纯 Sico 求解器 oracle；M16 capture/input 与 M17 vision 的既有证据各按本里程碑声明，M18/M24 不再以方块游戏为应用试点（STEP-0258）。
 
 进入条件：M14 GO，且每个 pilot 所需的平台里程碑已 GO。退出条件：应用不修改 compiler/Runtime/Host core 即可开发、测试、打包、授权、运行和更新；内部 fixture、洁净室 consumer、外部 pilot 和 production evidence 严格分级。
 
@@ -1301,7 +1301,7 @@ M14–M18 的详细门槛见 [`docs/plans/`](docs/plans/README.md)。规划阶�
 
 ### M19–M25：生产工程、平台广度、DX、自举与产品退出
 
-M19 生产工程与发布就绪、M20 跨平台 Runtime/语言 v1/完成审计、M21 开发者体验/标准库第二批/生态激活、M22 编译器自举轨道按各自 owner session directive 执行，状态以 [`docs/ROADMAP.md`](docs/ROADMAP.md) 为准。所有者于 2026-09-17 以「继续完成sico，M22-M25」确认：继续 M22 自举闭环（S6 lowering → S7 出口审计），并登记 M23 语言 v1 第三批——表达式人机工学（逐项 RFC-0033 门：中缀比较/逻辑运算符、表达式位置条件、裸字面量复测政策、text.chars 决定）、M24 视觉收口与方块游戏试点（M17 gate 2/4 + RFC-0043 roster 包将 M17 翻 GO，随后俄罗斯方块案例在真实 Windows 窗口经 M14 求解器 + M16 capture/input + M17 vision 走通完整验收链）、M25 v1.0 发布（语言 v1 freeze、§13 完成审计以 M14–M24 全证据链重发、可复现签名 bundle 与显式产品退出结论）。M23–M25 规划不预占 STEP 编号；每项实现工作仍以接受的 RFC/ADR 和盘点 STEP 开工。
+M19 生产工程与发布就绪、M20 跨平台 Runtime/语言 v1/完成审计、M21 开发者体验/标准库第二批/生态激活、M22 编译器自举轨道按各自 owner session directive 执行，状态以 [`docs/ROADMAP.md`](docs/ROADMAP.md) 为准。2026-09-17 登记 M23 表达式人机工学、M24 视觉收口与应用试点、M25 v1.0 发布；后续 STEP-0258 把 M24 试点改为 Sico 原生 GUI 的 JPEG↔PNG 格式转换器，STEP-0264 把 M23 实现门改为 M22 S7 GO 或 R3 止损双路径。M24 的原生 UI/试点工作可与 M22/M23 并行；M25 分别裁决 v1.0 发布与 §13 项目完成，前者要求 M23 第三批和 M24 原生 GUI 转换器均 GO。M26 在 M25 后以版本化包交付 PDF 结构阅读、合并、旋转和原生 GUI 工具。M23–M26 规划不预占 STEP 编号；每项实现工作仍以接受的 RFC/ADR 和盘点 STEP 开工。
 
 ## 20. 性能与质量指标
 

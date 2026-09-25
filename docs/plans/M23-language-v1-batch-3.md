@@ -1,6 +1,6 @@
 # M23 Language v1 batch 3 — expression ergonomics
 
-> Status: planned (owner session directive 「继续完成sico，M22-M25」, 2026-09-17); no STEP numbers reserved; contract drafting may proceed before M22 S7 closes, implementation may not; amended 2026-09-24 (STEP-0264, M22–M26 route replan v1 §4): the implementation gate becomes dual-exit — Route A after an M22 S7 GO, Route B immediately after an M22 R3 stop-loss declaration (S6 convergence declared not demonstrated on the current surface); the mid-flight-churn rationale is preserved because Route B never fires while a closure attempt is in flight
+> Status: planned (owner session directive 「继续完成sico，M22-M25」, 2026-09-17); no STEP numbers reserved; contract drafting and kickoff measurement may proceed before either M22 exit; implementation uses Route A after M22 S7 GO or Route B after an M22 R3 stop-loss declaration under the current W2 S3/S4 canary (STEP-0264, clarified by the M14–M26 audit)
 
 ## 1. Objective
 
@@ -45,8 +45,8 @@ Items, exactly as recorded in the M22 plan §8:
   - **Route A — M22 S7 exit audit GO.** Batch 3 implements on a proven
     closure; the self-host re-baseline decision (exit gate 5) follows.
   - **Route B — M22 R3 stop-loss declared** (M22 plan R-phase: 4
-    consecutive implementation STEPs with zero `formatter.sico` canary
-    growth and an unmoved refusal frontier; see
+    consecutive W2 S3/S4 implementation STEPs with zero current-phase
+    canary growth and an unmoved refusal frontier; see
     [`M22–M26 route replan v1`](./M22-M26-route-replan-v1.md) §3–§4).
     Batch 3 implements immediately — its measured consumers already
     exist (§8) and the richer surface is the registered re-baseline
@@ -80,7 +80,9 @@ Items, exactly as recorded in the M22 plan §8:
    formatter slices) either consumes the batch-3 surface or a declared,
    disjoint subset — recorded in the M22 dual-implementation register,
    not silently divergent.
-6. M0–M22 regression green + explicit exit audit with per-gate evidence.
+6. M0–M21 and every landed M22 slice regression green + explicit exit
+   audit with per-gate evidence. Route B does not imply M22 S6/S7 GO;
+   the stopped M22 attempt remains a registered NO-GO.
 7. AI-generation-noise claims (if any) only from owner-credentialed
    live-model runs; offline measurement is labeled offline.
 
@@ -113,11 +115,17 @@ re-measurement. No platform claims arise from this milestone.
 
 ## 7. Kickoff requirement
 
-The first implementation STEP (after RFC acceptance) is an inventory
-STEP in the STEP-0129/0142 pattern: a measured probe of the current
-surface (operator/keyword absence, ceremony counts on the selfhost
-corpus), the RFC set, and the machine matrix extension — before any
-grammar change lands.
+The kickoff inventory is a measurement STEP in the STEP-0129/0142 pattern:
+probe the current surface (operator/keyword absence, ceremony counts on the
+selfhost corpus), the RFC set, and the machine matrix extension before any
+grammar change. It may run while M22 proceeds. **Done: STEP-0284**
+(execution card 23-A) froze [`m23-ceremony-census-2026-09-25.json`](../reports/m23-ceremony-census-2026-09-25.json)
+via `tools/census-m23-ceremony.ps1` — deterministic, recomputable textual
+counts over the 8-source selfhost tree and the 51-file application corpus;
+the AI-generated corpus and runtime call/allocation counters are recorded
+gaps, not estimates. The first implementation
+STEP additionally requires one of the §2 M22 routes and the relevant
+accepted per-item RFC.
 
 ## 8. Per-item work protocol (refined 2026-09-22; no STEP numbers reserved)
 
@@ -126,9 +134,19 @@ labels for planning, not allocated STEP identifiers.
 
 ### 8.1 Item 1 — infix comparison and logical operators
 
-- **Measured consumer (inventory phase).** On the eleven `selfhost/*.sico`
-  files (14,018 lines) plus the frozen application corpora, count and
-  freeze a ceremony table: (a) `Result[Bool, NumericError]` match blocks
+> Status 2026-09-25 (card 23-B): RFC drafted —
+> [`RFC-0048`](../rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)
+> (draft, owner acceptance required) proposes the five ordered/inequality
+> infix comparisons plus `&&`, desugared onto the existing
+> `EqualFixed`/`LessFixed` operations; `||` and `!` excluded (no measured
+> consumer). The RFC also records the discovered `<=` check-green /
+> build-refused split on the unconsumed `LessEqual` token.
+
+- **Measured consumer (inventory phase).** Enumerate the current tracked
+  `selfhost/*.sico` sources and line counts in the inventory STEP (the
+  historical eleven-file/14,018-line snapshot is no longer the current
+  denominator after STEP-0278), then add the frozen application corpora.
+  Count and freeze a ceremony table: (a) `Result[Bool, NumericError]` match blocks
   whose only purpose is one comparison (`less_than`/`greater_than`/…),
   (b) nested-`if` conjunction/disjunction sites two or more levels deep,
   (c) `checked_add`/`checked_sub` match blocks per arithmetic site. Report
@@ -152,6 +170,12 @@ labels for planning, not allocated STEP identifiers.
   re-baseline entry recorded (§9).
 
 ### 8.2 Item 2 — expression-position conditions
+
+> Status 2026-09-25 (card 23-B): RFC drafted —
+> [`RFC-0049`](../rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)
+> (draft, owner acceptance required): the two let-bound statement forms
+> only (`let x = if/else`, `let x = match`), single-expression arms,
+> desugared through the landed D2 machinery; E2026/E2027 appended.
 
 - **Measured consumer.** Count the mutable-cell + all-return match +
   join-read sites that exist only to bind one conditional value, in the
@@ -177,6 +201,11 @@ labels for planning, not allocated STEP identifiers.
   "D3 stands" with the new measurement, or the smallest typed-literal RFC
   carrying the full RFC-0033 evidence. No grammar change may precede this
   record.
+- **Status 2026-09-25 (card 23-A/23-B).** Selfhost-side measurement is
+  frozen (STEP-0284: 2,169 literal-constructor calls, 3.199/KB). The
+  owner-reviewed AI-generated corpus remains the unmet leg; the decision
+  record is therefore **deferred**, the item stays open, and no grammar
+  change is made.
 
 ### 8.4 Item 4 — `text.chars` (queued by RFC-0046 §2)
 
@@ -187,15 +216,25 @@ labels for planning, not allocated STEP identifiers.
 - **Decision rule.** The intrinsic lands only if measurably better on the
   frozen corpora **and** it carries the same RFC-0033 evidence bar;
   otherwise the composed form is recorded as final and the item closes.
+- **Status 2026-09-25 (card 23-A/23-B): closed per the recorded rule.**
+  The runtime leg was never demonstrated: the runner CLI exposes no
+  call/allocation counters (recorded in STEP-0284), so "measurably
+  better" cannot be shown. Frozen demand: 153 composed
+  `text.length`/`char_at` call sites, 0 in the formatter `word_kind`
+  region. The composed form is recorded as final and the item closes; a
+  reopened item would need new runtime measurement evidence and the full
+  RFC-0033 bar.
 
 ## 9. Sequencing and dependency map (refined 2026-09-22)
 
 - One kickoff inventory covers all four probes (§7); after that the items
   are independent — each may proceed or close on its own RFC without
   waiting for the others.
-- Ordering constraint that does not move: **implementation** of any item
-  waits for the M22 S7 exit audit (§2). RFC drafting and measurement may
-  run in parallel with M22 S5–S7.
+- Ordering constraint: **implementation** of an item waits for either
+  M22 S7 GO (Route A) or the recorded R3 stop-loss (Route B), plus its
+  accepted RFC (§2). Kickoff measurement and RFC drafting may run while
+  M22 is active. Route B re-baselines M22 only after this milestone's
+  exit audit.
 - M22 interaction per accepted item: an entry in the M22
   dual-implementation register plus an explicit self-host re-baseline
   decision — the Sico frontend either consumes the new surface or a
