@@ -1,10 +1,10 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-25 (STEP-0294 22-C S2 local real-runner exit passed; nearest_match moves from CALL-TARGET to STATEMENT at 22/30, R3 consecutive stall count 0. Independent CI on the S2 commit is pending. W1/S1 retain their separate isolated-branch CI verdicts. M22 remains NO-GO and the parallel origin/dev history is unmerged.)
+> - updated: 2026-09-26 (STEP-0294 22-C S2 local real-runner exit and independent Windows GNU CI on 5a6d0bb passed; S2 GO on the isolated branch. nearest_match moves from CALL-TARGET to STATEMENT at 22/30, R3 consecutive stall count 0. W1/S1 retain their separate CI verdicts. M22 remains NO-GO and the parallel origin/dev history is unmerged.)
 > - previous update: 2026-09-24 (STEP-0263: M26 registered per owner directive — PDF document processing: structural reading, merge, rotate as a versioned package, plus a GUI PDF tool authored over the Sico-language native UI library; no STEP numbers reserved)
 > - previous update: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1/S1 GO on isolated CI-tested commits and 22-C S2 pending CI; M23–M26 planned.
+> - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1 and 22-C S1/S2 GO on separate isolated CI-tested commits; M23–M26 planned.
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -336,7 +336,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 重划片支持：STEP-0264 按 owner 指令（2026-09-24「重新规划路线，审视M22-M26，确保能落实到工程实现」）登记 M22–M26 路线重划片——M22 执行队列外加 R 阶段收敛门（R0 架构决策现为已接受的 ADR-0017 Option A + RFC-0047；R1 canary/燃料区间已测，栈高水位待测；R3 预登记止损：自 W2 S3/S4 起连续 4 个实现 STEP 若当前阶段 canary 零增长且拒绝前沿不动，就登记止损并触发 M23 Route B；停滞实现 STEP 计数，文档/测量 STEP 不计；formatter 达 30/30 后使用其余 selfhost 差分，S5 使用独立 codegen 门）；M23 实现门改双出口（Route A：M22 S7 GO 后；Route B：止损宣告后立即，自举于 richer surface 的 re-baseline 在 M23 出口审计后重启，ADR-0015 合同不变）；M24 入口门不依赖 M22/M23、即刻可开工盘点；M25 入口门接受显式 M22 结论（GO 或止损登记，绝不暗示）；不改任何能力合同、证据等级或 RFC/ADR 纪律；不预留实现 STEP 编号。详见 [`M22–M26 route replan v1`](./plans/M22-M26-route-replan-v1.md)。
 
-状态：in progress / NO-GO；S1/S2 声明子集完成，S3/S4/S5 partial，S6/S7 未进入。STEP-0292 的独立 Windows GNU CI 在 e8495f9 成功，W1 于隔离分支裁为 GO；STEP-0293 修复 while 体 u64.to_text RHS 的类型拒绝缺口，独立 CI 在 cb371c5 成功，22-C S1 于该分支裁为 GO。STEP-0294 的 map.get match 主语本机真实 runner 差分与相邻验证已过，独立 CI 待跑；formatter 仍为 22/30，nearest_match typed 前沿 CALL-TARGET → STATEMENT，R3 连续停滞数 0；下一片是 match 臂内 if/return 控制流。origin/dev 并行 STEP-0279–0283 历史未合并，不引用本分支 CI 为其证据。
+状态：in progress / NO-GO；S1/S2 声明子集完成，S3/S4/S5 partial，S6/S7 未进入。STEP-0292 的独立 Windows GNU CI 在 e8495f9 成功，W1 于隔离分支裁为 GO；STEP-0293 修复 while 体 u64.to_text RHS 的类型拒绝缺口，独立 CI 在 cb371c5 成功，22-C S1 于该分支裁为 GO。STEP-0294 的 map.get match 主语本机真实 runner 差分与独立 CI 在 5a6d0bb 均绿，22-C S2 于该分支裁为 GO；formatter 仍为 22/30，nearest_match typed 前沿 CALL-TARGET → STATEMENT，R3 连续停滞数 0；下一片是 match 臂内 if/return 控制流。origin/dev 并行 STEP-0279–0283 历史未合并，不引用本分支 CI 为其证据。
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 

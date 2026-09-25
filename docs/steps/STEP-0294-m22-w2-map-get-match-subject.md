@@ -1,6 +1,6 @@
 # STEP-0294: M22 W2 S3/S4 — Map[Text,U64] get as a match subject
 
-> - status: implementation complete locally / 22-C S2 independent CI pending
+> - status: complete / 22-C S2 GO on the isolated branch after independent CI
 > - phase: M22 compiler self-host, execution card 22-C S2
 > - date: 2026-09-25
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -47,12 +47,20 @@ WIT, Host or authority contract changes.
 - `tools/validate-step-0245.ps1`: semantic 6+11, bundle 4, checker 9
   (frozen 215 plus W1 five), compiler 23 and runner clippy passed.
 
-## Gate accounting
+## Independent CI and gate accounting
 
 The local shape exit passed and the typed frontier moved, so the R3
-consecutive-stall count remains **0**. **22-C S2 is pending independent CI**
-until a fresh runner succeeds on the exact repaired commit. M22 remains
-NO-GO. STEP-0291's S3 control-flow slice is next: nested `if` and `return`
+consecutive-stall count remains **0**. The final implementation and
+literal/parameter/local key differential were pushed as
+`5a6d0bbad59c9d014aab2cf5612b39b02e408fbd`. [GitHub Actions run
+36147743130](https://github.com/ImmortalWing/sico/actions/runs/36147743130)
+completed **success** on a fresh Windows GNU runner at 2026-09-25 14:47:10
+UTC. Its `Run repository CI on a fresh runner` step succeeded. The earlier
+`5a802ff` run also succeeded but did not include the parameter-key assertion
+and is not used for the final verdict.
+
+**22-C S2 GO on the isolated branch.** M22 remains NO-GO. STEP-0291's S3
+control-flow slice is next: nested `if` and `return`
 inside the `ok` arm of `nearest_match`, with byte-exact prefix differential.
-The parallel `origin/dev` W1/W2 history remains unmerged; branch CI will not
+The parallel `origin/dev` W1/W2 history remains unmerged; branch CI does not
 adjudicate that history.

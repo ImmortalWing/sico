@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0294 (S2 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, and STEP-0293 independently verified 22-C S1 on repaired cb371c5, both on the isolated codex/m22-w1-ci branch. STEP-0294's local real-runner result moves the formatter frontier from CALL-TARGET to STATEMENT at 22/30; R3 consecutive stall count is 0. The next slice is match-arm nested if/return control flow after S2 CI. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0294 (S2 GO). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, and STEP-0294 verified 22-C S2 on 5a6d0bb, all on the isolated codex/m22-w1-ci branch. The formatter frontier moved from CALL-TARGET to STATEMENT at 22/30; R3 consecutive stall count is 0. The next slice is match-arm nested if/return control flow. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -132,8 +132,9 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    stagnant steps. STEP-0294 is the second implementation STEP: the bounded
    `sico.map.get[Text,U64]` match subject passes local byte-exact differential
    and refusal regressions, moving the frontier to `ERR:E-SH-IR-STATEMENT`
-   at 22/30; independent CI is pending and the consecutive-stall count remains
-   zero. The parallel `origin/dev` history is not adjudicated by this branch's CI.
+   at 22/30; independent CI succeeded on `5a6d0bb`, giving S2 GO with the
+   consecutive-stall count still zero. The parallel `origin/dev` history is
+   not adjudicated by this branch's CI.
 2. **Formatter tail from the current frontier** — the
    `Map[Text,U64]` region (`nearest_match`/`set_nearest_match`/
    `match_arm_levels`),
