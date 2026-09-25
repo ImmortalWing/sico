@@ -13,9 +13,10 @@ completed successfully. The frozen STEP-0282 W2 baseline is 22/30 formatter
 functions, `nearest_match` / `ERR:E-SH-IR-GWPACK-OTHER`.
 
 This first R3-counted implementation STEP adds the single-argument
-`sico.u64.to_text` intrinsic to `gw_rhs_packed` by reusing the existing typed
-`gw_intrinsic_call_packed` path. The helper's one-argument shape and local-cell
-read logic remain unchanged. `sico.text.encode` and `sico.bytes.length` were
+`sico.u64.to_text` intrinsic to `gw_rhs_packed` by reusing the existing
+`gw_intrinsic_call_packed` shape and local-cell read path. The new dispatch
+also checks that either a parameter or a local-cell operand is `u64` before
+returning the packed IR. `sico.text.encode` and `sico.bytes.length` were
 already in this path; neither is newly claimed here. No language contract,
 WIT, or Host authority changes.
 
@@ -24,7 +25,8 @@ WIT, or Host authority changes.
 - New real-runner test compares a while-body `let key =
   sico.u64.to_text(cursor)` against the Rust oracle's canonical IR byte for
   byte. A two-argument mutation is typed-refused as
-  `ERR:E-SH-IR-CALL-SHAPE`. Targeted test 1/1 passed.
+  `ERR:E-SH-IR-CALL-SHAPE`; `Text` parameter and `Text` local operands are
+  typed-refused as `ERR:E-SH-IR-CALL-TYPE`. Targeted test 1/1 passed.
 - `tools/report-m22-canary.ps1` on the current tree: **22/30**, first uncovered
   function `nearest_match`, typed frontier **`ERR:E-SH-IR-CALL-TARGET`**, full
   source exit 122. This moves the refusal frontier while function coverage
@@ -37,6 +39,17 @@ WIT, or Host authority changes.
   difference in the new test. After formatting that statement, the complete
   rerun passed: semantic 6+11, bundle 4, checker 9 (original 215 plus W1 five
   additions), compiler 22 and runner clippy.
+
+The first pushed S1 draft (`f148b87`) passed its positive local checks but
+an additional negative probe found that the generic intrinsic helper would
+emit IR when a `Text` parameter was passed to `u64.to_text`. The same error
+was reproduced for a `Text` local. Both are now refused before IR is returned;
+the negative probes are permanent runner assertions. The `f148b87` remote
+run, regardless of its result, cannot adjudicate this repaired version.
+After the repair, `validate-step-0262.ps1`, `validate-step-0245.ps1`, and
+`validate-step-0261.ps1` were each rerun from a fresh command invocation and
+passed; `validate-step-0124.ps1 -SelfTest`, runner fmt, and `git diff --check`
+also passed.
 
 ## Gate accounting
 

@@ -559,6 +559,31 @@ fn sico_compiler_lowers_u64_to_text_in_while_body_byte_exactly() {
             message: "ERR:E-SH-IR-CALL-SHAPE".into(),
         }
     );
+
+    let wrong_type = source
+        .replace("convert(depth: U64)", "convert(depth: U64, word: Text)")
+        .replace("sico.u64.to_text(cursor)", "sico.u64.to_text(word)");
+    assert_eq!(
+        run_guest(&wrong_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+
+    let wrong_local = source
+        .replace(
+            "let cursor = depth",
+            "let cursor = depth\n  let word = \"no\"",
+        )
+        .replace("sico.u64.to_text(cursor)", "sico.u64.to_text(word)");
+    assert_eq!(
+        run_guest(&wrong_local),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
 }
 
 #[test]
