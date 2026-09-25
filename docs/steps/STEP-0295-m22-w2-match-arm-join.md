@@ -1,6 +1,6 @@
 # STEP-0295: M22 W2 S3 — nested if join in a match arm
 
-> - status: implementation complete locally; independent CI pending
+> - status: complete / 22-C S3 GO on the isolated branch after independent CI
 > - phase: M22 compiler self-host, execution card 22-C S3
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -43,5 +43,8 @@ The change adds no new local to the 240-local general-while function.
   remain open. M22 remains **NO-GO**.
 
 The canary numerator grew by one, so the R3 consecutive-stall count remains
-**0**. Until independent CI passes on the exact implementation SHA, 22-C S3
-has no GO verdict.
+**0**. The exact implementation and evidence commit
+`f7288b753a7444fa61d23bb88c52a215564bdd8f` passed [GitHub Actions run
+36166445685](https://github.com/ImmortalWing/sico/actions/runs/36166445685)
+on the fresh Windows GNU runner at 2026-09-25 17:38:31 UTC. Its repository
+CI step succeeded. **22-C S3 GO on the isolated branch.** M22 remains NO-GO.

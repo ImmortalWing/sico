@@ -118,7 +118,8 @@ try {
             throw "nearest_match prefix did not compile: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # The next function remains a typed refusal, not an implied supported shape.
+        # STEP-0296 enters the next function, then refuses its bytes.slice
+        # match-subject argument shape. The prefix is not yet covered.
         $boundary3 = $full.IndexOf('function match_arm_levels')
         if ($boundary3 -lt 0) { throw 'set_nearest_match boundary marker missing' }
         $process2 = [Diagnostics.Process]::Start($startInfo)
@@ -129,7 +130,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-STATEMENT')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-SHAPE')) {
             throw "set_nearest_match frontier probe changed: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
@@ -149,4 +150,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact nearest-match=byte-exact canary=SET-NEAREST-MATCH-STATEMENT repinned-by=STEP-0295'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact nearest-match=byte-exact canary=SET-NEAREST-MATCH-CALL-SHAPE repinned-by=STEP-0296'

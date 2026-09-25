@@ -5727,39 +5727,86 @@ function gw_compare_packed(words: List[Text], src: Bytes, name_idx: U64, cond_id
   let gcp_r_count = U64.literal(0)
   let gcp_r_value = gcp_r_base
   let gcp_r_kind = ""
-  let gcp_r_param = binding_parameter_index(words, name_idx, gcp_r_atom)
-  if U64.less_than(gcp_r_param, parameter_count):
-    set gcp_r_value = gcp_r_param
-    set gcp_r_kind = binding_parameter_kind(words, name_idx, gcp_r_atom)
+  let gcp_close_idx = gcp_r_idx
+  if is_intrinsic_path(words, gcp_r_idx, "text", "length"):
+    let gcp_len_open = next_index(next_index(next_index(next_index(next_index(gcp_r_idx, line_end), line_end), line_end), line_end), line_end)
+    if is_word(word_at(words, gcp_len_open), "("):
+      let gcp_len_open_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let gcp_len_close = matching_close(words, gcp_len_open, line_end)
+    let gcp_len_arg = next_index(gcp_len_open, line_end)
+    if U64.equal(next_index(gcp_len_arg, line_end), gcp_len_close):
+      let gcp_len_arity_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let gcp_len_atom = word_at(words, gcp_len_arg)
+    let gcp_len_param = binding_parameter_index(words, name_idx, gcp_len_atom)
+    let gcp_len_kind = ""
+    if U64.less_than(gcp_len_param, parameter_count):
+      set gcp_len_kind = binding_parameter_kind(words, name_idx, gcp_len_atom)
+    else:
+      let gcp_len_cell = local_binding_index(cell_names, gcp_len_atom)
+      if U64.less_than(gcp_len_cell, sico.list.length(cell_names)):
+        set gcp_len_kind = word_at(cell_kinds, gcp_len_cell)
+      else:
+        return "ERR:E-SH-IR-CALL-ARGUMENT"
+      end if
+    end if
+    if is_word(gcp_len_kind, "string"):
+      let gcp_len_type_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    let gcp_len_start = word_span_offset(words, src, cond_start, cond_idx, gcp_r_idx)
+    let gcp_len_close_off = word_span_offset(words, src, gcp_len_start, gcp_r_idx, gcp_len_close)
+    let gcp_len_end = next_index(gcp_len_close_off, sico.bytes.length(src))
+    let gcp_len_pack = gw_intrinsic_call_packed(words, src, name_idx, gcp_r_idx, next_index(gcp_len_close, line_end), gcp_len_start, gcp_len_end, cell_names, cell_kinds, cell_locals, parameter_count, gcp_r_base, "u64", "sico.text.length")
+    if sico.text.starts_with(gcp_len_pack, "ERR:"):
+      return gcp_len_pack
+    end if
+    let gcp_len_parts = sico.text.split_lines(gcp_len_pack)
+    set gcp_r_count = gw_decimal_value(word_at(gcp_len_parts, U64.literal(0)))
+    set gcp_r_value = gw_decimal_value(word_at(gcp_len_parts, U64.literal(1)))
+    set gcp_r_kind = word_at(gcp_len_parts, U64.literal(2))
+    set gcp_r_json = word_at(gcp_len_parts, U64.literal(3))
+    set gcp_close_idx = next_index(gcp_len_close, line_end)
   else:
-    set gcp_r_kind = operand_nonparam_kind(words, gcp_r_idx, cell_names, cell_kinds)
-    if sico.text.starts_with(gcp_r_kind, "ERR:"):
-      return gcp_r_kind
+    let gcp_r_param = binding_parameter_index(words, name_idx, gcp_r_atom)
+    if U64.less_than(gcp_r_param, parameter_count):
+      set gcp_r_value = gcp_r_param
+      set gcp_r_kind = binding_parameter_kind(words, name_idx, gcp_r_atom)
+    else:
+      set gcp_r_kind = operand_nonparam_kind(words, gcp_r_idx, cell_names, cell_kinds)
+      if sico.text.starts_with(gcp_r_kind, "ERR:"):
+        return gcp_r_kind
+      end if
+      if U64.equal(sico.text.length(gcp_r_kind), U64.literal(0)):
+        return "ERR:E-SH-IR-EXPRESSION"
+      end if
+      set gcp_r_json = operand_cell_or_literal_json(words, src, gcp_r_idx, gcp_r_base, cond_idx, cond_start, cell_names, cell_kinds, cell_locals)
+      if sico.text.starts_with(gcp_r_json, "ERR:"):
+        return gcp_r_json
+      end if
+      if U64.less_than(U64.literal(0), sico.text.length(gcp_r_json)):
+        set gcp_r_count = U64.literal(1)
+      end if
     end if
-    if U64.equal(sico.text.length(gcp_r_kind), U64.literal(0)):
-      return "ERR:E-SH-IR-EXPRESSION"
-    end if
-    set gcp_r_json = operand_cell_or_literal_json(words, src, gcp_r_idx, gcp_r_base, cond_idx, cond_start, cell_names, cell_kinds, cell_locals)
-    if sico.text.starts_with(gcp_r_json, "ERR:"):
-      return gcp_r_json
-    end if
-    if U64.less_than(U64.literal(0), sico.text.length(gcp_r_json)):
-      set gcp_r_count = U64.literal(1)
-    end if
+    let gcp_r_width = fixed_operation_operand_width(words, gcp_r_idx, name_idx)
+    match U64.checked_add(gcp_r_idx, gcp_r_width):
+      case ok(gcp_after_r):
+        set gcp_close_idx = gcp_after_r
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
   end if
   if is_word(gcp_r_kind, gcp_ckind):
     let gcprk_ok = I64.literal(1)
   else:
     return "ERR:E-SH-IR-CALL-TYPE"
   end if
-  let gcp_r_width = fixed_operation_operand_width(words, gcp_r_idx, name_idx)
-  let gcp_close_idx = gcp_r_idx
-  match U64.checked_add(gcp_r_idx, gcp_r_width):
-    case ok(gcp_after_r):
-      set gcp_close_idx = gcp_after_r
-    case error(_):
-      return "ERR:E-SH-IR-RANGE"
-  end match
   if is_word(word_at(words, gcp_close_idx), ")"):
     let gcpc_ok = I64.literal(1)
   else:
@@ -12415,7 +12462,13 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           set prev = "function"
           continue
         end if
-        if U64.less_than(U64.literal(0), count_until_end_function(words, body_from, "while")):
+        let general_route_count = count_until_end_function(words, body_from, "while")
+        if U64.less_than(U64.literal(0), if_count):
+          if U64.less_than(U64.literal(0), match_count):
+            set general_route_count = U64.literal(1)
+          end if
+        end if
+        if U64.less_than(U64.literal(0), general_route_count):
           let general_while_json = general_while_function_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
           if sico.text.starts_with(general_while_json, "SKIP"):
             return sico.text.concat("ERR:E-SH-IR-GWSKIP:", general_while_json)

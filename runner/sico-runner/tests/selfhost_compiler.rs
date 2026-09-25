@@ -692,6 +692,88 @@ fn sico_compiler_lowers_nearest_match_prefix_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_match_in_whileless_if_byte_exactly() {
+    let source = "function lookup(blocks: Map[Text,U64], count: U64) returns U64:\n  let cursor = count\n  if U64.less_than(U64.literal(0), cursor):\n    match sico.map.get[Text,U64](blocks, \"0\"):\n      case ok(value):\n        set cursor = value\n      case error(_):\n        set cursor = cursor\n    end match\n  end if\n  return cursor\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("while-less if/match shape must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let nested_length = source
+        .replace("count: U64)", "count: U64, word: Text)")
+        .replace(
+            "U64.less_than(U64.literal(0), cursor):",
+            "U64.less_than(U64.literal(0), sico.text.length(word)):",
+        );
+    let RunOutcome::Output(nested_output) = run_guest(&nested_length) else {
+        panic!("nested text.length condition must compile")
+    };
+    assert_eq!(nested_output.exit_code, 0, "{:?}", nested_output.stderr);
+    assert_bytes_equal(&nested_output.stdout, rust_ir(&nested_length).as_bytes());
+    let nested_local = nested_length
+        .replace(
+            "  if U64.less_than",
+            "  let label = word\n  if U64.less_than",
+        )
+        .replace("sico.text.length(word)", "sico.text.length(label)");
+    let RunOutcome::Output(local_output) = run_guest(&nested_local) else {
+        panic!("nested text.length of a Text local must compile")
+    };
+    assert_eq!(local_output.exit_code, 0, "{:?}", local_output.stderr);
+    assert_bytes_equal(&local_output.stdout, rust_ir(&nested_local).as_bytes());
+    for malformed in [
+        nested_length.replace("sico.text.length(word)", "sico.text.length(word, word)"),
+        nested_length.replace("sico.text.length(word)", "sico.text.length()"),
+    ] {
+        assert_eq!(
+            run_guest(&malformed),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+            }
+        );
+    }
+    let wrong_type = nested_length.replace("word: Text", "word: U64");
+    assert_eq!(
+        run_guest(&wrong_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let wrong_local = nested_local.replace("let label = word", "let label = count");
+    assert_eq!(
+        run_guest(&wrong_local),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&nested_length) else {
+        panic!("valid nested condition must compile after refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(&nested_length).as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_set_nearest_match_prefix_at_slice_shape() {
+    let end = FORMATTER_SOURCE
+        .find("function match_arm_levels")
+        .expect("formatter keeps the set_nearest_match prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    assert_eq!(
+        run_guest(source),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

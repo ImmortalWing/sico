@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0295 local evidence (S3 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, and STEP-0294 verified 22-C S2 on 5a6d0bb, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30 and set_nearest_match / STATEMENT with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0296 local evidence (S4 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, and STEP-0295 verified 22-C S3 on f7288b7, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30; STEP-0296 moves the set_nearest_match typed frontier from STATEMENT to CALL-SHAPE with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -137,8 +137,14 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    with a conditional `return` in the match `ok` arm; the formatter prefix
    through `nearest_match` is byte-exact against Rust, moving the canary to
    23/30 and the typed frontier to `set_nearest_match` / `STATEMENT`.
-   Independent CI for S3 remains pending. The parallel `origin/dev` history
-   is not adjudicated by this branch's CI.
+   STEP-0296 locally routes a while-less if/match shape through the general
+   machine and lowers a nested `sico.text.length(Text)` comparison operand
+   byte-exactly. The canary remains 23/30; the `set_nearest_match` refusal
+   moves from `STATEMENT` to `CALL-SHAPE` at the `bytes.slice` match subject.
+   R3 consecutive-stall count remains zero. Independent CI for S3 succeeded
+   on `f7288b7` (run 36166445685), giving S3 GO on the isolated branch; S4
+   independent CI remains pending. The parallel `origin/dev` history is not adjudicated by this
+   branch's CI.
 2. **Formatter tail from the current frontier** — the
    `Map[Text,U64]` region (`nearest_match`/`set_nearest_match`/
    `match_arm_levels`),
