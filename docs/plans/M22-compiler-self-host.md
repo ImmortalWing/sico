@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0280. S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0015 bootstrap contract and ADR-0016 SOA boundary remain accepted; ADR-0017 Option A was accepted by owner direction recorded in STEP-0269, and RFC-0047 is accepted (STEP-0270). STEP-0280 W1 C/D, the 215-source frozen partition, and STEP-0221/0245/0261/0262 canaries passed local Windows GNU real-runner validation; STEP-0278/0280 independent CI still awaits adjudication, so W1 is not closed. STEP-0266 measured formatter canary and fuel-cap intervals but not stack high-water. W2 S3/S4 re-pins the records-surface canary and starts the four-implementation-STEP R3 stop-loss counter. No future STEP numbers reserved.
+> Status: in progress / NO-GO through STEP-0293. S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified the pushed W1 snapshot e8495f9 on a fresh Windows GNU GitHub runner: W1 GO on codex/m22-w1-ci. STEP-0293 locally lowers while-body u64.to_text byte-exactly and moves the formatter frontier from GWPACK-OTHER to CALL-TARGET at 22/30; its own independent CI is pending. The first R3 implementation STEP made frontier progress, so the consecutive stall count is 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -118,16 +118,19 @@ progress across the remaining frozen selfhost source set. S5 is judged by
 its independent byte-equal codegen corpus. A four-STEP W2 stall declares
 Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
 
-1. **W1 exit and W2 baseline** — obtain STEP-0278/0280 independent CI
-   adjudication. The records-surface W2 baseline itself is frozen
+1. **W1 exit and W2 baseline** — STEP-0292 obtained independent CI success
+   for STEP-0278/0280 on the isolated `e8495f9` branch snapshot; W1 is GO
+   at that revision. The records-surface W2 baseline itself is frozen
    (STEP-0282, execution card 22-B): [`m22-w2-baseline-2026-09-25.json`](../reports/m22-w2-baseline-2026-09-25.json)
    pins the executed 22/30 formatter prefix, the `nearest_match` /
-   `ERR:E-SH-IR-GWPACK-OTHER` frontier, the four-size fuel ladder and the
+   `ERR:E-SH-IR-GWPACK-OTHER` starting frontier, the four-size fuel ladder and the
    8-source / 16,390-line tracked selfhost tree by SHA256; stack
-   high-water is recorded as unmeasured. If CI fails, repair the specific
-   regression and re-measure against that JSON before entering W2. A
-   local result alone does not close W1. The first W2 S3/S4
-   implementation STEP starts the R3 counter.
+   high-water is recorded as unmeasured. STEP-0293 is the first W2 S3/S4
+   implementation STEP: its local runner result moves the frontier to
+   `ERR:E-SH-IR-CALL-TARGET` with 22/30 functions, and its own independent
+   CI remains pending. This starts the R3 counter with zero consecutive
+   stagnant steps. The parallel `origin/dev` history is not adjudicated by
+   this branch's CI.
 2. **Formatter tail from the current frontier** — the
    `Map[Text,U64]` region (`nearest_match`/`set_nearest_match`/
    `match_arm_levels`),

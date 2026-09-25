@@ -126,8 +126,8 @@ try {
             throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Current full-source canary: nearest_match remains typed-refused at
-        # GWPACK-OTHER after STEP-0276 absorbed the Map-parameter WIP.
+        # Current full-source canary: STEP-0293 advances nearest_match to
+        # CALL-TARGET after while-body u64.to_text lowering.
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -136,7 +136,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-TARGET')) {
             throw "formatter canary changed from the current nearest_match frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
@@ -156,4 +156,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NEAREST-MATCH-GWPACK-OTHER superseded-by=STEP-0262/0266'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NEAREST-MATCH-CALL-TARGET repinned-by=STEP-0293'

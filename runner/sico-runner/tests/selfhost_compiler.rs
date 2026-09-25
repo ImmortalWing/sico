@@ -539,6 +539,29 @@ fn sico_compiler_lowers_the_format_code_region_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_u64_to_text_in_while_body_byte_exactly() {
+    let source = "function convert(depth: U64) returns Text:\n  let cursor = depth\n  while U64.less_than(U64.literal(0), cursor):\n    let key = sico.u64.to_text(cursor)\n    set cursor = U64.literal(0)\n  end while\n  return \"\"\nend function\n";
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("while-body intrinsic RHS must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let malformed = source.replace(
+        "sico.u64.to_text(cursor)",
+        "sico.u64.to_text(cursor, cursor)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

@@ -6195,6 +6195,9 @@ function gw_intrinsic_call_packed(words: List[Text], src: Bytes, name_idx: U64, 
 end function
 
 function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  if is_intrinsic_path(words, receiver_idx, "u64", "to_text"):
+    return gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "string", "sico.u64.to_text")
+  end if
   let gws_multi = U64.less_than(next_index(receiver_idx, line_end), line_end)
   let gws_pieces = ""
   let gws_value = base
