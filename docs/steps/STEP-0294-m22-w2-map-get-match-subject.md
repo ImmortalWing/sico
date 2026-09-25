@@ -27,7 +27,7 @@ WIT, Host or authority contract changes.
 
 ## Local exit evidence
 
-- The new real-runner differential compares literal and local Text-key
+- The new real-runner differential compares literal, parameter and local Text-key
   `map.get` match subjects with the Rust oracle byte for byte. Extra argument
   and extra generic type (limit+1) mutations refuse with
   `ERR:E-SH-IR-CALL-SHAPE`; wrong Map value and key types refuse with

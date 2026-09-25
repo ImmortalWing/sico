@@ -609,6 +609,19 @@ fn sico_compiler_lowers_map_get_match_subject_in_while_body_byte_exactly() {
     assert_eq!(local_output.exit_code, 0, "{:?}", local_output.stderr);
     assert_bytes_equal(&local_output.stdout, rust_ir(&local_key).as_bytes());
 
+    let parameter_key = source
+        .replace("blocks: Map[Text,U64]", "blocks: Map[Text,U64], key: Text")
+        .replace("(blocks, \"0\")", "(blocks, key)");
+    let RunOutcome::Output(parameter_output) = run_guest(&parameter_key) else {
+        panic!("map.get with a Text parameter key must compile")
+    };
+    assert_eq!(
+        parameter_output.exit_code, 0,
+        "{:?}",
+        parameter_output.stderr
+    );
+    assert_bytes_equal(&parameter_output.stdout, rust_ir(&parameter_key).as_bytes());
+
     for malformed in [
         source.replace("(blocks, \"0\")", "(blocks, \"0\", \"1\")"),
         source.replace("get[Text,U64]", "get[Text,U64,U64]"),
