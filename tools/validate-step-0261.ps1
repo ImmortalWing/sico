@@ -126,8 +126,8 @@ try {
             throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Current full-source canary: STEP-0299 covers match_arm_levels and
-        # fails closed in opener_close at the general-while if-region gate.
+        # Current full-source canary: STEP-0300 covers opener_close and
+        # fails closed in normalize_source at a RHS shape.
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -136,8 +136,8 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-GWSKIP:SKIP:GENERAL-WHILE-IF-REGION')) {
-            throw "formatter canary changed from the current opener_close frontier: exit=$($process2.ExitCode) stderr=$stderr2"
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
+            throw "formatter canary changed from the current normalize_source frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -156,4 +156,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=OPENER-CLOSE-GWSKIP repinned-by=STEP-0299'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NORMALIZE-SOURCE-GWPACK-OTHER repinned-by=STEP-0300'

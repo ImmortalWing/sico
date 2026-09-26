@@ -1,6 +1,6 @@
 # STEP-0298: M22 W2 slice 6 — map.put return and returning match arms
 
-> - status: implementation complete locally; independent CI pending
+> - status: complete / slice 6 GO on isolated branch
 > - phase: M22 compiler self-host, execution card 22-C slice 6 (lowering, not milestone S6 bootstrap)
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -49,7 +49,11 @@ enclosing `if` join. Existing non-returning match arms keep their jumps.
 - Root and runner `cargo fmt --all -- --check`,
   `tools/validate-step-0124.ps1`, and `git diff --check` passed.
 
-Independent CI on this STEP's exact SHA is pending.
+Independent GitHub Actions Windows GNU run
+[36210200271](https://github.com/ImmortalWing/sico/actions/runs/36210200271)
+completed successfully on the exact STEP-0298 commit
+`5ba175fb09f9c61aa5a0314af815dce6e39dd540`. Slice 6 is GO on the
+isolated branch.
 M22 remains **NO-GO**: six formatter functions, remaining selfhost source
 coverage, milestone S5 byte-equal codegen, S6 bootstrap and S7 exit audit
 remain open. `origin/dev` parallel history is still unmerged.

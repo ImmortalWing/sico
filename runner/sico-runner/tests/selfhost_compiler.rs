@@ -833,22 +833,43 @@ fn sico_compiler_lowers_direct_close_prefix_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_opener_close_prefix_at_typed_frontier() {
+fn sico_compiler_lowers_opener_close_prefix_byte_exactly() {
     let end = FORMATTER_SOURCE
         .find("function normalize_source")
         .expect("formatter keeps the opener_close prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("opener_close prefix must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let recovered_end = FORMATTER_SOURCE.find("function opener_close").unwrap();
+    let recovered_source = &FORMATTER_SOURCE[..recovered_end];
+    let RunOutcome::Output(recovered) = run_guest(recovered_source) else {
+        panic!("direct_close prefix must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(recovered_source).as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_normalize_source_prefix_at_typed_frontier() {
+    let end = FORMATTER_SOURCE
+        .find("function main")
+        .expect("formatter keeps the normalize_source prefix");
     let source = &FORMATTER_SOURCE[..end];
     assert_eq!(
         run_guest(source),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-GWSKIP:SKIP:GENERAL-WHILE-IF-REGION".into(),
+            message: "ERR:E-SH-IR-GWPACK-OTHER".into(),
         }
     );
-    let recovered_end = FORMATTER_SOURCE.find("function opener_close").unwrap();
+    let recovered_end = FORMATTER_SOURCE.find("function normalize_source").unwrap();
     let recovered_source = &FORMATTER_SOURCE[..recovered_end];
     let RunOutcome::Output(recovered) = run_guest(recovered_source) else {
-        panic!("direct_close prefix must compile after typed refusal")
+        panic!("opener_close prefix must compile after typed refusal")
     };
     assert_bytes_equal(&recovered.stdout, rust_ir(recovered_source).as_bytes());
 }

@@ -150,7 +150,8 @@ try {
             throw "direct_close prefix did not compile: exit=$($process3.ExitCode) stderr=$stderr3"
         }
 
-        # The next uncovered function refuses at a typed control-flow gate.
+        # STEP-0300 preserves the enclosing if region across a nested while.
+        # The prefix through opener_close is byte-exact in the runner test.
         $boundary5 = $full.IndexOf('function normalize_source')
         if ($boundary5 -lt 0) { throw 'opener_close boundary marker missing' }
         $process4 = [Diagnostics.Process]::Start($startInfo)
@@ -158,13 +159,27 @@ try {
         $process4.StandardInput.BaseStream.Write($stdinBytes4, 0, $stdinBytes4.Length)
         $process4.StandardInput.BaseStream.Flush()
         $process4.StandardInput.BaseStream.Close()
-        $null = $process4.StandardOutput.ReadToEnd()
+        $stdout4 = $process4.StandardOutput.ReadToEnd()
         $stderr4 = $process4.StandardError.ReadToEnd()
         $process4.WaitForExit()
-        if ($process4.ExitCode -ne 122 -or -not $stderr4.Contains('ERR:E-SH-IR-GWSKIP:SKIP:GENERAL-WHILE-IF-REGION')) {
-            throw "opener_close frontier probe changed: exit=$($process4.ExitCode) stderr=$stderr4"
+        if ($process4.ExitCode -ne 0 -or -not $stdout4.Contains('"name":"opener_close"')) {
+            throw "opener_close prefix did not compile: exit=$($process4.ExitCode) stderr=$stderr4"
         }
-        if ($stderr4.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
+
+        $boundary6 = $full.IndexOf('function main')
+        if ($boundary6 -lt 0) { throw 'normalize_source boundary marker missing' }
+        $process5 = [Diagnostics.Process]::Start($startInfo)
+        $stdinBytes5 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary6))
+        $process5.StandardInput.BaseStream.Write($stdinBytes5, 0, $stdinBytes5.Length)
+        $process5.StandardInput.BaseStream.Flush()
+        $process5.StandardInput.BaseStream.Close()
+        $null = $process5.StandardOutput.ReadToEnd()
+        $stderr5 = $process5.StandardError.ReadToEnd()
+        $process5.WaitForExit()
+        if ($process5.ExitCode -ne 122 -or -not $stderr5.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
+            throw "normalize_source frontier probe changed: exit=$($process5.ExitCode) stderr=$stderr5"
+        }
+        if ($stderr5.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
     finally {
         $resolvedTemp = [IO.Path]::GetFullPath($temp)
@@ -181,4 +196,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact direct-close=byte-exact canary=OPENER-CLOSE-GWSKIP repinned-by=STEP-0299'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact opener-close=byte-exact canary=NORMALIZE-SOURCE-GWPACK-OTHER repinned-by=STEP-0300'

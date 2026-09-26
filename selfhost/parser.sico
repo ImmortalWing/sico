@@ -8028,7 +8028,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gok = I64.literal(1)
       end if
       if is_word(gregion, "then"):
-        return "SKIP:GENERAL-WHILE-IF-REGION"
+        set gok = I64.literal(1)
       end if
       if is_word(gregion, "else"):
         return "SKIP:GENERAL-WHILE-IF-REGION"
@@ -8041,6 +8041,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       end if
       if I64.equal(gok, I64.literal(1)):
         set gok = I64.literal(0)
+        let gw_parent_region = gregion
         set gcursor = find_text_from(src, "while", gcursor)
         set gwhile_start = gcursor
         set gwhile_end = return_expression_end(src, gwhile_start)
@@ -8069,9 +8070,8 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gcur_rs = gwhile_start
         set gcur_re = gwhile_end
         set gregion = "header"
-        let gw_cond_idx = next_index(gi, gwl_end)
-        let gw_cond_start = word_span_offset(words, src, gwhile_start, gi, gw_cond_idx)
-        let gw_pack = gw_condition_packed(words, src, name_idx, gw_cond_idx, gwl_end, gw_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
+        let gw_cond_start = word_span_offset(words, src, gwhile_start, gi, next_index(gi, gwl_end))
+        let gw_pack = gw_condition_packed(words, src, name_idx, next_index(gi, gwl_end), gwl_end, gw_cond_start, gcell_names, gcell_kinds, gcell_locals, parameter_count, gnext)
         if is_word(gw_pack, "ERR:E-SH-IR-EXPRESSION"):
           return "ERR:E-SH-IR-GWCOND-EXPRESSION"
         end if
@@ -8096,9 +8096,9 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gcur_instrs = ""
         set gcur_rs = gwhile_start
         set gcur_re = gwhile_end
-        set gregion = "body"
-        set gwh_frames = sico.list.append(gwh_frames, sico.text.concat(sico.u64.to_text(ghdr_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gafter_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_cond), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_start), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_end), sico.text.concat("\n", sico.u64.to_text(gbrk_len))))))))))))
+        set gwh_frames = sico.list.append(gwh_frames, sico.text.concat(sico.u64.to_text(ghdr_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gafter_id), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_cond), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_start), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gwhile_end), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gbrk_len), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gdepth), sico.text.concat("\n", gw_parent_region)))))))))))))))
         set gwh_len = next_index(gwh_len, gwh_len)
+        set gregion = "body"
         let gw_after_line = next_index(gwl_end, body_end)
         let gw_nl = gw_after_line
         while U64.less_than(gw_nl, body_end):
@@ -8438,9 +8438,6 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
               end if
             end if
             if is_word(gend_kind, "while"):
-              if U64.less_than(U64.literal(0), gdepth):
-                return "ERR:E-SH-IR-STATEMENT"
-              end if
               if is_word(gregion, "after"):
                 return "ERR:E-SH-IR-STATEMENT"
               end if
@@ -8450,6 +8447,11 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
               match U64.checked_sub(gwh_len, U64.literal(1)):
                 case ok(gwfr_top):
                   set gwf = sico.text.split_lines(word_at(gwh_frames, gwfr_top))
+                  if U64.equal(gdepth, gw_decimal_value(word_at(gwf, U64.literal(6)))):
+                    set gok = I64.literal(1)
+                  else:
+                    return "ERR:E-SH-IR-STATEMENT"
+                  end if
                   set ghdr_id = gw_decimal_value(word_at(gwf, U64.literal(0)))
                   if gcur_term:
                     set gok = I64.literal(1)
@@ -8474,15 +8476,18 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
                   set gcur_instrs = ""
                   set gcur_rs = gw_decimal_value(word_at(gwf, U64.literal(3)))
                   set gcur_re = gw_decimal_value(word_at(gwf, U64.literal(4)))
+                  set gregion = word_at(gwf, U64.literal(7))
+                  if is_word(gregion, "entry"):
+                    set gregion = "after"
+                  end if
                   match U64.checked_sub(gwfr_top, U64.literal(1)):
                     case ok(gwfr_next):
                       set gwf = sico.text.split_lines(word_at(gwh_frames, gwfr_next))
                       set ghdr_id = gw_decimal_value(word_at(gwf, U64.literal(0)))
                       set gwhile_start = gw_decimal_value(word_at(gwf, U64.literal(3)))
                       set gwhile_end = gw_decimal_value(word_at(gwf, U64.literal(4)))
-                      set gregion = "body"
                     case error(_):
-                      set gregion = "after"
+                      set gok = I64.literal(1)
                   end match
                   set gwh_len = gwfr_top
                   set gcur_term = false
