@@ -759,7 +759,7 @@ fn sico_compiler_lowers_match_in_whileless_if_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_set_nearest_match_prefix_at_slice_shape() {
+fn sico_compiler_refuses_set_nearest_match_prefix_at_map_put_return() {
     let end = FORMATTER_SOURCE
         .find("function match_arm_levels")
         .expect("formatter keeps the set_nearest_match prefix");
@@ -768,9 +768,60 @@ fn sico_compiler_refuses_set_nearest_match_prefix_at_slice_shape() {
         run_guest(source),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+            message: "ERR:E-SH-IR-EXPRESSION".into(),
         }
     );
+}
+
+#[test]
+fn sico_compiler_lowers_nested_slice_match_subject_byte_exactly() {
+    let prefix = &FORMATTER_SOURCE[..FORMATTER_SOURCE.find("function same").unwrap()];
+    let source = format!(
+        "{prefix}function slice_probe(found_bytes: Bytes) returns U64:\n  let cursor = U64.literal(1)\n  if U64.less_than(U64.literal(0), cursor):\n    match sico.bytes.slice(found_bytes, U64.literal(1), sub(sico.bytes.length(found_bytes), U64.literal(1))):\n      case ok(part):\n        set cursor = U64.literal(1)\n      case error(_):\n        set cursor = cursor\n    end match\n  end if\n  return cursor\nend function\n"
+    );
+    let expected = rust_ir(&source);
+    let outcome = run_guest(&source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("nested bytes.slice match subject must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    for malformed in [
+        source.replace(
+            "sub(sico.bytes.length(found_bytes), U64.literal(1))):",
+            "sub(sico.bytes.length(found_bytes), U64.literal(1)), U64.literal(1)):",
+        ),
+        source.replace(
+            "sico.bytes.length(found_bytes)",
+            "sico.bytes.length(found_bytes, found_bytes)",
+        ),
+        source.replace(
+            "sub(sico.bytes.length(found_bytes), U64.literal(1))",
+            "sub(sico.bytes.length(found_bytes), U64.literal(1), U64.literal(1))",
+        ),
+    ] {
+        assert_ne!(malformed, source);
+        assert_eq!(
+            run_guest(&malformed),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+            }
+        );
+    }
+    let wrong_bytes = source.replace("found_bytes: Bytes", "found_bytes: Text");
+    assert_eq!(
+        run_guest(&wrong_bytes),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid nested slice match must compile after refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
 
 #[test]

@@ -1,6 +1,6 @@
 # STEP-0296: M22 W2 S4 — while-less if/match and nested text length
 
-> - status: implementation complete locally; independent CI pending
+> - status: complete / S4 GO on isolated branch
 > - phase: M22 compiler self-host, execution card 22-C S4
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -50,7 +50,10 @@ Store. No language, WIT, Host or authority contract changes.
 - Root `cargo fmt --all -- --check`, `tools/validate-step-0124.ps1`, and
   `git diff --check` passed.
 
-S4 independent CI on its own exact SHA is recorded after completion. M22
-remains **NO-GO**: seven formatter
+Independent GitHub Actions Windows GNU run
+[36168754671](https://github.com/ImmortalWing/sico/actions/runs/36168754671)
+completed successfully on the exact S4 commit
+`904b86a3cba87bec76aabf38a0c2dba6f3689a5a`. S4 is GO on the isolated
+branch. M22 remains **NO-GO**: seven formatter
 functions, remaining selfhost source coverage, S5 codegen, S6 bootstrap and
 S7 exit audit are still open.

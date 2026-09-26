@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0296 local evidence (S4 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, and STEP-0295 verified 22-C S3 on f7288b7, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30; STEP-0296 moves the set_nearest_match typed frontier from STATEMENT to CALL-SHAPE with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0297 local evidence (S5 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, and STEP-0296 verified 22-C S4 on 904b86a, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30; STEP-0296 and STEP-0297 move the set_nearest_match typed frontier through CALL-SHAPE to EXPRESSION with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -141,8 +141,11 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    machine and lowers a nested `sico.text.length(Text)` comparison operand
    byte-exactly. The canary remains 23/30; the `set_nearest_match` refusal
    moves from `STATEMENT` to `CALL-SHAPE` at the `bytes.slice` match subject.
-   R3 consecutive-stall count remains zero. Independent CI for S3 succeeded
-   on `f7288b7` (run 36166445685), giving S3 GO on the isolated branch; S4
+   STEP-0297 locally lowers the nested `bytes.slice` match subject byte-exactly;
+   the next typed frontier is the `sico.map.put[Text,U64]` return expression,
+   still at 23/30. R3 consecutive-stall count remains zero. Independent CI for
+   S3 succeeded on `f7288b7` (run 36166445685), and S4 succeeded on `904b86a`
+   (run 36168754671), giving each a GO on the isolated branch; STEP-0297
    independent CI remains pending. The parallel `origin/dev` history is not adjudicated by this
    branch's CI.
 2. **Formatter tail from the current frontier** — the
