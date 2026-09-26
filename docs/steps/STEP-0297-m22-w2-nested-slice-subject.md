@@ -1,6 +1,6 @@
 # STEP-0297: M22 W2 S5 — nested bytes.slice match subject
 
-> - status: implementation complete locally; independent CI pending
+> - status: complete / slice 5 GO on isolated branch
 > - phase: M22 compiler self-host, execution card 22-C S5 (a lowering slice, not milestone S5 codegen)
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -50,7 +50,11 @@ contract changes.
 - Root and runner `cargo fmt --all -- --check`,
   `tools/validate-step-0124.ps1`, and `git diff --check` passed.
 
-Independent CI on this STEP's exact SHA is pending.
+Independent GitHub Actions Windows GNU run
+[36209299222](https://github.com/ImmortalWing/sico/actions/runs/36209299222)
+completed successfully on the exact STEP-0297 commit
+`ffcdd3f85f33163af8dd5ced0e2e3630d4e15e84`. Slice 5 is GO on the
+isolated branch.
 M22 remains **NO-GO**: seven formatter functions, remaining selfhost source
 coverage, milestone S5 byte-equal codegen, S6 bootstrap and S7 exit audit
 remain open.

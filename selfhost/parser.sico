@@ -7496,7 +7496,7 @@ function gw_map_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64,
   let gmg_map = next_index(gmg_open, gmg_n)
   let gmg_comma = next_index(gmg_map, gmg_n)
   let gmg_key = next_index(gmg_comma, gmg_n)
-  let gmg_close = next_index(gmg_key, gmg_n)
+  let gmg_close = matching_close(words, gmg_open, line_end_idx)
   if is_word(word_at(words, gmg_bracket), "["):
     let gmg_b_ok = I64.literal(1)
   else:
@@ -7532,6 +7532,26 @@ function gw_map_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64,
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
   end if
+  if is_intrinsic_path(words, gmg_key, "u64", "to_text"):
+    let gmg_key_open = next_index(next_index(next_index(next_index(next_index(gmg_key, gmg_n), gmg_n), gmg_n), gmg_n), gmg_n)
+    if is_word(word_at(words, gmg_key_open), "("):
+      let gmg_key_open_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    let gmg_key_close = matching_close(words, gmg_key_open, gmg_close)
+    if U64.equal(next_index(gmg_key_close, gmg_n), gmg_close):
+      let gmg_key_tail_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+  else:
+    if U64.equal(next_index(gmg_key, gmg_n), gmg_close):
+      let gmg_key_atom_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+  end if
   if is_word(word_at(words, gmg_close), ")"):
     let gmg_z_ok = I64.literal(1)
   else:
@@ -7560,13 +7580,14 @@ function gw_map_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64,
     return "ERR:E-SH-IR-CALL-ARGUMENT"
   end if
   let gmg_key_start = word_span_offset(words, src, subject_start, subject_idx, gmg_key)
-  let gmg_key_end = gmg_key_start
-  match U64.checked_add(gmg_key_start, sico.bytes.length(sico.text.encode(word_at(words, gmg_key)))):
-    case ok(gmg_after_key):
-      set gmg_key_end = gmg_after_key
+  let gmg_key_last = gmg_close
+  match U64.checked_sub(gmg_close, U64.literal(1)):
+    case ok(gmg_before_close):
+      set gmg_key_last = gmg_before_close
     case error(_):
-      return "ERR:E-SH-IR-RANGE"
+      return "ERR:E-SH-IR-CALL-SHAPE"
   end match
+  let gmg_key_end = next_index(word_span_offset(words, src, gmg_key_start, gmg_key, gmg_key_last), sico.bytes.length(src))
   let gmg_key_pack = gw_rhs_packed(words, src, name_idx, gmg_key, gmg_close, gmg_key_start, gmg_key_end, cell_names, cell_kinds, cell_locals, parameter_count, base)
   if sico.text.starts_with(gmg_key_pack, "ERR:"):
     return gmg_key_pack

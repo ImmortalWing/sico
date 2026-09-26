@@ -774,6 +774,86 @@ fn sico_compiler_lowers_set_nearest_match_prefix_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_match_arm_levels_prefix_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function close_code")
+        .expect("formatter keeps the match_arm_levels prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("match_arm_levels prefix must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let extra_key_argument = source.replace(
+        "sico.u64.to_text(cursor)):",
+        "sico.u64.to_text(cursor, cursor)):",
+    );
+    assert_ne!(extra_key_argument, source);
+    assert_eq!(
+        run_guest(&extra_key_argument),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let extra_map_argument = source.replace(
+        "sico.u64.to_text(cursor)):",
+        "sico.u64.to_text(cursor), cursor):",
+    );
+    assert_ne!(extra_map_argument, source);
+    assert_eq!(
+        run_guest(&extra_map_argument),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid match_arm_levels prefix must compile after refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_direct_close_prefix_byte_exactly() {
+    let end = FORMATTER_SOURCE
+        .find("function opener_close")
+        .expect("formatter keeps the direct_close prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("direct_close prefix must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_opener_close_prefix_at_typed_frontier() {
+    let end = FORMATTER_SOURCE
+        .find("function normalize_source")
+        .expect("formatter keeps the opener_close prefix");
+    let source = &FORMATTER_SOURCE[..end];
+    assert_eq!(
+        run_guest(source),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-GWSKIP:SKIP:GENERAL-WHILE-IF-REGION".into(),
+        }
+    );
+    let recovered_end = FORMATTER_SOURCE.find("function opener_close").unwrap();
+    let recovered_source = &FORMATTER_SOURCE[..recovered_end];
+    let RunOutcome::Output(recovered) = run_guest(recovered_source) else {
+        panic!("direct_close prefix must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(recovered_source).as_bytes());
+}
+
+#[test]
 fn sico_compiler_lowers_map_put_return_byte_exactly() {
     let source = "function put_probe(active: Map[Text,U64], key_bytes: Bytes, value: U64) returns Map[Text,U64]:\n  while U64.less_than(U64.literal(0), value):\n    return sico.map.put[Text,U64](active, sico.bytes.utf8_decode(key_bytes), value)\n  end while\n  return active\nend function\n";
     let expected = rust_ir(source);

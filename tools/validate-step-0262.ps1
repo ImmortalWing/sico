@@ -134,22 +134,37 @@ try {
             throw "set_nearest_match prefix did not compile: exit=$($process2.ExitCode) stderr=$stderr2"
         }
 
-        # The next uncovered formatter function still refuses with a typed
-        # CALL-SHAPE error. It is not counted as covered.
-        $boundary4 = $full.IndexOf('function close_code')
-        if ($boundary4 -lt 0) { throw 'match_arm_levels boundary marker missing' }
+        # STEP-0299 lowers the nested u64.to_text key in map.get. The prefix
+        # through direct_close is byte-exact in the runner differential.
+        $boundary4 = $full.IndexOf('function opener_close')
+        if ($boundary4 -lt 0) { throw 'direct_close boundary marker missing' }
         $process3 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes3 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary4))
         $process3.StandardInput.BaseStream.Write($stdinBytes3, 0, $stdinBytes3.Length)
         $process3.StandardInput.BaseStream.Flush()
         $process3.StandardInput.BaseStream.Close()
-        $null = $process3.StandardOutput.ReadToEnd()
+        $stdout3 = $process3.StandardOutput.ReadToEnd()
         $stderr3 = $process3.StandardError.ReadToEnd()
         $process3.WaitForExit()
-        if ($process3.ExitCode -ne 122 -or -not $stderr3.Contains('ERR:E-SH-IR-CALL-SHAPE')) {
-            throw "match_arm_levels frontier probe changed: exit=$($process3.ExitCode) stderr=$stderr3"
+        if ($process3.ExitCode -ne 0 -or -not $stdout3.Contains('"name":"direct_close"')) {
+            throw "direct_close prefix did not compile: exit=$($process3.ExitCode) stderr=$stderr3"
         }
-        if ($stderr3.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
+
+        # The next uncovered function refuses at a typed control-flow gate.
+        $boundary5 = $full.IndexOf('function normalize_source')
+        if ($boundary5 -lt 0) { throw 'opener_close boundary marker missing' }
+        $process4 = [Diagnostics.Process]::Start($startInfo)
+        $stdinBytes4 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary5))
+        $process4.StandardInput.BaseStream.Write($stdinBytes4, 0, $stdinBytes4.Length)
+        $process4.StandardInput.BaseStream.Flush()
+        $process4.StandardInput.BaseStream.Close()
+        $null = $process4.StandardOutput.ReadToEnd()
+        $stderr4 = $process4.StandardError.ReadToEnd()
+        $process4.WaitForExit()
+        if ($process4.ExitCode -ne 122 -or -not $stderr4.Contains('ERR:E-SH-IR-GWSKIP:SKIP:GENERAL-WHILE-IF-REGION')) {
+            throw "opener_close frontier probe changed: exit=$($process4.ExitCode) stderr=$stderr4"
+        }
+        if ($stderr4.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
     finally {
         $resolvedTemp = [IO.Path]::GetFullPath($temp)
@@ -166,4 +181,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact set-nearest-match=byte-exact canary=MATCH-ARM-LEVELS-CALL-SHAPE repinned-by=STEP-0298'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact direct-close=byte-exact canary=OPENER-CLOSE-GWSKIP repinned-by=STEP-0299'
