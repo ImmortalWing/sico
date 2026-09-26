@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0297 local evidence (S5 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, and STEP-0296 verified 22-C S4 on 904b86a, all on the isolated codex/m22-w1-ci branch. STEP-0295 advances the formatter canary to 23/30; STEP-0296 and STEP-0297 move the set_nearest_match typed frontier through CALL-SHAPE to EXPRESSION with R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0298 local evidence (STEP-0297 and STEP-0298 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, and STEP-0296 verified 22-C S4 on 904b86a, all on the isolated codex/m22-w1-ci branch. STEP-0297 moves the set_nearest_match typed frontier to EXPRESSION; STEP-0298 advances the formatter canary to 24/30 with match_arm_levels / CALL-SHAPE and R3 consecutive stall count 0. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -80,7 +80,7 @@ language surface without an accepted RFC.
 | S1 formatter (L1) | complete | frozen corpus byte-exact + idempotent; `formatter.sico` runs on its own sources through the real runner | — |
 | S2 checker subset (L1) | complete for the declared subset | frozen diagnostic partition 116 lexical / 34 identity / 65 accepted / 0 unsupported | widening the subset requires its own declared-contract update (no silent growth) |
 | S3 lexer + parser (L2) | partial | `lexer.sico` / `tokens.sico` / `declaration_parser.sico` differentials green; `parser.sico` exercised through driver paths (recursive return-expression trees; verifier-accepted scalar IR + noncanonical refusals) | full declared-shape coverage of `parser.sico` (12,202 lines, the largest selfhost unit) on the frozen corpus |
-| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `nearest_match` (23 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 7 remaining formatter functions (`set_nearest_match` … `main`), then the remaining selfhost sources lower byte-exactly |
+| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `set_nearest_match` (24 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 6 remaining formatter functions (`match_arm_levels` … `main`), then the remaining selfhost sources lower byte-exactly |
 | S5 codegen (L2) | partial | bounded Core-Wasm seam: nonnegative `Int` constant emission byte-equal to Rust codegen; every other shape typed-refused (`unsupported codegen source shape`) | RFC-0011 deterministic backend subset over the frozen corpus |
 | S6 bootstrap closure | not entered | — | ADR-0015 contract: `A == B == C`, `.sapp` via the M7 trust chain, runner-executed self-compile, budget re-measurement |
 | S7 exit audit | not entered | — | evidence pack + explicit GO/NO-GO |
@@ -142,11 +142,13 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    byte-exactly. The canary remains 23/30; the `set_nearest_match` refusal
    moves from `STATEMENT` to `CALL-SHAPE` at the `bytes.slice` match subject.
    STEP-0297 locally lowers the nested `bytes.slice` match subject byte-exactly;
-   the next typed frontier is the `sico.map.put[Text,U64]` return expression,
-   still at 23/30. R3 consecutive-stall count remains zero. Independent CI for
+   STEP-0298 locally lowers the `sico.map.put[Text,U64]` return and both
+   returning match arms, advancing the canary to 24/30 with
+   `match_arm_levels` / `CALL-SHAPE` next. R3 consecutive-stall count remains zero. Independent CI for
    S3 succeeded on `f7288b7` (run 36166445685), and S4 succeeded on `904b86a`
    (run 36168754671), giving each a GO on the isolated branch; STEP-0297
-   independent CI remains pending. The parallel `origin/dev` history is not adjudicated by this
+   independent CI run 36209299222 remains pending and STEP-0298 has not yet
+   been submitted. The parallel `origin/dev` history is not adjudicated by this
    branch's CI.
 2. **Formatter tail from the current frontier** — the
    `Map[Text,U64]` region (`nearest_match`/`set_nearest_match`/

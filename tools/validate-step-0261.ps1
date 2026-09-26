@@ -126,8 +126,8 @@ try {
             throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Current full-source canary: STEP-0297 lowers the nested bytes.slice
-        # subject, then fails closed at the map.put return expression.
+        # Current full-source canary: STEP-0298 covers set_nearest_match and
+        # fails closed in match_arm_levels at a new call shape.
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -136,8 +136,8 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-EXPRESSION')) {
-            throw "formatter canary changed from the current set_nearest_match frontier: exit=$($process2.ExitCode) stderr=$stderr2"
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-SHAPE')) {
+            throw "formatter canary changed from the current match_arm_levels frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -156,4 +156,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=SET-NEAREST-MATCH-EXPRESSION repinned-by=STEP-0297'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=MATCH-ARM-LEVELS-CALL-SHAPE repinned-by=STEP-0298'

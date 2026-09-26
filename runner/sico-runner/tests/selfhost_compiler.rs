@@ -759,18 +759,67 @@ fn sico_compiler_lowers_match_in_whileless_if_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_set_nearest_match_prefix_at_map_put_return() {
+fn sico_compiler_lowers_set_nearest_match_prefix_byte_exactly() {
     let end = FORMATTER_SOURCE
         .find("function match_arm_levels")
         .expect("formatter keeps the set_nearest_match prefix");
     let source = &FORMATTER_SOURCE[..end];
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("set_nearest_match prefix must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_map_put_return_byte_exactly() {
+    let source = "function put_probe(active: Map[Text,U64], key_bytes: Bytes, value: U64) returns Map[Text,U64]:\n  while U64.less_than(U64.literal(0), value):\n    return sico.map.put[Text,U64](active, sico.bytes.utf8_decode(key_bytes), value)\n  end while\n  return active\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("map.put return must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let extra_arg = source.replace("key_bytes), value)", "key_bytes), value, value)");
     assert_eq!(
-        run_guest(source),
+        run_guest(&extra_arg),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-EXPRESSION".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
         }
     );
+    let wrong_map = source.replace("active: Map[Text,U64]", "active: Text");
+    assert_eq!(
+        run_guest(&wrong_map),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let wrong_bytes = source.replace("key_bytes: Bytes", "key_bytes: Text");
+    assert_eq!(
+        run_guest(&wrong_bytes),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let wrong_value = source.replace("value: U64", "value: Text");
+    assert_eq!(
+        run_guest(&wrong_value),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid map.put return must compile after refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
 
 #[test]
