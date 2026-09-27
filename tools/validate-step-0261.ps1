@@ -12,7 +12,8 @@ foreach ($marker in @(
     'let gwh_frames = sico.text.split_lines("")',
     'let gwh_len = U64.literal(0)',
     'let gwt_entries = sico.text.split_lines("")',
-    'SKIP:GENERAL-WHILE-IF-REGION',
+    'if is_word(gregion, "else"):',
+    'if is_word(gregion, "join"):',
     'let scl_uc_callee = function_declaration_index(words, scl_atom)',
     'let scl_uc_pack = while_call_rhs_packed(words, src, name_idx, scl_seg_start, line_end, scl_seg_offset, scl_uc_end',
     '"u64", "sico.list.length")',
@@ -31,6 +32,9 @@ foreach ($marker in @(
 # The single-nested-while entry guard is gone: nested whiles now lower.
 if ($parser.Contains('SKIP:GENERAL-WHILE-NESTED')) {
     throw 'stale SKIP:GENERAL-WHILE-NESTED guard still present in parser.sico'
+}
+if ($parser.Contains('SKIP:GENERAL-WHILE-IF-REGION')) {
+    throw 'stale SKIP:GENERAL-WHILE-IF-REGION guard still present in parser.sico'
 }
 
 # Refusal identity must not carry diagnostic suffixes again.
@@ -126,8 +130,8 @@ try {
             throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Current full-source canary: STEP-0300 covers opener_close and
-        # fails closed in normalize_source at a RHS shape.
+        # Current full-source canary: STEP-0304 lowers a user-call comparison operand, then
+        # fails closed at a nested while region in normalize_source.
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -136,7 +140,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-ARGUMENT')) {
             throw "formatter canary changed from the current normalize_source frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
@@ -156,4 +160,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NORMALIZE-SOURCE-GWPACK-OTHER repinned-by=STEP-0300'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NORMALIZE-SOURCE-CALL-ARGUMENT repinned-by=STEP-0304'

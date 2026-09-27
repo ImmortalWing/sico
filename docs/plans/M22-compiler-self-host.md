@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0300 local evidence (STEP-0299/0300 independent CI pending). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, STEP-0296 verified 22-C S4 on 904b86a, STEP-0297 verified slice 5 on ffcdd3f and STEP-0298 verified slice 6 on 5ba175f, all on the isolated codex/m22-w1-ci branch. STEP-0299 advances the formatter canary to 27/30; STEP-0300 advances it to 28/30 with byte-exact opener_close prefix, normalize_source / GWPACK-OTHER next and R3 consecutive stall count 0. STEP-0299 CI run 36212164872 is pending on f856bb1. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO through STEP-0305 local evidence (STEP-0300–0305 independent CI unadjudicated). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, STEP-0296 verified 22-C S4 on 904b86a, STEP-0297 verified slice 5 on ffcdd3f and STEP-0298 verified slice 6 on 5ba175f, all on the isolated codex/m22-w1-ci branch. STEP-0299 advances the formatter canary to 27/30 and its independent CI succeeded; STEP-0300 advances it to 28/30 with byte-exact opener_close prefix; STEP-0301 moves the normalize_source typed frontier GWPACK-OTHER → GWSKIP; STEP-0302 moves it to CALL-ARGUMENT; STEP-0303 moves it to EXPRESSION; STEP-0304 moves it to a nested text.concat CALL-ARGUMENT; STEP-0305 moves the refusal deeper into the nested trim argument with R3 consecutive stall count 0. STEP-0300 CI run 36212509946 was last recorded pending on f2fd7fc. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
 
 ## 1. Objective
 
@@ -148,13 +148,25 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    coverage to 27/30 with a separately byte-exact `direct_close` prefix.
    STEP-0300 locally preserves the parent if region across a nested while,
    advancing coverage to 28/30 with a byte-exact `opener_close` prefix;
-   `normalize_source` / `GWPACK-OTHER` is next. R3 consecutive-stall count remains zero. Independent CI for
+   STEP-0301 locally lowers `map.empty[Text,U64]()` RHS; the canary remains
+   28/30 and `normalize_source` moves to `GWSKIP`. STEP-0302 locally admits
+   while loops in else and post-if join regions with two real-runner
+   byte-exact IR differentials; the canary remains 28/30 and the next
+   typed frontier is `CALL-ARGUMENT`. STEP-0303 locally reads a
+   `Map[Text,U64]` local before its `map.get` key with byte-exact SSA
+   order, moving the next frontier to `EXPRESSION` while the canary
+   remains 28/30. STEP-0304 locally lowers a user call as the left operand
+   of a fixed comparison and repairs SSA numbering after returning a
+   parameter, moving the next refusal into nested `text.concat` arguments.
+   STEP-0305 locally lowers two Text-returning user calls as `text.concat`
+   arguments and moves the refusal deeper into the nested trim argument.
+   R3 consecutive-stall count remains zero. Independent CI for
    S3 succeeded on `f7288b7` (run 36166445685), and S4 succeeded on `904b86a`
    (run 36168754671), giving each a GO on the isolated branch; STEP-0297
    independent CI succeeded on `ffcdd3f` (run 36209299222), and STEP-0298
    succeeded on `5ba175f` (run 36210200271). STEP-0299 independent CI run
-   36212164872 is pending on exact SHA `f856bb1`.
-   STEP-0300 has local evidence only. The
+   36212164872 succeeded on exact SHA `f856bb1`, and STEP-0300 run
+   36212509946 was last recorded pending on `f2fd7fc`. STEP-0301–0305 have local evidence only. The
    parallel `origin/dev` history is not adjudicated by this
    branch's CI.
 2. **Formatter tail from the current frontier** — `normalize_source`, `main`.

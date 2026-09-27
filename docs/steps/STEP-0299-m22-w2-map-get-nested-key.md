@@ -1,6 +1,6 @@
 # STEP-0299: M22 W2 slice 7 — map.get nested key
 
-> - status: implementation complete locally; independent CI pending
+> - status: complete / slice 7 GO on isolated branch
 > - phase: M22 compiler self-host, execution card 22-C slice 7
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -45,7 +45,11 @@ No language, WIT, Host or authority contract changes.
 - Root and runner `cargo fmt --all -- --check`,
   `tools/validate-step-0124.ps1`, and `git diff --check` passed.
 
-Independent CI on this STEP's exact SHA is pending.
+Independent GitHub Actions Windows GNU run
+[36212164872](https://github.com/ImmortalWing/sico/actions/runs/36212164872)
+completed successfully on the exact STEP-0299 commit
+`f856bb10ff3ac0de576fcd92c13bda570af39901`. Slice 7 is GO on the
+isolated branch.
 M22 remains **NO-GO**: three formatter functions, remaining selfhost source
 coverage, milestone S5 byte-equal codegen, S6 bootstrap and S7 exit audit
 remain open. `origin/dev` parallel history is still unmerged.

@@ -176,7 +176,7 @@ try {
         $null = $process5.StandardOutput.ReadToEnd()
         $stderr5 = $process5.StandardError.ReadToEnd()
         $process5.WaitForExit()
-        if ($process5.ExitCode -ne 122 -or -not $stderr5.Contains('ERR:E-SH-IR-GWPACK-OTHER')) {
+        if ($process5.ExitCode -ne 122 -or -not $stderr5.Contains('ERR:E-SH-IR-CALL-ARGUMENT')) {
             throw "normalize_source frontier probe changed: exit=$($process5.ExitCode) stderr=$stderr5"
         }
         if ($stderr5.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
@@ -196,4 +196,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact opener-close=byte-exact canary=NORMALIZE-SOURCE-GWPACK-OTHER repinned-by=STEP-0300'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact opener-close=byte-exact canary=NORMALIZE-SOURCE-CALL-ARGUMENT repinned-by=STEP-0304'
