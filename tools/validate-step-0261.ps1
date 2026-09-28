@@ -130,8 +130,8 @@ try {
             throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Current full-source canary: STEP-0304 lowers a user-call comparison operand, then
-        # fails closed at a nested while region in normalize_source.
+        # Current full-source canary: STEP-0309 completes normalize_source;
+        # main next fails closed at its condition.
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -140,7 +140,7 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-CALL-ARGUMENT')) {
+        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-SCICOND')) {
             throw "formatter canary changed from the current normalize_source frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
@@ -160,4 +160,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=NORMALIZE-SOURCE-CALL-ARGUMENT repinned-by=STEP-0304'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=MAIN-SCICOND repinned-by=STEP-0309'

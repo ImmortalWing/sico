@@ -1,6 +1,6 @@
 # STEP-0302: M22 W2 slice 10 — while in else and join regions
 
-> - status: implementation complete locally; independent CI pending
+> - status: implementation complete; independent CI success (STEP-0310 adjudication)
 > - phase: M22 compiler self-host, execution card 22-C slice 10
 > - date: 2026-09-27
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -37,3 +37,7 @@ The full workspace suite was not run for this parser-only lowering slice.
 Independent CI is pending. M22 remains **NO-GO**: the rest of `normalize_source`, `main`,
 remaining selfhost sources, S5 byte-equal codegen, S6 bootstrap, and S7
 exit audit remain open. M23 implementation has neither Route A nor Route B.
+
+## Later CI adjudication
+
+STEP-0310 verified GitHub Windows GNU workflow run 36366432845 on cumulative SHA 8bee75b as completed/success. This adjudicates the committed snapshot only; M22 remains NO-GO.

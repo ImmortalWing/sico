@@ -1,5 +1,7 @@
 # M14–M26 milestone route audit (2026-09-24)
 
+> Historical snapshot: the M22 row below predates the [2026-09-28 M22 CI and exit review](./m22-exit-audit-2026-09-28.md). Use that later review for the current M22 verdict; the 2026-09-24 gate register remains unchanged as dated evidence.
+
 > Evidence class: planning audit. This report reconciles recorded exit audits,
 > accepted contracts, current plans and the latest STEP; it does not promote a
 > contract or a historical test run to new runtime evidence. Historical STEP

@@ -6088,6 +6088,103 @@ function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_
   return sico.text.concat(sico.u64.to_text(gcc_result), sico.text.concat("\n3\n", gcc_json))
 end function
 
+function gw_text_trim_user_call_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  let gtu_len = sico.list.length(words)
+  let gtu_open = next_index(next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end), line_end)
+  if is_word(word_at(words, gtu_open), "("):
+    let gtu_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gtu_close = matching_close(words, gtu_open, line_end)
+  if U64.equal(next_index(gtu_close, line_end), line_end):
+    let gtu_tail_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gtu_arg = next_index(gtu_open, line_end)
+  let gtu_callee = function_declaration_index(words, word_at(words, gtu_arg))
+  if U64.less_than(gtu_callee, gtu_len):
+    let gtu_callee_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARGUMENT"
+  end if
+  let gtu_call_open = next_index(gtu_arg, gtu_close)
+  if is_word(word_at(words, gtu_call_open), "("):
+    let gtu_call_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gtu_call_close = matching_close(words, gtu_call_open, gtu_close)
+  if U64.equal(next_index(gtu_call_close, gtu_len), gtu_close):
+    let gtu_call_tail_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gtu_arg_start = word_span_offset(words, src, expr_start, receiver_idx, gtu_arg)
+  let gtu_call_close_start = word_span_offset(words, src, gtu_arg_start, gtu_arg, gtu_call_close)
+  let gtu_call_end = gtu_call_close_start
+  match U64.checked_add(gtu_call_close_start, U64.literal(1)):
+    case ok(gtu_after_call):
+      set gtu_call_end = gtu_after_call
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gtu_pack = while_call_rhs_packed(words, src, name_idx, gtu_arg, gtu_close, gtu_arg_start, gtu_call_end, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  if sico.text.starts_with(gtu_pack, "ERR:"):
+    return gtu_pack
+  end if
+  let gtu_parts = sico.text.split_lines(gtu_pack)
+  let gtu_kind = word_at(gtu_parts, U64.literal(0))
+  if is_word(gtu_kind, "string"):
+    let gtu_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gtu_args = word_at(gtu_parts, U64.literal(1))
+  let gtu_pre = word_at(gtu_parts, U64.literal(2))
+  if is_word(gtu_pre, "-"):
+    set gtu_pre = ""
+  end if
+  let gtu_pre_count = gw_instr_count(gtu_pre)
+  let gtu_call_id = base
+  match U64.checked_add(base, gtu_pre_count):
+    case ok(gtu_after_pre):
+      set gtu_call_id = gtu_after_pre
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gtu_call_json = call_instruction_json(gtu_call_id, gtu_kind, function_declaration_ordinal(words, gtu_callee), gtu_args, gtu_arg_start, gtu_call_end)
+  let gtu_trim_id = gtu_call_id
+  match U64.checked_add(gtu_call_id, U64.literal(1)):
+    case ok(gtu_after_call_id):
+      set gtu_trim_id = gtu_after_call_id
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gtu_close_start = word_span_offset(words, src, expr_start, receiver_idx, gtu_close)
+  let gtu_end = gtu_close_start
+  match U64.checked_add(gtu_close_start, U64.literal(1)):
+    case ok(gtu_after_close):
+      set gtu_end = gtu_after_close
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gtu_trim_json = intrinsic_instruction_json(gtu_trim_id, "string", "sico.text.trim", sico.text.concat("[", sico.text.concat(sico.u64.to_text(gtu_call_id), "]")), expr_start, gtu_end)
+  let gtu_pieces = sico.text.concat(gtu_call_json, sico.text.concat(",", gtu_trim_json))
+  if U64.less_than(U64.literal(0), sico.text.length(gtu_pre)):
+    set gtu_pieces = sico.text.concat(gtu_pre, sico.text.concat(",", gtu_pieces))
+  end if
+  let gtu_count = gtu_pre_count
+  match U64.checked_add(gtu_pre_count, U64.literal(2)):
+    case ok(gtu_total):
+      set gtu_count = gtu_total
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  return sico.text.concat(sico.u64.to_text(gtu_count), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gtu_trim_id), sico.text.concat("\nstring\n", gtu_pieces))))
+end function
+
 function gw_text_concat_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
   let gtc_words_len = sico.list.length(words)
   let gtc_open = next_index(next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end), line_end)
@@ -6173,6 +6270,54 @@ function gw_text_concat_packed(words: List[Text], src: Bytes, name_idx: U64, rec
       end if
       set gtc_advance = gw_decimal_value(word_at(gtc_sub_parts, U64.literal(0)))
     else:
+      if is_intrinsic_path(words, gtc_seg, "text", "join"):
+        let gtc_join_close = matching_close(words, next_index(next_index(next_index(next_index(next_index(gtc_seg, gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end)
+        if U64.equal(next_index(gtc_join_close, gtc_words_len), gtc_seg_end):
+          let gtc_join_tail_ok = I64.literal(1)
+        else:
+          return "ERR:E-SH-IR-CALL-SHAPE"
+        end if
+        let gtc_join_end_start = word_span_offset(words, src, gtc_seg_offset, gtc_seg, gtc_join_close)
+        let gtc_join_end = gtc_join_end_start
+        match U64.checked_add(gtc_join_end_start, U64.literal(1)):
+          case ok(gtc_after_join):
+            set gtc_join_end = gtc_after_join
+          case error(_):
+            return "ERR:E-SH-IR-RANGE"
+        end match
+        let gtc_join_pack = gw_text_list_binary_packed(words, src, name_idx, gtc_seg, gtc_seg_end, gtc_seg_offset, gtc_join_end, cell_names, cell_kinds, cell_locals, parameter_count, gtc_value, "string", "sico.text.join")
+        if sico.text.starts_with(gtc_join_pack, "ERR:"):
+          return gtc_join_pack
+        end if
+        let gtc_join_parts = sico.text.split_lines(gtc_join_pack)
+        set gtc_arg_value = gw_decimal_value(word_at(gtc_join_parts, U64.literal(1)))
+        set gtc_arg_instr = word_at(gtc_join_parts, U64.literal(3))
+        set gtc_advance = gw_decimal_value(word_at(gtc_join_parts, U64.literal(0)))
+      else:
+      if is_intrinsic_path(words, gtc_seg, "text", "trim"):
+        let gtc_trim_close = matching_close(words, next_index(next_index(next_index(next_index(next_index(gtc_seg, gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end), gtc_seg_end)
+        if U64.equal(next_index(gtc_trim_close, gtc_words_len), gtc_seg_end):
+          let gtc_trim_tail_ok = I64.literal(1)
+        else:
+          return "ERR:E-SH-IR-CALL-SHAPE"
+        end if
+        let gtc_trim_end_start = word_span_offset(words, src, gtc_seg_offset, gtc_seg, gtc_trim_close)
+        let gtc_trim_end = gtc_trim_end_start
+        match U64.checked_add(gtc_trim_end_start, U64.literal(1)):
+          case ok(gtc_after_trim):
+            set gtc_trim_end = gtc_after_trim
+          case error(_):
+            return "ERR:E-SH-IR-RANGE"
+        end match
+        let gtc_trim_pack = gw_text_trim_user_call_packed(words, src, name_idx, gtc_seg, gtc_seg_end, gtc_seg_offset, gtc_trim_end, cell_names, cell_kinds, cell_locals, parameter_count, gtc_value)
+        if sico.text.starts_with(gtc_trim_pack, "ERR:"):
+          return gtc_trim_pack
+        end if
+        let gtc_trim_parts = sico.text.split_lines(gtc_trim_pack)
+        set gtc_arg_value = gw_decimal_value(word_at(gtc_trim_parts, U64.literal(1)))
+        set gtc_arg_instr = word_at(gtc_trim_parts, U64.literal(3))
+        set gtc_advance = gw_decimal_value(word_at(gtc_trim_parts, U64.literal(0)))
+      else:
       let gtc_callee = function_declaration_index(words, gtc_atom)
       if U64.less_than(gtc_callee, gtc_words_len):
         let gtc_call_open = next_index(gtc_seg, gtc_seg_end)
@@ -6260,6 +6405,8 @@ function gw_text_concat_packed(words: List[Text], src: Bytes, name_idx: U64, rec
             end if
           end if
         end if
+      end if
+      end if
       end if
     end if
     if U64.less_than(U64.literal(0), gtc_advance):
@@ -6481,7 +6628,18 @@ function gw_map_put_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
   end if
-  if U64.equal(next_index(gmp_value_idx, gmp_n), gmp_close):
+  let gmp_value_width = U64.literal(1)
+  if is_word(fixed_literal_argument(words, gmp_value_idx), "u64"):
+    set gmp_value_width = fixed_operation_operand_width(words, gmp_value_idx, name_idx)
+  end if
+  let gmp_after_value_idx = gmp_value_idx
+  match U64.checked_add(gmp_value_idx, gmp_value_width):
+    case ok(gmp_value_end_idx):
+      set gmp_after_value_idx = gmp_value_end_idx
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.equal(gmp_after_value_idx, gmp_close):
     let gmp_value_atom_ok = I64.literal(1)
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
@@ -6604,12 +6762,121 @@ function gw_map_put_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
   return sico.text.concat(sico.u64.to_text(gmp_count), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gmp_next), sico.text.concat("\n", sico.text.concat(gmp_map_ty, sico.text.concat("\n", gmp_pieces))))))
 end function
 
+function gw_text_list_binary_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64, result_kind: Text, intr_name: Text) returns Text:
+  let gla_open = next_index(next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end), line_end)
+  if is_word(word_at(words, gla_open), "("):
+    let gla_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gla_close = matching_close(words, gla_open, line_end)
+  if U64.equal(next_index(gla_close, line_end), line_end):
+    let gla_tail_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gla_list_idx = next_index(gla_open, line_end)
+  let gla_comma = next_index(gla_list_idx, line_end)
+  let gla_text_idx = next_index(gla_comma, line_end)
+  if is_word(word_at(words, gla_comma), ","):
+    let gla_comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  if U64.equal(next_index(gla_text_idx, line_end), gla_close):
+    let gla_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gla_list_start = word_span_offset(words, src, expr_start, receiver_idx, gla_list_idx)
+  let gla_list_pack = gw_rhs_packed(words, src, name_idx, gla_list_idx, gla_comma, gla_list_start, gla_list_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  if sico.text.starts_with(gla_list_pack, "ERR:"):
+    return gla_list_pack
+  end if
+  let gla_list_parts = sico.text.split_lines(gla_list_pack)
+  let gla_list_kind = "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}"
+  if is_word(word_at(gla_list_parts, U64.literal(2)), gla_list_kind):
+    let gla_list_type_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gla_list_count = gw_decimal_value(word_at(gla_list_parts, U64.literal(0)))
+  let gla_list_value = gw_decimal_value(word_at(gla_list_parts, U64.literal(1)))
+  let gla_list_instr = word_at(gla_list_parts, U64.literal(3))
+  if is_word(gla_list_instr, "-"):
+    set gla_list_instr = ""
+  end if
+  let gla_text_base = base
+  match U64.checked_add(base, gla_list_count):
+    case ok(gla_after_list):
+      set gla_text_base = gla_after_list
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gla_text_start = word_span_offset(words, src, expr_start, receiver_idx, gla_text_idx)
+  let gla_text_pack = gw_rhs_packed(words, src, name_idx, gla_text_idx, gla_close, gla_text_start, gla_text_start, cell_names, cell_kinds, cell_locals, parameter_count, gla_text_base)
+  if sico.text.starts_with(gla_text_pack, "ERR:"):
+    return gla_text_pack
+  end if
+  let gla_text_parts = sico.text.split_lines(gla_text_pack)
+  if is_word(word_at(gla_text_parts, U64.literal(2)), "string"):
+    let gla_text_type_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let gla_text_count = gw_decimal_value(word_at(gla_text_parts, U64.literal(0)))
+  let gla_text_value = gw_decimal_value(word_at(gla_text_parts, U64.literal(1)))
+  let gla_text_instr = word_at(gla_text_parts, U64.literal(3))
+  if is_word(gla_text_instr, "-"):
+    set gla_text_instr = ""
+  end if
+  let gla_intr_id = gla_text_base
+  match U64.checked_add(gla_text_base, gla_text_count):
+    case ok(gla_after_text):
+      set gla_intr_id = gla_after_text
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gla_args = sico.text.concat("[", sico.text.concat(sico.u64.to_text(gla_list_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(gla_text_value), "]"))))
+  let gla_intr = intrinsic_instruction_json(gla_intr_id, result_kind, intr_name, gla_args, expr_start, line_end_offset)
+  let gla_pieces = ""
+  if U64.less_than(U64.literal(0), sico.text.length(gla_list_instr)):
+    set gla_pieces = sico.text.concat(gla_list_instr, ",")
+  end if
+  if U64.less_than(U64.literal(0), sico.text.length(gla_text_instr)):
+    set gla_pieces = sico.text.concat(gla_pieces, sico.text.concat(gla_text_instr, ","))
+  end if
+  set gla_pieces = sico.text.concat(gla_pieces, gla_intr)
+  let gla_count = U64.literal(0)
+  match U64.checked_add(gla_list_count, gla_text_count):
+    case ok(gla_arg_count):
+      match U64.checked_add(gla_arg_count, U64.literal(1)):
+        case ok(gla_total):
+          set gla_count = gla_total
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gla_out = sico.u64.to_text(gla_count)
+  set gla_out = sico.text.concat(gla_out, "\n")
+  set gla_out = sico.text.concat(gla_out, sico.u64.to_text(gla_intr_id))
+  set gla_out = sico.text.concat(gla_out, "\n")
+  set gla_out = sico.text.concat(gla_out, result_kind)
+  set gla_out = sico.text.concat(gla_out, "\n")
+  return sico.text.concat(gla_out, gla_pieces)
+end function
+
 function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
   if is_intrinsic_path(words, receiver_idx, "map", "empty"):
     return gw_map_empty_rhs_packed(words, receiver_idx, line_end, expr_start, line_end_offset, base)
   end if
   if is_intrinsic_path(words, receiver_idx, "map", "put"):
     return gw_map_put_rhs_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  end if
+  if is_intrinsic_path(words, receiver_idx, "list", "append"):
+    return gw_text_list_binary_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}", "sico.list.append")
   end if
   if is_intrinsic_path(words, receiver_idx, "bytes", "utf8_decode"):
     let gws_decode_pack = gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "string", "sico.bytes.utf8_decode")

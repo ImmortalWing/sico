@@ -1,6 +1,6 @@
 # STEP-0300: M22 W2 slice 8 — while inside an if arm
 
-> - status: implementation complete locally; independent CI pending
+> - status: implementation complete; independent CI success (STEP-0310 adjudication)
 > - phase: M22 compiler self-host, execution card 22-C slice 8
 > - date: 2026-09-26
 > - evidence class: internal-fixture, Windows x64 GNU real runner
@@ -49,3 +49,7 @@ Independent CI on this STEP's exact SHA is pending.
 M22 remains **NO-GO**: two formatter functions, remaining selfhost source
 coverage, milestone S5 byte-equal codegen, S6 bootstrap and S7 exit audit
 remain open. `origin/dev` parallel history is still unmerged.
+
+## Later CI adjudication
+
+STEP-0310 verified GitHub Windows GNU workflow run 36212509946 on exact SHA f2fd7fc as completed/success. This adjudicates the committed snapshot only; M22 remains NO-GO.

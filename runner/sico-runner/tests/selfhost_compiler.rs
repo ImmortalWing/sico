@@ -854,24 +854,40 @@ fn sico_compiler_lowers_opener_close_prefix_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_normalize_source_prefix_at_nested_trim_frontier() {
+fn sico_compiler_lowers_normalize_source_prefix_byte_exactly() {
     let end = FORMATTER_SOURCE
         .find("function main")
         .expect("formatter keeps the normalize_source prefix");
     let source = &FORMATTER_SOURCE[..end];
-    assert_eq!(
-        run_guest(source),
-        RunOutcome::Domain {
-            code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-CALL-ARGUMENT".into(),
-        }
-    );
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("normalize_source prefix must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
     let recovered_end = FORMATTER_SOURCE.find("function normalize_source").unwrap();
     let recovered_source = &FORMATTER_SOURCE[..recovered_end];
     let RunOutcome::Output(recovered) = run_guest(recovered_source) else {
-        panic!("opener_close prefix must compile after typed refusal")
+        panic!("opener_close prefix must compile after normalize_source")
     };
     assert_bytes_equal(&recovered.stdout, rust_ir(recovered_source).as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_full_formatter_at_main_condition() {
+    assert_eq!(
+        run_guest(FORMATTER_SOURCE),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-SCICOND".into(),
+        }
+    );
+    let end = FORMATTER_SOURCE.find("function main").unwrap();
+    let prefix = &FORMATTER_SOURCE[..end];
+    let RunOutcome::Output(recovered) = run_guest(prefix) else {
+        panic!("normalize_source prefix must compile after full-source refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(prefix).as_bytes());
 }
 
 #[test]
@@ -1077,6 +1093,154 @@ fn sico_compiler_lowers_user_calls_inside_text_concat_byte_exactly() {
     );
     let RunOutcome::Output(recovered) = run_guest(source) else {
         panic!("valid nested concat calls must compile after refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_trimmed_user_call_inside_text_concat_byte_exactly() {
+    let source = "function add(left: U64, right: U64) returns U64:\n  return left\nend function\nfunction item(tokens: List[Text], index: U64) returns Text:\n  return \"x\"\nend function\nfunction trim_probe(tokens: List[Text], comment_index: U64) returns Text:\n  let rendered = \"\"\n  while U64.less_than(U64.literal(0), comment_index):\n    set rendered = sico.text.concat(rendered, sico.text.trim(item(tokens, add(comment_index, U64.literal(1)))))\n    return rendered\n  end while\n  return rendered\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("trimmed user call in concat must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let wrong_type = source.replace(
+        "function item(tokens: List[Text], index: U64) returns Text:\n  return \"x\"",
+        "function item(tokens: List[Text], index: U64) returns U64:\n  return index",
+    );
+    assert_eq!(
+        run_guest(&wrong_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid trimmed call must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_text_list_append_rhs_byte_exactly() {
+    let source = "function append_probe(items: List[Text], value: Text, n: U64) returns List[Text]:\n  let output = items\n  while U64.less_than(U64.literal(0), n):\n    set output = sico.list.append(output, \"\")\n    set output = sico.list.append(output, value)\n    return output\n  end while\n  return output\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("Text list append RHS must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let extra_arg = source.replace("(output, value)", "(output, value, value)");
+    assert_eq!(
+        run_guest(&extra_arg),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let wrong_type = source.replace("value: Text", "value: U64");
+    assert_eq!(
+        run_guest(&wrong_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid list append must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_map_put_fixed_literal_rhs_byte_exactly() {
+    let source = "function put_zero(items: Map[Text,U64], key: Text, n: U64) returns Map[Text,U64]:\n  let active = items\n  while U64.less_than(U64.literal(0), n):\n    set active = sico.map.put[Text,U64](active, key, U64.literal(0))\n    return active\n  end while\n  return active\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("map.put fixed literal RHS must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let extra_arg = source.replace("U64.literal(0))", "U64.literal(0), n)");
+    assert_eq!(
+        run_guest(&extra_arg),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let wrong_type = source.replace("U64.literal(0))", "I64.literal(0))");
+    assert_eq!(
+        run_guest(&wrong_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid map.put literal must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_normalize_source_before_final_join_byte_exactly() {
+    let end = FORMATTER_SOURCE.find("function main").unwrap();
+    let prefix = &FORMATTER_SOURCE[..end];
+    let source = prefix.replace(
+        "return sico.text.concat(sico.text.join(output, \"\\n\"), \"\\n\")",
+        "return \"\"",
+    );
+    assert_ne!(
+        source, prefix,
+        "formatter final join marker must be present"
+    );
+    let expected = rust_ir(&source);
+    let outcome = run_guest(&source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("normalize_source before final join must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_text_join_inside_concat_byte_exactly() {
+    let source = "function join_probe(items: List[Text], n: U64) returns Text:\n  while U64.less_than(U64.literal(0), n):\n    return sico.text.concat(sico.text.join(items, \"\\n\"), \"\\n\")\n  end while\n  return \"\"\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("text.join inside concat must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let wrong_list = source.replace("items: List[Text]", "items: Text");
+    assert_eq!(
+        run_guest(&wrong_list),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let extra_arg = source.replace("items, \"\\n\")", "items, \"\\n\", \"x\")");
+    assert_eq!(
+        run_guest(&extra_arg),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid text.join must compile after typed refusals")
     };
     assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }

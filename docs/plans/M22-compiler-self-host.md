@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: in progress / NO-GO through STEP-0305 local evidence (STEP-0300–0305 independent CI unadjudicated). S1/S2 declared subsets complete; S3/S4/S5 partial; S6/S7 not entered. ADR-0017 Option A and RFC-0047 are accepted. STEP-0292 independently verified W1 on e8495f9, STEP-0293 verified 22-C S1 on repaired cb371c5, STEP-0294 verified 22-C S2 on 5a6d0bb, STEP-0295 verified 22-C S3 on f7288b7, STEP-0296 verified 22-C S4 on 904b86a, STEP-0297 verified slice 5 on ffcdd3f and STEP-0298 verified slice 6 on 5ba175f, all on the isolated codex/m22-w1-ci branch. STEP-0299 advances the formatter canary to 27/30 and its independent CI succeeded; STEP-0300 advances it to 28/30 with byte-exact opener_close prefix; STEP-0301 moves the normalize_source typed frontier GWPACK-OTHER → GWSKIP; STEP-0302 moves it to CALL-ARGUMENT; STEP-0303 moves it to EXPRESSION; STEP-0304 moves it to a nested text.concat CALL-ARGUMENT; STEP-0305 moves the refusal deeper into the nested trim argument with R3 consecutive stall count 0. STEP-0300 CI run 36212509946 was last recorded pending on f2fd7fc. origin/dev has a conflicting parallel W1/W2 history and remains unmerged.
+> Status: in progress / NO-GO after STEP-0310 exit review. S1/S2 declared subsets complete; S3/S4/S5 partial; S6 not entered; S7 reviewed NO-GO. STEP-0300 independent CI succeeded on f2fd7fc (run 36212509946), and the 8bee75b snapshot containing STEP-0301–0305 succeeded (run 36366432845). STEP-0306–0309 are local only and advance the formatter canary to 29/30, with `main` / SCICOND next and R3 consecutive stall count 0. ADR-0017 Option A and RFC-0047 are accepted. The parallel origin/dev W1/W2 history remains unmerged; neither branch CI nor this review proves M22 completion. See [2026-09-28 exit review](../reports/m22-exit-audit-2026-09-28.md).
 
 ## 1. Objective
 
@@ -80,10 +80,10 @@ language surface without an accepted RFC.
 | S1 formatter (L1) | complete | frozen corpus byte-exact + idempotent; `formatter.sico` runs on its own sources through the real runner | — |
 | S2 checker subset (L1) | complete for the declared subset | frozen diagnostic partition 116 lexical / 34 identity / 65 accepted / 0 unsupported | widening the subset requires its own declared-contract update (no silent growth) |
 | S3 lexer + parser (L2) | partial | `lexer.sico` / `tokens.sico` / `declaration_parser.sico` differentials green; `parser.sico` exercised through driver paths (recursive return-expression trees; verifier-accepted scalar IR + noncanonical refusals) | full declared-shape coverage of `parser.sico` (12,202 lines, the largest selfhost unit) on the frozen corpus |
-| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `opener_close` (28 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 2 remaining formatter functions (`normalize_source`, `main`), then the remaining selfhost sources lower byte-exactly |
+| S4 semantics + lowering (L2) | partial | local real-runner formatter prefix byte-exact through `normalize_source` (29 of 30 functions); typed refusal-first discipline with re-pinned canary each step; STEP-0306–0309 independent CI pending | `main`, then the remaining selfhost sources lower byte-exactly |
 | S5 codegen (L2) | partial | bounded Core-Wasm seam: nonnegative `Int` constant emission byte-equal to Rust codegen; every other shape typed-refused (`unsupported codegen source shape`) | RFC-0011 deterministic backend subset over the frozen corpus |
 | S6 bootstrap closure | not entered | — | ADR-0015 contract: `A == B == C`, `.sapp` via the M7 trust chain, runner-executed self-compile, budget re-measurement |
-| S7 exit audit | not entered | — | evidence pack + explicit GO/NO-GO |
+| S7 exit audit | reviewed / NO-GO | STEP-0310 reviewed all seven exit gates against current executed evidence | repeat full audit only after S3/S4/S5/S6 and final regression close |
 
 Current delta: RFC-0047 record types have since landed through STEP-0275;
 STEP-0276 absorbed the Map-parameter WIP and repaired `records` table
@@ -92,9 +92,12 @@ S3 row. STEP-0280 replaced the L1 E7002 keyword fingerprint and added a
 SHA-frozen five-case W1 delta corpus covering renamed parameters and
 zero-indent function bodies. Its real-runner test passed along with the
 original 215-case partition locally. STEP-0221/0245/0261/0262 canaries
-passed locally after their frozen-records/frontier expectations were updated;
-independent CI is still required. This delta does not close S3/S4, W1, S5 or M22. The current verdict register is
-the [M14–M26 audit](../reports/m14-m26-milestone-audit-2026-09-24.md).
+passed locally after their frozen-records/frontier expectations were updated.
+That was the STEP-0280 local snapshot; STEP-0292 subsequently closed W1 on an
+independent CI-tested SHA. The current M22 verdict is the
+[2026-09-28 exit review](../reports/m22-exit-audit-2026-09-28.md); the
+[M14–M26 audit](../reports/m14-m26-milestone-audit-2026-09-24.md) remains
+historical planning evidence.
 
 ### 3.2 Execution queue (planned ordering; no STEP numbers reserved)
 
@@ -160,19 +163,30 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    parameter, moving the next refusal into nested `text.concat` arguments.
    STEP-0305 locally lowers two Text-returning user calls as `text.concat`
    arguments and moves the refusal deeper into the nested trim argument.
+   STEP-0306 locally lowers that nested trim/user-call argument and moves
+   the refusal to the output `list.append` RHS / GWPACK-OTHER.
+   STEP-0307 locally lowers the Text `list.append` RHS and moves the
+   refusal to `map.put` with a fixed-literal value / CALL-SHAPE.
+   STEP-0308 locally lowers that fixed-literal `map.put` value and proves
+   the `normalize_source` prefix byte-exact when only its final join
+   return is replaced by a literal; the real source next refuses at
+   `text.join` inside the final `text.concat` / CALL-ARGUMENT.
+   STEP-0309 locally lowers that `text.join` expression; the actual
+   formatter prefix through `normalize_source` is byte-exact and the
+   canary advances to 29/30, with `main` / SCICOND next.
    R3 consecutive-stall count remains zero. Independent CI for
    S3 succeeded on `f7288b7` (run 36166445685), and S4 succeeded on `904b86a`
    (run 36168754671), giving each a GO on the isolated branch; STEP-0297
    independent CI succeeded on `ffcdd3f` (run 36209299222), and STEP-0298
    succeeded on `5ba175f` (run 36210200271). STEP-0299 independent CI run
    36212164872 succeeded on exact SHA `f856bb1`, and STEP-0300 run
-   36212509946 was last recorded pending on `f2fd7fc`. STEP-0301–0305 have local evidence only. The
+   36212509946 succeeded on exact SHA `f2fd7fc`; run 36366432845 succeeded on `8bee75b`, which contains STEP-0301–0305. STEP-0306–0309 have local evidence only. The
    parallel `origin/dev` history is not adjudicated by this
    branch's CI.
-2. **Formatter tail from the current frontier** — `normalize_source`, `main`.
+2. **Formatter tail from the current frontier** — `main`.
    The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
    `direct_close` and `opener_close` passed the real-runner
-   byte differential. `item` through `repeat_indent` also passed; do not
+   byte differential. `normalize_source` passed at STEP-0309, and `item` through `repeat_indent` also passed; do not
    re-implement those regions or treat their historical refusals as current.
    Each remaining region lands as its own byte-exact prefix differential. Exit test:
    the complete `formatter.sico` lowers byte-exactly against the Rust

@@ -173,11 +173,11 @@ try {
         $process5.StandardInput.BaseStream.Write($stdinBytes5, 0, $stdinBytes5.Length)
         $process5.StandardInput.BaseStream.Flush()
         $process5.StandardInput.BaseStream.Close()
-        $null = $process5.StandardOutput.ReadToEnd()
+        $stdout5 = $process5.StandardOutput.ReadToEnd()
         $stderr5 = $process5.StandardError.ReadToEnd()
         $process5.WaitForExit()
-        if ($process5.ExitCode -ne 122 -or -not $stderr5.Contains('ERR:E-SH-IR-CALL-ARGUMENT')) {
-            throw "normalize_source frontier probe changed: exit=$($process5.ExitCode) stderr=$stderr5"
+        if ($process5.ExitCode -ne 0 -or -not $stdout5.Contains('"name":"normalize_source"')) {
+            throw "normalize_source prefix did not compile: exit=$($process5.ExitCode) stderr=$stderr5"
         }
         if ($stderr5.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
@@ -196,4 +196,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact opener-close=byte-exact canary=NORMALIZE-SOURCE-CALL-ARGUMENT repinned-by=STEP-0304'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact normalize-source=byte-exact canary=MAIN-SCICOND repinned-by=STEP-0309'
