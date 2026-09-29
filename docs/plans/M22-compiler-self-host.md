@@ -180,9 +180,7 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    independent CI succeeded on `ffcdd3f` (run 36209299222), and STEP-0298
    succeeded on `5ba175f` (run 36210200271). STEP-0299 independent CI run
    36212164872 succeeded on exact SHA `f856bb1`, and STEP-0300 run
-   36212509946 succeeded on exact SHA `f2fd7fc`; run 36366432845 succeeded on `8bee75b`, which contains STEP-0301–0305. STEP-0306–0309 have local evidence only. The
-   parallel `origin/dev` history is not adjudicated by this
-   branch's CI.
+   36212509946 succeeded on exact SHA `f2fd7fc`; run 36366432845 succeeded on `8bee75b`, which contains STEP-0301–0305. Independent CI for STEP-0306–0309 and the STEP-0310 audit snapshot succeeded on exact SHA `9c94e7d` (run 36406396074, adjudicated 2026-09-29), so those STEPs carry formal progress credit. On 2026-09-29 the owner designated this branch the authoritative M22 working line, to be merged into `dev` after M22 completes; the parallel `origin/dev` history is not otherwise adjudicated by this branch's CI.
 2. **Formatter tail from the current frontier** — `main`.
    The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
    `direct_close` and `opener_close` passed the real-runner

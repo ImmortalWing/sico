@@ -20,3 +20,7 @@
 - `tools/report-m22-canary.ps1`（单独新命令）：exit 0，29/30，`main` / `ERR:E-SH-IR-SCICOND`，full-source exit 122，fuel cap 5,000,000,000；该 cap 不是实际 consumed fuel。
 
 本次审计时 STEP-0306–0309 尚无对应精确快照的独立 CI，因此无权将上述旧 SHA 的结果写成它们的 GO。后续提交触发的运行须另行核对 SHA 与结论。
+
+## 裁决增补（2026-09-29）
+
+本 STEP 与 STEP-0306–0309 的快照 `9c94e7d` 已取得独立 CI：GitHub Actions 运行 [36406396074](https://github.com/ImmortalWing/sico/actions/runs/36406396074)（workflow `m22-w1-ci.yml`，`windows-2025` runner）`completed/success`，`windows-gnu` job `success`，head SHA 与本地提交一致。按本文裁决规则，该运行覆盖 STEP-0306–0309 的实现与本文档快照：0306–0309 自此获得正式进展信用，canary 29/30（`main` / `ERR:E-SH-IR-SCICOND`）、全源 exit 122 与 R3 连续停滞数 0 正式化。七个出口门的 NO-GO 裁决不变（门 2/3/4 未满足，门 6 的完整候选集成审计仍待复跑）。同日 owner 指令：`codex/m22-w1-ci` 为 M22 权威工作线，M22 完成后合并至 `dev`；该线 STEP 的提交/推送已获授权。
