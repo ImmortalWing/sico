@@ -1147,6 +1147,35 @@ function parameter_type_word(words: List[Text], function_name_idx: U64, wanted_i
   return ""
 end function
 
+function script_result_return_json(words: List[Text], function_name_idx: U64) returns Text:
+  let srr_words_len = sico.list.length(words)
+  let srr_i = next_index(function_name_idx, srr_words_len)
+  let srr_limit = next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(next_index(function_name_idx, srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len), srr_words_len)
+  while U64.less_than(srr_i, srr_limit):
+    if is_word(word_at(words, srr_i), "returns"):
+      let srr_type_idx = next_index(srr_i, srr_words_len)
+      if is_word(word_at(words, srr_type_idx), "Result"):
+        if is_word(word_at(words, next_index(srr_type_idx, srr_words_len)), "["):
+          let srr_ok_idx = next_index(next_index(srr_type_idx, srr_words_len), srr_words_len)
+          if is_word(word_at(words, srr_ok_idx), "ScriptOutput"):
+            if is_word(word_at(words, next_index(srr_ok_idx, srr_words_len)), ","):
+              let srr_err_idx = next_index(next_index(srr_ok_idx, srr_words_len), srr_words_len)
+              if is_word(word_at(words, srr_err_idx), "ScriptError"):
+                if is_word(word_at(words, next_index(srr_err_idx, srr_words_len)), "]"):
+                  return "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\"named\",\"data\":\"ScriptOutput\"},\"error\":{\"kind\":\"named\",\"data\":\"ScriptError\"}}}"
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+      return ""
+    end if
+    set srr_i = next_index(srr_i, srr_words_len)
+  end while
+  return ""
+end function
+
 function binding_parameter_kind(words: List[Text], function_name_idx: U64, binding: Text) returns Text:
   let binding_kind_words_len = sico.list.length(words)
   let binding_kind_open_idx = next_index(function_name_idx, binding_kind_words_len)
@@ -6987,6 +7016,170 @@ function gw_text_list_binary_packed(words: List[Text], src: Bytes, name_idx: U64
 end function
 
 function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  if is_word(word_at(words, receiver_idx), "error"):
+    let gew_n = sico.list.length(words)
+    let gew_open = next_index(receiver_idx, gew_n)
+    if is_word(word_at(words, gew_open), "("):
+      let gew_cname = next_index(gew_open, gew_n)
+      if is_word(word_at(words, gew_cname), "ScriptError"):
+        let gew_copen = next_index(gew_cname, gew_n)
+        if is_word(word_at(words, gew_copen), "("):
+          let gew_f1 = next_index(gew_copen, gew_n)
+          let gew_c1 = next_index(gew_f1, gew_n)
+          let gew_enum = next_index(gew_c1, gew_n)
+          let gew_edot = next_index(gew_enum, gew_n)
+          let gew_case = next_index(gew_edot, gew_n)
+          let gew_comma = next_index(gew_case, gew_n)
+          let gew_f2 = next_index(gew_comma, gew_n)
+          let gew_c2 = next_index(gew_f2, gew_n)
+          let gew_lit = next_index(gew_c2, gew_n)
+          let gew_close1 = next_index(gew_lit, gew_n)
+          let gew_close2 = next_index(gew_close1, gew_n)
+          if is_word(word_at(words, gew_close2), ")"):
+            if U64.equal(next_index(gew_close2, line_end), line_end):
+              let gew_result_ty = script_result_return_json(words, name_idx)
+              if U64.less_than(U64.literal(0), sico.text.length(gew_result_ty)):
+                let gew_ok = I64.literal(1)
+              else:
+                return "ERR:E-SH-IR-CALL-TYPE"
+              end if
+              if is_word(word_at(words, gew_f1), "code"):
+                if is_word(word_at(words, gew_c1), ":"):
+                  if is_word(word_at(words, gew_enum), "ScriptErrorCode"):
+                    if is_word(word_at(words, gew_edot), "."):
+                      if is_word(word_at(words, gew_case), "InvalidInput"):
+                        if is_word(word_at(words, gew_comma), ","):
+                          if is_word(word_at(words, gew_f2), "message"):
+                            if is_word(word_at(words, gew_c2), ":"):
+                              if is_string_token(word_at(words, gew_lit)):
+                                if is_word(word_at(words, gew_close1), ")"):
+                                  let gew_enum_start = word_span_offset(words, src, expr_start, receiver_idx, gew_enum)
+                                  let gew_enum_end = gew_enum_start
+                                  match U64.checked_add(gew_enum_end, sico.bytes.length(sico.text.encode(word_at(words, gew_enum)))):
+                                    case ok(gew_after_enum):
+                                      set gew_enum_end = gew_after_enum
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  match U64.checked_add(gew_enum_end, sico.bytes.length(sico.text.encode(word_at(words, gew_edot)))):
+                                    case ok(gew_after_dot):
+                                      set gew_enum_end = gew_after_dot
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  match U64.checked_add(gew_enum_end, sico.bytes.length(sico.text.encode(word_at(words, gew_case)))):
+                                    case ok(gew_after_case):
+                                      set gew_enum_end = gew_after_case
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  let gew_variant = "{\"result\":"
+                                  set gew_variant = sico.text.concat(gew_variant, sico.u64.to_text(base))
+                                  set gew_variant = sico.text.concat(gew_variant, ",\"ty\":{\"kind\":\"named\",\"data\":\"ScriptErrorCode\"},\"operation\":{\"op\":\"variant\",\"data\":{\"name\":\"ScriptErrorCode.InvalidInput\",\"payload\":[]}},\"range\":{\"start\":")
+                                  set gew_variant = sico.text.concat(gew_variant, sico.u64.to_text(gew_enum_start))
+                                  set gew_variant = sico.text.concat(gew_variant, ",\"end\":")
+                                  set gew_variant = sico.text.concat(gew_variant, sico.u64.to_text(gew_enum_end))
+                                  set gew_variant = sico.text.concat(gew_variant, "}}")
+                                  let gew_lit_start = word_span_offset(words, src, expr_start, receiver_idx, gew_lit)
+                                  let gew_lit_end = gew_lit_start
+                                  match U64.checked_add(gew_lit_end, sico.bytes.length(sico.text.encode(word_at(words, gew_lit)))):
+                                    case ok(gew_after_lit):
+                                      set gew_lit_end = gew_after_lit
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  let gew_string = "{\"result\":"
+                                  set gew_string = sico.text.concat(gew_string, sico.u64.to_text(next_index(base, base)))
+                                  set gew_string = sico.text.concat(gew_string, ",\"ty\":{\"kind\":\"string\"},\"operation\":{\"op\":\"const_string\",\"data\":")
+                                  set gew_string = sico.text.concat(gew_string, json_string_token(word_at(words, gew_lit)))
+                                  set gew_string = sico.text.concat(gew_string, "},\"range\":{\"start\":")
+                                  set gew_string = sico.text.concat(gew_string, sico.u64.to_text(gew_lit_start))
+                                  set gew_string = sico.text.concat(gew_string, ",\"end\":")
+                                  set gew_string = sico.text.concat(gew_string, sico.u64.to_text(gew_lit_end))
+                                  set gew_string = sico.text.concat(gew_string, "}}")
+                                  let gew_construct_start = word_span_offset(words, src, expr_start, receiver_idx, gew_cname)
+                                  let gew_construct_end = word_span_offset(words, src, expr_start, receiver_idx, gew_close1)
+                                  let gew_construct_end_off = gew_construct_end
+                                  match U64.checked_add(gew_construct_end, U64.literal(1)):
+                                    case ok(gew_after_close1):
+                                      set gew_construct_end_off = gew_after_close1
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  let gew_construct = "{\"result\":"
+                                  set gew_construct = sico.text.concat(gew_construct, sico.u64.to_text(next_index(next_index(base, base), base)))
+                                  set gew_construct = sico.text.concat(gew_construct, ",\"ty\":{\"kind\":\"named\",\"data\":\"ScriptError\"},\"operation\":{\"op\":\"construct\",\"data\":{\"name\":\"ScriptError\",\"fields\":[{\"name\":\"code\",\"value\":")
+                                  set gew_construct = sico.text.concat(gew_construct, sico.u64.to_text(base))
+                                  set gew_construct = sico.text.concat(gew_construct, "},{\"name\":\"message\",\"value\":")
+                                  set gew_construct = sico.text.concat(gew_construct, sico.u64.to_text(next_index(base, base)))
+                                  set gew_construct = sico.text.concat(gew_construct, "}]}},\"range\":{\"start\":")
+                                  set gew_construct = sico.text.concat(gew_construct, sico.u64.to_text(gew_construct_start))
+                                  set gew_construct = sico.text.concat(gew_construct, ",\"end\":")
+                                  set gew_construct = sico.text.concat(gew_construct, sico.u64.to_text(gew_construct_end_off))
+                                  set gew_construct = sico.text.concat(gew_construct, "}}")
+                                  let gew_wrap_end = word_span_offset(words, src, expr_start, receiver_idx, gew_close2)
+                                  let gew_wrap_end_off = gew_wrap_end
+                                  match U64.checked_add(gew_wrap_end, U64.literal(1)):
+                                    case ok(gew_after_close2):
+                                      set gew_wrap_end_off = gew_after_close2
+                                    case error(_):
+                                      return "ERR:E-SH-IR-RANGE"
+                                  end match
+                                  let gew_wrap = "{\"result\":"
+                                  set gew_wrap = sico.text.concat(gew_wrap, sico.u64.to_text(next_index(next_index(next_index(base, base), base), base)))
+                                  set gew_wrap = sico.text.concat(gew_wrap, ",\"ty\":")
+                                  set gew_wrap = sico.text.concat(gew_wrap, gew_result_ty)
+                                  set gew_wrap = sico.text.concat(gew_wrap, ",\"operation\":{\"op\":\"variant\",\"data\":{\"name\":\"error\",\"payload\":[")
+                                  set gew_wrap = sico.text.concat(gew_wrap, sico.u64.to_text(next_index(next_index(base, base), base)))
+                                  set gew_wrap = sico.text.concat(gew_wrap, "]}},\"range\":{\"start\":")
+                                  set gew_wrap = sico.text.concat(gew_wrap, sico.u64.to_text(expr_start))
+                                  set gew_wrap = sico.text.concat(gew_wrap, ",\"end\":")
+                                  set gew_wrap = sico.text.concat(gew_wrap, sico.u64.to_text(gew_wrap_end_off))
+                                  set gew_wrap = sico.text.concat(gew_wrap, "}}")
+                                  let gew_pack = "4\n"
+                                  set gew_pack = sico.text.concat(gew_pack, sico.u64.to_text(next_index(next_index(next_index(base, base), base), base)))
+                                  set gew_pack = sico.text.concat(gew_pack, "\n")
+                                  set gew_pack = sico.text.concat(gew_pack, gew_result_ty)
+                                  set gew_pack = sico.text.concat(gew_pack, "\n")
+                                  return sico.text.concat(gew_pack, sico.text.concat(gew_variant, sico.text.concat(",", sico.text.concat(gew_string, sico.text.concat(",", sico.text.concat(gew_construct, sico.text.concat(",", gew_wrap)))))))
+                                else:
+                                  return "ERR:E-SH-IR-CALL-SHAPE"
+                                end if
+                              else:
+                                return "ERR:E-SH-IR-CALL-ARGUMENT"
+                              end if
+                            else:
+                              return "ERR:E-SH-IR-CALL-SHAPE"
+                            end if
+                          else:
+                            return "ERR:E-SH-IR-CALL-TYPE"
+                          end if
+                        else:
+                          return "ERR:E-SH-IR-CALL-SHAPE"
+                        end if
+                      else:
+                        return "ERR:E-SH-IR-CALL-TYPE"
+                      end if
+                    else:
+                      return "ERR:E-SH-IR-CALL-TYPE"
+                    end if
+                  else:
+                    return "ERR:E-SH-IR-CALL-SHAPE"
+                  end if
+                else:
+                  return "ERR:E-SH-IR-CALL-TYPE"
+                end if
+              else:
+                return "ERR:E-SH-IR-CALL-SHAPE"
+              end if
+            else:
+              return "ERR:E-SH-IR-CALL-SHAPE"
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
   if is_intrinsic_path(words, receiver_idx, "map", "empty"):
     return gw_map_empty_rhs_packed(words, receiver_idx, line_end, expr_start, line_end_offset, base)
   end if
@@ -9629,7 +9822,11 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   set gjson = sico.text.concat(gjson, "\",\"parameters\":")
   set gjson = sico.text.concat(gjson, gparameters)
   set gjson = sico.text.concat(gjson, ",\"return_type\":")
-  set gjson = sico.text.concat(gjson, type_json(return_kind))
+  if U64.less_than(U64.literal(0), sico.text.length(script_result_return_json(words, name_idx))):
+    set gjson = sico.text.concat(gjson, script_result_return_json(words, name_idx))
+  else:
+    set gjson = sico.text.concat(gjson, type_json(return_kind))
+  end if
   set gjson = sico.text.concat(gjson, ",\"effects\":[]")
   if U64.less_than(U64.literal(0), gcell_count):
     set gjson = sico.text.concat(gjson, ",\"locals\":")
@@ -11315,6 +11512,12 @@ function control_if_function_ir(words: List[Text], src: Bytes, name_idx: U64, bo
       end if
       let swr_line_end = line_end(words, sif_idx)
       let swr_value_idx = next_index(sif_idx, swr_line_end)
+      if is_word(word_at(words, swr_value_idx), "error"):
+        return "ERR:E-SH-IR-EXPRESSION"
+      end if
+      if is_word(word_at(words, swr_value_idx), "ok"):
+        return "ERR:E-SH-IR-EXPRESSION"
+      end if
       let swr_multi = U64.less_than(next_index(swr_value_idx, swr_line_end), swr_line_end)
       let swr_json = ""
       let swr_count = U64.literal(0)

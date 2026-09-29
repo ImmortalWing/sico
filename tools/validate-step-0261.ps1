@@ -160,4 +160,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=MAIN-ERROR-RETURN repinned-by=STEP-0312'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=MAIN-OK-RETURN repinned-by=STEP-0313'

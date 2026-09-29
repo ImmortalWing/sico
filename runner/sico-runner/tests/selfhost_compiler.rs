@@ -931,7 +931,60 @@ fn sico_compiler_lowers_let_utf8_decode_field_rhs_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_full_formatter_at_main_error_return() {
+fn sico_compiler_lowers_error_return_variant_construct_byte_exactly() {
+    let source = "record ScriptInput:\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction probe(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  if sico.bytes.is_utf8(input.stdin):\n    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"A\"))\n  end if\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"source is not UTF-8\"))\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("error-return variant/construct must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let u64_signature = source
+        .replace("returns Result[ScriptOutput, ScriptError]", "returns U64")
+        .replace("message: \"source is not UTF-8\"", "message: \"x\"");
+    let u64_gw_body = u64_signature.replace(
+        "    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"A\"))\n  end if\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"x\"))",
+        "    return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"A\"))\n  end if\n  return U64.literal(0)",
+    );
+    assert_eq!(
+        run_guest(&u64_gw_body),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let wrong_case = source.replace(
+        "ScriptErrorCode.InvalidInput, message: \"source is not UTF-8\"",
+        "ScriptErrorCode.ResourceLimit, message: \"source is not UTF-8\"",
+    );
+    assert_eq!(
+        run_guest(&wrong_case),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let swapped_fields = source.replace(
+        "code: ScriptErrorCode.InvalidInput, message: \"source is not UTF-8\"",
+        "message: \"source is not UTF-8\", code: ScriptErrorCode.InvalidInput",
+    );
+    assert_eq!(
+        run_guest(&swapped_fields),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid error-return must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_full_formatter_at_main_ok_return() {
     assert_eq!(
         run_guest(FORMATTER_SOURCE),
         RunOutcome::Domain {
