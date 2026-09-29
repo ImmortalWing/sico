@@ -1543,6 +1543,102 @@ fn sico_compiler_lowers_nested_slice_match_subject_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_parser_is_ident_byte_prefix_byte_exactly() {
+    let through = PARSER_SOURCE
+        .find("function lex_words")
+        .expect("parser keeps the is_ident_byte prefix");
+    let offset = PARSER_SOURCE.len() - PARSER_SOURCE.splitn(2, '\n').nth(1).unwrap().len();
+    let source = &PARSER_SOURCE[offset..through];
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("parser is_ident_byte prefix must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_control_if_decline_routes_to_general_machine() {
+    let source = "function probe(b: U64) returns U64:\n  if U64.less_than(b, U64.literal(95)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function\n";
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("if-return/end-if/return must route through the general machine: {source}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let with_else = source.replace(
+        "    return U64.literal(1)\n  end if\n",
+        "    return U64.literal(1)\n  else:\n    return U64.literal(2)\n  end if\n",
+    );
+    let RunOutcome::Output(else_output) = run_guest(&with_else) else {
+        panic!("if/else/return dual-guard must compile: {with_else}")
+    };
+    assert_eq!(else_output.exit_code, 0);
+    assert_bytes_equal(&else_output.stdout, rust_ir(&with_else).as_bytes());
+
+    let string_guard = "function probe(b: U64) returns Bool:\n  if U64.equal(b, U64.literal(0)):\n    return true\n  end if\n  return false\nend function\n";
+    let RunOutcome::Output(bool_output) = run_guest(string_guard) else {
+        panic!("Bool guard chain must compile: {string_guard}")
+    };
+    assert_eq!(bool_output.exit_code, 0);
+    assert_bytes_equal(&bool_output.stdout, rust_ir(string_guard).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_list_get_literal_index_match_byte_exactly() {
+    let source = "function probe(words: List[Text]) returns Text:\n  match sico.list.get(words, U64.literal(0)):\n    case ok(w):\n      return w\n    case error(_):\n      return \"?\"\n  end match\nend function\n";
+    let expected = rust_ir(source);
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("literal-index list.get match must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let parameter_index = "function probe(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"?\"\n  end match\nend function\n";
+    let RunOutcome::Output(param_output) = run_guest(parameter_index) else {
+        panic!("parameter-index list.get match must compile")
+    };
+    assert_eq!(param_output.exit_code, 0);
+    assert_bytes_equal(&param_output.stdout, rust_ir(parameter_index).as_bytes());
+
+    let literal_in_two_param = parameter_index.replace(
+        "sico.list.get(words, i)",
+        "sico.list.get(words, U64.literal(0))",
+    );
+    assert_eq!(
+        run_guest(&literal_in_two_param),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-PARAMETERS".into(),
+        }
+    );
+    let negative_literal = source.replace("U64.literal(0)", "U64.literal(-1)");
+    assert_eq!(
+        run_guest(&negative_literal),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let trailing_operand = source.replace(
+        "sico.list.get(words, U64.literal(0))",
+        "sico.list.get(words, U64.literal(0), U64.literal(1))",
+    );
+    assert_eq!(
+        run_guest(&trailing_operand),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered_output) = run_guest(source) else {
+        panic!("valid literal-index match must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered_output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

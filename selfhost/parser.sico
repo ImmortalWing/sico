@@ -2828,7 +2828,11 @@ function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_fr
   if U64.equal(parameter_count, U64.literal(2)):
     let lgm_arity_ok = I64.literal(1)
   else:
-    return "ERR:E-SH-IR-MATCH-SHAPE"
+    if U64.equal(parameter_count, U64.literal(1)):
+      let lgm_arity_one_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
   end if
   let m = body_from
   while U64.less_than(m, body_end):
@@ -3059,35 +3063,79 @@ function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_fr
   else:
     return "ERR:E-SH-IR-PARAMETERS"
   end if
-  if is_word(word_at(words, lgm_decl_sep), ","):
-    let lgm_decl_sep_ok = I64.literal(1)
+  if is_word(word_at(words, lgm_decl_sep), ")"):
+    let lgm_one_param_ok = I64.literal(1)
   else:
-    return "ERR:E-SH-IR-PARAMETERS"
-  end if
-  if is_word(word_at(words, lgm_decl_colon1), ":"):
-    let lgm_decl_colon1_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-PARAMETERS"
-  end if
-  if is_word(word_at(words, lgm_decl_t1), "U64"):
-    let lgm_decl_t1_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-PARAMETERS"
-  end if
-  if is_word(word_at(words, lgm_decl_close), ")"):
-    let lgm_decl_close_ok = I64.literal(1)
-  else:
-    return "ERR:E-SH-IR-PARAMETERS"
+    if is_word(word_at(words, lgm_decl_sep), ","):
+      let lgm_decl_sep_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-PARAMETERS"
+    end if
+    if is_word(word_at(words, lgm_decl_colon1), ":"):
+      let lgm_decl_colon1_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-PARAMETERS"
+    end if
+    if is_word(word_at(words, lgm_decl_t1), "U64"):
+      let lgm_decl_t1_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-PARAMETERS"
+    end if
+    if is_word(word_at(words, lgm_decl_close), ")"):
+      let lgm_decl_close_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-PARAMETERS"
+    end if
   end if
   if is_word(word_at(words, lgm_left), word_at(words, lgm_decl_p0)):
     let lgm_left_ok = I64.literal(1)
   else:
     return "ERR:E-SH-IR-CALL-ARGUMENT"
   end if
-  if is_word(word_at(words, lgm_right), word_at(words, lgm_decl_p1)):
-    let lgm_right_ok = I64.literal(1)
+  let lgm_literal_index = false
+  let lgm_index_magnitude = ""
+  if is_word(word_at(words, lgm_right), "U64"):
+    let lgm_r_dot = next_index(lgm_right, n)
+    let lgm_r_name = next_index(lgm_r_dot, n)
+    let lgm_r_open = next_index(lgm_r_name, n)
+    let lgm_r_mag = next_index(lgm_r_open, n)
+    let lgm_r_close = next_index(lgm_r_mag, n)
+    if is_word(word_at(words, lgm_r_dot), "."):
+      if is_word(word_at(words, lgm_r_name), "literal"):
+        if is_word(word_at(words, lgm_r_open), "("):
+          if is_word(word_at(words, lgm_r_close), ")"):
+            if U64.equal(next_index(lgm_r_close, n), lgm_close):
+              if is_canonical_magnitude(word_at(words, lgm_r_mag)):
+                if U64.equal(parameter_count, U64.literal(1)):
+                  set lgm_literal_index = true
+                  set lgm_index_magnitude = word_at(words, lgm_r_mag)
+                else:
+                  return "ERR:E-SH-IR-PARAMETERS"
+                end if
+              else:
+                return "ERR:E-SH-IR-CALL-TYPE"
+              end if
+            else:
+              return "ERR:E-SH-IR-CALL-SHAPE"
+            end if
+          else:
+            return "ERR:E-SH-IR-CALL-SHAPE"
+          end if
+        else:
+          return "ERR:E-SH-IR-CALL-SHAPE"
+        end if
+      else:
+        return "ERR:E-SH-IR-CALL-TARGET"
+      end if
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
   else:
-    return "ERR:E-SH-IR-CALL-ARGUMENT"
+    if is_word(word_at(words, lgm_right), word_at(words, lgm_decl_p1)):
+      let lgm_right_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
   end if
   let lgm_left_value = U64.literal(0)
   let lgm_right_value = U64.literal(1)
@@ -3153,7 +3201,37 @@ function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_fr
   if U64.less_than(source_len, lgm_fn_end):
     set lgm_fn_end = source_len
   end if
+  let lgm_const_id = parameter_count
+  let lgm_const_json = ""
+  let lgm_const_pieces = ""
+  if lgm_literal_index:
+    let lgm_mag_start = word_span_offset(words, src, lgm_receiver_start, lgm_receiver, lgm_right)
+    let lgm_r_dot2 = next_index(lgm_right, n)
+    let lgm_r_name2 = next_index(lgm_r_dot2, n)
+    let lgm_r_open2 = next_index(lgm_r_name2, n)
+    let lgm_r_mag2 = next_index(lgm_r_open2, n)
+    let lgm_mag_off = word_span_offset(words, src, lgm_mag_start, lgm_right, lgm_r_mag2)
+    let lgm_mag_end = lgm_mag_off
+    match U64.checked_add(lgm_mag_off, sico.bytes.length(sico.text.encode(lgm_index_magnitude))):
+      case ok(lgm_mag_after):
+        set lgm_mag_end = lgm_mag_after
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    set lgm_const_json = scalar_const_instruction_json(lgm_const_id, "u64", lgm_index_magnitude, lgm_mag_off, lgm_mag_end)
+    set lgm_const_pieces = sico.text.concat("{\"result\":", sico.u64.to_text(lgm_const_id))
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, ",\"ty\":{\"kind\":\"u64\"},\"operation\":{\"op\":\"const_u64\",\"data\":")
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, lgm_index_magnitude)
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, "},\"range\":{\"start\":")
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, sico.u64.to_text(lgm_mag_off))
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, ",\"end\":")
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, sico.u64.to_text(lgm_mag_end))
+    set lgm_const_pieces = sico.text.concat(lgm_const_pieces, "}},")
+  end if
   let lgm_subject = parameter_count
+  if lgm_literal_index:
+    set lgm_subject = next_index(lgm_const_id, lgm_const_id)
+  end if
   let lgm_write = next_index(lgm_subject, lgm_subject)
   let lgm_read = next_index(lgm_write, lgm_write)
   let lgm_project = next_index(lgm_read, lgm_read)
@@ -3174,14 +3252,20 @@ function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_fr
   set out = sico.text.concat(out, sico.u64.to_text(match_start))
   set out = sico.text.concat(out, ",\"end\":")
   set out = sico.text.concat(out, sico.u64.to_text(lgm_match_end))
-  set out = sico.text.concat(out, "}}],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[{\"result\":")
+  set out = sico.text.concat(out, "}}],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[")
+  set out = sico.text.concat(out, lgm_const_pieces)
+  set out = sico.text.concat(out, "{\"result\":")
   set out = sico.text.concat(out, sico.u64.to_text(lgm_subject))
   set out = sico.text.concat(out, ",\"ty\":")
   set out = sico.text.concat(out, lgm_result_type)
   set out = sico.text.concat(out, ",\"operation\":{\"op\":\"intrinsic\",\"data\":{\"name\":\"sico.list.get\",\"arguments\":[")
   set out = sico.text.concat(out, sico.u64.to_text(lgm_left_value))
   set out = sico.text.concat(out, ",")
-  set out = sico.text.concat(out, sico.u64.to_text(lgm_right_value))
+  if lgm_literal_index:
+    set out = sico.text.concat(out, sico.u64.to_text(lgm_const_id))
+  else:
+    set out = sico.text.concat(out, sico.u64.to_text(lgm_right_value))
+  end if
   set out = sico.text.concat(out, "]}},\"range\":{\"start\":")
   set out = sico.text.concat(out, sico.u64.to_text(lgm_receiver_start))
   set out = sico.text.concat(out, ",\"end\":")
@@ -11801,6 +11885,9 @@ function control_if_function_ir(words: List[Text], src: Bytes, name_idx: U64, bo
         end if
         set sif_form = "ret"
       else:
+        if is_word(sif_form, "ret"):
+          return "ERR:E-SH-IR-EXPRESSION"
+        end if
         if sif_final_done:
           return "ERR:E-SH-IR-STATEMENT"
         end if
@@ -11966,7 +12053,11 @@ function control_if_function_ir(words: List[Text], src: Bytes, name_idx: U64, bo
       if is_word(swk_end_word, "if"):
         if U64.equal(sif_target, U64.literal(1)):
           if is_word(sif_form, "ret"):
-            return "ERR:E-SH-IR-STATEMENT"
+            if sif_has_else:
+              return "ERR:E-SH-IR-STATEMENT"
+            else:
+              return "ERR:E-SH-IR-EXPRESSION"
+            end if
           end if
           set sif_target = U64.literal(3)
         else:
