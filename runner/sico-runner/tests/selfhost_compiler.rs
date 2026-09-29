@@ -5,10 +5,14 @@
 use sico_codegen_wasm as codegen_oracle;
 use sico_ir::{Module, canonical_json, lower_core, verify};
 use sico_runner::{
-    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
-    ScriptInput,
+    CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
 use sico_source::{SourceFile, SourceId};
+
+#[path = "support/selfhost_common.rs"]
+mod selfhost_common;
+
+use selfhost_common::{PreparedPool, cached_component, default_pool_slots, prepare_slot};
 
 const COMPILER_SOURCE: &str = include_str!("../../../selfhost/compiler.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
@@ -17,6 +21,15 @@ const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
 const FORMATTER_SOURCE: &str = include_str!("../../../selfhost/formatter.sico");
 const IDENTITY_SOURCE: &str =
     "function identity(value: Int) returns Int:\n  return value\nend function\n";
+
+fn compiler_sources() -> [(&'static str, &'static str); 4] {
+    [
+        ("compiler.sico", COMPILER_SOURCE),
+        ("compiler_lexer.sico", COMPILER_LEXER_SOURCE),
+        ("compiler_parser.sico", COMPILER_PARSER_SOURCE),
+        ("parser.sico", PARSER_SOURCE),
+    ]
+}
 
 fn assert_bytes_equal(actual: &[u8], expected: &[u8]) {
     if actual == expected {
@@ -48,82 +61,37 @@ fn rust_ir(text: &str) -> String {
 
 fn compile_guest() -> &'static [u8] {
     static COMPONENT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
-    COMPONENT.get_or_init(|| {
-        let directory =
-            std::env::temp_dir().join(format!("sico-step0197-compiler-{}", std::process::id()));
-        if directory.exists() {
-            std::fs::remove_dir_all(&directory).unwrap();
-        }
-        std::fs::create_dir(&directory).unwrap();
-        let source_path = directory.join("compiler.sico");
-        let component_path = directory.join("compiler.component.wasm");
-        std::fs::write(&source_path, COMPILER_SOURCE).unwrap();
-        std::fs::write(directory.join("compiler_lexer.sico"), COMPILER_LEXER_SOURCE).unwrap();
-        std::fs::write(
-            directory.join("compiler_parser.sico"),
-            COMPILER_PARSER_SOURCE,
-        )
-        .unwrap();
-        std::fs::write(directory.join("parser.sico"), PARSER_SOURCE).unwrap();
-        let mut stdout = Vec::new();
-        let mut stderr = Vec::new();
-        let exit = sico_cli::run(
-            [
-                std::ffi::OsString::from("sico"),
-                std::ffi::OsString::from("build"),
-                std::ffi::OsString::from("--profile"),
-                std::ffi::OsString::from("script-v0"),
-                std::ffi::OsString::from("--output"),
-                component_path.as_os_str().to_owned(),
-                source_path.as_os_str().to_owned(),
-            ],
-            &mut std::io::empty(),
-            &mut stdout,
-            &mut stderr,
-        );
-        assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-        let component = std::fs::read(&component_path).unwrap();
-        std::fs::remove_dir_all(directory).unwrap();
-        component
-    })
+    COMPONENT.get_or_init(|| cached_component("compiler.sico", &compiler_sources()))
 }
 
 fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
-    // Reuse native compilation, not guest execution state. PreparedProgram::run
-    // allocates a fresh Store, resources and fuel for every fixture. Serialize
-    // runs because timeout watchdogs advance the shared Engine's epoch.
-    static PREPARED: std::sync::OnceLock<std::sync::Mutex<PreparedProgram>> =
-        std::sync::OnceLock::new();
-    let prepared = PREPARED
-        .get_or_init(|| {
-            let runner = Runner::new().expect("runner builds");
-            std::sync::Mutex::new(
-                runner
-                    .prepare_program_with_net(
-                        compile_guest(),
-                        &FsGrants::default(),
-                        &NetGrants::default(),
-                    )
-                    .expect("compiler component links"),
-            )
-        })
-        .lock()
-        .expect("compiler execution lock is healthy");
-    prepared
-        .run(
-            &ScriptInput {
-                arguments,
-                stdin: input.as_bytes().to_vec(),
-            },
-            &RunnerLimits {
-                fuel: 5_000_000_000,
-                timeout: std::time::Duration::from_secs(30),
-                memory_bytes: 512 * 1024 * 1024,
-                ..RunnerLimits::default()
-            },
-            &CancelToken::new(),
-        )
-        .expect("input bounds hold")
+    // Reuse native compilation, not guest execution state (STEP-0254).
+    // STEP-0317: the pool holds one PreparedProgram per slot, each with its
+    // own Runner/Engine so timeout watchdogs cannot advance each other's
+    // epochs; PreparedProgram::run still allocates a fresh Store, resources
+    // and fuel for every fixture. Slots grow lazily, so a single-fixture
+    // invocation compiles exactly one.
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = compile_guest().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments,
+            stdin: input.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel: 5_000_000_000,
+            timeout: std::time::Duration::from_secs(30),
+            memory_bytes: 512 * 1024 * 1024,
+            ..RunnerLimits::default()
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    outcome.expect("input bounds hold")
 }
 
 fn run_guest(input: &str) -> RunOutcome {
@@ -1547,7 +1515,7 @@ fn sico_compiler_lowers_parser_is_ident_byte_prefix_byte_exactly() {
     let through = PARSER_SOURCE
         .find("function lex_words")
         .expect("parser keeps the is_ident_byte prefix");
-    let offset = PARSER_SOURCE.len() - PARSER_SOURCE.splitn(2, '\n').nth(1).unwrap().len();
+    let offset = PARSER_SOURCE.len() - PARSER_SOURCE.split_once('\n').unwrap().1.len();
     let source = &PARSER_SOURCE[offset..through];
     let expected = rust_ir(source);
     let RunOutcome::Output(output) = run_guest(source) else {

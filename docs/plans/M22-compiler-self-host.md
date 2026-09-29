@@ -235,6 +235,17 @@ Every fixture still executes with a fresh Store and the original limits.
 Measured serial suite time is 66.99s versus STEP-0253's 801.46s; this is test
 harness overhead reduction, not guest self-compilation performance evidence.
 
+STEP-0317 extends the harness economics (owner directive 2026-09-29): a
+shared on-disk component cache keyed by the selfhost source texts plus a
+compiler-crate fingerprint (kill switch `SICO_SELFHOST_COMPONENT_CACHE=0`),
+opt-level 1 for runner dev dependencies, and a lazily-grown pool of
+engine-isolated prepared programs replacing the global mutex. On this host
+the filtered single-test invocation drops 23.59s → 1.82s warm (4.55s cold),
+the differential suite 57.05s → 12.98s serial (9.35s pool-parallel, 51/51),
+and the full runner suite 227.8s → 102.7s. Still harness overhead reduction
+only: fixture limits, fresh-Store isolation and the byte-exact oracle are
+unchanged, and none of it is gate-4 self-compilation performance evidence.
+
 All M22 evidence is `internal-fixture`. Differential corpus runs are
 runtime evidence when executed through a real runner; corpus presence
 alone stays `contract-verified`. No external-pilot or production claims

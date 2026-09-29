@@ -212,3 +212,12 @@ instrumentation landed before any post-replan lowering STEP.
   budget probe and the M24 kickoff inventory both need runner time;
   schedule them in different sessions (the handoff quick-loop already
   documents the GNU flow).
+
+## 11. 登记：M22 裁决后的性能优化轨道（owner 指令 2026-09-29）
+
+同日 owner 指令「规划好这些优化，完成M22」除落地验证经济（STEP-0317，M22 内
+validation-support，已实测登记）外，登记一条 M22 范围外的性能轨道：自举
+编译器/编译产物的产品级优化不在 M22 内进行（M22 计划 §6 performance-parity
+non-goal 不变；S6 只按 gate 4 登记预算实测，不做优化主张）。M22 裁决（S7 GO
+或 R3 止损登记）落地后，该轨道作为独立工作包启动：先 RFC 冻结预算目标与验收
+语料，再分配实现 STEP。现在不预留 STEP 编号。

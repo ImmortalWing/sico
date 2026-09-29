@@ -2,61 +2,44 @@
 //! literal operands of fixed-width operations — const instructions emit
 //! before the operation with digits/sign ranges and SSA-ordered values.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+#[path = "support/selfhost_common.rs"]
+mod selfhost_common;
 
 use sico_ir::{Module, canonical_json, lower_core, verify};
-use sico_runner::{
-    CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
-    ScriptInput,
-};
+use sico_runner::{CancelToken, PreparedProgram, RunOutcome, RunnerLimits, ScriptInput};
 use sico_source::{SourceFile, SourceId};
 
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
 const PARSER_DRIVER_SOURCE: &str = include_str!("../../../selfhost/parser_driver.sico");
-static TEMP_ID: AtomicU64 = AtomicU64::new(0);
 const INPUT: &[u8] = b"function main() returns Int:\n  let xs = sico.list.empty()\n  let total = I64.literal(0)\n  for x in xs:\n    if I64.equal(total, I64.literal(0)):\n      set total = I64.literal(1)\n    else:\n      while I64.less_than(total, I64.literal(2)):\n        match I64.checked_add(total, I64.literal(1)):\n          case ok(next):\n            set total = next\n          case error(_):\n            return -1\n        end match\n      end while\n    end if\n  end for\n  return 0\nend function\n\nfunction add(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(I64.literal(1), b)\nend function\n\nfunction message() returns Text:\n  return \"ready, (nested-looking)\"\nend function\n";
 
 fn compile_parser() -> Vec<u8> {
-    let directory = std::env::temp_dir().join(format!(
-        "sico-step0201-parser-{}-{}",
-        std::process::id(),
-        TEMP_ID.fetch_add(1, Ordering::Relaxed)
-    ));
-    std::fs::create_dir(&directory).unwrap();
-    let source_path = directory.join("parser_driver.sico");
-    let component_path = directory.join("parser.component.wasm");
-    std::fs::write(directory.join("parser.sico"), PARSER_SOURCE).unwrap();
-    std::fs::write(&source_path, PARSER_DRIVER_SOURCE).unwrap();
-    let mut stdout: Vec<u8> = Vec::new();
-    let mut stderr: Vec<u8> = Vec::new();
-    let exit = sico_cli::run(
-        [
-            std::ffi::OsString::from("sico"),
-            std::ffi::OsString::from("build"),
-            std::ffi::OsString::from("--profile"),
-            std::ffi::OsString::from("script-v0"),
-            std::ffi::OsString::from("--output"),
-            component_path.as_os_str().to_owned(),
-            source_path.as_os_str().to_owned(),
+    selfhost_common::cached_component(
+        "parser_driver.sico",
+        &[
+            ("parser.sico", PARSER_SOURCE),
+            ("parser_driver.sico", PARSER_DRIVER_SOURCE),
         ],
-        &mut std::io::empty(),
-        &mut stdout,
-        &mut stderr,
-    );
-    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&stderr));
-    let component = std::fs::read(&component_path).unwrap();
-    std::fs::remove_dir_all(directory).unwrap();
-    component
+    )
+}
+
+// STEP-0317: engine-isolated slots; every run still allocates a fresh
+// Store, resources and fuel.
+fn parser_pool() -> &'static selfhost_common::PreparedPool {
+    static POOL: std::sync::OnceLock<selfhost_common::PreparedPool> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| {
+        let component = compile_parser();
+        selfhost_common::PreparedPool::new(selfhost_common::default_pool_slots(), move || {
+            selfhost_common::prepare_slot(&component)
+        })
+    })
 }
 
 #[test]
 fn sico_parser_emits_recursive_return_expression_trees() {
-    let component = compile_parser();
-    let runner = Runner::new().expect("runner builds");
-    let prepared = runner
-        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
-        .expect("parser component links");
-    match prepared
+    let pool = parser_pool();
+    let prepared = pool.acquire();
+    let outcome = prepared
         .run(
             &ScriptInput {
                 stdin: INPUT.to_vec(),
@@ -65,8 +48,9 @@ fn sico_parser_emits_recursive_return_expression_trees() {
             &RunnerLimits::default(),
             &CancelToken::new(),
         )
-        .expect("input bounds hold")
-    {
+        .expect("input bounds hold");
+    pool.release(prepared);
+    match outcome {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
             // STEP-0200: exact signatures and statement inventory remain
@@ -131,11 +115,8 @@ fn assert_ir_matches_rust(prepared: &PreparedProgram, source: &[u8]) {
 
 #[test]
 fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_input() {
-    let component = compile_parser();
-    let runner = Runner::new().expect("runner builds");
-    let prepared = runner
-        .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
-        .expect("parser component links");
+    let pool = parser_pool();
+    let prepared = pool.acquire();
     assert_ir_matches_rust(
         &prepared,
         b"function answer() returns Int:\n  return 7\nend function\n",
@@ -1282,4 +1263,5 @@ fn sico_lowering_emits_verifier_accepted_scalar_ir_and_refuses_noncanonical_inpu
         },
         "the advanced cell frontend must fail closed instead of resolving a shadowed parameter differently from Rust"
     );
+    pool.release(prepared);
 }

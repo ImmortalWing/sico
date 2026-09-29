@@ -332,6 +332,8 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 验证支持：STEP-0254 在测试进程内复用 PreparedProgram，每次 guest 执行仍创建独立 Store；13 项差分串行实测从 801.46s 降至 66.99s，降低后续自举迭代成本，不改变语言支持或 bootstrap 状态。
 
+验证经济：STEP-0317（owner 指令 2026-09-29「规划好这些优化，完成M22」）落地差分循环降本——selfhost 源文本+编译器 crate 指纹键控的组件磁盘缓存（`SICO_SELFHOST_COMPONENT_CACHE=0` 可关）、runner dev 依赖 opt-level 1、每槽位独立 Engine 的懒增长并行池；run-ci 每步输出耗时。本机实测：单测调用 23.59s→1.82s（热缓存）/4.55s（冷缓存）、差分套件 57.05s→12.98s（串行）/9.35s（池并行 51/51）、runner 全套件 227.8s→102.7s；一次性 opt1 依赖重建 2m56s。oracle 纪律不变：每 fixture 独立 Store/fuel、字节级对比、Rust oracle 每次重算、CI 冷缓存恒新构建。产品级性能优化轨道按同指令登记为 M22 裁决后的独立工作包（本里程碑 §6 non-goal 不变，先 RFC 定预算目标，见 route replan §11）。
+
 规划支持：STEP-0255 细化 M22–M24 执行计划——M22 切片状态表（计划 §3.1）与执行队列（§3.2：item list.get match → formatter 尾 → selfhost 全源 → S5 → S6 → S7）、M23 逐项工作协议（§8）与排序依赖图（§9）、M24 逐 gate 工作分解与 pilot 循环映射（§8）；不预留未来 STEP 编号、不改任何 gate。
 
 重划片支持：STEP-0264 按 owner 指令（2026-09-24「重新规划路线，审视M22-M26，确保能落实到工程实现」）登记 M22–M26 路线重划片——M22 执行队列外加 R 阶段收敛门（R0 架构决策现为已接受的 ADR-0017 Option A + RFC-0047；R1 canary/燃料区间已测，栈高水位待测；R3 预登记止损：自 W2 S3/S4 起连续 4 个实现 STEP 若当前阶段 canary 零增长且拒绝前沿不动，就登记止损并触发 M23 Route B；停滞实现 STEP 计数，文档/测量 STEP 不计；formatter 达 30/30 后使用其余 selfhost 差分，S5 使用独立 codegen 门）；M23 实现门改双出口（Route A：M22 S7 GO 后；Route B：止损宣告后立即，自举于 richer surface 的 re-baseline 在 M23 出口审计后重启，ADR-0015 合同不变）；M24 入口门不依赖 M22/M23、即刻可开工盘点；M25 入口门接受显式 M22 结论（GO 或止损登记，绝不暗示）；不改任何能力合同、证据等级或 RFC/ADR 纪律；不预留实现 STEP 编号。详见 [`M22–M26 route replan v1`](./plans/M22-M26-route-replan-v1.md)。
