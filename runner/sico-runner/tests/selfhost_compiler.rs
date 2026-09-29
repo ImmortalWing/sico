@@ -2,6 +2,7 @@
 //! `sico.ir.v0` bytes and the permanent Rust verifier accepts and
 //! reserializes them byte-exactly.
 
+use sico_codegen_wasm as codegen_oracle;
 use sico_ir::{Module, canonical_json, lower_core, verify};
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, PreparedProgram, RunOutcome, Runner, RunnerLimits,
@@ -1575,7 +1576,7 @@ fn sico_compiler_encodes_general_nonnegative_int_constant_core_wasm() {
         let source_file =
             SourceFile::from_text(SourceId::new(0), "identity.sico", source.clone()).unwrap();
         let rust_module = lower_core(&source_file).unwrap();
-        let expected = sico_codegen_wasm::compile(&rust_module).unwrap();
+        let expected = codegen_oracle::compile(&rust_module).unwrap();
 
         let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-core-hex".into()])
@@ -1601,4 +1602,113 @@ fn sico_compiler_encodes_general_nonnegative_int_constant_core_wasm() {
             "unsupported Core Wasm shape must fail closed: {source}"
         );
     }
+}
+
+#[test]
+fn sico_compiler_encodes_declared_scalar_core_wasm_families_byte_exactly() {
+    for (name, source) in [
+        (
+            "const-i64",
+            "function probe() returns I64:\n  return I64.literal(624485)\nend function\n",
+        ),
+        (
+            "const-u64",
+            "function probe() returns U64:\n  return U64.literal(624485)\nend function\n",
+        ),
+        (
+            "const-bool-true",
+            "function probe() returns Bool:\n  return true\nend function\n",
+        ),
+        (
+            "const-bool-false",
+            "function probe() returns Bool:\n  return false\nend function\n",
+        ),
+        (
+            "identity-i64",
+            "function probe(value: I64) returns I64:\n  return value\nend function\n",
+        ),
+        (
+            "identity-u64",
+            "function probe(value: U64) returns U64:\n  return value\nend function\n",
+        ),
+        (
+            "identity-bool",
+            "function probe(value: Bool) returns Bool:\n  return value\nend function\n",
+        ),
+        (
+            "identity-pair-second",
+            "function probe(a: I64, b: I64) returns I64:\n  return b\nend function\n",
+        ),
+        (
+            "identity-pair-first",
+            "function probe(a: I64, b: I64) returns I64:\n  return a\nend function\n",
+        ),
+        (
+            "identity-pair-bool",
+            "function probe(a: Bool, b: Bool) returns Bool:\n  return b\nend function\n",
+        ),
+        (
+            "less-than-i64",
+            "function probe(a: I64, b: I64) returns Bool:\n  return I64.less_than(a, b)\nend function\n",
+        ),
+        (
+            "less-than-u64",
+            "function probe(a: U64, b: U64) returns Bool:\n  return U64.less_than(a, b)\nend function\n",
+        ),
+        (
+            "checked-add-i64",
+            "function probe(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_add(a, b)\nend function\n",
+        ),
+        (
+            "checked-add-u64",
+            "function probe(a: U64, b: U64) returns Result[U64, NumericError]:\n  return U64.checked_add(a, b)\nend function\n",
+        ),
+    ] {
+        let source_file =
+            SourceFile::from_text(SourceId::new(0), "identity.sico", source.to_string()).unwrap();
+        let rust_module = lower_core(&source_file).unwrap();
+        let expected = codegen_oracle::compile(&rust_module).unwrap();
+
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-core-hex".into()])
+        else {
+            panic!("{name} fixture must compile: {source}")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(actual, expected, "{name}");
+        wasmparser::Validator::new().validate_all(&actual).unwrap();
+    }
+
+    for source in [
+        "function probe(x: I64) returns I64:\n  return x\nend function\n",
+        "function probe(value: I64) returns U64:\n  return value\nend function\n",
+        "function probe(a: I64, b: I64, c: I64) returns I64:\n  return c\nend function\n",
+        "function probe(a: I64, b: I64) returns Bool:\n  return I64.greater_than(a, b)\nend function\n",
+        "function probe(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_sub(a, b)\nend function\n",
+        "function probe() returns U64:\n  return U64.literal(9223372036854775808)\nend function\n",
+        "function probe(value: I64) returns I64:\n  return I64.add(value, value)\nend function\n",
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-core-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "undeclared codegen shape must fail closed: {source}"
+        );
+    }
+    let RunOutcome::Output(recovered) = run_guest_with_args(
+        "function probe(value: I64) returns I64:\n  return value\nend function\n",
+        vec!["--emit-core-hex".into()],
+    ) else {
+        panic!("valid identity fixture must compile after typed refusals")
+    };
+    let source_file = SourceFile::from_text(
+        SourceId::new(0),
+        "identity.sico",
+        "function probe(value: I64) returns I64:\n  return value\nend function\n",
+    )
+    .unwrap();
+    let expected = codegen_oracle::compile(&lower_core(&source_file).unwrap()).unwrap();
+    assert_eq!(decode_hex(&recovered.stdout), expected);
 }

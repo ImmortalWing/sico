@@ -1,0 +1,115 @@
+{
+    "schema":  "sico.m22.codegen-corpus.v0",
+    "created":  "2026-09-29",
+    "step":  "STEP-0315",
+    "backend":  "RFC-0011 compile() Direct Core-Wasm subset",
+    "byte_equal_entries":  [
+                               {
+                                   "name":  "const-i64",
+                                   "source_sha256":  "acfc9d915376ec8ecc5a5d441f9d81fb6e919b8f622657fc1af94d3c45923c75",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "const-u64",
+                                   "source_sha256":  "12f7ba795e8f037c345563d182965d6bbb644df175fd9efffba1a8f956f1f468",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "const-bool-true",
+                                   "source_sha256":  "d8005475074fd118ff688d6ea16346d65956f260d903c183d4b21a2a095bd11b",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "const-bool-false",
+                                   "source_sha256":  "4b526443761c57de50f50b0b25ab1e8549c639a332b0978abe45a298d39b8239",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-i64",
+                                   "source_sha256":  "26631ce3a0ee5c2d80a975d701c4ec2dd1b2d6cb9f677fe6b42f716230cf5444",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-u64",
+                                   "source_sha256":  "734c555edce84fc681ee06a11d25710f0becb1f0b37b33afe1540d24f8c9c8ae",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-bool",
+                                   "source_sha256":  "49cf4cf7c48fda759b5ca030c551b459b7e2ba7f014d061b82b1e6654ca0b6e3",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-pair-first",
+                                   "source_sha256":  "8e6b60fba98bd30fb77caf40de7316581dc93a391d1054885bdde57b53a7e256",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-pair-second",
+                                   "source_sha256":  "a2e239b09416f4456e30ba7b036fe5b24941c8c387af9ab19ac6ba1306a8066f",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "identity-pair-bool",
+                                   "source_sha256":  "e54419c8a71399e296ec45d6442fe25db37a8922004d8a45100d6fb8fe55bfbd",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "less-than-i64",
+                                   "source_sha256":  "ba6cab367e904337a5ee547ce1f6d1490bfbe022700103a2497e75c4c5e1f058",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "less-than-u64",
+                                   "source_sha256":  "00200e8d82485b95d54040b379c90f07fe27adc007c92bf314943b4b66ecf15a",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "checked-add-i64",
+                                   "source_sha256":  "cf64be6a0c3682776943f8bcc7d61c32e92dddfb61110386896a424a65b4ced9",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "checked-add-u64",
+                                   "source_sha256":  "809b41ca14ce8dbaecbdf9628cef77ab2058cddd9ee4c5f40d699c25309da5bf",
+                                   "expected":  "rust-codegen-byte-equal"
+                               }
+                           ],
+    "typed_refusal_entries":  [
+                                  {
+                                      "name":  "wrong-param-name",
+                                      "source_sha256":  "d4f39ddcef69ac888a0b32e3ece9a968c99388a5a3db47db7048177d5a25795d",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "return-type-mismatch",
+                                      "source_sha256":  "74b65f2414bf9547b4b8d559233f6018577545bde327d4bca12328dc4d536bbc",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "three-params",
+                                      "source_sha256":  "8a2bec080ba145e152377ff97a27686a20a9edca6dcbf0c1181ed3d54ee13e9c",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "undeclared-intrinsic",
+                                      "source_sha256":  "293765cb2d9696b8caf2709bd979f79353c84ce98c3a1bd65d2574f6d69a46dd",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "checked-sub",
+                                      "source_sha256":  "949af08549806d0c45c47eeab73659f6e0f2e9406d8b60bf6d56ae115d3f483a",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "u64-out-of-range",
+                                      "source_sha256":  "53024d11de883b0f38401b4039f7fb94f32ebe8b61b55daa05d5b5adac99db41",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  },
+                                  {
+                                      "name":  "undeclared-i64-add",
+                                      "source_sha256":  "4394562d0d234c72859234d9b30cecaf2cfaa49eddfa23f07273a21b4a6f743b",
+                                      "expected":  "typed-refusal-unsupported-codegen-source-shape"
+                                  }
+                              ]
+}
