@@ -10,7 +10,7 @@ foreach ($marker in @(
     '"string", "sico.text.join"',
     'sico_compiler_lowers_text_join_inside_concat_byte_exactly',
     'sico_compiler_lowers_normalize_source_prefix_byte_exactly',
-    'sico_compiler_refuses_full_formatter_at_main_ok_return'
+    'sico_compiler_lowers_full_formatter_byte_exactly'
 )) {
     if (-not $parser.Contains($marker) -and -not $tests.Contains($marker)) {
         throw "missing STEP-0309 marker: $marker"
@@ -18,4 +18,4 @@ foreach ($marker in @(
 }
 & (Join-Path $PSScriptRoot 'validate-step-0308.ps1') -CargoPath $CargoPath
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0308 inherited validator failed' }
-Write-Output 'STEP_0309_OK text-join-in-concat=byte-exact formatter-canary=29/30 current-frontier=MAIN-OK-RETURN'
+Write-Output 'STEP_0309_OK text-join-in-concat=byte-exact formatter-canary=29/30 current-frontier=FORMATTER-CLOSED'

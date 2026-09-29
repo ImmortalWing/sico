@@ -984,20 +984,93 @@ fn sico_compiler_lowers_error_return_variant_construct_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_full_formatter_at_main_ok_return() {
+fn sico_compiler_lowers_full_formatter_byte_exactly() {
+    let expected = rust_ir(FORMATTER_SOURCE);
+    let RunOutcome::Output(output) = run_guest(FORMATTER_SOURCE) else {
+        panic!("full formatter source must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_ok_return_construct_byte_exactly() {
+    let source = "record ScriptInput:\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction source_has_lex_error(source: Text) returns Bool:\n  return true\nend function\n\nfunction normalize_source(source: Text) returns Text:\n  return source\nend function\n\nfunction probe(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  if sico.bytes.is_utf8(input.stdin):\n    let source = sico.bytes.utf8_decode(input.stdin)\n    if source_has_lex_error(source):\n      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"LEXICAL\"))\n    end if\n    let normalized = normalize_source(source)\n    return ok(ScriptOutput(stdout: sico.text.encode(normalized), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\n  end if\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"source is not UTF-8\"))\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("ok-return construct must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let swapped_fields = source.replace(
+        "stdout: sico.text.encode(normalized), stderr: sico.text.encode(\"\")",
+        "stderr: sico.text.encode(normalized), stdout: sico.text.encode(\"\")",
+    );
     assert_eq!(
-        run_guest(FORMATTER_SOURCE),
+        run_guest(&swapped_fields),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let wrong_construct = source.replace("ok(ScriptOutput(stdout:", "ok(ScriptError(code:");
+    assert_eq!(
+        run_guest(&wrong_construct),
         RunOutcome::Domain {
             code: "invalid-input".into(),
             message: "ERR:E-SH-IR-CALL-TARGET".into(),
         }
     );
-    let end = FORMATTER_SOURCE.find("function main").unwrap();
-    let prefix = &FORMATTER_SOURCE[..end];
-    let RunOutcome::Output(recovered) = run_guest(prefix) else {
-        panic!("normalize_source prefix must compile after full-source refusal")
+    let literal_stdout = source.replace(
+        "stdout: sico.text.encode(normalized)",
+        "stdout: sico.text.encode(\"\")",
+    );
+    assert_eq!(
+        run_guest(&literal_stdout),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARGUMENT".into(),
+        }
+    );
+    let u64_signature = source
+        .replace("returns Result[ScriptOutput, ScriptError]", "returns U64")
+        .replace(
+            "      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"LEXICAL\"))",
+            "      return U64.literal(1)",
+        )
+        .replace(
+            "  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"source is not UTF-8\"))",
+            "  return U64.literal(0)",
+        );
+    assert_eq!(
+        run_guest(&u64_signature),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let missing_paren = source.replace("exit_code: I64.literal(0)))", "exit_code: I64.literal(0))");
+    assert_eq!(
+        run_guest(&missing_paren),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let u64_exit_code = source.replace("exit_code: I64.literal(0)", "exit_code: U64.literal(0)");
+    assert_eq!(
+        run_guest(&u64_exit_code),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid ok-return must compile after typed refusals")
     };
-    assert_bytes_equal(&recovered.stdout, rust_ir(prefix).as_bytes());
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
 
 #[test]
