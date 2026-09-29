@@ -6997,6 +6997,60 @@ function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_id
     return gw_text_list_binary_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}", "sico.list.append")
   end if
   if is_intrinsic_path(words, receiver_idx, "bytes", "utf8_decode"):
+    let gwsdf_open = next_index(next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end), line_end)
+    if is_word(word_at(words, gwsdf_open), "("):
+      let gwsdf_arg = next_index(gwsdf_open, line_end)
+      let gwsdf_dot = next_index(gwsdf_arg, line_end)
+      if is_word(word_at(words, gwsdf_dot), "."):
+        let gwsdf_field = next_index(gwsdf_dot, line_end)
+        let gwsdf_close = next_index(gwsdf_field, line_end)
+        if is_word(word_at(words, gwsdf_close), ")"):
+          let gwsdf_param = binding_parameter_index(words, name_idx, word_at(words, gwsdf_arg))
+          if U64.less_than(gwsdf_param, parameter_count):
+            let gwsdf_ptype = parameter_type_word(words, name_idx, gwsdf_param)
+            if is_word(gwsdf_ptype, "ScriptInput"):
+              if is_word(word_at(words, gwsdf_field), "stdin"):
+                let gwsdf_dot_start = word_span_offset(words, src, expr_start, receiver_idx, gwsdf_dot)
+                let gwsdf_field_end = gwsdf_dot_start
+                match U64.checked_add(gwsdf_dot_start, U64.literal(1)):
+                  case ok(gwsdf_after_dot):
+                    set gwsdf_field_end = gwsdf_after_dot
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                match U64.checked_add(gwsdf_field_end, sico.bytes.length(sico.text.encode(word_at(words, gwsdf_field)))):
+                  case ok(gwsdf_after_field):
+                    set gwsdf_field_end = gwsdf_after_field
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                let gwsdf_project = "{\"result\":"
+                set gwsdf_project = sico.text.concat(gwsdf_project, sico.u64.to_text(base))
+                set gwsdf_project = sico.text.concat(gwsdf_project, ",\"ty\":{\"kind\":\"bytes\"},\"operation\":{\"op\":\"project\",\"data\":{\"base\":")
+                set gwsdf_project = sico.text.concat(gwsdf_project, sico.u64.to_text(gwsdf_param))
+                set gwsdf_project = sico.text.concat(gwsdf_project, ",\"field\":\"stdin\"}},\"range\":{\"start\":")
+                set gwsdf_project = sico.text.concat(gwsdf_project, sico.u64.to_text(gwsdf_dot_start))
+                set gwsdf_project = sico.text.concat(gwsdf_project, ",\"end\":")
+                set gwsdf_project = sico.text.concat(gwsdf_project, sico.u64.to_text(gwsdf_field_end))
+                set gwsdf_project = sico.text.concat(gwsdf_project, "}}")
+                let gwsdf_intr_id = next_index(base, base)
+                let gwsdf_intr = intrinsic_instruction_json(gwsdf_intr_id, "string", "sico.bytes.utf8_decode", sico.text.concat("[", sico.text.concat(sico.u64.to_text(base), "]")), expr_start, line_end_offset)
+                let gwsdf_pack = "2\n"
+                set gwsdf_pack = sico.text.concat(gwsdf_pack, sico.u64.to_text(gwsdf_intr_id))
+                set gwsdf_pack = sico.text.concat(gwsdf_pack, "\nstring\n")
+                return sico.text.concat(gwsdf_pack, sico.text.concat(gwsdf_project, sico.text.concat(",", gwsdf_intr)))
+              else:
+                return "ERR:E-SH-IR-CALL-TYPE"
+              end if
+            else:
+              return "ERR:E-SH-IR-CALL-TYPE"
+            end if
+          else:
+            return "ERR:E-SH-IR-CALL-ARGUMENT"
+          end if
+        end if
+      end if
+    end if
     let gws_decode_pack = gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "string", "sico.bytes.utf8_decode")
     if sico.text.starts_with(gws_decode_pack, "ERR:"):
       return gws_decode_pack

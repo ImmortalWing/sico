@@ -874,12 +874,69 @@ fn sico_compiler_lowers_normalize_source_prefix_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_full_formatter_at_main_let_rhs() {
+fn sico_compiler_lowers_let_utf8_decode_field_rhs_byte_exactly() {
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nfunction probe(input: ScriptInput) returns U64:\n  if sico.bytes.is_utf8(input.stdin):\n    let source = sico.bytes.utf8_decode(input.stdin)\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("let utf8_decode field RHS must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let wrong_field = source.replace("utf8_decode(input.stdin)", "utf8_decode(input.arguments)");
+    assert_eq!(
+        run_guest(&wrong_field),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let bytes_parameter = source
+        .replace(
+            "function probe(input: ScriptInput) returns U64:",
+            "function probe(input: ScriptInput, data: Bytes) returns U64:",
+        )
+        .replace("utf8_decode(input.stdin)", "utf8_decode(data.stdin)");
+    assert_eq!(
+        run_guest(&bytes_parameter),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let bare_parameter = source.replace("utf8_decode(input.stdin)", "utf8_decode(input)");
+    assert_eq!(
+        run_guest(&bare_parameter),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let extra_argument = source.replace(
+        "utf8_decode(input.stdin)",
+        "utf8_decode(input.stdin, input.stdin)",
+    );
+    assert_eq!(
+        run_guest(&extra_argument),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid let utf8_decode must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_full_formatter_at_main_error_return() {
     assert_eq!(
         run_guest(FORMATTER_SOURCE),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into(),
         }
     );
     let end = FORMATTER_SOURCE.find("function main").unwrap();
