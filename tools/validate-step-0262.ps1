@@ -196,4 +196,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact normalize-source=byte-exact canary=MAIN-SCICOND repinned-by=STEP-0309'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact normalize-source=byte-exact canary=MAIN-LET-RHS repinned-by=STEP-0311'

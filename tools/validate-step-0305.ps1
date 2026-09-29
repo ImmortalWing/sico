@@ -18,4 +18,4 @@ foreach ($marker in @(
 }
 & (Join-Path $PSScriptRoot 'validate-step-0304.ps1') -CargoPath $CargoPath
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0304 inherited validator failed' }
-Write-Output 'STEP_0305_OK text-concat-user-call-args=byte-exact historical-frontier=NESTED-TRIM-ARGUMENT current-frontier=MAIN-SCICOND'
+Write-Output 'STEP_0305_OK text-concat-user-call-args=byte-exact historical-frontier=NESTED-TRIM-ARGUMENT current-frontier=MAIN-LET-RHS'

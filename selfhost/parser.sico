@@ -935,6 +935,7 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
     let parameter_item_kind = ""
     let parameter_is_list = I64.literal(0)
     let parameter_is_map = I64.literal(0)
+    let parameter_is_named = I64.literal(0)
     let parameter_element_kind = ""
     let parameter_map_key_kind = ""
     let parameter_map_val_kind = ""
@@ -987,7 +988,12 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
       else:
         set parameter_item_kind = scalar_type_kind(parameter_item_type)
         if sico.text.starts_with(parameter_item_kind, "ERR:"):
-          return parameter_item_kind
+          if is_word(parameter_item_type, "ScriptInput"):
+            set parameter_item_kind = "named"
+            set parameter_is_named = I64.literal(1)
+          else:
+            return parameter_item_kind
+          end if
         end if
       end if
     end if
@@ -1033,7 +1039,11 @@ function parameters_ir(words: List[Text], function_name_idx: U64, src: Bytes, se
       set parameter_json = sico.text.concat(parameter_json, parameter_element_kind)
       set parameter_json = sico.text.concat(parameter_json, "\"}")
     else:
+    if I64.equal(parameter_is_named, I64.literal(1)):
+      set parameter_json = sico.text.concat(parameter_json, "\",\"data\":\"ScriptInput\"")
+    else:
       set parameter_json = sico.text.concat(parameter_json, "\"")
+    end if
     end if
     end if
     set parameter_json = sico.text.concat(parameter_json, "},\"range\":{\"start\":")
@@ -1100,6 +1110,41 @@ function binding_parameter_index(words: List[Text], function_name_idx: U64, bind
     end if
   end while
   return binding_words_len
+end function
+
+function parameter_type_word(words: List[Text], function_name_idx: U64, wanted_id: U64) returns Text:
+  let ptw_words_len = sico.list.length(words)
+  let ptw_open_idx = next_index(function_name_idx, ptw_words_len)
+  if is_word(word_at(words, ptw_open_idx), "("):
+    let ptw_open_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  let ptw_token_idx = next_index(ptw_open_idx, ptw_words_len)
+  let ptw_id = U64.literal(0)
+  while U64.less_than(ptw_token_idx, ptw_words_len):
+    if is_word(word_at(words, ptw_token_idx), ")"):
+      return ""
+    end if
+    let ptw_colon_idx = next_index(ptw_token_idx, ptw_words_len)
+    if is_word(word_at(words, ptw_colon_idx), ":"):
+      let ptw_colon_ok = I64.literal(1)
+    else:
+      return ""
+    end if
+    let ptw_type_idx = next_index(ptw_colon_idx, ptw_words_len)
+    if U64.equal(ptw_id, wanted_id):
+      return word_at(words, ptw_type_idx)
+    end if
+    let ptw_after_idx = next_index(ptw_type_idx, ptw_words_len)
+    if is_word(word_at(words, ptw_after_idx), ","):
+      set ptw_token_idx = next_index(ptw_after_idx, ptw_words_len)
+      set ptw_id = next_index(ptw_id, ptw_id)
+    else:
+      return ""
+    end if
+  end while
+  return ""
 end function
 
 function binding_parameter_kind(words: List[Text], function_name_idx: U64, binding: Text) returns Text:
@@ -5932,6 +5977,79 @@ function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_
     return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
   end if
   if is_word(word_at(words, cond_idx), "sico"):
+    if is_intrinsic_path(words, cond_idx, "bytes", "is_utf8"):
+      let scu_open = next_index(next_index(next_index(next_index(next_index(cond_idx, line_end), line_end), line_end), line_end), line_end)
+      if is_word(word_at(words, scu_open), "("):
+        let scu_open_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-SHAPE"
+      end if
+      let scu_arg = next_index(scu_open, line_end)
+      let scu_dot = next_index(scu_arg, line_end)
+      if is_word(word_at(words, scu_dot), "."):
+        let scu_dot_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-ARGUMENT"
+      end if
+      let scu_field = next_index(scu_dot, line_end)
+      let scu_close = next_index(scu_field, line_end)
+      if is_word(word_at(words, scu_close), ")"):
+        let scu_close_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-ARITY"
+      end if
+      let scu_param = binding_parameter_index(words, name_idx, word_at(words, scu_arg))
+      if U64.less_than(scu_param, parameter_count):
+        let scu_param_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-ARGUMENT"
+      end if
+      let scu_param_type = parameter_type_word(words, name_idx, scu_param)
+      if is_word(scu_param_type, "ScriptInput"):
+        let scu_param_type_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+      if is_word(word_at(words, scu_field), "stdin"):
+        let scu_field_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+      let scu_dot_start = word_span_offset(words, src, cond_start, cond_idx, scu_dot)
+      let scu_field_end = scu_dot_start
+      match U64.checked_add(scu_dot_start, U64.literal(1)):
+        case ok(scu_after_dot):
+          set scu_field_end = scu_after_dot
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      match U64.checked_add(scu_field_end, sico.bytes.length(sico.text.encode(word_at(words, scu_field)))):
+        case ok(scu_after_field):
+          set scu_field_end = scu_after_field
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      let scu_project = "{\"result\":"
+      set scu_project = sico.text.concat(scu_project, sico.u64.to_text(base))
+      set scu_project = sico.text.concat(scu_project, ",\"ty\":{\"kind\":\"bytes\"},\"operation\":{\"op\":\"project\",\"data\":{\"base\":")
+      set scu_project = sico.text.concat(scu_project, sico.u64.to_text(scu_param))
+      set scu_project = sico.text.concat(scu_project, ",\"field\":\"stdin\"}},\"range\":{\"start\":")
+      set scu_project = sico.text.concat(scu_project, sico.u64.to_text(scu_dot_start))
+      set scu_project = sico.text.concat(scu_project, ",\"end\":")
+      set scu_project = sico.text.concat(scu_project, sico.u64.to_text(scu_field_end))
+      set scu_project = sico.text.concat(scu_project, "}}")
+      let scu_close_offset = word_span_offset(words, src, cond_start, cond_idx, scu_close)
+      let scu_expr_end = scu_close_offset
+      match U64.checked_add(scu_close_offset, U64.literal(1)):
+        case ok(scu_after_close):
+          set scu_expr_end = scu_after_close
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      let scu_intr_id = next_index(base, base)
+      let scu_intr = intrinsic_instruction_json(scu_intr_id, "bool", "sico.bytes.is_utf8", sico.text.concat("[", sico.text.concat(sico.u64.to_text(base), "]")), cond_start, scu_expr_end)
+      return sico.text.concat(sico.u64.to_text(scu_intr_id), sico.text.concat("\n", sico.text.concat("2\n", sico.text.concat(scu_project, sico.text.concat(",", scu_intr)))))
+    end if
     return "ERR:E-SH-IR-SCICOND"
   end if
   let gcc_cell_idx = local_binding_index(cell_names, word_at(words, cond_idx))

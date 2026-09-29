@@ -874,12 +874,12 @@ fn sico_compiler_lowers_normalize_source_prefix_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_refuses_full_formatter_at_main_condition() {
+fn sico_compiler_refuses_full_formatter_at_main_let_rhs() {
     assert_eq!(
         run_guest(FORMATTER_SOURCE),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-SCICOND".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into(),
         }
     );
     let end = FORMATTER_SOURCE.find("function main").unwrap();
@@ -888,6 +888,68 @@ fn sico_compiler_refuses_full_formatter_at_main_condition() {
         panic!("normalize_source prefix must compile after full-source refusal")
     };
     assert_bytes_equal(&recovered.stdout, rust_ir(prefix).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_main_condition_byte_exactly() {
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nfunction probe(input: ScriptInput) returns U64:\n  if sico.bytes.is_utf8(input.stdin):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = &outcome else {
+        panic!("main-entry is_utf8 condition must compile: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let wrong_field = source.replace("input.stdin):", "input.arguments):");
+    assert_eq!(
+        run_guest(&wrong_field),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let bare_parameter = source.replace("input.stdin):", "input):");
+    assert_eq!(
+        run_guest(&bare_parameter),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARGUMENT".into(),
+        }
+    );
+    let extra_argument = source.replace("input.stdin):", "input.stdin, input.stdin):");
+    assert_eq!(
+        run_guest(&extra_argument),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARITY".into(),
+        }
+    );
+    let bytes_parameter = source
+        .replace(
+            "function probe(input: ScriptInput) returns U64:",
+            "function probe(input: ScriptInput, data: Bytes) returns U64:",
+        )
+        .replace("is_utf8(input.stdin):", "is_utf8(data.stdin):");
+    assert_eq!(
+        run_guest(&bytes_parameter),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into(),
+        }
+    );
+    let other_intrinsic = source.replace("sico.bytes.is_utf8", "sico.bytes.length");
+    assert_eq!(
+        run_guest(&other_intrinsic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-SCICOND".into(),
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(source) else {
+        panic!("valid main-entry condition must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
 
 #[test]
