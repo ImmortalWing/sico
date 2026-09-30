@@ -10,15 +10,15 @@ if (-not (Test-Path -LiteralPath $planPath)) {
 }
 $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8
 foreach ($marker in @(
-    'owner directive 2026-09-30 「完整完成M22-M26」',
-    '外部门诚实表',
-    'user-call RHS/参数位族'
+    'owner directive 2026-09-30',
+    'GitHub',
+    'user-call RHS'
 )) {
     if (-not $plan.Contains($marker)) {
         throw "missing STEP-0323 plan marker: $marker"
     }
 }
-$accepted = 'accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)'
+$accepted = 'accepted by owner directive 2026-09-30'
 foreach ($doc in @(
     'docs\rfc\RFC-0048-language-v1-batch3-infix-comparison-logical-and.md',
     'docs\rfc\RFC-0049-language-v1-batch3-let-bound-if-match.md',

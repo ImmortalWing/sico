@@ -1763,6 +1763,18 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0324: matching_close flips through the widened gw match subject
+    // (checked_add/checked_sub in nested if regions).
+    let mut matching_close_source = line_end_source.clone();
+    matching_close_source.push_str(&parser_function_text("matching_close"));
+    matching_close_source.push('\n');
+    let expected = rust_ir(&matching_close_source);
+    let RunOutcome::Output(output) = run_guest(&matching_close_source) else {
+        panic!("matching_close with its callees must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }
 
 #[test]
@@ -1799,6 +1811,71 @@ fn parser_function_text(name: &str) -> String {
         + start
         + "\nend function\n".len();
     PARSER_SOURCE[start..end].to_owned()
+}
+
+#[test]
+fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
+    // STEP-0324: the general-while machine accepts `I64/U64.checked_add`
+    // and `checked_sub` match subjects inside statement regions (if/else
+    // branches and loop bodies' nested regions), with parameter, cell and
+    // literal operands — previously only `sico.map.get`/`sico.bytes.slice`
+    // subjects were lowered and these refused CALL-TARGET.
+    let base = format!(
+        "{}\n{}\n{}\n{}\n",
+        parser_function_text("is_word"),
+        parser_function_text("word_at"),
+        parser_function_text("next_index"),
+        parser_function_text("line_end"),
+    );
+    let cases = [
+        // set-arm checked_add match in an if branch, cell + literal operands.
+        format!(
+            "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_add(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        ),
+        // checked_sub subject with parameter and cell operands, nested if in
+        // the ok arm — the matching_close shape.
+        format!(
+            "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(2)\n  let w = word_at(words, i)\n  if is_word(w, \")\"):\n    match U64.checked_sub(depth, i):\n      case ok(next):\n        set depth = next\n        if U64.equal(depth, U64.literal(0)):\n          return i\n        end if\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        ),
+        // matching_close itself, exact frozen text with its callees.
+        format!("{}{}", base, parser_function_text("matching_close")),
+    ];
+    for source in &cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("gw checked-arithmetic match subject must compile")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Typed refusals: cross-kind operand, unknown operand, and an
+    // out-of-family operation stay typed-refused, then recovery.
+    let bad_type = format!(
+        "{base}function probe(words: List[Text], seed: I64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, end_idx)\n  if is_word(w, \"(\"):\n    match U64.checked_add(seed, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&bad_type),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let bad_op = format!(
+        "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_mul(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&bad_op),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let good = &cases[0];
+    let expected = rust_ir(good);
+    let RunOutcome::Output(recovered) = run_guest(good) else {
+        panic!("valid gw subject must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
 
 #[test]
