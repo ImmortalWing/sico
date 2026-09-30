@@ -1775,6 +1775,27 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // STEP-0327: five more parser functions flip with the same callee
+    // prefix — decimal_at_most additionally exercises the widened
+    // bytes.at cell-cursor emission (cursor argument id fix).
+    for name in [
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "decimal_at_most",
+        "return_expression_end",
+    ] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]

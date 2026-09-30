@@ -6421,6 +6421,8 @@ function while_bytes_at_local_src_packed(words: List[Text], src: Bytes, name_idx
     return "ERR:E-SH-IR-CALL-ARGUMENT"
   end if
   let sbl_cursor_cell = local_binding_index(cell_names, word_at(words, sbl_cursor))
+  let sbl_cursor_param = binding_parameter_index(words, name_idx, word_at(words, sbl_cursor))
+  let sbl_cursor_form = U64.literal(0)
   if U64.less_than(sbl_cursor_cell, sico.list.length(cell_names)):
     if is_word(word_at(cell_kinds, sbl_cursor_cell), "u64"):
       let sbl_cursor_ok = I64.literal(1)
@@ -6428,7 +6430,19 @@ function while_bytes_at_local_src_packed(words: List[Text], src: Bytes, name_idx
       return "ERR:E-SH-IR-CALL-TYPE"
     end if
   else:
-    return "ERR:E-SH-IR-CALL-ARGUMENT"
+    if U64.less_than(sbl_cursor_param, parameter_count):
+      let sbl_cursor_pk = parameter_kind_by_id(words, name_idx, sbl_cursor_param)
+      if sico.text.starts_with(sbl_cursor_pk, "ERR:"):
+        return sbl_cursor_pk
+      end if
+      if is_word(sbl_cursor_pk, "u64"):
+        set sbl_cursor_form = U64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
   end if
   if is_word(fixed_literal_argument(words, sbl_default), "i64"):
     let sbl_default_ok = I64.literal(1)
@@ -6458,25 +6472,39 @@ function while_bytes_at_local_src_packed(words: List[Text], src: Bytes, name_idx
   end match
   let sbl_src_json = read_local_instruction_json(base, "bytes", u64_list_at(cell_locals, sbl_src_cell, U64.literal(0)), sbl_src_start, sbl_src_end)
   let sbl_cursor_id = next_index(base, base)
-  let sbl_cursor_start = word_span_offset(words, src, expr_start, receiver_idx, sbl_cursor)
-  let sbl_cursor_end = sbl_cursor_start
-  match U64.checked_add(sbl_cursor_start, sico.bytes.length(sico.text.encode(word_at(words, sbl_cursor)))):
-    case ok(sbl_after_cursor):
-      set sbl_cursor_end = sbl_after_cursor
-    case error(_):
-      return "ERR:E-SH-IR-RANGE"
-  end match
-  let sbl_cursor_json = read_local_instruction_json(sbl_cursor_id, "u64", u64_list_at(cell_locals, sbl_cursor_cell, U64.literal(0)), sbl_cursor_start, sbl_cursor_end)
-  let sbl_default_result = next_index(sbl_cursor_id, sbl_cursor_id)
+  let sbl_cursor_json = ""
+  let sbl_cursor_value = base
+  let sbl_default_result = next_index(base, base)
+  if U64.equal(sbl_cursor_form, U64.literal(0)):
+    let sbl_cursor_start = word_span_offset(words, src, expr_start, receiver_idx, sbl_cursor)
+    let sbl_cursor_end = sbl_cursor_start
+    match U64.checked_add(sbl_cursor_start, sico.bytes.length(sico.text.encode(word_at(words, sbl_cursor)))):
+      case ok(sbl_after_cursor):
+        set sbl_cursor_end = sbl_after_cursor
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    set sbl_cursor_json = read_local_instruction_json(sbl_cursor_id, "u64", u64_list_at(cell_locals, sbl_cursor_cell, U64.literal(0)), sbl_cursor_start, sbl_cursor_end)
+    set sbl_cursor_value = sbl_cursor_id
+    set sbl_default_result = next_index(sbl_cursor_id, sbl_cursor_id)
+  else:
+    set sbl_cursor_value = sbl_cursor_param
+    set sbl_default_result = next_index(base, base)
+  end if
   let sbl_default_json = fixed_literal_operand_json(words, src, sbl_default, receiver_idx, expr_start, sbl_default_result)
   if sico.text.starts_with(sbl_default_json, "ERR:"):
     return sbl_default_json
   end if
   let sbl_result = next_index(sbl_default_result, sbl_default_result)
-  let sbl_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(base), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbl_cursor_id), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbl_default_result), "]"))))))
+  let sbl_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(base), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbl_cursor_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbl_default_result), "]"))))))
   let sbl_intrinsic = intrinsic_instruction_json(sbl_result, "i64", "sico.bytes.at", sbl_arguments, expr_start, line_end_offset)
-  let sbl_json = sico.text.concat(sbl_src_json, sico.text.concat(",", sico.text.concat(sbl_cursor_json, sico.text.concat(",", sico.text.concat(sbl_default_json, sico.text.concat(",", sbl_intrinsic))))))
-  return sico.text.concat("4\n", sico.text.concat(sico.u64.to_text(sbl_result), sico.text.concat("\ni64\n", sbl_json)))
+  let sbl_json = sico.text.concat(sbl_src_json, sico.text.concat(",", sico.text.concat(sbl_default_json, sico.text.concat(",", sbl_intrinsic))))
+  let sbl_count = U64.literal(3)
+  if U64.equal(sbl_cursor_form, U64.literal(0)):
+    set sbl_json = sico.text.concat(sbl_src_json, sico.text.concat(",", sico.text.concat(sbl_cursor_json, sico.text.concat(",", sico.text.concat(sbl_default_json, sico.text.concat(",", sbl_intrinsic))))))
+    set sbl_count = U64.literal(4)
+  end if
+  return sico.text.concat(sico.u64.to_text(sbl_count), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(sbl_result), sico.text.concat("\ni64\n", sbl_json))))
 end function
 
 function while_bytes_at_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_idx: U64, line_end: U64, expr_start: U64, line_end_offset: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
