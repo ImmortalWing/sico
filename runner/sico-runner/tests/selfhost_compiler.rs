@@ -1879,6 +1879,58 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_gw_list_get_match_subjects_byte_exactly() {
+    // STEP-0325: the general-while machine accepts `sico.list.get(<param
+    // list>, <index>)` match subjects inside statement regions — the fourth
+    // in-body subject family — and the result temp local carries the
+    // string-ok result type (new result-string kind; result-i64 added for
+    // the checked-arithmetic subjects).
+    let base = format!(
+        "{}\n{}\n{}\n{}\n",
+        parser_function_text("is_word"),
+        parser_function_text("word_at"),
+        parser_function_text("next_index"),
+        parser_function_text("line_end"),
+    );
+    let good = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  if U64.less_than(i, n):\n    match sico.list.get(words, i):\n      case ok(w):\n        if is_word(w, \"end\"):\n          return i\n        end if\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw list.get match subject must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // Declared bounds: a list-cell operand (not a parameter) and an
+    // out-of-family member stay typed-refused, then recovery.
+    let list_cell = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  let copy = words\n  if U64.less_than(i, n):\n    match sico.list.get(copy, i):\n      case ok(w):\n        return i\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&list_cell),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let wrong_member = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  if U64.less_than(i, n):\n    match sico.list.set(words, i):\n      case ok(w):\n        return i\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&wrong_member),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("valid list.get subject must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
