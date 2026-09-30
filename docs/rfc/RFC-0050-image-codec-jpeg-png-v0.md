@@ -1,6 +1,6 @@
 # RFC-0050: M24 image codec package — JPEG↔PNG v0 (deterministic, fail-closed)
 
-> - status: **draft — owner acceptance required before any implementation STEP**
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)**
 > - date: 2026-09-25
 > - phase: M24 §8.4 conversion-engine contract (first increment JPEG↔PNG)
 > - depends: RFC-0041 (image data contract: BGRA8, packed rows, top-left origin, stride = w·4), RFC-0015/0024/0026 (M7 package digest and registry discipline), M24 plan §8.4/§8.5, STEP-0287 inventory

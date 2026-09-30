@@ -1,6 +1,6 @@
 # RFC-0053: M26 PDF structural reading subset v0
 
-> - status: **draft — owner acceptance required** (acceptance does not unlock implementation: the route replan gates PDF implementation behind M25 v1.0 release GO)
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)** (acceptance does not unlock implementation: the route replan gates PDF implementation behind M25 v1.0 release GO)
 > - date: 2026-09-25
 > - phase: M26 §7 kickoff contracts (data/reading side)
 > - depends: RFC-0045 (Bytes surface), RFC-0047 (records/`List[record]`), M26 plan §2/§3/§7, STEP-0290 inventory

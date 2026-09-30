@@ -1,6 +1,6 @@
 # ADR-0018: Native desktop renderer architecture — Fluent-subset Direct2D v0
 
-> - status: **proposed — owner acceptance required before any implementation STEP**
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)**
 > - date: 2026-09-25
 > - owners: autonomous-agent
 > - supersedes: -

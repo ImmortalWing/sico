@@ -1,6 +1,6 @@
 # RFC-0048: Language v1 batch 3 item 1 — infix comparison conditions and `&&`
 
-> - status: **draft — owner acceptance required before any implementation STEP** (M23 plan §2 dual gate still applies afterwards: Route A = M22 S7 GO, Route B = R3 stop-loss)
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)** (M23 plan §2 dual gate still applies afterwards: Route A = M22 S7 GO, Route B = R3 stop-loss)
 > - date: 2026-09-25
 > - phase: M23 §8.1 (language v1 batch 3, item 1)
 > - depends: RFC-0033 (evidence gate), RFC-0044 (infix equality precedent), RFC-0046 §2 (batch-3 queue), STEP-0284 census (measured demand)

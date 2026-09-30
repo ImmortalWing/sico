@@ -1,6 +1,6 @@
 # RFC-0051: M17 gate 4 — model/package provenance manifest v0
 
-> - status: **draft — owner acceptance required before any implementation STEP**
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)**
 > - date: 2026-09-25
 > - phase: M24 §8.2 (M17 gate 4 model/package provenance RFC)
 > - depends: RFC-0041 (image data contract), RFC-0015/0024/0026 (M7 digest, signed registry, dependency-lock discipline), ADR-0012 (live-model budget record), M24 plan §8.2, STEP-0287 inventory

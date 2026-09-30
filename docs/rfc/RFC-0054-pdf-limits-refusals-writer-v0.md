@@ -1,6 +1,6 @@
 # RFC-0054: M26 PDF limits and refusal taxonomy v0 (incl. byte-stable writer contract)
 
-> - status: **draft — owner acceptance required** (acceptance does not unlock implementation: PDF implementation waits for M25 v1.0 release GO)
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)** (acceptance does not unlock implementation: PDF implementation waits for M25 v1.0 release GO)
 > - date: 2026-09-25
 > - phase: M26 §7 kickoff contracts (limits/refusal side)
 > - depends: RFC-0053 (reading subset, draft), RFC-0018 lineage (typed Runtime fault taxonomy), M26 plan §3/§5, STEP-0290 inventory
