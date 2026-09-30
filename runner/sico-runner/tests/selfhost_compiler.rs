@@ -1725,23 +1725,42 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     // oracle. `next_index` exercises the returning checked_add family,
     // `word_at` the list.get returning-match family and
     // `valid_escape_byte` the control-if guard-chain family.
+    // STEP-0320 adds `line_end` (while + if + user-call consumers) with its
+    // flipped callees reordered first.
     for name in ["next_index", "word_at", "valid_escape_byte"] {
-        let start = PARSER_SOURCE
-            .find(&format!("function {name}"))
-            .expect("parser keeps the function");
-        let end = PARSER_SOURCE[start..]
-            .find("\nend function\n")
-            .expect("function ends")
-            + start
-            + "\nend function\n".len();
-        let source = &PARSER_SOURCE[start..end];
-        let expected = rust_ir(source);
-        let RunOutcome::Output(output) = run_guest(source) else {
+        let source = format!("{}\n", parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
             panic!("parser function {name} must compile through existing families")
         };
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+    let mut line_end_source = String::new();
+    for callee in ["is_word", "word_at", "next_index"] {
+        line_end_source.push_str(&parser_function_text(callee));
+        line_end_source.push('\n');
+    }
+    line_end_source.push_str(&parser_function_text("line_end"));
+    line_end_source.push('\n');
+    let expected = rust_ir(&line_end_source);
+    let RunOutcome::Output(output) = run_guest(&line_end_source) else {
+        panic!("line_end with its callees must compile through existing families")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+fn parser_function_text(name: &str) -> String {
+    let start = PARSER_SOURCE
+        .find(&format!("function {name}"))
+        .expect("parser keeps the function");
+    let end = PARSER_SOURCE[start..]
+        .find("\nend function\n")
+        .expect("function ends")
+        + start
+        + "\nend function\n".len();
+    PARSER_SOURCE[start..end].to_owned()
 }
 
 #[test]

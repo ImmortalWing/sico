@@ -200,6 +200,12 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    inputs: `is_digit_token`/`is_string_token` refuse EXPRESSION (missing
    text.encode/text.length/bytes.at let-RHS shapes) and
    `line_end`/`matching_close` refuse CALL-TARGET (missing user-call RHS).
+   STEP-0320 (2026-09-30) flips `line_end` itself (while + if + user-call
+   consumer, callees reordered first): parser coverage 8/115 → 9/115, R3
+   stays zero. Probe census of its downstream pins the next family:
+   user-call RHS/argument-position shapes (six CALL-TARGET refusals plus
+   return_shapes' CALL-ARGUMENT) and the text.encode/bytes.at let-RHS
+   host-call family (json_string_token's EXPRESSION).
 2. **Formatter tail from the current frontier** — `main`.
    The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
    `direct_close` and `opener_close` passed the real-runner
