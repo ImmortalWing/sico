@@ -2823,6 +2823,863 @@ function checked_arithmetic_match_ir(words: List[Text], src: Bytes, function_idx
   return out
 end function
 
+function literal_value_index(side_idx: U64, words_len: U64) returns U64:
+  let lvi_a = next_index(side_idx, words_len)
+  let lvi_b = next_index(lvi_a, words_len)
+  let lvi_c = next_index(lvi_b, words_len)
+  return next_index(lvi_c, words_len)
+end function
+
+function checked_arithmetic_set_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
+  let n = sico.list.length(words)
+  if U64.equal(parameter_count, U64.literal(1)):
+    let casm_arity_one = I64.literal(1)
+  else:
+    if U64.equal(parameter_count, U64.literal(2)):
+      let casm_arity_two = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+  end if
+  let casm_returns_idx = body_from
+  while U64.less_than(casm_returns_idx, body_end):
+    if is_word(word_at(words, casm_returns_idx), "returns"):
+      break
+    end if
+    set casm_returns_idx = next_index(casm_returns_idx, body_end)
+  end while
+  if U64.less_than(casm_returns_idx, body_end):
+    let casm_returns_seen = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_sig_colon_idx = next_index(casm_returns_idx, n)
+  while U64.less_than(casm_sig_colon_idx, body_end):
+    if is_word(word_at(words, casm_sig_colon_idx), ":"):
+      break
+    end if
+    set casm_sig_colon_idx = next_index(casm_sig_colon_idx, body_end)
+  end while
+  if is_word(word_at(words, casm_sig_colon_idx), ":"):
+    let casm_sig_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_body_start = next_index(line_end(words, casm_sig_colon_idx), n)
+  if is_word(word_at(words, casm_body_start), "let"):
+    let casm_let_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_cell_idx = next_index(casm_body_start, n)
+  let casm_cell_word = word_at(words, casm_cell_idx)
+  if is_word(casm_cell_word, "let"):
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_recv_idx = next_index(casm_cell_idx, n)
+  let casm_dot_idx = next_index(casm_recv_idx, n)
+  let casm_litname_idx = next_index(casm_dot_idx, n)
+  let casm_litopen_idx = next_index(casm_litname_idx, n)
+  let casm_litvalue_idx = next_index(casm_litopen_idx, n)
+  let casm_litclose_idx = next_index(casm_litvalue_idx, n)
+  let casm_let_line_end = line_end(words, casm_body_start)
+  if U64.equal(next_index(casm_litclose_idx, n), casm_let_line_end):
+    let casm_let_line_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_dot_idx), "."):
+    let casm_ldot_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_litname_idx), "literal"):
+    let casm_lname_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, casm_litopen_idx), "("):
+    let casm_lopen_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_litclose_idx), ")"):
+    let casm_lclose_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_kind = ""
+  if is_word(word_at(words, casm_recv_idx), "I64"):
+    set casm_kind = "i64"
+  else:
+    if is_word(word_at(words, casm_recv_idx), "U64"):
+      set casm_kind = "u64"
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+  end if
+  if is_word(word_at(words, casm_litvalue_idx), "-"):
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  if is_canonical_magnitude(word_at(words, casm_litvalue_idx)):
+    let casm_lmag_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  if is_word(casm_kind, "i64"):
+    if decimal_at_most(word_at(words, casm_litvalue_idx), "9223372036854775807"):
+      let casm_lrange_i64_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-I64-RANGE"
+    end if
+  else:
+    if decimal_at_most(word_at(words, casm_litvalue_idx), "18446744073709551615"):
+      let casm_lrange_u64_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-U64-RANGE"
+    end if
+  end if
+  if U64.less_than(binding_parameter_index(words, name_idx, casm_cell_word), parameter_count):
+    return "ERR:E-SH-IR-CELL-SHADOW"
+  end if
+  let casm_m = next_index(casm_let_line_end, n)
+  if is_word(word_at(words, casm_m), "match"):
+    let casm_m_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_mr_idx = next_index(casm_m, n)
+  if is_word(word_at(words, casm_mr_idx), word_at(words, casm_recv_idx)):
+    let casm_mr_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let casm_mdot = next_index(casm_mr_idx, n)
+  let casm_mop = next_index(casm_mdot, n)
+  let casm_mopen = next_index(casm_mop, n)
+  if is_word(word_at(words, casm_mdot), "."):
+    let casm_mdot_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_mop), "checked_add"):
+    let casm_mop_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TARGET"
+  end if
+  if is_word(word_at(words, casm_mopen), "("):
+    let casm_mopen_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_match_line_end = line_end(words, casm_m)
+  let casm_mclose = matching_close(words, casm_mopen, casm_match_line_end)
+  let casm_comma = casm_mclose
+  let casm_scan = next_index(casm_mopen, n)
+  while U64.less_than(casm_scan, casm_mclose):
+    if is_word(word_at(words, casm_scan), "("):
+      set casm_scan = next_index(matching_close(words, casm_scan, casm_mclose), casm_mclose)
+    else:
+      if is_word(word_at(words, casm_scan), ","):
+        set casm_comma = casm_scan
+        set casm_scan = casm_mclose
+      else:
+        set casm_scan = next_index(casm_scan, casm_mclose)
+      end if
+    end if
+  end while
+  if is_word(word_at(words, casm_comma), ","):
+    let casm_comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_left = next_index(casm_mopen, n)
+  let casm_right = next_index(casm_comma, n)
+  let casm_colon = next_index(casm_mclose, n)
+  if is_word(word_at(words, casm_colon), ":"):
+    let casm_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_left_kind = fixed_literal_argument(words, casm_left)
+  if sico.text.starts_with(casm_left_kind, "ERR:"):
+    return casm_left_kind
+  end if
+  let casm_left_form = U64.literal(0)
+  let casm_left_param = U64.literal(0)
+  let casm_left_token = casm_left
+  if U64.equal(sico.text.length(casm_left_kind), U64.literal(0)):
+    if U64.equal(next_index(casm_left, n), casm_comma):
+      let casm_lp = binding_parameter_index(words, name_idx, word_at(words, casm_left))
+      if U64.less_than(casm_lp, parameter_count):
+        if is_word(parameter_type_word(words, name_idx, casm_lp), word_at(words, casm_recv_idx)):
+          set casm_left_form = U64.literal(1)
+          set casm_left_param = casm_lp
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+      else:
+        if is_word(word_at(words, casm_left), casm_cell_word):
+          set casm_left_form = U64.literal(2)
+        else:
+          return "ERR:E-SH-IR-EXPRESSION"
+        end if
+      end if
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+  else:
+    if is_word(casm_left_kind, casm_kind):
+      let casm_left_lit_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if is_word(word_at(words, next_index(casm_left, n)), "."):
+      let casm_left_ldot_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, next_index(next_index(casm_left, n), n)), "literal"):
+      let casm_left_lname_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, next_index(next_index(next_index(casm_left, n), n), n)), "("):
+      let casm_left_lopen_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if is_word(word_at(words, literal_value_index(casm_left, n)), "-"):
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set casm_left_token = literal_value_index(casm_left, n)
+    if is_word(word_at(words, next_index(casm_left_token, n)), ")"):
+      let casm_left_lclose_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if U64.equal(next_index(next_index(casm_left_token, n), n), casm_comma):
+      let casm_left_boundary_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+    set casm_left_form = U64.literal(3)
+  end if
+  let casm_right_kind = fixed_literal_argument(words, casm_right)
+  if sico.text.starts_with(casm_right_kind, "ERR:"):
+    return casm_right_kind
+  end if
+  let casm_right_form = U64.literal(0)
+  let casm_right_param = U64.literal(0)
+  let casm_right_token = casm_right
+  if U64.equal(sico.text.length(casm_right_kind), U64.literal(0)):
+    if U64.equal(next_index(casm_right, n), casm_mclose):
+      let casm_rp = binding_parameter_index(words, name_idx, word_at(words, casm_right))
+      if U64.less_than(casm_rp, parameter_count):
+        if is_word(parameter_type_word(words, name_idx, casm_rp), word_at(words, casm_recv_idx)):
+          set casm_right_form = U64.literal(1)
+          set casm_right_param = casm_rp
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+      else:
+        if is_word(word_at(words, casm_right), casm_cell_word):
+          set casm_right_form = U64.literal(2)
+        else:
+          return "ERR:E-SH-IR-EXPRESSION"
+        end if
+      end if
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+  else:
+    if is_word(casm_right_kind, casm_kind):
+      let casm_right_lit_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if is_word(word_at(words, literal_value_index(casm_right, n)), "-"):
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set casm_right_token = literal_value_index(casm_right, n)
+    if is_word(word_at(words, next_index(casm_right_token, n)), ")"):
+      let casm_right_lclose_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if U64.equal(next_index(next_index(casm_right_token, n), n), casm_mclose):
+      let casm_right_boundary_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+    set casm_right_form = U64.literal(3)
+  end if
+  let casm_ok_case = next_index(casm_match_line_end, n)
+  let casm_ok_name = next_index(casm_ok_case, n)
+  let casm_ok_open = next_index(casm_ok_name, n)
+  let casm_binding = next_index(casm_ok_open, n)
+  let casm_ok_close = next_index(casm_binding, n)
+  let casm_ok_colon = next_index(casm_ok_close, n)
+  let casm_ok_line_end = line_end(words, casm_ok_case)
+  if is_word(word_at(words, casm_ok_case), "case"):
+    let casm_ok_case_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_ok_name), "ok"):
+    let casm_ok_name_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_ok_open), "("):
+    let casm_ok_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_ok_close), ")"):
+    let casm_ok_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_ok_colon), ":"):
+    let casm_ok_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if U64.equal(next_index(casm_ok_colon, n), casm_ok_line_end):
+    let casm_ok_line_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_binding), "_"):
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_binding_word = word_at(words, casm_binding)
+  let casm_set = next_index(casm_ok_line_end, n)
+  let casm_set_cell = next_index(casm_set, n)
+  let casm_set_bind = next_index(casm_set_cell, n)
+  let casm_set_line_end = line_end(words, casm_set)
+  if is_word(word_at(words, casm_set), "set"):
+    let casm_set_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_set_cell), casm_cell_word):
+    let casm_set_cell_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_set_bind), casm_binding_word):
+    let casm_set_bind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if U64.equal(next_index(casm_set_bind, n), casm_set_line_end):
+    let casm_set_line_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_err_case = next_index(casm_set_line_end, n)
+  let casm_err_name = next_index(casm_err_case, n)
+  let casm_err_open = next_index(casm_err_name, n)
+  let casm_err_wild = next_index(casm_err_open, n)
+  let casm_err_close = next_index(casm_err_wild, n)
+  let casm_err_colon = next_index(casm_err_close, n)
+  let casm_err_line_end = line_end(words, casm_err_case)
+  if is_word(word_at(words, casm_err_case), "case"):
+    let casm_err_case_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_err_name), "error"):
+    let casm_err_name_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_err_open), "("):
+    let casm_err_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_err_wild), "_"):
+    let casm_err_wild_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_err_close), ")"):
+    let casm_err_close_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_err_colon), ":"):
+    let casm_err_colon_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if U64.equal(next_index(casm_err_colon, n), casm_err_line_end):
+    let casm_err_line_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_err_ret = next_index(casm_err_line_end, n)
+  if is_word(word_at(words, casm_err_ret), "return"):
+    let casm_err_ret_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_fb_first = next_index(casm_err_ret, n)
+  let casm_fb_line_end = line_end(words, casm_err_ret)
+  let casm_fb_kind = fixed_literal_argument(words, casm_fb_first)
+  if sico.text.starts_with(casm_fb_kind, "ERR:"):
+    return casm_fb_kind
+  end if
+  let casm_fb_form = U64.literal(0)
+  let casm_fb_param = U64.literal(0)
+  let casm_fb_token = casm_fb_first
+  if U64.equal(sico.text.length(casm_fb_kind), U64.literal(0)):
+    if U64.equal(next_index(casm_fb_first, n), casm_fb_line_end):
+      let casm_fp = binding_parameter_index(words, name_idx, word_at(words, casm_fb_first))
+      if U64.less_than(casm_fp, parameter_count):
+        if is_word(parameter_type_word(words, name_idx, casm_fp), word_at(words, casm_recv_idx)):
+          set casm_fb_form = U64.literal(1)
+          set casm_fb_param = casm_fp
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+      else:
+        return "ERR:E-SH-IR-EXPRESSION"
+      end if
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+  else:
+    if is_word(casm_fb_kind, casm_kind):
+      let casm_fb_lit_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    if is_word(word_at(words, literal_value_index(casm_fb_first, n)), "-"):
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    set casm_fb_token = literal_value_index(casm_fb_first, n)
+    if is_word(word_at(words, next_index(casm_fb_token, n)), ")"):
+      let casm_fb_lclose_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-MATCH-SHAPE"
+    end if
+    if U64.equal(next_index(next_index(casm_fb_token, n), n), casm_fb_line_end):
+      let casm_fb_boundary_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+    set casm_fb_form = U64.literal(3)
+  end if
+  let casm_end_word = next_index(casm_fb_line_end, n)
+  let casm_end_match = next_index(casm_end_word, n)
+  if is_word(word_at(words, casm_end_word), "end"):
+    let casm_end_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_end_match), "match"):
+    let casm_end_match_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_after_match_line_end = line_end(words, casm_end_word)
+  let casm_tail_ret = next_index(casm_after_match_line_end, n)
+  if is_word(word_at(words, casm_tail_ret), "return"):
+    let casm_tail_ret_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  let casm_tail_first = next_index(casm_tail_ret, n)
+  let casm_tail_line_end = line_end(words, casm_tail_ret)
+  let casm_tail_form = U64.literal(0)
+  let casm_tail_param = U64.literal(0)
+  if U64.equal(next_index(casm_tail_first, n), casm_tail_line_end):
+    if is_word(word_at(words, casm_tail_first), casm_cell_word):
+      set casm_tail_form = U64.literal(2)
+    else:
+      let casm_tp = binding_parameter_index(words, name_idx, word_at(words, casm_tail_first))
+      if U64.less_than(casm_tp, parameter_count):
+        if is_word(parameter_type_word(words, name_idx, casm_tp), word_at(words, casm_recv_idx)):
+          set casm_tail_form = U64.literal(1)
+          set casm_tail_param = casm_tp
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+      else:
+        return "ERR:E-SH-IR-EXPRESSION"
+      end if
+    end if
+  else:
+    return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let casm_end_fn = next_index(casm_tail_line_end, n)
+  let casm_fn_word = next_index(casm_end_fn, n)
+  if is_word(word_at(words, casm_end_fn), "end"):
+    let casm_end_fn_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(word_at(words, casm_fn_word), "function"):
+    let casm_fn_word_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if U64.equal(next_index(casm_fn_word, n), body_end):
+    let casm_complete = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-MATCH-SHAPE"
+  end if
+  if is_word(return_kind, casm_kind):
+    let casm_ret_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-TYPE-MISMATCH"
+  end if
+  let casm_parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(casm_parameters, "ERR:"):
+    return casm_parameters
+  end if
+  let casm_source_len = sico.bytes.length(src)
+  let casm_returns_off = find_text_from(src, "returns", fn_start)
+  let casm_sig_colon_off = find_text_from(src, ":", casm_returns_off)
+  let casm_let_kw_off = find_text_from(src, "let", casm_sig_colon_off)
+  let casm_cell_off = find_text_from(src, casm_cell_word, casm_let_kw_off)
+  let casm_cell_end = casm_cell_off
+  match U64.checked_add(casm_cell_off, sico.bytes.length(sico.text.encode(casm_cell_word))):
+    case ok(casm_after_cell):
+      set casm_cell_end = casm_after_cell
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_litword_off = find_text_from(src, "literal", casm_cell_end)
+  let casm_letopen_off = find_text_from(src, "(", casm_litword_off)
+  let casm_letval_off = find_text_from(src, word_at(words, casm_litvalue_idx), casm_letopen_off)
+  let casm_letval_end = casm_letval_off
+  match U64.checked_add(casm_letval_off, sico.bytes.length(sico.text.encode(word_at(words, casm_litvalue_idx)))):
+    case ok(casm_after_letval):
+      set casm_letval_end = casm_after_letval
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_letclose_off = find_text_from(src, ")", casm_letval_end)
+  let casm_let_stmt_end = casm_letclose_off
+  match U64.checked_add(casm_letclose_off, U64.literal(1)):
+    case ok(casm_after_letclose):
+      set casm_let_stmt_end = casm_after_letclose
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_match_start = find_text_from(src, "match", casm_let_stmt_end)
+  let casm_receiver_start = find_text_from(src, word_at(words, casm_mr_idx), casm_match_start)
+  let casm_close_off = word_span_offset(words, src, casm_receiver_start, casm_mr_idx, casm_mclose)
+  let casm_colon_off = find_text_from(src, ":", casm_close_off)
+  let casm_match_end = casm_colon_off
+  match U64.checked_add(casm_colon_off, U64.literal(1)):
+    case ok(casm_after_colon):
+      set casm_match_end = casm_after_colon
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_ok_case_off = find_text_from(src, "case", casm_match_end)
+  let casm_ok_colon_off = find_text_from(src, ":", casm_ok_case_off)
+  let casm_ok_case_end = casm_ok_colon_off
+  match U64.checked_add(casm_ok_colon_off, U64.literal(1)):
+    case ok(casm_after_ok_colon):
+      set casm_ok_case_end = casm_after_ok_colon
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_set_kw_off = find_text_from(src, "set", casm_ok_case_end)
+  let casm_set_bind_off = find_text_from(src, casm_binding_word, casm_set_kw_off)
+  let casm_set_bind_end = casm_set_bind_off
+  match U64.checked_add(casm_set_bind_off, sico.bytes.length(sico.text.encode(casm_binding_word))):
+    case ok(casm_after_set_bind):
+      set casm_set_bind_end = casm_after_set_bind
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_err_case_off = find_text_from(src, "case", casm_set_bind_end)
+  let casm_err_colon_off = find_text_from(src, ":", casm_err_case_off)
+  let casm_err_case_end = casm_err_colon_off
+  match U64.checked_add(casm_err_colon_off, U64.literal(1)):
+    case ok(casm_after_err_colon):
+      set casm_err_case_end = casm_after_err_colon
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_fb_digits_off = casm_err_case_end
+  let casm_fb_digits_end = casm_err_case_end
+  if U64.equal(casm_fb_form, U64.literal(3)):
+    let casm_err_ret_off = find_text_from(src, "return", casm_err_case_end)
+    set casm_fb_digits_off = find_text_from(src, word_at(words, casm_fb_token), casm_err_ret_off)
+    set casm_fb_digits_end = casm_fb_digits_off
+    match U64.checked_add(casm_fb_digits_off, sico.bytes.length(sico.text.encode(word_at(words, casm_fb_token)))):
+      case ok(casm_after_fb_digits):
+        set casm_fb_digits_end = casm_after_fb_digits
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+  end if
+  let casm_end_match_off = find_text_from(src, "end match", casm_err_case_end)
+  let casm_tail_ret_off = find_text_from(src, "return", casm_end_match_off)
+  let casm_tail_off = find_text_from(src, word_at(words, casm_tail_first), casm_tail_ret_off)
+  let casm_tail_end = casm_tail_off
+  match U64.checked_add(casm_tail_off, sico.bytes.length(sico.text.encode(word_at(words, casm_tail_first)))):
+    case ok(casm_after_tail):
+      set casm_tail_end = casm_after_tail
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_end_function_offset = find_text_from(src, "end function", fn_start)
+  let casm_fn_end = fn_start
+  match U64.checked_add(casm_end_function_offset, U64.literal(13)):
+    case ok(casm_after_end_function):
+      set casm_fn_end = casm_after_end_function
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  if U64.less_than(casm_source_len, casm_fn_end):
+    set casm_fn_end = casm_source_len
+  end if
+  let casm_id_const = parameter_count
+  let casm_id_write_cell = next_index(casm_id_const, casm_id_const)
+  let casm_id_left = next_index(casm_id_write_cell, casm_id_write_cell)
+  let casm_left_count = U64.literal(0)
+  if U64.equal(casm_left_form, U64.literal(2)):
+    set casm_left_count = U64.literal(1)
+  end if
+  if U64.equal(casm_left_form, U64.literal(3)):
+    set casm_left_count = U64.literal(1)
+  end if
+  let casm_id_right = casm_id_left
+  if U64.equal(casm_left_count, U64.literal(1)):
+    set casm_id_right = next_index(casm_id_left, casm_id_left)
+  end if
+  let casm_right_count = U64.literal(0)
+  if U64.equal(casm_right_form, U64.literal(2)):
+    set casm_right_count = U64.literal(1)
+  end if
+  if U64.equal(casm_right_form, U64.literal(3)):
+    set casm_right_count = U64.literal(1)
+  end if
+  let casm_id_add = casm_id_right
+  if U64.equal(casm_right_count, U64.literal(1)):
+    set casm_id_add = next_index(casm_id_right, casm_id_right)
+  end if
+  let casm_id_write_temp = next_index(casm_id_add, casm_id_add)
+  let casm_id_read_temp = next_index(casm_id_write_temp, casm_id_write_temp)
+  let casm_id_project = next_index(casm_id_read_temp, casm_id_read_temp)
+  let casm_id_write_bind = next_index(casm_id_project, casm_id_project)
+  let casm_id_read_bind = next_index(casm_id_write_bind, casm_id_write_bind)
+  let casm_id_write_cell2 = next_index(casm_id_read_bind, casm_id_read_bind)
+  let casm_id_fallback = next_index(casm_id_write_cell2, casm_id_write_cell2)
+  let casm_tail_id = casm_id_fallback
+  if U64.equal(casm_fb_form, U64.literal(3)):
+    set casm_tail_id = next_index(casm_id_fallback, casm_id_fallback)
+  end if
+  let casm_left_value = casm_left_param
+  if U64.equal(casm_left_form, U64.literal(2)):
+    set casm_left_value = casm_id_left
+  end if
+  if U64.equal(casm_left_form, U64.literal(3)):
+    set casm_left_value = casm_id_left
+  end if
+  let casm_right_value = casm_right_param
+  if U64.equal(casm_right_form, U64.literal(2)):
+    set casm_right_value = casm_id_right
+  end if
+  if U64.equal(casm_right_form, U64.literal(3)):
+    set casm_right_value = casm_id_right
+  end if
+  let casm_fallback_value = casm_fb_param
+  if U64.equal(casm_fb_form, U64.literal(3)):
+    set casm_fallback_value = casm_id_fallback
+  end if
+  let casm_tail_value = casm_tail_param
+  if U64.equal(casm_tail_form, U64.literal(2)):
+    set casm_tail_value = casm_tail_id
+  end if
+  let casm_result_type = "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\""
+  set casm_result_type = sico.text.concat(casm_result_type, casm_kind)
+  set casm_result_type = sico.text.concat(casm_result_type, "\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}")
+  let casm_add_end = casm_close_off
+  match U64.checked_add(casm_close_off, U64.literal(1)):
+    case ok(casm_after_close_off):
+      set casm_add_end = casm_after_close_off
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let casm_left_off = casm_receiver_start
+  let casm_left_end = casm_receiver_start
+  if U64.equal(casm_left_count, U64.literal(1)):
+    set casm_left_off = word_span_offset(words, src, casm_receiver_start, casm_mr_idx, casm_left_token)
+    set casm_left_end = casm_left_off
+    match U64.checked_add(casm_left_off, sico.bytes.length(sico.text.encode(word_at(words, casm_left_token)))):
+      case ok(casm_after_left_off):
+        set casm_left_end = casm_after_left_off
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+  end if
+  let casm_right_off = casm_receiver_start
+  let casm_right_end = casm_receiver_start
+  if U64.equal(casm_right_count, U64.literal(1)):
+    set casm_right_off = word_span_offset(words, src, casm_receiver_start, casm_mr_idx, casm_right_token)
+    set casm_right_end = casm_right_off
+    match U64.checked_add(casm_right_off, sico.bytes.length(sico.text.encode(word_at(words, casm_right_token)))):
+      case ok(casm_after_right_off):
+        set casm_right_end = casm_after_right_off
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+  end if
+  let casm_out = "{\"id\":"
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(function_ordinal))
+  set casm_out = sico.text.concat(casm_out, ",\"name\":\"")
+  set casm_out = sico.text.concat(casm_out, word_at(words, name_idx))
+  set casm_out = sico.text.concat(casm_out, "\",\"parameters\":")
+  set casm_out = sico.text.concat(casm_out, casm_parameters)
+  set casm_out = sico.text.concat(casm_out, ",\"return_type\":{\"kind\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_kind)
+  set casm_out = sico.text.concat(casm_out, "\"},\"effects\":[],\"locals\":[{\"name\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_cell_word)
+  set casm_out = sico.text.concat(casm_out, "\",\"ty\":{\"kind\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_kind)
+  set casm_out = sico.text.concat(casm_out, "\"},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_cell_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_cell_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"name\":\"#match1\",\"ty\":")
+  set casm_out = sico.text.concat(casm_out, casm_result_type)
+  set casm_out = sico.text.concat(casm_out, ",\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"name\":\"#match")
+  set casm_out = sico.text.concat(casm_out, casm_binding_word)
+  set casm_out = sico.text.concat(casm_out, "\",\"ty\":{\"kind\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_kind)
+  set casm_out = sico.text.concat(casm_out, "\"},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, "}}],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[")
+  set casm_out = sico.text.concat(casm_out, scalar_const_instruction_json(casm_id_const, casm_kind, word_at(words, casm_litvalue_idx), casm_letval_off, casm_letval_end))
+  set casm_out = sico.text.concat(casm_out, ",")
+  set casm_out = sico.text.concat(casm_out, write_local_instruction_json(casm_id_write_cell, U64.literal(0), casm_id_const, casm_let_kw_off, casm_let_stmt_end))
+  if U64.equal(casm_left_count, U64.literal(1)):
+    set casm_out = sico.text.concat(casm_out, ",")
+    if U64.equal(casm_left_form, U64.literal(2)):
+      set casm_out = sico.text.concat(casm_out, read_local_instruction_json(casm_id_left, casm_kind, U64.literal(0), casm_left_off, casm_left_end))
+    else:
+      set casm_out = sico.text.concat(casm_out, scalar_const_instruction_json(casm_id_left, casm_kind, word_at(words, casm_left_token), casm_left_off, casm_left_end))
+    end if
+  end if
+  if U64.equal(casm_right_count, U64.literal(1)):
+    set casm_out = sico.text.concat(casm_out, ",")
+    if U64.equal(casm_right_form, U64.literal(2)):
+      set casm_out = sico.text.concat(casm_out, read_local_instruction_json(casm_id_right, casm_kind, U64.literal(0), casm_right_off, casm_right_end))
+    else:
+      set casm_out = sico.text.concat(casm_out, scalar_const_instruction_json(casm_id_right, casm_kind, word_at(words, casm_right_token), casm_right_off, casm_right_end))
+    end if
+  end if
+  set casm_out = sico.text.concat(casm_out, ",{\"result\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_add))
+  set casm_out = sico.text.concat(casm_out, ",\"ty\":")
+  set casm_out = sico.text.concat(casm_out, casm_result_type)
+  set casm_out = sico.text.concat(casm_out, ",\"operation\":{\"op\":\"checked_add\",\"data\":{\"left\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_left_value))
+  set casm_out = sico.text.concat(casm_out, ",\"right\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_right_value))
+  set casm_out = sico.text.concat(casm_out, "}},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_receiver_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_add_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"result\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_write_temp))
+  set casm_out = sico.text.concat(casm_out, ",\"ty\":{\"kind\":\"unit\"},\"operation\":{\"op\":\"write_local\",\"data\":{\"local\":1,\"value\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_add))
+  set casm_out = sico.text.concat(casm_out, "}},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_end))
+  set casm_out = sico.text.concat(casm_out, "}}],\"terminator\":{\"kind\":\"match\",\"data\":{\"values\":[")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_add))
+  set casm_out = sico.text.concat(casm_out, "],\"arms\":[{\"patterns\":[{\"kind\":\"variant\",\"data\":{\"name\":\"ok\",\"payload\":[{\"kind\":\"binding\",\"data\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_binding_word)
+  set casm_out = sico.text.concat(casm_out, "\"}]}}],\"target\":1,\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"patterns\":[{\"kind\":\"variant\",\"data\":{\"name\":\"error\",\"payload\":[{\"kind\":\"wildcard\"}]}}],\"target\":2,\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_err_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_err_case_end))
+  set casm_out = sico.text.concat(casm_out, "}}]}},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(fn_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_fn_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"id\":1,\"instructions\":[")
+  set casm_out = sico.text.concat(casm_out, "{\"result\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_read_temp))
+  set casm_out = sico.text.concat(casm_out, ",\"ty\":")
+  set casm_out = sico.text.concat(casm_out, casm_result_type)
+  set casm_out = sico.text.concat(casm_out, ",\"operation\":{\"op\":\"read_local\",\"data\":{\"local\":1}},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, "}}")
+  set casm_out = sico.text.concat(casm_out, ",{\"result\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_project))
+  set casm_out = sico.text.concat(casm_out, ",\"ty\":{\"kind\":\"")
+  set casm_out = sico.text.concat(casm_out, casm_kind)
+  set casm_out = sico.text.concat(casm_out, "\"},\"operation\":{\"op\":\"project\",\"data\":{\"base\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_id_read_temp))
+  set casm_out = sico.text.concat(casm_out, ",\"field\":\"ok\"}},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, "}},")
+  set casm_out = sico.text.concat(casm_out, write_local_instruction_json(casm_id_write_bind, U64.literal(2), casm_id_project, casm_ok_case_off, casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, ",")
+  set casm_out = sico.text.concat(casm_out, read_local_instruction_json(casm_id_read_bind, casm_kind, U64.literal(2), casm_set_bind_off, casm_set_bind_end))
+  set casm_out = sico.text.concat(casm_out, ",")
+  set casm_out = sico.text.concat(casm_out, write_local_instruction_json(casm_id_write_cell2, U64.literal(0), casm_id_read_bind, casm_set_kw_off, casm_set_bind_end))
+  set casm_out = sico.text.concat(casm_out, "],\"terminator\":{\"kind\":\"jump\",\"data\":3},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_ok_case_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"id\":2,\"instructions\":[")
+  if U64.equal(casm_fb_form, U64.literal(3)):
+    set casm_out = sico.text.concat(casm_out, scalar_const_instruction_json(casm_id_fallback, casm_kind, word_at(words, casm_fb_token), casm_fb_digits_off, casm_fb_digits_end))
+  end if
+  set casm_out = sico.text.concat(casm_out, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_fallback_value))
+  set casm_out = sico.text.concat(casm_out, "},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_err_case_off))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_err_case_end))
+  set casm_out = sico.text.concat(casm_out, "}},{\"id\":3,\"instructions\":[")
+  if U64.equal(casm_tail_form, U64.literal(2)):
+    set casm_out = sico.text.concat(casm_out, read_local_instruction_json(casm_tail_id, casm_kind, U64.literal(0), casm_tail_off, casm_tail_end))
+  end if
+  set casm_out = sico.text.concat(casm_out, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_tail_value))
+  set casm_out = sico.text.concat(casm_out, "},\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_match_end))
+  set casm_out = sico.text.concat(casm_out, "}}],\"range\":{\"start\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(fn_start))
+  set casm_out = sico.text.concat(casm_out, ",\"end\":")
+  set casm_out = sico.text.concat(casm_out, sico.u64.to_text(casm_fn_end))
+  set casm_out = sico.text.concat(casm_out, "}}")
+  return casm_out
+end function
+
 function list_get_match_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
   let n = sico.list.length(words)
   if U64.equal(parameter_count, U64.literal(2)):
@@ -14369,6 +15226,52 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           set i = body_end_word
           set prev = "function"
           continue
+          end if
+        end if
+        if U64.equal(match_count, U64.literal(1)):
+          if U64.equal(let_count, U64.literal(1)):
+            if U64.equal(set_count, U64.literal(1)):
+              if U64.equal(if_count, U64.literal(0)):
+                if U64.equal(count_until_end_function(words, body_from, "while"), U64.literal(0)):
+                  let casm_route_m = body_from
+                    while U64.less_than(casm_route_m, body_end_word):
+                      if is_word(word_at(words, casm_route_m), "match"):
+                        break
+                      end if
+                      set casm_route_m = next_index(casm_route_m, body_end_word)
+                    end while
+                    if U64.less_than(casm_route_m, body_end_word):
+                      let casm_route_ok_case = next_index(line_end(words, casm_route_m), n)
+                      let casm_route_set = next_index(line_end(words, casm_route_ok_case), n)
+                      if is_word(word_at(words, casm_route_set), "set"):
+                        let casm_json = checked_arithmetic_set_match_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+                        if sico.text.starts_with(casm_json, "ERR:"):
+                          return casm_json
+                        end if
+                        if U64.less_than(U64.literal(1), function_count):
+                          set functions_json = sico.text.concat(functions_json, ",")
+                        end if
+                        set functions_json = sico.text.concat(functions_json, casm_json)
+                        let casm_end_function_offset = find_text_from(src, "end function", fn_start)
+                        let casm_fn_end = fn_start
+                        match U64.checked_add(casm_end_function_offset, U64.literal(13)):
+                          case ok(casm_after_end_function):
+                            set casm_fn_end = casm_after_end_function
+                          case error(_):
+                            return "ERR:E-SH-IR-RANGE"
+                        end match
+                        if U64.less_than(source_len, casm_fn_end):
+                          set casm_fn_end = source_len
+                        end if
+                        set source_cursor = casm_fn_end
+                        set i = body_end_word
+                        set prev = "function"
+                        continue
+                      end if
+                    end if
+                end if
+              end if
+            end if
           end if
         end if
         let body_statement_count = let_count

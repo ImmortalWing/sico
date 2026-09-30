@@ -181,6 +181,16 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    succeeded on `5ba175f` (run 36210200271). STEP-0299 independent CI run
    36212164872 succeeded on exact SHA `f856bb1`, and STEP-0300 run
    36212509946 succeeded on exact SHA `f2fd7fc`; run 36366432845 succeeded on `8bee75b`, which contains STEP-0301–0305. Independent CI for STEP-0306–0309 and the STEP-0310 audit snapshot succeeded on exact SHA `9c94e7d` (run 36406396074, adjudicated 2026-09-29), so those STEPs carry formal progress credit. On 2026-09-29 the owner designated this branch the authoritative M22 working line, to be merged into `dev` after M22 completes; the parallel `origin/dev` history is not otherwise adjudicated by this branch's CI.
+   STEP-0317 (2026-09-30, validation economics under the same owner directive
+   「规划好这些优化，完成M22」) landed the differential-loop cost reductions
+   recorded in §5. STEP-0318 (2026-09-30) lands the first lex_words-region
+   family: `checked_arithmetic_set_match_ir`, a whole-function shape for
+   `let cell = T.literal(k)` + `T.checked_add` match whose ok arm is
+   `set cell = bind` — six byte-equal variants, eleven typed refusals with
+   recovery, suite 53/53. No parser.sico function flips green (5/115 and the
+   `lex_words`/CALL-TARGET frontier unchanged), so under the §3.2 discipline
+   this implementation STEP counts as R3 stall 1/4; the next slices should
+   move the frontier (lex_words let-RHS host-call family first).
 2. **Formatter tail from the current frontier** — `main`.
    The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
    `direct_close` and `opener_close` passed the real-runner

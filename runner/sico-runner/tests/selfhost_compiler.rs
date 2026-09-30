@@ -1607,6 +1607,117 @@ fn sico_compiler_lowers_list_get_literal_index_match_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_checked_arithmetic_set_arm_match_byte_exactly() {
+    // STEP-0318: `let <cell> = T.literal(k)` followed by an all-scalar
+    // `T.checked_add` match whose ok arm is `set <cell> = <bind>`, an
+    // error-arm return and a join return. Operands cover parameter, cell
+    // and literal forms on both sides, both scalar kinds, one and two
+    // parameters, parameter/literal fallbacks and cell/parameter tails.
+    let cases = [
+        "function probe(seed: U64) returns U64:\n  let string_len = U64.literal(0)\n  match U64.checked_add(string_len, U64.literal(1)):\n    case ok(next):\n      set string_len = next\n    case error(_):\n      return U64.literal(0)\n  end match\n  return string_len\nend function\n",
+        "function probe(seed: U64) returns U64:\n  let acc = U64.literal(0)\n  match U64.checked_add(seed, acc):\n    case ok(next):\n      set acc = next\n    case error(_):\n      return seed\n  end match\n  return acc\nend function\n",
+        "function probe(seed: I64) returns I64:\n  let total = I64.literal(7)\n  match I64.checked_add(total, I64.literal(2)):\n    case ok(next):\n      set total = next\n    case error(_):\n      return I64.literal(0)\n  end match\n  return total\nend function\n",
+        "function probe(seed: U64, other: U64) returns U64:\n  let acc = U64.literal(0)\n  match U64.checked_add(seed, other):\n    case ok(next):\n      set acc = next\n    case error(_):\n      return other\n  end match\n  return seed\nend function\n",
+        "function probe(seed: U64) returns U64:\n  let acc = U64.literal(0)\n  match U64.checked_add(seed, U64.literal(3)):\n    case ok(next):\n      set acc = next\n    case error(_):\n      return U64.literal(0)\n  end match\n  return seed\nend function\n",
+        "function probe(seed: U64, other: U64) returns U64:\n  let acc = U64.literal(4)\n  match U64.checked_add(acc, U64.literal(5)):\n    case ok(next):\n      set acc = next\n    case error(_):\n      return U64.literal(0)\n  end match\n  return acc\nend function\n",
+    ];
+    for source in cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("set-arm checked_add match must compile: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_refuses_invalid_set_arm_match_shapes_with_typed_identity() {
+    let base = "function probe(seed: U64) returns U64:\n  let acc = U64.literal(0)\n  match U64.checked_add(acc, U64.literal(1)):\n    case ok(next):\n      set acc = next\n    case error(_):\n      return U64.literal(0)\n  end match\n  return acc\nend function\n";
+    let mutations: [(&str, String); 11] = [
+        ("sub-op", base.replacen("checked_add", "checked_sub", 1)),
+        (
+            "type-mismatch-operand",
+            base.replace(
+                "function probe(seed: U64) returns U64:",
+                "function probe(seed: I64, extra: U64) returns U64:",
+            )
+            .replacen("U64.checked_add(acc,", "U64.checked_add(seed,", 1),
+        ),
+        (
+            "overflow-u64",
+            base.replacen("U64.literal(1)", "U64.literal(18446744073709551616)", 1),
+        ),
+        (
+            "non-canonical",
+            base.replacen("U64.literal(1)", "U64.literal(01)", 1),
+        ),
+        (
+            "cross-kind-negative",
+            base.replacen("U64.literal(1)", "I64.literal(-7)", 1),
+        ),
+        ("cell-shadow", base.replacen("let acc = ", "let seed = ", 1)),
+        (
+            "three-operands",
+            base.replacen(
+                "(acc, U64.literal(1))",
+                "(acc, U64.literal(1), U64.literal(2))",
+                1,
+            ),
+        ),
+        (
+            "nested-call-operand",
+            base.replacen(
+                "U64.checked_add(acc,",
+                "U64.checked_add(U64.checked_add(acc, U64.literal(1)),",
+                1,
+            ),
+        ),
+        (
+            "set-other-cell",
+            base.replacen("set acc = next", "set other = next", 1),
+        ),
+        (
+            "wrong-return-kind",
+            base.replacen("returns U64:", "returns Bool:", 1),
+        ),
+        (
+            "wildcard-binding",
+            base.replacen("case ok(next):", "case ok(_):", 1),
+        ),
+    ];
+    let expected_codes = [
+        "ERR:E-SH-IR-CALL-TARGET",
+        "ERR:E-SH-IR-CALL-TYPE",
+        "ERR:E-SH-IR-U64-RANGE",
+        "ERR:E-SH-IR-CALL-SHAPE",
+        "ERR:E-SH-IR-CALL-TYPE",
+        "ERR:E-SH-IR-CELL-SHADOW",
+        "ERR:E-SH-IR-EXPRESSION",
+        "ERR:E-SH-IR-EXPRESSION",
+        "ERR:E-SH-IR-MATCH-SHAPE",
+        "ERR:E-SH-IR-TYPE-MISMATCH",
+        "ERR:E-SH-IR-MATCH-SHAPE",
+    ];
+    for ((name, source), code) in mutations.into_iter().zip(expected_codes) {
+        assert_eq!(
+            run_guest(&source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: code.into(),
+            },
+            "mutation {name} must stay typed-refused"
+        );
+    }
+    // The same prepared compiler recovers byte-exactly after the refusals.
+    let expected = rust_ir(base);
+    let RunOutcome::Output(recovered) = run_guest(base) else {
+        panic!("valid set-arm match must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
