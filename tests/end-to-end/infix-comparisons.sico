@@ -1,0 +1,115 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+// RFC-0048 (language v1 batch 3, STEP-0328): infix comparison conditions and
+// `&&` lower through the two existing fixed-width IR comparisons. `<`, `!=`
+// and `>=` keep the full RFC-0044 operand surface; the swap-form `>` / `<=`
+// evaluate their source-left operand second, so v0 restricts their operands
+// to atoms and call-shaped operands must be bound first. Bare integer
+// literals remain unbounded Int (NUM-001 oracle unchanged).
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = "v"
+  let a = I64.literal(3)
+  let b = I64.literal(7)
+  let three = I64.literal(3)
+  let four = I64.literal(4)
+  let six = I64.literal(6)
+  if a < b:
+    set out = sico.text.concat(out, "|lt")
+  end if
+  if a <= four:
+    set out = sico.text.concat(out, "|le")
+  end if
+  if b > six:
+    set out = sico.text.concat(out, "|gt")
+  end if
+  if b >= I64.literal(7):
+    set out = sico.text.concat(out, "|ge-boundary")
+  end if
+  if a != b:
+    set out = sico.text.concat(out, "|ne")
+  end if
+  if a <= three:
+    set out = sico.text.concat(out, "|le-boundary")
+  end if
+  let u = U64.literal(9)
+  let w = U64.literal(4)
+  if u > w:
+    set out = sico.text.concat(out, "|ugt")
+  end if
+  if w <= u:
+    set out = sico.text.concat(out, "|ule")
+  end if
+  if u < U64.literal(10):
+    set out = sico.text.concat(out, "|ult")
+  end if
+  if u >= U64.literal(9):
+    set out = sico.text.concat(out, "|uge-boundary")
+  end if
+  if u != U64.literal(8):
+    set out = sico.text.concat(out, "|une")
+  end if
+  if u == U64.literal(9):
+    set out = sico.text.concat(out, "|ueq")
+  end if
+  if a < b && a != I64.literal(0) && b >= I64.literal(7):
+    set out = sico.text.concat(out, "|and3")
+  end if
+  let i = I64.literal(0)
+  let loop_hits = I64.literal(0)
+  while i < I64.literal(4) && loop_hits != I64.literal(2):
+    match I64.checked_add(i, I64.literal(1)):
+      case ok(next_index):
+        set i = next_index
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+    if i == I64.literal(2):
+      continue
+    end if
+    match I64.checked_add(loop_hits, I64.literal(1)):
+      case ok(next_hits):
+        set loop_hits = next_hits
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end while
+  if i == I64.literal(3) && loop_hits == I64.literal(2):
+    set out = sico.text.concat(out, "|loop")
+  end if
+  let j = U64.literal(0)
+  while j < U64.literal(3):
+    match U64.checked_add(j, U64.literal(1)):
+      case ok(next_j):
+        set j = next_j
+      case error(_):
+        return error(ScriptError(code: ScriptErrorCode.DomainError, message: "overflow"))
+    end match
+  end while
+  if j == U64.literal(3):
+    set out = sico.text.concat(out, "|jdone")
+  end if
+  set out = sico.text.concat(out, "|done")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

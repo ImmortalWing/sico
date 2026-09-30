@@ -59,6 +59,15 @@ Items, exactly as recorded in the M22 plan §8:
     B fires only after convergence is declared absent, never during a
     closure attempt. Only RFC/contract drafting and measured-consumer
     evidence proceed while M22 is mid-flight regardless of route.
+  - **Owner parallel directive (2026-09-30, registered):** 「现在有个
+    代理在完成M22，你来完成M23」 authorizes batch-3 implementation in
+    parallel with the mid-flight M22 line. The dual-gate's churn concern
+    is neutralized by the RFC-0048 §4/§9 and RFC-0049 §4/§8 append-only
+    proofs (every new form widens today's refusal surface; the selfhost
+    sources consume none of it; the M22 differential stays byte-stable —
+    re-verified by the STEP-0329 shared-tree record). The selfhost
+    re-baseline remains a separately registered decision (§9) and the
+    M22 critical path is untouched.
 - Per-item accepted RFC (RFC-0033 gate): measured consumer, explicit
   desugar, source-map identity, formatter idempotence, typed
   diagnostics for pre-existing identifiers that used the new keywords/
@@ -134,13 +143,16 @@ labels for planning, not allocated STEP identifiers.
 
 ### 8.1 Item 1 — infix comparison and logical operators
 
-> Status 2026-09-25 (card 23-B): RFC drafted —
-> [`RFC-0048`](../rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)
-> (draft, owner acceptance required) proposes the five ordered/inequality
-> infix comparisons plus `&&`, desugared onto the existing
-> `EqualFixed`/`LessFixed` operations; `||` and `!` excluded (no measured
-> consumer). The RFC also records the discovered `<=` check-green /
-> build-refused split on the unconsumed `LessEqual` token.
+> Status 2026-09-30 (STEP-0328): **implemented** under the owner
+> parallel directive (§2). [`RFC-0048`](../rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)
+> (accepted by the STEP-0323 adjudication) landed: lexer pair scan,
+> condition-position desugar onto `EqualFixed`/`LessFixed` with branch
+> inversion and atom-restricted swap forms (E2025), short-circuit `&&`
+> between comparison conditions in if/while, E2024 message generalized,
+> formatter one-space canonical, matrix rows + validator + e2e and
+> refusal corpora, limit+1 nesting evidence. `||`/`!` out of v0 as
+> drafted. The `<=` check-green/build-refused debt is closed (accepted
+> in-shape; narrower named refusal out-of-shape).
 
 - **Measured consumer (inventory phase).** Enumerate the current tracked
   `selfhost/*.sico` sources and line counts in the inventory STEP (the
@@ -171,11 +183,16 @@ labels for planning, not allocated STEP identifiers.
 
 ### 8.2 Item 2 — expression-position conditions
 
-> Status 2026-09-25 (card 23-B): RFC drafted —
-> [`RFC-0049`](../rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)
-> (draft, owner acceptance required): the two let-bound statement forms
-> only (`let x = if/else`, `let x = match`), single-expression arms,
-> desugared through the landed D2 machinery; E2026/E2027 appended.
+> Status 2026-09-30 (STEP-0329): **implemented** under the owner
+> parallel directive (§2). [`RFC-0049`](../rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)
+> (accepted by the STEP-0323 adjudication) landed: parser openers for the
+> two let-bound forms, check-side E2026/E2027/E2001 arm rules with
+> join-time binding visibility, lowering through the landed cell +
+> branch-writes + join-read machinery (statement-match payload spill
+> reused verbatim), formatter canonical shape (else:/case: at header
+> depth), matrix rows + validator + e2e and refusal corpora, limit+1
+> nesting evidence. Annotated/nested/multi-statement forms refused as
+> drafted.
 
 - **Measured consumer.** Count the mutable-cell + all-return match +
   join-read sites that exist only to bind one conditional value, in the
@@ -241,6 +258,16 @@ labels for planning, not allocated STEP identifiers.
   declared, disjoint subset is recorded; a wide operator set forces the
   parser slices to re-freeze, which is exactly why the RFC must fix the
   smallest closed set first (§5 risk 1).
+- **Dual-implementation register entry (2026-09-30, STEP-0328/0329):**
+  the Sico selfhost frontend declares a **disjoint subset** of the
+  batch-3 surface: the selfhost lexer/parser/checker/formatter sources
+  keep the intrinsic-call style (0 infix-operator occurrences, 0 let-
+  bound forms) and do not consume `< <= > >= != &&` or `let x =
+  if/match`; no selfhost slice re-freezes and the M22 differential
+  (corpus-v0.json stays frozen at 215 entries; post-freeze corpus files
+  are excluded per the RFC-0047 record precedent) is byte-stable. A
+  future re-baseline that adopts the batch-3 surface re-opens S1/S2
+  differentials under the unchanged ADR-0015 contract.
 - Items 1 and 2 share one diagnostic-namespace decision (append-only
   codes); landing them under one RFC-set review keeps the code registry
   coherent, but they remain separately gated items.

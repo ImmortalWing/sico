@@ -4,7 +4,7 @@
 > - previous update: 2026-09-24 (STEP-0263: M26 registered per owner directive — PDF document processing: structural reading, merge, rotate as a versioned package, plus a GUI PDF tool authored over the Sico-language native UI library; no STEP numbers reserved)
 > - previous update: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1 and 22-C S1/S2 GO on separate isolated CI-tested commits; M23–M26 planned.
+> - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1 and 22-C S1/S2 GO on separate isolated CI-tested commits; M23 item 1/2 landed (STEP-0328/0329, owner parallel directive; item 3 deferred-external, item 4 closed) with exit audit issued; M24–M26 planned.
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -366,9 +366,9 @@ STEP-0310 核对 [GitHub CI 36212509946](https://github.com/ImmortalWing/sico/ac
 
 执行计划：[`M22 compiler self-host track`](./plans/M22-compiler-self-host.md)。
 
-## M23: Language v1 batch 3 — expression ergonomics（planned; 2026-09-17）
+## M23: Language v1 batch 3 — expression ergonomics（implementation complete locally; 2026-09-17 registered, 2026-09-30 landed）
 
-状态：planned；开工盘点已由 STEP-0284（卡 23-A）完成——[`m23-ceremony-census-2026-09-25.json`](./reports/m23-ceremony-census-2026-09-25.json) 冻结四项仪式计数；item 1 的 [`RFC-0048`](./rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)（STEP-0285）与 item 2 的 [`RFC-0049`](./rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)（STEP-0286，仅两种最小 let 绑定块，desugar 到 D2 机制）均已起草（draft，待 owner 接受；RFC-0048 并实测登记 `<=` 无消费记号的 check 绿/build 拒分裂）；item 4 按计划 §8.4 决策规则收口（组合式为最终形态）；item 3 因 AI 语料外部门 deferred。实现双入口：Route A = M22 S7 GO，Route B = W2 S3/S4 的 R3 四步无进展停损登记后；Route B 的自举 re-baseline 在 M23 出口审计后重启。
+状态：item 1/2 实现落地（STEP-0328/0329，owner 2026-09-30 指令「现在有个代理在完成M22，你来完成M23」授权并行推进，M23 计划 §2 登记）——[`RFC-0048`](./rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md) 中缀比较 `< <= > >= !=` + `&&`（if/while 条件位，EqualFixed/LessFixed 反糖、swap 形原子限制 E2025、短路按构造）与 [`RFC-0049`](./rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md) 两种 let 绑定语句形（E2026/E2027、join 后绑定可见、statement-match payload spill 复用）经真实 runner e2e byte-exact + 拒绝语料 + limit+1 嵌套证据 + 矩阵行/校验器 + 格式化幂等落地；`<=` 无消费记号的 check 绿/build 拒分裂按 RFC 收口。开工盘点 STEP-0284（卡 23-A）冻结四项仪式计数；item 4 按计划 §8.4 决策规则收口（组合式为最终形态）；item 3 因 AI 语料外部门保持 deferred。双实现登记：自托管前端声明不相交子集（零消费新表面），M22 差分字节稳定，re-baseline 另行登记（M23 计划 §9）。出口审计：[`m23-exit-audit-2026-09-30.md`](./reports/m23-exit-audit-2026-09-30.md)（item 1/2 GO；item 3 保持外部门 deferred，不作完成宣称）。
 
 关闭 RFC-0044/0045/0046 已实测但未移除的语言表面摩擦，逐项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断）：中缀比较/逻辑运算符（最小封闭算符集由 RFC 决定；实测消费者 = selfhost 源码本身的仪式密度）、表达式位置条件（`let x = if/match …`，记录在案的最大结构性冗余税）、裸字面量复称（按 RFC-0046 D3 记录的复测政策，先测后议、不改语法不做承诺）、`text.chars`（RFC-0046 §2 排队项，按消费者证据决定）。
 

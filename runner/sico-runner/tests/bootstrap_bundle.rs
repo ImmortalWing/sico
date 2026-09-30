@@ -195,6 +195,13 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
         ]
         .map(|file| format!("tests/end-to-end/{file}")),
     );
+    // M23 language v1 batch 3 fixtures (STEP-0328/0329) landed after the
+    // freeze the same way: covered by language_batch3.rs, excluded from the
+    // frozen bundle.
+    expected_discovered.extend(
+        ["infix-comparisons.sico", "let-bind.sico"]
+            .map(|file| format!("tests/end-to-end/{file}")),
+    );
     expected_discovered.sort();
     assert_eq!(
         expected_discovered, discovered,

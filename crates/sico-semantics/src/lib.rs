@@ -980,12 +980,20 @@ fn analyze_function(
     // Close indices of open `while` regions, for break/continue validation.
     let mut open_loops: Vec<usize> = Vec::new();
     let region_closes = region_close_map(&function.body);
+    // RFC-0049 (STEP-0329): let-bound bindings keyed by their region's
+    // `end` line — they become visible only after the region joins.
+    let mut pending_let_binds: BTreeMap<usize, (String, Type)> = BTreeMap::new();
     for (line_index, line) in function.body.iter().enumerate() {
         open_scopes.retain(|(close_index, _)| *close_index > line_index);
         open_loops.retain(|close_index| *close_index > line_index);
         match line.kind {
             LineKind::While | LineKind::If => {
                 let condition_tokens = &line.tokens[1..line.tokens.len().saturating_sub(1)];
+                // RFC-0048 (STEP-0328): the swap-form comparison operators
+                // carry the check-time atom-operand rule (E2025); every other
+                // new-operator refusal stays on the build channel per the
+                // RFC §7 channel split.
+                check_condition_atoms(condition_tokens, diagnostics);
                 let condition = infer_expression(condition_tokens, &locals, model, diagnostics);
                 require_type(&Type::named("Bool"), &condition, diagnostics);
             }
@@ -1104,6 +1112,31 @@ fn analyze_function(
                     locals.insert(name.to_owned(), value.ty);
                 }
             }
+            // RFC-0049 (STEP-0329): the two let-bound block forms. The
+            // binding becomes visible only when the region's `end` line is
+            // walked, so an arm expression cannot read the cell it feeds.
+            LineKind::Let if is_let_bound_block_header(&line.tokens) => {
+                if line.tokens[3].kind == TokenKind::If {
+                    check_let_bound_if(
+                        line_index,
+                        function,
+                        &locals,
+                        model,
+                        diagnostics,
+                        &mut pending_let_binds,
+                    );
+                } else {
+                    check_let_bound_match(
+                        line_index,
+                        function,
+                        &locals,
+                        model,
+                        diagnostics,
+                        facts,
+                        &mut pending_let_binds,
+                    );
+                }
+            }
             LineKind::Let if line.tokens.len() >= 4 => {
                 let propagates = line.tokens[3].kind == TokenKind::Try
                     || (line
@@ -1174,6 +1207,12 @@ fn analyze_function(
                 check_match(line_index, function, model, diagnostics, facts);
             }
             LineKind::End => {
+                if let Some((name, ty)) = pending_let_binds.remove(&line_index) {
+                    locals.insert(name.clone(), ty);
+                    for scope in &mut open_scopes {
+                        scope.1.push(name.clone());
+                    }
+                }
                 if let Some(close) = region_closes.get(&line_index) {
                     open_loops.retain(|loop_close| *loop_close != line_index);
                     if let Some((_, names)) = open_scopes.iter().find(|(c, _)| c == close) {
@@ -1208,6 +1247,245 @@ fn check_expression_statement(
             [],
             range,
         );
+    }
+}
+
+/// RFC-0049 (STEP-0329): whether a `let` line is one of the two let-bound
+/// block forms. Detection is positional — `let`, name, `=`, `if`/`match`,
+/// … trailing `:` — matching the lowering's rule exactly.
+fn is_let_bound_block_header(tokens: &[HirToken]) -> bool {
+    tokens.len() >= 5
+        && tokens
+            .last()
+            .is_some_and(|token| token.kind == TokenKind::Colon)
+        && tokens
+            .get(3)
+            .is_some_and(|token| matches!(token.kind, TokenKind::If | TokenKind::Match))
+}
+
+/// Locates the `else` (when present) and `end` lines of an if-style region
+/// opened at `start_index` at the header's depth. A successful parse
+/// balances blocks, so the `end` line always exists.
+fn let_region_close(body: &[Line], start_index: usize, depth: u16) -> (Option<usize>, usize) {
+    let mut else_index = None;
+    for (index, line) in body.iter().enumerate().skip(start_index) {
+        match line.kind {
+            LineKind::Else if else_index.is_none() && line.depth == depth + 1 => {
+                else_index = Some(index);
+            }
+            LineKind::End if line.depth == depth => return (else_index, index),
+            _ => {}
+        }
+    }
+    (else_index, body.len())
+}
+
+/// RFC-0049 §3 (STEP-0329): one let-bound arm is exactly one expression
+/// statement — no `return`, no `set`, no nested blocks, no multi-statement
+/// arms (E2026, span = the offending statement). Returns the arm's inferred
+/// type, or `None` when the arm was refused.
+fn check_let_arm(
+    body: &[Line],
+    start: usize,
+    end: usize,
+    header_range: TextRange,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) -> Option<Value> {
+    if end != start + 1 {
+        let range = body.get(start).map_or(header_range, |line| line.range);
+        push_diagnostic(
+            diagnostics,
+            "E2026",
+            "LET_BIND_ARM_NOT_EXPRESSION",
+            "let-bound arm must be exactly one expression".to_owned(),
+            [],
+            range,
+        );
+        return None;
+    }
+    let line = &body[start];
+    if line.kind != LineKind::Expression {
+        push_diagnostic(
+            diagnostics,
+            "E2026",
+            "LET_BIND_ARM_NOT_EXPRESSION",
+            "let-bound arm must be exactly one expression".to_owned(),
+            [],
+            line.range,
+        );
+        return None;
+    }
+    Some(infer_expression(&line.tokens, locals, model, diagnostics))
+}
+
+fn check_let_arm_mismatch(
+    first: &Value,
+    second: &Value,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+) {
+    if types_compatible(&first.ty, &second.ty) {
+        return;
+    }
+    push_diagnostic(
+        diagnostics,
+        "E2001",
+        "TYPE_MISMATCH",
+        format!("expected {}, found {}", first.ty, second.ty),
+        [
+            ("expected", first.ty.to_string().as_str()),
+            ("found", second.ty.to_string().as_str()),
+        ],
+        second.range,
+    );
+}
+
+/// RFC-0049 §3 (STEP-0329): `let x = if cond: <expr> else: <expr> end if` —
+/// the condition uses the statement grammar (RFC-0044/0048), `else:` is
+/// mandatory (E2027), both arms are single expressions, and their types
+/// unify onto the binding (visible only after the region joins).
+fn check_let_bound_if(
+    line_index: usize,
+    function: &FunctionDefinition,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    pending_let_binds: &mut BTreeMap<usize, (String, Type)>,
+) {
+    let line = &function.body[line_index];
+    let condition_tokens = &line.tokens[4..line.tokens.len() - 1];
+    check_condition_atoms(condition_tokens, diagnostics);
+    let condition = infer_expression(condition_tokens, locals, model, diagnostics);
+    require_type(&Type::named("Bool"), &condition, diagnostics);
+    let (else_index, end_index) = let_region_close(&function.body, line_index + 1, line.depth);
+    let Some(else_index) = else_index else {
+        push_diagnostic(
+            diagnostics,
+            "E2027",
+            "LET_BIND_MISSING_ELSE",
+            "let-bound if requires an else arm".to_owned(),
+            [],
+            line.range,
+        );
+        return;
+    };
+    let then_value = check_let_arm(
+        &function.body,
+        line_index + 1,
+        else_index,
+        line.range,
+        locals,
+        model,
+        diagnostics,
+    );
+    let else_value = check_let_arm(
+        &function.body,
+        else_index + 1,
+        end_index,
+        line.range,
+        locals,
+        model,
+        diagnostics,
+    );
+    if let (Some(first), Some(second)) = (&then_value, &else_value) {
+        check_let_arm_mismatch(first, second, diagnostics);
+    }
+    let bind_ty = match (then_value, else_value) {
+        (Some(first), Some(second)) if first.ty == Type::Unknown => second.ty,
+        (Some(first), _) => first.ty,
+        (None, Some(second)) => second.ty,
+        (None, None) => return,
+    };
+    pending_let_binds.insert(end_index, (line.tokens[1].text.clone(), bind_ty));
+}
+
+/// RFC-0049 §3 (STEP-0329): `let x = match subject: case p: <expr> … end
+/// match` — the statement match's exhaustiveness rules apply unchanged and
+/// each single-expression arm unifies onto the binding. Pattern variables
+/// scope to their arm expression (inferred as unknown at check, concretely
+/// bound at lowering).
+fn check_let_bound_match(
+    line_index: usize,
+    function: &FunctionDefinition,
+    locals: &BTreeMap<String, Type>,
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    facts: &mut Vec<SemanticFact>,
+    pending_let_binds: &mut BTreeMap<usize, (String, Type)>,
+) {
+    let line = &function.body[line_index];
+    let subject_tokens = &line.tokens[4..line.tokens.len() - 1];
+    infer_expression(subject_tokens, locals, model, diagnostics);
+    check_match(line_index, function, model, diagnostics, facts);
+    let mut arm_ranges: Vec<(usize, usize)> = Vec::new();
+    let mut end_index = None;
+    let mut cursor = line_index + 1;
+    while cursor < function.body.len() {
+        let arm_line = &function.body[cursor];
+        if arm_line.kind == LineKind::End && arm_line.depth == line.depth {
+            end_index = Some(cursor);
+            break;
+        }
+        if !(arm_line.kind == LineKind::MatchArm && arm_line.depth == line.depth + 1) {
+            push_diagnostic(
+                diagnostics,
+                "E2026",
+                "LET_BIND_ARM_NOT_EXPRESSION",
+                "let-bound match arm must be exactly one expression".to_owned(),
+                [],
+                arm_line.range,
+            );
+            return;
+        }
+        let mut body_end = cursor + 1;
+        while body_end < function.body.len() {
+            let body_line = &function.body[body_end];
+            if (body_line.kind == LineKind::End && body_line.depth == line.depth)
+                || (body_line.kind == LineKind::MatchArm && body_line.depth == line.depth + 1)
+            {
+                break;
+            }
+            if body_line.depth <= line.depth {
+                push_diagnostic(
+                    diagnostics,
+                    "E2026",
+                    "LET_BIND_ARM_NOT_EXPRESSION",
+                    "let-bound match arm must be exactly one expression".to_owned(),
+                    [],
+                    body_line.range,
+                );
+                return;
+            }
+            body_end += 1;
+        }
+        arm_ranges.push((cursor, body_end));
+        cursor = body_end;
+    }
+    let Some(end_index) = end_index else {
+        return;
+    };
+    let mut unified: Option<Value> = None;
+    for (arm_index, body_end) in arm_ranges {
+        let value = check_let_arm(
+            &function.body,
+            arm_index + 1,
+            body_end,
+            line.range,
+            locals,
+            model,
+            diagnostics,
+        );
+        match (&unified, value) {
+            (None, Some(value)) => unified = Some(value),
+            (Some(first), Some(second)) => {
+                check_let_arm_mismatch(first, &second, diagnostics);
+            }
+            (_, None) => {}
+        }
+    }
+    if let Some(value) = unified {
+        pending_let_binds.insert(end_index, (line.tokens[1].text.clone(), value.ty));
     }
 }
 
@@ -2691,6 +2969,101 @@ fn product_patterns(enum_names: &[String], model: &Model) -> Vec<String> {
 }
 
 #[allow(clippy::too_many_lines)]
+/// Top-level comparison/equality operator kinds (RFC-0044 infix equality
+/// extended by RFC-0048, STEP-0328). `&&` is handled before this list so a
+/// conjoined condition splits at the conjunction, not inside an operand.
+const COMPARISON_KINDS: &[TokenKind] = &[
+    TokenKind::EqualEqual,
+    TokenKind::LessEqual,
+    TokenKind::LessThan,
+    TokenKind::GreaterThan,
+    TokenKind::GreaterEqual,
+    TokenKind::BangEqual,
+];
+
+/// The two swap-form operators (RFC-0048 §3): they evaluate their
+/// source-left operand second, so v0 restricts their operands to atoms.
+const SWAP_FORM_KINDS: &[TokenKind] = &[TokenKind::GreaterThan, TokenKind::LessEqual];
+
+fn comparison_operator_text(kind: TokenKind) -> &'static str {
+    const OPERATORS: [&str; COMPARISON_KINDS.len()] = ["==", "<=", "<", ">", ">=", "!="];
+    COMPARISON_KINDS
+        .iter()
+        .position(|candidate| *candidate == kind)
+        .map_or(OPERATORS[0], |index| OPERATORS[index])
+}
+
+/// RFC-0048 §7 (STEP-0328): E2025 — a non-atom operand in a `>` / `<=`
+/// condition. Diagnosed at check time with the offending operand span; the
+/// message names the equivalent non-swap rewrite. One diagnostic per
+/// condition (the first offending operand).
+fn check_condition_atoms(tokens: &[HirToken], diagnostics: &mut Vec<SemanticDiagnostic>) {
+    if let Some(index) = top_level_kind(tokens, TokenKind::AmpAmp) {
+        check_condition_atoms(&tokens[..index], diagnostics);
+        check_condition_atoms(&tokens[index + 1..], diagnostics);
+        return;
+    }
+    let Some(index) = top_level_any(tokens, SWAP_FORM_KINDS) else {
+        return;
+    };
+    for side in [&tokens[..index], &tokens[index + 1..]] {
+        if !is_atom_operand(side) {
+            let (operator, rewrite) = if tokens[index].kind == TokenKind::GreaterThan {
+                (">", "b < a")
+            } else {
+                ("<=", "b >= a")
+            };
+            push_diagnostic(
+                diagnostics,
+                "E2025",
+                "INFIX_SWAP_OPERAND_NOT_ATOM",
+                format!(
+                    "non-atom operand in a swap-form {operator} condition; evaluate the operand into a binding first or rewrite as {rewrite}"
+                ),
+                [],
+                token_range(side),
+            );
+            return;
+        }
+    }
+}
+
+/// RFC-0048 §3 atom surface: integer/string/bool literals, identifier
+/// bindings, and field-access chains rooted at an identifier or literal.
+/// Paren-wrapped atoms stay atoms (parentheses do not change the
+/// expression); calls, indexed reads and computed chains are not atoms.
+fn is_atom_operand(tokens: &[HirToken]) -> bool {
+    let mut tokens = tokens;
+    while tokens.len() >= 2
+        && tokens[0].kind == TokenKind::LeftParen
+        && tokens[tokens.len() - 1].kind == TokenKind::RightParen
+    {
+        tokens = &tokens[1..tokens.len() - 1];
+    }
+    if tokens.len() == 1 {
+        return matches!(
+            tokens[0].kind,
+            TokenKind::Integer
+                | TokenKind::String
+                | TokenKind::True
+                | TokenKind::False
+                | TokenKind::Identifier
+        );
+    }
+    if tokens.len() >= 3 && tokens.len() % 2 == 1 {
+        let rooted = matches!(
+            tokens[0].kind,
+            TokenKind::Identifier | TokenKind::Integer | TokenKind::String
+        );
+        let chain = tokens[1..]
+            .chunks(2)
+            .all(|pair| pair[0].kind == TokenKind::Dot && pair[1].kind == TokenKind::Identifier);
+        return rooted && chain;
+    }
+    false
+}
+
+#[allow(clippy::too_many_lines)] // the batch-3 comparison arms read best inline
 fn infer_expression(
     tokens: &[HirToken],
     locals: &BTreeMap<String, Type>,
@@ -2746,7 +3119,23 @@ fn infer_expression(
                 .and_then(i128::checked_neg),
         };
     }
-    if let Some(index) = top_level_any(tokens, &[TokenKind::EqualEqual, TokenKind::LessEqual]) {
+    // RFC-0048 (STEP-0328): `&&` splits before the comparisons it conjoins —
+    // both operands are condition shapes and the result is Bool. Left-to-right
+    // evaluation order and short-circuit behavior are fixed by the lowering's
+    // nested-branch desugar; the condition-position operand rules live in
+    // `check_condition_atoms`.
+    if let Some(index) = top_level_kind(tokens, TokenKind::AmpAmp) {
+        let left = infer_expression(&tokens[..index], locals, model, diagnostics);
+        let right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
+        require_type(&Type::named("Bool"), &left, diagnostics);
+        require_type(&Type::named("Bool"), &right, diagnostics);
+        return Value {
+            ty: Type::named("Bool"),
+            range,
+            integer: None,
+        };
+    }
+    if let Some(index) = top_level_any(tokens, COMPARISON_KINDS) {
         let left = infer_expression(&tokens[..index], locals, model, diagnostics);
         let right = infer_expression(&tokens[index + 1..], locals, model, diagnostics);
         // RFC-0047 D3 (STEP-0273): record equality/ordering is refused in
@@ -2758,18 +3147,12 @@ fn infer_expression(
         if let Some(side) = record_side
             && let Type::Named(name) = &side.ty
         {
+            let operator = comparison_operator_text(tokens[index].kind);
             push_diagnostic(
                 diagnostics,
                 "E2024",
                 "RECORD_COMPARISON",
-                format!(
-                    "records do not support {}; compare fields explicitly",
-                    if tokens[index].kind == TokenKind::EqualEqual {
-                        "=="
-                    } else {
-                        "<="
-                    }
-                ),
+                format!("records do not support {operator}; compare fields explicitly"),
                 [("type", name.as_str())],
                 side.range,
             );

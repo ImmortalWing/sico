@@ -17,6 +17,9 @@ pub enum FormatError {
 struct BlockState {
     close: TokenKind,
     match_arm_active: bool,
+    /// RFC-0049 (STEP-0329): a let-bound if/match block formats its
+    /// `else:`/`case …:` lines at the header's depth.
+    let_bound: bool,
 }
 
 /// Produces the single canonical layout for valid B source.
@@ -135,7 +138,12 @@ fn emit_line(
     }
 
     let match_arm_levels = blocks.iter().filter(|block| block.match_arm_active).count();
-    let indent = blocks.len() + match_arm_levels + usize::from(list_item);
+    // RFC-0049 (STEP-0329): a let-bound block's `else:`/`case …:` lines sit
+    // at the header's depth, one level under the pushed block.
+    let header_level_close = matches!(first, Some(TokenKind::Else | TokenKind::Case))
+        && blocks.last().is_some_and(|block| block.let_bound);
+    let indent =
+        blocks.len() + match_arm_levels + usize::from(list_item) - usize::from(header_level_close);
     let mut output = "  ".repeat(indent);
     output.push_str(&format_code(source, code));
 
@@ -169,19 +177,29 @@ fn emit_line(
         *section_active = true;
     }
 
-    if let Some(close) = opener_close(code) {
+    if let Some((close, let_bound)) = opener_close(code) {
         blocks.push(BlockState {
             close,
             match_arm_active: false,
+            let_bound,
         });
     }
 }
 
-fn opener_close(code: &[Token]) -> Option<TokenKind> {
+fn opener_close(code: &[Token]) -> Option<(TokenKind, bool)> {
     if code.last()?.kind != TokenKind::Colon {
         return None;
     }
     let first = code.first()?.kind;
+    // RFC-0049 (STEP-0329): the let-bound block forms bind the block —
+    // `let x = if …:` closes with `end if`, `let x = match …:` with
+    // `end match` — and format their else/case lines at header depth.
+    if code.len() >= 5
+        && first == TokenKind::Let
+        && matches!(code[3].kind, TokenKind::If | TokenKind::Match)
+    {
+        return Some((code[3].kind, true));
+    }
     let direct = match first {
         TokenKind::Record => Some(TokenKind::Record),
         TokenKind::Enum => Some(TokenKind::Enum),
@@ -194,10 +212,11 @@ fn opener_close(code: &[Token]) -> Option<TokenKind> {
         TokenKind::Task => Some(TokenKind::Task),
         _ => None,
     };
-    direct.or_else(|| {
+    let bound = direct.map(|kind| (kind, false));
+    bound.or_else(|| {
         code.iter()
             .any(|token| token.kind == TokenKind::Function)
-            .then_some(TokenKind::Function)
+            .then_some((TokenKind::Function, false))
     })
 }
 
