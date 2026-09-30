@@ -758,6 +758,68 @@ function checked_add_core_hex(source: Bytes, words: List[Text]) returns Text:
   return ""
 end function
 
+function checked_sub_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(17)):
+    let cs_name = word_at(words, U64.literal(1))
+    let cs_type = word_at(words, U64.literal(3))
+    let cs_hex = scalar_type_hex(cs_type)
+    let cs_family = word_at(words, U64.literal(11))
+    let cs_body = ""
+    let cs_body_len = U64.literal(0)
+    if same_text(cs_family, "I64"):
+      set cs_body = "03017f017e017f410021040240034020044100460440200020017d210320002001852000200385834200530440410121022000420053ad210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+      set cs_body_len = U64.literal(89)
+    else:
+      if same_text(cs_family, "U64"):
+        set cs_body = "03017f017e017f410021040240034020044100460440200020017d210320002001540440410121024201210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+        set cs_body_len = U64.literal(76)
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "a"):
+        if same_text(word_at(words, U64.literal(4)), "b"):
+          if same_text(word_at(words, U64.literal(6)), "returns"):
+            if same_text(word_at(words, U64.literal(7)), "Result"):
+              if same_text(word_at(words, U64.literal(9)), "NumericError"):
+                if same_text(word_at(words, U64.literal(10)), "return"):
+                  if same_text(word_at(words, U64.literal(12)), "checked_sub"):
+                    if same_text(word_at(words, U64.literal(13)), "a"):
+                      if same_text(word_at(words, U64.literal(14)), "b"):
+                        if same_text(word_at(words, U64.literal(15)), "end"):
+                          if same_text(word_at(words, U64.literal(16)), "function"):
+                            if U64.equal(sico.text.length(cs_hex), U64.literal(2)):
+                              if same_text(word_at(words, U64.literal(5)), cs_type):
+                                if same_text(word_at(words, U64.literal(8)), cs_type):
+                                  if same_text(cs_type, cs_family):
+                                    let cs_canonical = canonical_function_source(cs_name, "a: I64, b: I64", "Result[I64, NumericError]", sico.text.concat(cs_family, ".checked_sub(a, b)"))
+                                    if same_text(cs_type, "U64"):
+                                      set cs_canonical = canonical_function_source(cs_name, "a: U64, b: U64", "Result[U64, NumericError]", sico.text.concat(cs_family, ".checked_sub(a, b)"))
+                                    end if
+                                    if sico.bytes.equal(source, sico.text.encode(cs_canonical)):
+                                      return wasm_module_hex(cs_name, "0160027e7e037f7e7f", cs_body_len, cs_body)
+                                    end if
+                                  end if
+                                end if
+                              end if
+                            end if
+                          end if
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
 function declared_core_hex(source: Bytes, words: List[Text]) returns Text:
   let dc_hex = int_constant_core_hex(source, words)
   if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
@@ -780,6 +842,9 @@ function declared_core_hex(source: Bytes, words: List[Text]) returns Text:
   end if
   if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
     set dc_hex = checked_add_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = checked_sub_core_hex(source, words)
   end if
   return dc_hex
 end function

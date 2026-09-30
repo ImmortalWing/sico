@@ -1,7 +1,7 @@
 {
     "schema":  "sico.m22.codegen-corpus.v0",
     "created":  "2026-09-29",
-    "step":  "STEP-0315",
+    "step":  "STEP-0315+0322",
     "backend":  "RFC-0011 compile() Direct Core-Wasm subset",
     "byte_equal_entries":  [
                                {
@@ -73,6 +73,16 @@
                                    "name":  "checked-add-u64",
                                    "source_sha256":  "809b41ca14ce8dbaecbdf9628cef77ab2058cddd9ee4c5f40d699c25309da5bf",
                                    "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "checked-sub-i64",
+                                   "source_sha256":  "949af08549806d0c45c47eeab73659f6e0f2e9406d8b60bf6d56ae115d3f483a",
+                                   "expected":  "rust-codegen-byte-equal"
+                               },
+                               {
+                                   "name":  "checked-sub-u64",
+                                   "source_sha256":  "b662b695ff7491b3b91489d6cdb0ad04480ed87ecc54280a5979a604e1d4d90d",
+                                   "expected":  "rust-codegen-byte-equal"
                                }
                            ],
     "typed_refusal_entries":  [
@@ -97,8 +107,8 @@
                                       "expected":  "typed-refusal-unsupported-codegen-source-shape"
                                   },
                                   {
-                                      "name":  "checked-sub",
-                                      "source_sha256":  "949af08549806d0c45c47eeab73659f6e0f2e9406d8b60bf6d56ae115d3f483a",
+                                      "name":  "checked-mul",
+                                      "source_sha256":  "1a0656936728f13f487858fd7b9ff6457705d08838434cb8f90fcfc4ee87ddcb",
                                       "expected":  "typed-refusal-unsupported-codegen-source-shape"
                                   },
                                   {

@@ -21,7 +21,7 @@ foreach ($marker in @(
     }
 }
 $byteEqual = ($corpus | ConvertFrom-Json).byte_equal_entries
-if ($byteEqual.Count -ne 14) { throw "codegen corpus must pin 14 byte-equal entries, found $($byteEqual.Count)" }
+if ($byteEqual.Count -lt 14) { throw "codegen corpus must pin at least the 14 original byte-equal entries, found $($byteEqual.Count)" }
 & (Join-Path $PSScriptRoot 'validate-step-0314.ps1') -CargoPath $CargoPath
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0314 inherited validator failed' }
 Write-Output 'STEP_0315_OK codegen-families=14-byte-equal refusals=7-typed s5-subset-widened formatter-canary=30/30'

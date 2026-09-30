@@ -1922,6 +1922,14 @@ fn sico_compiler_encodes_declared_scalar_core_wasm_families_byte_exactly() {
             "checked-add-u64",
             "function probe(a: U64, b: U64) returns Result[U64, NumericError]:\n  return U64.checked_add(a, b)\nend function\n",
         ),
+        (
+            "checked-sub-i64",
+            "function probe(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_sub(a, b)\nend function\n",
+        ),
+        (
+            "checked-sub-u64",
+            "function probe(a: U64, b: U64) returns Result[U64, NumericError]:\n  return U64.checked_sub(a, b)\nend function\n",
+        ),
     ] {
         let source_file =
             SourceFile::from_text(SourceId::new(0), "identity.sico", source.to_string()).unwrap();
@@ -1943,7 +1951,7 @@ fn sico_compiler_encodes_declared_scalar_core_wasm_families_byte_exactly() {
         "function probe(value: I64) returns U64:\n  return value\nend function\n",
         "function probe(a: I64, b: I64, c: I64) returns I64:\n  return c\nend function\n",
         "function probe(a: I64, b: I64) returns Bool:\n  return I64.greater_than(a, b)\nend function\n",
-        "function probe(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_sub(a, b)\nend function\n",
+        "function probe(a: I64, b: I64) returns Result[I64, NumericError]:\n  return I64.checked_mul(a, b)\nend function\n",
         "function probe() returns U64:\n  return U64.literal(9223372036854775808)\nend function\n",
         "function probe(value: I64) returns I64:\n  return I64.add(value, value)\nend function\n",
     ] {
