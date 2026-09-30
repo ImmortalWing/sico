@@ -1931,6 +1931,40 @@ fn sico_compiler_lowers_gw_list_get_match_subjects_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_gw_host_call_lets_byte_exactly() {
+    // STEP-0326: `sico.text.encode`/`sico.bytes.length` let/set RHS and
+    // `sico.bytes.at` with a parameter cursor inside general-while
+    // functions, byte-exact against the Rust oracle. The bytes.at packer's
+    // return format gains an explicit count line (consumers updated).
+    let cases = [
+        "function probe(w: Text, i: U64) returns U64:\n  let b = sico.text.encode(w)\n  let n = U64.literal(0)\n  while U64.less_than(i, n):\n    set n = sico.bytes.length(b)\n  end while\n  return n\nend function\n",
+        "function probe(b: Bytes, i: U64, m: U64) returns I64:\n  let x = I64.literal(0)\n  while U64.less_than(i, m):\n    set x = sico.bytes.at(b, i, I64.literal(0))\n  end while\n  return x\nend function\n",
+    ];
+    for source in cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("gw host-call let/set must compile: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Typed refusal: a non-u64 cursor parameter stays refused, then recovery.
+    let bad_cursor = "function probe(b: Bytes, i: I64, m: U64) returns I64:\n  let x = I64.literal(0)\n  while U64.less_than(m, U64.literal(1)):\n    set x = sico.bytes.at(b, i, I64.literal(0))\n  end while\n  return x\nend function\n";
+    assert_eq!(
+        run_guest(bad_cursor),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let expected = rust_ir(cases[0]);
+    let RunOutcome::Output(recovered) = run_guest(cases[0]) else {
+        panic!("valid host-call lets must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());

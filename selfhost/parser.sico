@@ -6518,6 +6518,8 @@ function while_bytes_at_rhs_packed(words: List[Text], src: Bytes, name_idx: U64,
     return "ERR:E-SH-IR-CALL-ARGUMENT"
   end if
   let sbi_cursor_cell = local_binding_index(cell_names, word_at(words, sbi_cursor))
+  let sbi_cursor_param = binding_parameter_index(words, name_idx, word_at(words, sbi_cursor))
+  let sbi_cursor_is_param = I64.literal(0)
   if U64.less_than(sbi_cursor_cell, sico.list.length(cell_names)):
     if is_word(word_at(cell_kinds, sbi_cursor_cell), "u64"):
       let sbi_cursor_ok = I64.literal(1)
@@ -6525,7 +6527,19 @@ function while_bytes_at_rhs_packed(words: List[Text], src: Bytes, name_idx: U64,
       return "ERR:E-SH-IR-CALL-TYPE"
     end if
   else:
-    return "ERR:E-SH-IR-CALL-ARGUMENT"
+    if U64.less_than(sbi_cursor_param, parameter_count):
+      let sbi_cursor_pk = parameter_kind_by_id(words, name_idx, sbi_cursor_param)
+      if sico.text.starts_with(sbi_cursor_pk, "ERR:"):
+        return sbi_cursor_pk
+      end if
+      if is_word(sbi_cursor_pk, "u64"):
+        set sbi_cursor_is_param = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+    else:
+      return "ERR:E-SH-IR-CALL-ARGUMENT"
+    end if
   end if
   if is_word(fixed_literal_argument(words, sbi_default), "i64"):
     let sbi_default_ok = I64.literal(1)
@@ -6553,17 +6567,36 @@ function while_bytes_at_rhs_packed(words: List[Text], src: Bytes, name_idx: U64,
     case error(_):
       return "ERR:E-SH-IR-RANGE"
   end match
-  let sbi_cursor_json = read_local_instruction_json(base, "u64", u64_list_at(cell_locals, sbi_cursor_cell, U64.literal(0)), sbi_cursor_start, sbi_cursor_end)
-  let sbi_default_result = next_index(base, base)
+  let sbi_cursor_json = ""
+  let sbi_default_result = base
+  if I64.equal(sbi_cursor_is_param, I64.literal(1)):
+    let sbi_param_cursor_ok = I64.literal(1)
+  else:
+    set sbi_cursor_json = read_local_instruction_json(base, "u64", u64_list_at(cell_locals, sbi_cursor_cell, U64.literal(0)), sbi_cursor_start, sbi_cursor_end)
+    set sbi_default_result = next_index(base, base)
+  end if
   let sbi_default_json = fixed_literal_operand_json(words, src, sbi_default, receiver_idx, expr_start, sbi_default_result)
   if sico.text.starts_with(sbi_default_json, "ERR:"):
     return sbi_default_json
   end if
   let sbi_result = next_index(sbi_default_result, sbi_default_result)
-  let sbi_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(sbi_src_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(base), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbi_default_result), "]"))))))
+  let sbi_cursor_value = base
+  if I64.equal(sbi_cursor_is_param, I64.literal(1)):
+    set sbi_cursor_value = sbi_cursor_param
+  end if
+  let sbi_arguments = sico.text.concat("[", sico.text.concat(sico.u64.to_text(sbi_src_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbi_cursor_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(sbi_default_result), "]"))))))
   let sbi_intrinsic = intrinsic_instruction_json(sbi_result, "i64", "sico.bytes.at", sbi_arguments, expr_start, line_end_offset)
-  let sbi_json = sico.text.concat(sbi_cursor_json, sico.text.concat(",", sico.text.concat(sbi_default_json, sico.text.concat(",", sbi_intrinsic))))
-  return sico.text.concat("i64", sico.text.concat("\n", sico.text.concat(sbi_json, sico.text.concat("\n", sico.u64.to_text(sbi_result)))))
+  let sbi_json = sico.text.concat(sbi_default_json, sico.text.concat(",", sbi_intrinsic))
+  if I64.equal(sbi_cursor_is_param, I64.literal(1)):
+    let sbi_param_tail_ok = I64.literal(1)
+  else:
+    set sbi_json = sico.text.concat(sbi_cursor_json, sico.text.concat(",", sbi_json))
+  end if
+  let sbi_count = U64.literal(2)
+  if I64.equal(sbi_cursor_is_param, I64.literal(0)):
+    set sbi_count = U64.literal(3)
+  end if
+  return sico.text.concat("i64", sico.text.concat("\n", sico.text.concat(sico.u64.to_text(sbi_result), sico.text.concat("\n", sico.text.concat(sico.u64.to_text(sbi_count), sico.text.concat("\n", sbi_json))))))
 end function
 function gw_instr_count(text: Text) returns U64:
   let gic_bytes = sico.text.encode(text)
@@ -7152,10 +7185,10 @@ function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_
   else:
     return "ERR:E-SH-IR-CALL-TYPE"
   end if
-  let gcc_inner_json = word_at(gcc_parts, U64.literal(1))
-  let gcc_inner_value = gw_decimal_value(word_at(gcc_parts, U64.literal(2)))
+  let gcc_inner_json = word_at(gcc_parts, U64.literal(3))
+  let gcc_inner_value = gw_decimal_value(word_at(gcc_parts, U64.literal(1)))
   let gcc_result = base
-  match U64.checked_add(base, U64.literal(3)):
+  match U64.checked_add(base, gw_decimal_value(word_at(gcc_parts, U64.literal(2)))):
     case ok(gcc_call_result):
       set gcc_result = gcc_call_result
     case error(_):
@@ -8547,14 +8580,9 @@ function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_id
         end if
         let gws_parts = sico.text.split_lines(gws_pack)
         set gws_kind = word_at(gws_parts, U64.literal(0))
-        set gws_pieces = word_at(gws_parts, U64.literal(1))
-        set gws_count = U64.literal(3)
-        match U64.checked_add(base, U64.literal(2)):
-          case ok(gws_sbi_value):
-            set gws_value = gws_sbi_value
-          case error(_):
-            return "ERR:E-SH-IR-RANGE"
-        end match
+        set gws_value = gw_decimal_value(word_at(gws_parts, U64.literal(1)))
+        set gws_count = gw_decimal_value(word_at(gws_parts, U64.literal(2)))
+        set gws_pieces = word_at(gws_parts, U64.literal(3))
       else:
         let gws_bat_pack = while_bytes_at_local_src_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base)
         if sico.text.starts_with(gws_bat_pack, "ERR:"):
