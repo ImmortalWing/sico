@@ -191,6 +191,15 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
    `lex_words`/CALL-TARGET frontier unchanged), so under the §3.2 discipline
    this implementation STEP counts as R3 stall 1/4; the next slices should
    move the frontier (lex_words let-RHS host-call family first).
+   STEP-0319 (2026-09-30) extends the canary metric to per-function
+   differential coverage over the frozen sources (rearranged subsets, exact
+   function text): `next_index`, `word_at` and `valid_escape_byte` flip
+   green through existing families, parser coverage 5/115 → 8/115, canary
+   +3 and the R3 consecutive-stall count resets to zero. The contiguous
+   prefix frontier stays at `lex_words`/CALL-TARGET; measured next-slice
+   inputs: `is_digit_token`/`is_string_token` refuse EXPRESSION (missing
+   text.encode/text.length/bytes.at let-RHS shapes) and
+   `line_end`/`matching_close` refuse CALL-TARGET (missing user-call RHS).
 2. **Formatter tail from the current frontier** — `main`.
    The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
    `direct_close` and `opener_close` passed the real-runner

@@ -1718,6 +1718,33 @@ fn sico_compiler_refuses_invalid_set_arm_match_shapes_with_typed_identity() {
 }
 
 #[test]
+fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
+    // STEP-0319: per-function differential coverage beyond the contiguous
+    // prefix — the exact frozen function text of parser.sico functions that
+    // existing families already lower, byte-compared against the Rust
+    // oracle. `next_index` exercises the returning checked_add family,
+    // `word_at` the list.get returning-match family and
+    // `valid_escape_byte` the control-if guard-chain family.
+    for name in ["next_index", "word_at", "valid_escape_byte"] {
+        let start = PARSER_SOURCE
+            .find(&format!("function {name}"))
+            .expect("parser keeps the function");
+        let end = PARSER_SOURCE[start..]
+            .find("\nend function\n")
+            .expect("function ends")
+            + start
+            + "\nend function\n".len();
+        let source = &PARSER_SOURCE[start..end];
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
 fn sico_compiler_refuses_an_invalid_parameter_shape_with_typed_identity() {
     let mutation = IDENTITY_SOURCE.replacen(": Int", "; Int", 1);
     assert_eq!(mutation.len(), IDENTITY_SOURCE.len());
