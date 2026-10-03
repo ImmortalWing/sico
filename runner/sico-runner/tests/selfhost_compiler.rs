@@ -1931,6 +1931,24 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0341: the general-while machine's match state becomes a stack
+    // (gmt_stack/gmt_depth push on nested open, pop on end match) and the
+    // match>1-without-while ladder gate routes to the general machine
+    // instead of refusing CONTROL. count_params (list.get match with a
+    // nested checked_sub match inside an if-then, inside a while) flips
+    // byte-exactly with the line_end callee prefix.
+    {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text("count_params"));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("count_params must compile through the match-stack machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]

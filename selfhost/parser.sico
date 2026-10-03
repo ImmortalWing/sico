@@ -10385,9 +10385,6 @@ end function
 
 function gw_match_open_pack(words: List[Text], src: Bytes, name_idx: U64, gi: U64, gcursor: U64, gnext: U64, gcell_count: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, cur_instrs: Text, cur_blk: U64, region: Text, cur_term: Bool, match_open: I64, body_end: U64) returns Text:
   let gmo_n = sico.list.length(words)
-  if I64.equal(match_open, I64.literal(1)):
-    return "ERR:E-SH-IR-CONTROL"
-  end if
   if is_word(region, "entry"):
     return "ERR:E-SH-IR-STATEMENT"
   end if
@@ -10655,6 +10652,8 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gmt_entries = sico.text.split_lines("")
   let gmt_len = U64.literal(0)
   let gmt_open = I64.literal(0)
+  let gmt_stack = sico.text.split_lines("")
+  let gmt_depth = U64.literal(0)
   let gmt_p_pack = ""
   let gcell_names = sico.text.split_lines("")
   let gcell_kinds = sico.text.split_lines("")
@@ -11233,7 +11232,17 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
                 set gcur_rs = gw_decimal_value(word_at(gem_f, U64.literal(6)))
                 set gcur_re = gw_decimal_value(word_at(gem_f, U64.literal(7)))
                 set gcur_term = false
-                set gmt_open = I64.literal(0)
+                if U64.less_than(U64.literal(0), gmt_depth):
+                  match U64.checked_sub(gmt_depth, U64.literal(1)):
+                    case ok(gmt_pop_idx):
+                      set gmt_p_pack = word_at(gmt_stack, gmt_pop_idx)
+                      set gmt_depth = gmt_pop_idx
+                    case error(_):
+                      set gmt_depth = U64.literal(0)
+                  end match
+                else:
+                  set gmt_open = I64.literal(0)
+                end if
                 set gcursor = return_expression_end(src, find_text_from(src, "end match", gcursor))
                 let gem_after = next_index(gend_next, body_end)
                 let gem_nl = gem_after
@@ -11454,6 +11463,10 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       let gm_binding = word_at(gm_f, U64.literal(12))
       let gm_val = gw_decimal_value(word_at(gm_f, U64.literal(13)))
       let gm_hdr_blk = gw_decimal_value(word_at(gm_f, U64.literal(14)))
+      if I64.equal(gmt_open, I64.literal(1)):
+        set gmt_stack = sico.list.append(gmt_stack, gmt_p_pack)
+        set gmt_depth = next_index(gmt_depth, gmt_depth)
+      end if
       set gblk_instrs = sico.list.append(gblk_instrs, gm_hinstrs)
       set gblk_rs = sico.list.append[U64](gblk_rs, gcur_rs)
       set gblk_re = sico.list.append[U64](gblk_re, gcur_re)
@@ -16158,11 +16171,6 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
         let set_count = count_until_end_function(words, body_from, "set")
         let match_count = count_until_end_function(words, body_from, "match")
         let if_count = count_until_end_function(words, body_from, "if")
-        if U64.less_than(U64.literal(1), match_count):
-          if U64.equal(count_until_end_function(words, body_from, "while"), U64.literal(0)):
-            return "ERR:E-SH-IR-CONTROL"
-          end if
-        end if
         let direct_intrinsic_json = direct_bytes_equal_encode_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
         if is_word(direct_intrinsic_json, "SKIP"):
           let no_direct_intrinsic = I64.literal(1)
@@ -16222,6 +16230,9 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
           if U64.less_than(U64.literal(0), match_count):
             set general_route_count = U64.literal(1)
           end if
+        end if
+        if U64.less_than(U64.literal(1), match_count):
+          set general_route_count = U64.literal(1)
         end if
         if U64.less_than(U64.literal(0), general_route_count):
           let general_while_json = general_while_function_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
