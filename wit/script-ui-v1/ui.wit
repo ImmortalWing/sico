@@ -1,0 +1,86 @@
+// Draft WIT realization of RFC-0052 §2/§3 as re-homed by Amendment A1
+// (M24 #5): the versioned `sico:script/ui@1.0.0` host-provider interface,
+// guest-visible through the runner (`runner/sico-runner/src/ui.rs::link_ui`).
+// A1 withdraws the `sico:user/ui@1` pure-package framing: the UI surface
+// drives the desktop window system (a Host effect), so it lives in the host
+// namespace exactly like `sico:script/http@0.2.0`, where records/variants are
+// permitted and `interface_value_offender` (E8017) does not apply.
+//
+// This is a spec artifact: the runner hand-registers the surface via
+// `func_wrap` and the compiler hand-encodes the instance type; neither parses
+// this file. The Sico-source binding stays zero-grammar-growth (RFC-0052 §1).
+//
+// Guest-visible errors are typed only: the Host never leaks window, path or
+// diagnostic text across this boundary. The UI capability is default-deny and
+// composes no capture/input/clipboard/credential/process authority; file
+// open/save stay separate least-privilege file capabilities.
+//
+// The granted window/frame/event behaviour is provided by the ADR-0018
+// isolated renderer adapter (#4, Direct2D/DirectWrite). Real render-frame
+// evidence is gated on that adapter; this binding layer delivers the
+// default-deny authority refusal (every call -> `authority-denied`).
+package sico:script@1.0.0;
+
+interface ui {
+  /// RFC-0052 §3 typed refusal set (declaration order is the wire discriminant
+  /// order; append-only). `limit` covers node-count/tree-depth/queue budgets
+  /// (limit+1 refused before allocation, never truncation); `authority-denied`
+  /// is the default-deny capability gate firing before any renderer effect.
+  enum ui-error {
+    unknown-handle,
+    wrong-parent-kind,
+    limit,
+    no-window,
+    event-overflow,
+    authority-denied,
+  }
+
+  /// One opaque UI node handle (RFC-0052 §2).
+  record ui-handle {
+    id: u64,
+  }
+
+  /// A device-independent point (RFC-0052 §2; declared for the v0 vocabulary,
+  /// not yet carried by any v0 function payload).
+  record ui-point {
+    x: s64,
+    y: s64,
+  }
+
+  /// The two payloads of a `select` event, packaged into a record because the
+  /// Wasmtime `variant` realization permits at most one unnamed field per case
+  /// (an ABI detail; the event still carries exactly the handle and index).
+  record ui-selection {
+    handle: ui-handle,
+    index: u64,
+  }
+
+  /// One delivered UI event (RFC-0052 §2 `poll-event`).
+  variant ui-event {
+    click(ui-handle),
+    select(ui-selection),
+    closed,
+  }
+
+  // tree construction (parent must be a window or panel handle)
+  window: func(title: string, width: s64, height: s64) -> result<ui-handle, ui-error>;
+  column: func(parent: ui-handle) -> result<ui-handle, ui-error>;
+  row: func(parent: ui-handle) -> result<ui-handle, ui-error>;
+  text: func(parent: ui-handle, content: string) -> result<ui-handle, ui-error>;
+  button: func(parent: ui-handle, label: string) -> result<ui-handle, ui-error>;
+  dropdown: func(parent: ui-handle, options: list<string>) -> result<ui-handle, ui-error>;
+  image-preview: func(parent: ui-handle, w: u64, h: u64) -> result<ui-handle, ui-error>;
+  progress: func(parent: ui-handle) -> result<ui-handle, ui-error>;
+
+  // state + events
+  set-text: func(handle: ui-handle, content: string) -> result<bool, ui-error>;
+  set-progress: func(handle: ui-handle, done: u64, of: u64) -> result<bool, ui-error>;
+  /// `pixels` is an RFC-0041 BGRA8 buffer; composes with image-vision@1 /
+  /// image-codec@1.
+  draw-image: func(handle: ui-handle, w: u64, h: u64, pixels: list<u8>) -> result<bool, ui-error>;
+  /// Pumps the OS event queue once; `none` when no event is pending or the UI
+  /// capability is not granted (default-deny leaks no event).
+  poll-event: func() -> option<ui-event>;
+  /// Presents one frame; a frame is a pure function of UI state (ADR-0018 §3).
+  run: func() -> result<bool, ui-error>;
+}

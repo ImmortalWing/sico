@@ -1,0 +1,109 @@
+{
+  "schema": "sico.m24.codec-probe.v0",
+  "core_module": {
+    "path": "E:\\github\\sico-m24\\prototypes\\image-codec-probe\\guest\\target\\wasm32-unknown-unknown\\release\\sico_image_codec_probe_guest.wasm",
+    "bytes": 194087,
+    "sha256": "bb7a2c83c72dc6982b81956dfd7ca409cf272275a7ebcc17c36ac811f32577ba"
+  },
+  "component": {
+    "identity": "sico:user/image-codec-probe@1.0.0",
+    "bytes": 194482,
+    "sha256": "a457f96d3736b475c32649c57e56f7d77062a8554cd0d2465c01bb7024981a62",
+    "rebuild_byte_identical": true,
+    "exported_instances": [
+      "sico:user/image-codec-probe@1.0.0"
+    ],
+    "exported_functions": [
+      "decode-png",
+      "encode-png"
+    ]
+  },
+  "decode_cases": [
+    {
+      "name": "decode-ok-2x2-rgba",
+      "expect": "ok 32 bytes",
+      "got": "ok 32 bytes, match=true",
+      "pass": true
+    },
+    {
+      "name": "decode-bad-signature",
+      "expect": "err bad-signature",
+      "got": "err bad-signature",
+      "pass": true
+    },
+    {
+      "name": "decode-trailing-data",
+      "expect": "err trailing-data",
+      "got": "err trailing-data",
+      "pass": true
+    },
+    {
+      "name": "decode-truncated",
+      "expect": "err truncated",
+      "got": "err truncated",
+      "pass": true
+    },
+    {
+      "name": "decode-corrupt-crc",
+      "expect": "err corrupt-stream",
+      "got": "err corrupt-stream",
+      "pass": true
+    },
+    {
+      "name": "decode-oversized-limit-plus-one",
+      "expect": "err oversized",
+      "got": "err oversized",
+      "pass": true
+    },
+    {
+      "name": "decode-unsupported-palette",
+      "expect": "err unsupported-profile",
+      "got": "err unsupported-profile",
+      "pass": true
+    },
+    {
+      "name": "decode-unsupported-depth-16",
+      "expect": "err unsupported-profile",
+      "got": "err unsupported-profile",
+      "pass": true
+    },
+    {
+      "name": "decode-unsupported-interlaced",
+      "expect": "err unsupported-profile",
+      "got": "err unsupported-profile",
+      "pass": true
+    }
+  ],
+  "encode": {
+    "chunk_kinds": [
+      "IHDR",
+      "IDAT",
+      "IEND"
+    ],
+    "chunk_set_frozen": true,
+    "byte_stable": true,
+    "sha256": "39930681608989296b1ab7774584b41682a2948239a68568f92929343fef696e",
+    "roundtrip_payload_match": true,
+    "refusals": [
+      {
+        "name": "encode-zero-width",
+        "expect": "err oversized",
+        "got": "err oversized",
+        "pass": true
+      },
+      {
+        "name": "encode-limit-plus-one",
+        "expect": "err oversized",
+        "got": "err oversized",
+        "pass": true
+      },
+      {
+        "name": "encode-buffer-mismatch",
+        "expect": "err corrupt-stream",
+        "got": "err corrupt-stream",
+        "pass": true
+      }
+    ]
+  },
+  "verdict": "package-route-feasible"
+}

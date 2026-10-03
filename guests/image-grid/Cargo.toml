@@ -1,0 +1,19 @@
+[package]
+name = "sico-image-grid-guest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# ADR-0019 §2: release profile fixed for byte-reproducible core production.
+# Pure integer horizontal-run detection over the RFC-0043-A2 packed input
+# header: no external crates, dependency-free.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = 0
+strip = true

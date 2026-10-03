@@ -4,6 +4,7 @@
 > - date: 2026-09-25
 > - phase: M24 §8.2 (M17 gate 4 model/package provenance RFC)
 > - depends: RFC-0041 (image data contract), RFC-0015/0024/0026 (M7 digest, signed registry, dependency-lock discipline), ADR-0012 (live-model budget record), M24 plan §8.2, STEP-0287 inventory
+> - Amendment A1: [`Amendment A1 (ACCEPTED)`](./RFC-0051-amendment-A1-carriage-and-budget-mapping.md) — STEP-0334 landed the §2 schema + load-verification primitives; A1 pins the three §2/§3 wiring rules the accepted body left open (carried-manifest location, `name`→payload binding, `budgets`→`RuntimeLimits` mapping/precedence). **Accepted by owner re-adjudication 2026-10-01 (all three recommended options).** The load/verify-boundary half (`resources/<name>[.provenance.json]` carry, `verify_binding` digest/size cross-check, `check_budgets_within` subset-with-limit+1-refusal) is now implemented in `crates/sico-package/src/provenance.rs` (unit-level, internal-fixture). The **run-time** budget enforcement and mid-inference cancellation (§3 properties 3-runtime/4) still need the runner wiring + a frozen fixture-model payload; the §2/§3 body text below is unchanged (A1 is compatible with it) and gate 4 stays 未达 until those land.
 
 ## 1. Summary
 

@@ -2039,6 +2039,136 @@ pub fn image_vision_package() -> Vec<u8> {
     build_package_component("image-vision", 1, &functions, &core)
 }
 
+/// The committed, digest-pinned PNG guest core (ADR-0019 §3).
+///
+/// Produced by the out-of-workspace crate `guests/image-codec` compiled to
+/// `wasm32-unknown-unknown`; `tools/validate-package-core.ps1` asserts a clean
+/// rebuild is byte-identical to these bytes (SHA-256 in the sibling
+/// `.sha256`). Bumping the codec crate or toolchain changes the bytes and is
+/// a deliberate new package version, re-pinned.
+const IMAGE_CODEC_CORE: &[u8] = include_bytes!("../artifacts/image-codec-core.wasm");
+
+/// Builds the `sico:user/image-codec@1` package Component (M24 #2, RFC-0050
+/// as amended by A1).
+///
+/// Unlike the hand-emitted packages, the core is a Rust-compiled
+/// `wasm32-unknown-unknown` module (ADR-0019 class (b)); this producer only
+/// embeds the committed core and wraps it with the same
+/// [`build_package_component`], so consumers and the runner see no
+/// difference. Surface (RFC-0050 §1 flattened form, A1):
+/// - `decode-png(data: Bytes) -> Result[Bytes, Text]` — ok payload is a
+///   16-byte little-endian header (width u64, height u64) followed by
+///   RFC-0041 BGRA8 pixels.
+/// - `encode-png(pixels: Bytes, width: U64, height: U64) -> Result[Bytes, Text]`
+///   — RGBA-8, Paeth, zlib level 9, frozen `{IHDR,IDAT,IEND}` chunk set.
+///
+/// Error cases ride the RFC-0050 §3 closed set as completed by A1:
+/// `bad-signature`, `truncated`, `trailing-data`, `oversized`,
+/// `unsupported-profile`, `corrupt-stream`, `encode-buffer-mismatch`.
+#[must_use]
+pub fn image_codec_package() -> Vec<u8> {
+    let functions = vec![
+        PackageFunctionSpec {
+            name: "decode-png".into(),
+            parameters: vec![Type::Bytes],
+            result: Type::Result {
+                ok: Box::new(Type::Bytes),
+                error: Box::new(Type::String),
+            },
+        },
+        PackageFunctionSpec {
+            name: "encode-png".into(),
+            parameters: vec![Type::Bytes, Type::U64, Type::U64],
+            result: Type::Result {
+                ok: Box::new(Type::Bytes),
+                error: Box::new(Type::String),
+            },
+        },
+    ];
+    build_package_component("image-codec", 1, &functions, IMAGE_CODEC_CORE)
+}
+
+/// The committed, digest-pinned `image-match` guest core (ADR-0019 §3),
+/// produced out-of-workspace by `guests/image-match` compiled to
+/// `wasm32-unknown-unknown`; `tools/validate-package-core.ps1` asserts a clean
+/// rebuild is byte-identical (SHA-256 in the sibling `.sha256`).
+const IMAGE_MATCH_CORE: &[u8] = include_bytes!("../artifacts/image-match-core.wasm");
+
+/// Builds the `sico:user/image-match@1` package Component (M24 gate 3 roster,
+/// RFC-0043 §Summary as frozen by [`A1`] for the result and [`A2`] for the
+/// input). Like the codec, the core is a Rust-compiled `wasm32-unknown-unknown`
+/// module (ADR-0019 class (b)) — this producer only embeds the committed core
+/// and wraps it with [`build_package_component`].
+///
+/// Surface (A1/A2 flattened form, all within E8017):
+/// - `template(bmp: Bytes, tpl: Bytes) -> Result[Bytes, Text]` — inputs are A2
+///   self-describing packed headers (`width u32 · height u32 · format u8 ·
+///   reserved u8[3] · pixels`); the `ok` arm is one 16-byte A1 `region`
+///   (`x · y · width · height` u32 LE, `width`/`height` = template dims); the
+///   `error` arm is an RFC-0041 `image-error` case name.
+#[must_use]
+pub fn image_match_package() -> Vec<u8> {
+    let functions = vec![PackageFunctionSpec {
+        name: "template".into(),
+        parameters: vec![Type::Bytes, Type::Bytes],
+        result: Type::Result {
+            ok: Box::new(Type::Bytes),
+            error: Box::new(Type::String),
+        },
+    }];
+    build_package_component("image-match", 1, &functions, IMAGE_MATCH_CORE)
+}
+
+/// The committed, digest-pinned `image-grid` guest core (ADR-0019 §3), produced
+/// out-of-workspace by `guests/image-grid` compiled to `wasm32-unknown-unknown`;
+/// `tools/validate-package-core.ps1` asserts a clean rebuild is byte-identical.
+const IMAGE_GRID_CORE: &[u8] = include_bytes!("../artifacts/image-grid-core.wasm");
+
+/// Builds the `sico:user/image-grid@1` package Component (M24 gate 3 roster
+/// 2/3, RFC-0043 §Summary `image-grid@1`; input frozen by Amendment A2, list
+/// result by Amendment A1). Surface:
+/// `detect-lines(bmp: Bytes, min-run: U64) -> Result[Bytes, Text]` — the `ok`
+/// arm is an A1 count-prefixed `list<region>` blob (grey8 maximal horizontal
+/// runs of length `>= min-run`); the `error` arm an RFC-0041 `image-error` case
+/// name.
+#[must_use]
+pub fn image_grid_package() -> Vec<u8> {
+    let functions = vec![PackageFunctionSpec {
+        name: "detect-lines".into(),
+        parameters: vec![Type::Bytes, Type::U64],
+        result: Type::Result {
+            ok: Box::new(Type::Bytes),
+            error: Box::new(Type::String),
+        },
+    }];
+    build_package_component("image-grid", 1, &functions, IMAGE_GRID_CORE)
+}
+
+/// The committed, digest-pinned `image-contour` guest core (ADR-0019 §3),
+/// produced out-of-workspace by `guests/image-contour` compiled to
+/// `wasm32-unknown-unknown`; `tools/validate-package-core.ps1` asserts a clean
+/// rebuild is byte-identical.
+const IMAGE_CONTOUR_CORE: &[u8] = include_bytes!("../artifacts/image-contour-core.wasm");
+
+/// Builds the `sico:user/image-contour@1` package Component (M24 gate 3 roster
+/// 3/3, RFC-0043 §Summary `image-contour@1`; input frozen by Amendment A2, list
+/// result by Amendment A1). `find(bmp: Bytes, min-area: U64) -> Result[Bytes,
+/// Text]` returns the A1 `list<region>` blob of the closed 4-connected external
+/// regions whose foreground area `>= min-area` (bounding box per region,
+/// grey8-only); the `error` arm an RFC-0041 `image-error` case name.
+#[must_use]
+pub fn image_contour_package() -> Vec<u8> {
+    let functions = vec![PackageFunctionSpec {
+        name: "find".into(),
+        parameters: vec![Type::Bytes, Type::U64],
+        result: Type::Result {
+            ok: Box::new(Type::Bytes),
+            error: Box::new(Type::String),
+        },
+    }];
+    build_package_component("image-contour", 1, &functions, IMAGE_CONTOUR_CORE)
+}
+
 /// The three CV operations sharing the per-pixel loop shape.
 #[derive(Clone, Copy)]
 enum VisionOp {

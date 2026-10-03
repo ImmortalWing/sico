@@ -1,0 +1,22 @@
+{
+  "asset": {
+    "name": "model-fixture",
+    "kind": "model",
+    "media": "application/x-sico-fixture-model",
+    "sha256": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880",
+    "size": 256,
+    "provenance": {
+      "origin": "in-repo generated",
+      "license": "in-repo",
+      "created": "2026-09-30",
+      "generator": "hand-authored fixture"
+    },
+    "budgets": {
+      "max_memory_bytes": 1048576,
+      "max_wall_ms": 5000,
+      "max_hostcalls": 100000
+    },
+    "interface": "load-fixture-model",
+    "surprise": "unknown field must refuse"
+  }
+}

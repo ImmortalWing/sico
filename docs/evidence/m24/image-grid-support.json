@@ -1,0 +1,67 @@
+{
+  "schema": "sico.m24.roster-support.v0",
+  "package": "sico:user/image-grid@1",
+  "rfc": "RFC-0043 (input frozen by Amendment A2, list result by Amendment A1; both owner re-adjudication 2026-10-01)",
+  "adr": "ADR-0019 (Rust-compiled package core production path, accepted 2026-09-30)",
+  "step": "STEP-0336",
+  "production-path": {
+    "class": "rust-compiled-core",
+    "guest-crate": "guests/image-grid",
+    "committed-core": "crates/sico-codegen-wasm/artifacts/image-grid-core.wasm",
+    "core-sha256": "524810cbde0308301a70b08de5e7c6f65a15db197776d54da9b56dfdcdb8ecfe",
+    "reproducibility-validator": "tools/validate-package-core.ps1",
+    "reproducible": true,
+    "import-free": true,
+    "dependencies": []
+  },
+  "functions": [
+    {
+      "name": "detect-lines",
+      "signature": "detect-lines(bmp: Bytes, min-run: U64) -> Result[Bytes, Text]",
+      "input-encoding": "RFC-0043-A2 self-describing packed header; this op is grey8-only (a bgra8 input -> unsupported-format, per RFC-0043 §A4 grey8/threshold raster family)",
+      "result-encoding": "RFC-0043-A1 list<region>: count u32 LE, then count x 16 B (x,y,width,height u32 LE); empty result is a count=0 blob as ok",
+      "semantics": "maximal horizontal runs of foreground pixels (grey value >= 128) whose length >= min-run become region {x, y, len, 1}; row-major order (y outer, x inner); integer-only",
+      "semantics-provenance": "RFC-0043 §A4 delegates this op's exact behaviour to the determinism rules + the content-asserting corpus; the fixed thresholds (foreground>=128, horizontal maximal runs, count=0 empty=ok) are that frozen reference definition, documented here and in the guest crate, not a cross-boundary wire contract",
+      "check": true,
+      "build": true,
+      "run": true,
+      "evidence": "runtime-verified",
+      "runner": "windows-native (wasmtime 47.0.2 component, empty linker)",
+      "runner-test": "runner/sico-runner/tests/image_grid_package.rs"
+    }
+  ],
+  "refusal-corpus": {
+    "source": "independent oracle (pure stdlib Python run-detection re-implementation, no shared code with the Rust core; numpy absent offline)",
+    "generator": "prototypes/image-grid-probe/tools/make-fixtures.py",
+    "manifest": "runner/sico-runner/tests/corpus/image-grid/manifest.json",
+    "reachable-error-set": [
+      "unsupported-format",
+      "stride-mismatch",
+      "dimension-overflow",
+      "allocation-limit"
+    ],
+    "not-applicable": {
+      "region-out-of-bounds": "inapplicable to detect-lines: every emitted region derives from a within-image horizontal run and so cannot exceed the raster"
+    },
+    "cases": 13,
+    "ok": 5,
+    "typed-refusals": 8,
+    "ok-shapes": [
+      "two-full-hlines",
+      "single-row-min3",
+      "single-row-min2",
+      "min-run-too-large-empty",
+      "mixed-rows-x-offset"
+    ],
+    "coverage": "min-run boundary (>=), min-run too large -> count=0 ok, x-offset start, empty result, grey8-only refusal, and the four reachable A2/parameter image-error cases; byte-stability + fresh-store repeat asserted"
+  },
+  "honest-scope": {
+    "covered-here": "image-grid detect-lines package content contract at the pure-package Component level (A2/A1 frozen framing, integer determinism, row-major ordering, typed refusals, byte-stability)",
+    "deferred": [
+      "image-contour@1 (find): the remaining gate-3 roster package, its own ADR-0019 core + independent content corpus + runner content test + STEP",
+      "install/registry path (M7 sico-lock.json) lands with the first consumer pilot",
+      "cancellation/save-failure: runner + pilot (#6) concerns, not package-level"
+    ],
+    "not-claimed": "this is 2 of 3 gate-3 packages: M24 §3 gate 3 stays UNMET until image-contour also lands a byte-exact corpus; gate 1 (accelerator) and #4 Direct2D remain external doors; no gate flips from this row"
+  }
+}

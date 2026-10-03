@@ -196,7 +196,7 @@ work package maps each concern to its contract home:
 | Concern | Home | Constraint |
 |---|---|---|
 | source selection | file open dialog over the existing file capability | user-selected paths, least-privilege, no default-deny bypass |
-| conversion engine | versioned package and/or host provider surface | frozen by RFC before implementation; image-vision@1 is deterministic pixel processing only and provides no codec I/O (honest gap) |
+| conversion engine | versioned package and/or host provider surface | frozen by RFC before implementation; `image-vision@1` is deterministic pixel processing only (no codec I/O). `image-codec@1` now provides PNG decode/encode I/O (STEP-0331); the JPEG half remains a named external deferral (#3, offline JPEG codec crate unavailable) |
 | presentation | Sico-language native UI library (§8.6.1) | pinned WinUI 3-like Fluent style, deterministic frames |
 | persistence | file save dialog over the existing file capability | user-selected paths; typed save failures |
 | refusal | typed outcomes end to end | no trap, hang, partial output or silent fallback |
@@ -204,12 +204,18 @@ work package maps each concern to its contract home:
 - Increments: step 1 (§3 gate 5) converts JPEG ↔ PNG in both
   directions; further formats, options or batch features take their own
   RFC + STEP.
-- Conversion-engine contract drafted 2026-09-25 (post 24-A):
-  [`RFC-0050`](../rfc/RFC-0050-image-codec-jpeg-png-v0.md) (draft, owner
-  acceptance required) freezes `sico:user/image-codec@1` — four pure
-  functions over the RFC-0041 BGRA8 contract, accepted profiles and
-  encoder settings frozen by name, byte-stable outputs, the §8.5 refusal
-  surface typed end to end.
+- Conversion-engine contract accepted (post 24-A):
+  [`RFC-0050`](../rfc/RFC-0050-image-codec-jpeg-png-v0.md) + A1 (owner
+  re-adjudication 2026-09-30; ADR-0019 compiled-core route accepted) freeze
+  `sico:user/image-codec@1` — pure functions over the RFC-0041 BGRA8
+  contract, accepted profiles and encoder settings frozen by name, byte-stable
+  outputs, the §8.5 refusal surface typed end to end.
+  **Status correction**: PNG bidirectional landed (STEP-0331, digest-pinned
+  Rust core, runner content tests 5/5 green); the JPEG direction is a **named
+  external deferral** (#3, offline JPEG codec crate + independent oracle
+  unavailable — see STEP-0330 §4/Honest residuals). ⇒ §3 gate 5's step-1
+  "JPEG ↔ PNG both directions" cannot be met on this host; PNG→PNG is not a
+  meaningful converter increment.
 - The first increment's scope is frozen by the codec contract (RFC):
   accepted JPEG/PNG profiles, output parameters, and determinism
   guarantees (PNG outputs byte-stable for fixed input; JPEG encoder

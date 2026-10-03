@@ -1,6 +1,6 @@
 # RFC-0052: Sico-language native UI library — source binding v0
 
-> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)** (pairs with [`ADR-0018`](../adr/ADR-0018-native-renderer-fluent-subset-v0.md), accepted)
+> - status: **accepted by owner directive 2026-09-30 「完整完成M22-M26」(STEP-0323)**; §1 (home/namespace) and §2 (surface form) amended in place by [`Amendment A1`](./RFC-0052-amendment-A1-host-provider-ui-surface.md) — **accepted by owner re-adjudication 2026-09-30 (STEP-0330)**: `ui@1` is re-homed from a pure `sico:user/` package to the host-provider import surface `sico:script/ui@1.0.0` (records/variants permitted on that path; E8017 unchanged for true `sico:user/` packages) (pairs with [`ADR-0018`](../adr/ADR-0018-native-renderer-fluent-subset-v0.md), accepted)
 > - date: 2026-09-25
 > - phase: M24 §8.6.1 prerequisite workstream (source side)
 > - depends: RFC-0039 (modules/packages/user WIT), RFC-0041 (BGRA8 image contract), ADR-0018 (renderer architecture, proposed), M24 plan §8.6.1/§8.6.2, STEP-0287 inventory

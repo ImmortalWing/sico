@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod compose;
+pub mod provenance;
 
 use std::collections::{BTreeMap, BTreeSet};
 

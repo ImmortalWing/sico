@@ -378,9 +378,9 @@ STEP-0310 核对 [GitHub CI 36212509946](https://github.com/ImmortalWing/sico/ac
 
 执行计划：[`M23 Language v1 batch 3 — expression ergonomics`](./plans/M23-language-v1-batch-3.md)。
 
-## M24: Vision closure and GUI application pilot（planned; 2026-09-17）
+## M24: Vision closure and GUI application pilot（executing; §3 逐门 NO-GO on offline evidence host — STEP-0333 审计）
 
-状态：planned；开工盘点已由 STEP-0287（卡 24-A）冻结（[`m24-inventory-2026-09-25.json`](./reports/m24-inventory-2026-09-25.json)：加速证据主机未命名——gate 2 保持延期，模型资产 0，roster 三包缺，Sico 原生 UI 库整体不存在，codec 依赖 0）；四份前置合同中，codec [`RFC-0050`](./rfc/RFC-0050-image-codec-jpeg-png-v0.md) 与 provenance [`RFC-0051`](./rfc/RFC-0051-model-provenance-manifest-v0.md) 已由 STEP-0288 起草（draft）；UI source-binding [`RFC-0052`](./rfc/RFC-0052-native-ui-source-binding-v0.md)（draft）+ renderer [`ADR-0018`](./adr/ADR-0018-native-renderer-fluent-subset-v0.md)（proposed）已由 STEP-0289 起草——四份前置合同至此全部起草完毕；仅加速 ADR 的证据被外部输入卡死。M17 gate 2/4 与 roster 分别裁决；无真实加速器对照时 gate 2 延期，M17 整体保持 NO-GO。
+状态：**executing / §3 audit = NO-GO on this host**（2026-09-30，详见 [`STEP-0333`](./steps/STEP-0333-m24-exit-audit.md)）。前置合同已由 STEP-0330 owner 复裁决全部接受（[`RFC-0050`](./rfc/RFC-0050-image-codec-jpeg-png-v0.md)+A1、[`RFC-0051`](./rfc/RFC-0051-model-provenance-manifest-v0.md)、[`RFC-0052`](./rfc/RFC-0052-native-ui-source-binding-v0.md)+A1、[`ADR-0018`](./adr/ADR-0018-native-renderer-fluent-subset-v0.md) + 新增 [`ADR-0019`](./adr/ADR-0019-rust-compiled-package-core-production-v0.md)）。逐门裁决：**gate 2 加速器=具名外部门**（无具名硬件，reference-only 不翻）；**#2 PNG codec ✓**（STEP-0331，digest-pinned Rust core，runner 5/5）；**#5 `ui@1` 绑定 + 默认拒绝授权 ✓ 含 end-to-end runtime-verified**（STEP-0332，`tests/ui_authority.rs` 2/2；受权真实渲染帧仍 gated on #4）；**gate 4 model provenance=未达但本机唯一可离线推进项**（fixture model 路线不需硬件/JPEG/Direct2D/record；**STEP-0334 已落 `sico.m17.provenance.v0` 封闭 schema + 载入校验原语（`sico-package::provenance`，10/10 单测），gate 仍未达**——余 budget/cancel 的 runner 接线 + 一份冻结 fixture model 载荷）；**gate 3 roster=#E8017 合同门阻挡**（record 返回类型不在已接受包接口值集，须 owner 裁决 region 编码，见 STEP-0330 §8）；**#3 JPEG / #4 Direct2D=具名外部门**（离线无 JPEG crate / 无 Direct2D 绑定）；**gate 5 GUI 转换器随 #3/#4/roster 延期 NO-GO**。⇒ **M24 本机不翻 full GO**；不替代、不静默改合同。M17 gate 2/4/roster 分别裁决，M17 整体保持 NO-GO。
 
 本里程碑承载 M17 视觉收口与重定后的应用试点。俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138 ✓）与其 Python 案例 oracle，不再作为 M18/M24 验收载体（owner 指令 2026-09-22）。
 

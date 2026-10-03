@@ -1,0 +1,153 @@
+{
+  "cases": [
+    {
+      "bmp_hex": "050000000500000001000000000000000000ffffff0000ffffff0000ffffff000000000000",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "0100000001000000010000000300000003000000"
+      },
+      "min_area": 1,
+      "name": "single-blob-3x3"
+    },
+    {
+      "bmp_hex": "060000000100000001000000ffff00ffffff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "020000000000000000000000020000000100000003000000000000000300000001000000"
+      },
+      "min_area": 2,
+      "name": "two-comps-min-area-boundary"
+    },
+    {
+      "bmp_hex": "060000000100000001000000ffff00ffffff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "0100000003000000000000000300000001000000"
+      },
+      "min_area": 3,
+      "name": "two-comps-min-area-excludes-small"
+    },
+    {
+      "bmp_hex": "010000000500000001000000ffffffffff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "0100000000000000000000000100000005000000"
+      },
+      "min_area": 1,
+      "name": "vertical-component"
+    },
+    {
+      "bmp_hex": "050000000500000001000000ffffffffffff000000ffff000000ffff000000ffffffffffff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "0100000000000000000000000500000005000000"
+      },
+      "min_area": 1,
+      "name": "ring-hole-single-region"
+    },
+    {
+      "bmp_hex": "020000000200000001000000ff0000ff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "020000000000000000000000010000000100000001000000010000000100000001000000"
+      },
+      "min_area": 1,
+      "name": "diagonal-disconnect-4conn"
+    },
+    {
+      "bmp_hex": "04000000040000000100000000000000000000000000000000000000",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "00000000"
+      },
+      "min_area": 1,
+      "name": "all-off-empty"
+    },
+    {
+      "bmp_hex": "060000000100000001000000ffff00ffffff",
+      "expect": {
+        "kind": "ok",
+        "list_hex": "00000000"
+      },
+      "min_area": 100,
+      "name": "min-area-too-large-empty"
+    },
+    {
+      "bmp_hex": "040000000400000007000000",
+      "expect": {
+        "case": "unsupported-format",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "bad-format-tag"
+    },
+    {
+      "bmp_hex": "02000000020000000000000000000000000000000000000000000000",
+      "expect": {
+        "case": "unsupported-format",
+        "kind": "err"
+      },
+      "min_area": 1,
+      "name": "bgra8-rejected-grey8-only"
+    },
+    {
+      "bmp_hex": "040000000400000001aa000000000000000000000000000000000000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "reserved-nonzero"
+    },
+    {
+      "bmp_hex": "0400000004000000010000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "too-short-header"
+    },
+    {
+      "bmp_hex": "000000000400000001000000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "zero-axis"
+    },
+    {
+      "bmp_hex": "040000000400000001000000ffffffffffffffffffffffffffffffff0000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "length-mismatch"
+    },
+    {
+      "bmp_hex": "010000000100001001000000",
+      "expect": {
+        "case": "allocation-limit",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "allocation-limit"
+    },
+    {
+      "bmp_hex": "ffffffffffffffff00000000",
+      "expect": {
+        "case": "dimension-overflow",
+        "kind": "err"
+      },
+      "min_area": 2,
+      "name": "dimension-overflow"
+    }
+  ],
+  "function": "find",
+  "oracle": "prototypes/image-contour-probe/tools/make-fixtures.py",
+  "package": "image-contour",
+  "schema": "sico.m24.roster-contour-fixtures.v0",
+  "semantics": "grey8 4-connected components, foreground >= 128, closed external region -> bounding box (minx,miny,w,h), row-major seed order (ties lowest (y,x)), area >= min-area (inclusive, filter); list = count u32 LE + regions (x,y,width,height u32 LE); no region -> count 0 ok"
+}

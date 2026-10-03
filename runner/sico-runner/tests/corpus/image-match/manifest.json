@@ -1,0 +1,135 @@
+{
+  "cases": [
+    {
+      "bmp_hex": "080000000600000001000000001f3e5d7c9bbad935547392b1d0ef136a89a8c7e60a29489fbedd01203f5e7dd4f31736557493b20e2d4c6b8aa9c8e7",
+      "expect": {
+        "kind": "ok",
+        "region_hex": "03000000020000000300000002000000"
+      },
+      "name": "grey-exact-offset",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "080000000600000001000000001f3e5d7c9bbad935547392b1d0ef136a89a8c7e60a29489fbedd01203f5e7dd4f31736557493b20e2d4c6b8aa9c8e7",
+      "expect": {
+        "kind": "ok",
+        "region_hex": "02000000010000000300000002000000"
+      },
+      "name": "grey-best-nonzero",
+      "tpl_hex": "0300000002000000010000007492b1a8c7e6"
+    },
+    {
+      "bmp_hex": "0500000004000000010000006464646464646464646464646464646464646464",
+      "expect": {
+        "kind": "ok",
+        "region_hex": "00000000000000000200000002000000"
+      },
+      "name": "grey-tie-lowest-yx",
+      "tpl_hex": "02000000020000000100000064646464"
+    },
+    {
+      "bmp_hex": "060000000500000000000000000000ff140028ff280050ff3c0078ff5000a0ff6400c8ff143c00ff283c28ff3c3c50ff503c78ff643ca0ff783cc8ff287800ff3c7828ff507850ff647878ff7878a0ff8c78c8ff3cb400ff50b428ff64b450ff78b478ff8cb4a0ffa0b4c8ff50f000ff64f028ff78f050ff8cf078ffa0f0a0ffb4f0c8ff",
+      "expect": {
+        "kind": "ok",
+        "region_hex": "02000000010000000300000002000000"
+      },
+      "name": "bgra-exact-offset",
+      "tpl_hex": "0300000002000000000000003c3c50ff503c78ff643ca0ff507850ff647878ff7878a0ff"
+    },
+    {
+      "bmp_hex": "060000000500000000000000000000ff140028ff280050ff3c0078ff5000a0ff6400c8ff143c00ff283c28ff3c3c50ff503c78ff643ca0ff783cc8ff287800ff3c7828ff507850ff647878ff7878a0ff8c78c8ff3cb400ff50b428ff64b450ff78b478ff8cb4a0ffa0b4c8ff50f000ff64f028ff78f050ff8cf078ffa0f0a0ffb4f0c8ff",
+      "expect": {
+        "kind": "ok",
+        "region_hex": "02000000010000000300000002000000"
+      },
+      "name": "bgra-best-nonzero",
+      "tpl_hex": "0300000002000000000000003c3f50ff503c78ff643ca0ff507850ff647878ff7878a0ff"
+    },
+    {
+      "bmp_hex": "040000000400000007000000",
+      "expect": {
+        "case": "unsupported-format",
+        "kind": "err"
+      },
+      "name": "bad-format-tag",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "040000000400000001aa00000a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "name": "reserved-nonzero",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "0400000004000000010000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "name": "too-short-header",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "000000000400000001000000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "name": "zero-axis",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "0400000004000000010000000a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0000",
+      "expect": {
+        "case": "stride-mismatch",
+        "kind": "err"
+      },
+      "name": "length-mismatch",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "010000000100001001000000",
+      "expect": {
+        "case": "allocation-limit",
+        "kind": "err"
+      },
+      "name": "allocation-limit",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "ffffffffffffffff00000000",
+      "expect": {
+        "case": "dimension-overflow",
+        "kind": "err"
+      },
+      "name": "dimension-overflow",
+      "tpl_hex": "030000000200000001000000c7e60a01203f"
+    },
+    {
+      "bmp_hex": "04000000040000000000000003020104030201040302010403020104030201040302010403020104030201040302010403020104030201040302010403020104030201040302010403020104",
+      "expect": {
+        "case": "unsupported-format",
+        "kind": "err"
+      },
+      "name": "format-mismatch",
+      "tpl_hex": "02000000020000000100000064646464"
+    },
+    {
+      "bmp_hex": "02000000020000000100000005050505",
+      "expect": {
+        "case": "region-out-of-bounds",
+        "kind": "err"
+      },
+      "name": "template-too-large",
+      "tpl_hex": "030000000300000001000000050505050505050505"
+    }
+  ],
+  "function": "template",
+  "note": "region_hex = 16B A1 encoding x,y,width,height u32 LE; inputs are A2 self-describing packed Bytes; expected outputs computed independently in pure Python, no code shared with the core.",
+  "oracle": "prototypes/image-match-probe/tools/make-fixtures.py",
+  "package": "image-match",
+  "schema": "sico.m24.roster-fixtures.v0"
+}

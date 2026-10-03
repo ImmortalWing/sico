@@ -32,9 +32,15 @@ members = [
 ]
 resolver = "3"
 exclude = [
+    "guests/image-codec",
+    "guests/image-match",
+    "guests/image-grid",
+    "guests/image-contour",
     "prototypes/component-host-call/async-guest",
     "prototypes/component-host-call/guest",
     "prototypes/component-host-call/host",
+    "prototypes/image-codec-probe/guest",
+    "prototypes/image-codec-probe/host",
     "prototypes/numeric",
     "prototypes/resource-async",
     "prototypes/script-profile",

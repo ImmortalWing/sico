@@ -1,0 +1,77 @@
+{
+  "schema": "sico.m24.codec-fixtures.v0",
+  "decode_cases": [
+    {
+      "name": "decode-ok-2x2-rgba",
+      "file": "ok-2x2-rgba.png",
+      "expect": {
+        "kind": "ok",
+        "payload_hex": "020000000000000002000000000000001e140aff3c3228805a504600786e6440"
+      }
+    },
+    {
+      "name": "decode-bad-signature",
+      "file": "bad-signature.png",
+      "expect": {
+        "kind": "err",
+        "case": "bad-signature"
+      }
+    },
+    {
+      "name": "decode-trailing-data",
+      "file": "trailing-data.png",
+      "expect": {
+        "kind": "err",
+        "case": "trailing-data"
+      }
+    },
+    {
+      "name": "decode-truncated",
+      "file": "truncated.png",
+      "expect": {
+        "kind": "err",
+        "case": "truncated"
+      }
+    },
+    {
+      "name": "decode-corrupt-crc",
+      "file": "corrupt-crc.png",
+      "expect": {
+        "kind": "err",
+        "case": "corrupt-stream"
+      }
+    },
+    {
+      "name": "decode-oversized-limit-plus-one",
+      "file": "oversized.png",
+      "expect": {
+        "kind": "err",
+        "case": "oversized"
+      }
+    },
+    {
+      "name": "decode-unsupported-palette",
+      "file": "palette.png",
+      "expect": {
+        "kind": "err",
+        "case": "unsupported-profile"
+      }
+    },
+    {
+      "name": "decode-unsupported-depth-16",
+      "file": "depth-16.png",
+      "expect": {
+        "kind": "err",
+        "case": "unsupported-profile"
+      }
+    },
+    {
+      "name": "decode-unsupported-interlaced",
+      "file": "interlaced.png",
+      "expect": {
+        "kind": "err",
+        "case": "unsupported-profile"
+      }
+    }
+  ]
+}

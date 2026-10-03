@@ -1,0 +1,64 @@
+{
+  "schema": "sico.m24.roster-support.v0",
+  "package": "sico:user/image-contour@1",
+  "rfc": "RFC-0043 (as amended by A1 result list + A2 bitmap input, owner accepted 2026-10-01)",
+  "adr": "ADR-0019 (Rust-compiled package core production path, accepted 2026-09-30)",
+  "step": "STEP-0337",
+  "roster-slot": "3/3",
+  "production-path": {
+    "class": "rust-compiled-core",
+    "guest-crate": "guests/image-contour",
+    "committed-core": "crates/sico-codegen-wasm/artifacts/image-contour-core.wasm",
+    "core-sha256": "b260e36b0d058b21be7de5f19f2ad1ec2e489441f1c0d62fd7d21ea27f98e4df",
+    "core-bytes": 18856,
+    "reproducibility-validator": "tools/validate-package-core.ps1",
+    "reproducible": true,
+    "import-free": true,
+    "dependency-free": true
+  },
+  "functions": [
+    {
+      "name": "find",
+      "signature": "find(bmp: Bytes, min-area: U64) -> Result[Bytes, Text]",
+      "check": true,
+      "build": true,
+      "run": true,
+      "evidence": "runtime-verified",
+      "runner": "windows-native (wasmtime 47.0.2 component, empty linker)",
+      "runner-test": "runner/sico-runner/tests/image_contour_package.rs"
+    }
+  ],
+  "semantics": "grey8 A2 input only (a bgra8 input is unsupported-format); foreground = pixel value >= 128; a region is a maximal 4-connected (left/right/up/down) foreground component, emitted as the closed external region's bounding box {x=min_x, y=min_y, w=max_x-min_x+1, h=max_y-min_y+1}; a region is emitted iff its foreground pixel area >= min-area (inclusive filter, not a parameter-accept gate); ordering is by the row-major seed (lowest (y,x)); list<region> is A1-encoded as count u32 LE then count x 16 B (x,y,width,height u32 LE); no qualifying region is a count-0 ok.",
+  "semantics-provenance": "The connection rule (4-connectivity), foreground threshold (>= 128), bounding-box region form and the min-area filter are RFC-0043 §A4-DELEGATED internal reference semantics for the `image-contour@1` op — §A4 hands each op's exact behavior to 'the determinism rules + the content-asserting corpus', so the frozen corpus (not an owner wire ruling) is the authority here. This is NOT a cross-boundary wire contract: the cross-boundary shapes ARE owner-ruled and already frozen — input framing by RFC-0043-A2 and list<region> result encoding by RFC-0043-A1. Same delegation basis as image-grid's detect-lines (STEP-0336).",
+  "refusal-corpus": {
+    "source": "independent oracle (pure-stdlib Python, no shared code with the dependency-free Rust core)",
+    "generator": "prototypes/image-contour-probe/tools/make-fixtures.py",
+    "manifest": "runner/sico-runner/tests/corpus/image-contour/manifest.json",
+    "manifest-schema": "sico.m24.roster-contour-fixtures.v0",
+    "reachable-image-error-set": [
+      "unsupported-format",
+      "stride-mismatch",
+      "dimension-overflow",
+      "allocation-limit"
+    ],
+    "unreachable-image-error": {
+      "case": "region-out-of-bounds",
+      "reason": "bounding regions derive from within-image components and can never exceed the raster; asserted absent in-test"
+    },
+    "cases": 16,
+    "ok": 8,
+    "typed-refusals": 8,
+    "count-0-empty-ok": 2,
+    "byte-stable-repeat": "asserted (fresh-store re-call identical)"
+  },
+  "gate": {
+    "identity": "M24 §3 gate 3 (roster) = M17 roster",
+    "status": "3/3 roster packages now green at the pure-package-Component level (image-match STEP-0335 + image-grid STEP-0336 + image-contour STEP-0337)",
+    "flip-authority": "the aggregate §3 gate 3 verdict is recorded in the M24 exit audit, not by an individual slice; this slice completes the last of the three green conditions"
+  },
+  "honest-scope": {
+    "covered-here": "image-contour@1 package content contract at the pure-package Component level (A2 input framing, A1 list result, closed reachable image-error set, deterministic connected-region content, byte-stability)",
+    "not-claimed": "no M24 full-GO claim; M24 §3 gate 1 (accelerator hardware) and #4 Direct2D/DirectWrite renderer remain external doors; #3 JPEG offline; the converter pilot (§3 gate 5) and provenance run-time budget/cancel remain open",
+    "evidence-label": "internal-fixture / runtime-verified package-Component level (not script-level, not pilot-level)"
+  }
+}

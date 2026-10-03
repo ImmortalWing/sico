@@ -9,19 +9,31 @@
 
 Freeze the conversion engine of the GUI format-converter pilot as a
 versioned package, **`sico:user/image-codec@1`**, with four pure
-functions over the RFC-0041 pixel contract:
+functions over the RFC-0041 pixel contract.
+
+> **Amendment A1 (accepted by owner re-adjudication 2026-09-30, STEP-0330).**
+> The original §1 declared `record Image` and `enum CodecError`, which fall
+> outside the frozen v0 user-WIT value set — `interface_value_offender`
+> (RFC-0039 §2.4 A7) refuses records/enums with **E8017**, so the accepted
+> surface could not be lowered through the pure-package path. A1 flattens the
+> surface to scalars only (below) and adds the `encode-buffer-mismatch` error
+> case to §3. See
+> [`RFC-0050-amendment-A1-flattened-surface`](./RFC-0050-amendment-A1-flattened-surface.md).
+> §2 profiles, §3 limits, determinism and the §4 pure-package implementation
+> home are unchanged.
 
 ```text
-decode-jpeg(data: Bytes)              -> Result[Image, CodecError]
-decode-png(data: Bytes)               -> Result[Image, CodecError]
-encode-png(image: Image)              -> Result[Bytes, CodecError]
-encode-jpeg(image: Image)             -> Result[Bytes, CodecError]
+decode-jpeg(data: Bytes)                             -> Result[Bytes, Text]
+decode-png(data: Bytes)                              -> Result[Bytes, Text]
+encode-png(pixels: Bytes, width: U64, height: U64)   -> Result[Bytes, Text]
+encode-jpeg(pixels: Bytes, width: U64, height: U64)  -> Result[Bytes, Text]
 
-record Image:
-  field width:  U64
-  field height: U64
-  field pixels: Bytes        // BGRA8, packed rows, top-left origin, stride = width*4
-end record
+// decode ok payload (Bytes): 16-byte little-endian header
+//   width u64 LE | height u64 LE
+// followed by RFC-0041 BGRA8 pixels (packed rows, top-left origin,
+// stride = width*4). The former `record Image` rides in-band.
+// error (Text): the §3 case name (HTTP case-name precedent); the
+// discriminant is the Result arm, so no enum crosses the boundary.
 ```
 
 Determinism is the contract, not an implementation detail: for a fixed
@@ -62,8 +74,11 @@ a new package version.
 - Declared limits, checked from headers **before** pixel allocation:
   dimension bound and pixel-count bound (`width·height ≤ 2^28`) — the
   +1 cases are typed refusals, never OOM.
-- `CodecError` cases (v0 closed set): `bad-signature`, `truncated`,
-  `trailing-data`, `oversized`, `unsupported-profile`, `corrupt-stream`.
+- `CodecError` cases (v0 closed set, delivered as case-name `Text` per A1):
+  `bad-signature`, `truncated`, `trailing-data`, `oversized`,
+  `unsupported-profile`, `corrupt-stream`, `encode-buffer-mismatch`
+  (A1: the supplied pixel buffer length != `width·height·4` for the declared
+  dimensions; decode-side stream corruption keeps `corrupt-stream`).
   Each decode failure consumes only its input; nothing is written.
 - Cancellation mid-decode/encode yields the runner's typed cancellation
   outcome; the pure functions never emit partial files. Writing the
