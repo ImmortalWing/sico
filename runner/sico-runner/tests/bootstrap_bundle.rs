@@ -199,8 +199,7 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
     // freeze the same way: covered by language_batch3.rs, excluded from the
     // frozen bundle.
     expected_discovered.extend(
-        ["infix-comparisons.sico", "let-bind.sico"]
-            .map(|file| format!("tests/end-to-end/{file}")),
+        ["infix-comparisons.sico", "let-bind.sico"].map(|file| format!("tests/end-to-end/{file}")),
     );
     expected_discovered.sort();
     assert_eq!(

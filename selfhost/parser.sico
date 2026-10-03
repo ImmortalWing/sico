@@ -1990,6 +1990,26 @@ function fixed_operation_operand_width(words: List[Text], atom_idx: U64, caller_
   if U64.less_than(binding_parameter_index(words, caller_name_idx, fow_atom), fow_param_count):
     return U64.literal(1)
   end if
+  if is_word(fow_atom, "sico"):
+    let fow_intrinsic_open = next_index(next_index(next_index(next_index(atom_idx, fow_words_len), fow_words_len), fow_words_len), fow_words_len)
+    if is_word(word_at(words, fow_intrinsic_open), "("):
+      let fow_intrinsic_close = matching_close(words, fow_intrinsic_open, fow_words_len)
+      if U64.less_than(fow_intrinsic_close, fow_words_len):
+        match U64.checked_add(fow_intrinsic_close, U64.literal(1)):
+          case ok(fow_after_intrinsic):
+            match U64.checked_sub(fow_after_intrinsic, atom_idx):
+              case ok(fow_intrinsic_width):
+                return fow_intrinsic_width
+              case error(_):
+                return U64.literal(1)
+            end match
+          case error(_):
+            return U64.literal(1)
+        end match
+      end if
+    end if
+    return U64.literal(1)
+  end if
   let fow_literal_kind = fixed_literal_argument(words, atom_idx)
   if U64.equal(sico.text.length(fow_literal_kind), U64.literal(0)):
     return U64.literal(1)
@@ -15770,7 +15790,33 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
             return control_if_json
           end if
           if is_word(control_if_json, "SKIP:CONTROL-IF-DECLINED"):
-            let control_if_declined = I64.literal(1)
+            let gw_decline_json = general_while_function_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+            if is_word(gw_decline_json, "SKIP"):
+              let gw_decline_unclaimed = I64.literal(1)
+            else:
+              if sico.text.starts_with(gw_decline_json, "ERR:"):
+                return gw_decline_json
+              end if
+              if U64.less_than(U64.literal(1), function_count):
+                set functions_json = sico.text.concat(functions_json, ",")
+              end if
+              set functions_json = sico.text.concat(functions_json, gw_decline_json)
+              let gw_decline_end_offset = find_text_from(src, "end function", fn_start)
+              let gw_decline_fn_end = fn_start
+              match U64.checked_add(gw_decline_end_offset, U64.literal(13)):
+                case ok(gw_decline_after_end):
+                  set gw_decline_fn_end = gw_decline_after_end
+                case error(_):
+                  return "ERR:E-SH-IR-RANGE"
+              end match
+              if U64.less_than(source_len, gw_decline_fn_end):
+                set gw_decline_fn_end = source_len
+              end if
+              set source_cursor = gw_decline_fn_end
+              set i = body_end_word
+              set prev = "function"
+              continue
+            end if
           else:
           if U64.less_than(U64.literal(1), function_count):
             set functions_json = sico.text.concat(functions_json, ",")
