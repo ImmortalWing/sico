@@ -7049,12 +7049,150 @@ function gw_compare_packed(words: List[Text], src: Bytes, name_idx: U64, cond_id
   return gcp_pack
 end function
 
+function gw_starts_with_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_idx: U64, line_end: U64, cond_start: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
+  let gsw_len = sico.list.length(words)
+  let gsw_open = next_index(next_index(next_index(next_index(next_index(cond_idx, gsw_len), gsw_len), gsw_len), gsw_len), gsw_len)
+  if is_word(word_at(words, gsw_open), "("):
+    let gsw_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gsw_close = matching_close(words, gsw_open, line_end)
+  let gsw_recv = next_index(gsw_open, gsw_close)
+  let gsw_recv_open = next_index(gsw_recv, gsw_close)
+  let gsw_recv_call = U64.literal(0)
+  if is_word(word_at(words, gsw_recv_open), "("):
+    set gsw_recv_call = U64.literal(1)
+  end if
+  let gsw_recv_close = gsw_recv
+  let gsw_comma = next_index(gsw_recv, gsw_close)
+  if U64.equal(gsw_recv_call, U64.literal(1)):
+    set gsw_recv_close = matching_close(words, gsw_recv_open, gsw_close)
+    set gsw_comma = next_index(gsw_recv_close, gsw_close)
+  end if
+  if is_word(word_at(words, gsw_comma), ","):
+    let gsw_comma_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gsw_lit = next_index(gsw_comma, gsw_close)
+  if is_string_token(word_at(words, gsw_lit)):
+    let gsw_lit_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  if U64.equal(next_index(gsw_lit, gsw_close), gsw_close):
+    let gsw_tail_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let gsw_recv_json = ""
+  let gsw_recv_count = U64.literal(0)
+  let gsw_recv_value = base
+  let gsw_recv_param = binding_parameter_index(words, name_idx, word_at(words, gsw_recv))
+  if U64.less_than(gsw_recv_param, parameter_count):
+    if is_word(binding_parameter_kind(words, name_idx, word_at(words, gsw_recv)), "string"):
+      let gsw_recv_kind_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-TYPE"
+    end if
+    set gsw_recv_value = gsw_recv_param
+  else:
+    let gsw_recv_cell = local_binding_index(cell_names, word_at(words, gsw_recv))
+    if U64.less_than(gsw_recv_cell, sico.list.length(cell_names)):
+      if is_word(word_at(cell_kinds, gsw_recv_cell), "string"):
+        let gsw_recv_cell_kind_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+      let gsw_cell_start = word_span_offset(words, src, cond_start, cond_idx, gsw_recv)
+      let gsw_cell_end = gsw_cell_start
+      match U64.checked_add(gsw_cell_start, sico.bytes.length(sico.text.encode(word_at(words, gsw_recv)))):
+        case ok(gsw_after_cell):
+          set gsw_cell_end = gsw_after_cell
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      set gsw_recv_json = read_local_instruction_json(base, "string", u64_list_at(cell_locals, gsw_recv_cell, U64.literal(0)), gsw_cell_start, gsw_cell_end)
+      set gsw_recv_count = U64.literal(1)
+      set gsw_recv_value = base
+    else:
+      if U64.equal(gsw_recv_call, U64.literal(1)):
+        let gsw_recv_start = word_span_offset(words, src, cond_start, cond_idx, gsw_recv)
+        let gsw_recv_close_off = word_span_offset(words, src, gsw_recv_start, gsw_recv, gsw_recv_close)
+        let gsw_recv_end = next_index(gsw_recv_close_off, sico.bytes.length(src))
+        let gsw_pack = gw_rhs_packed(words, src, name_idx, gsw_recv, gsw_comma, gsw_recv_start, gsw_recv_end, cell_names, cell_kinds, cell_locals, parameter_count, base)
+        if sico.text.starts_with(gsw_pack, "ERR:"):
+          return gsw_pack
+        end if
+        let gsw_parts = sico.text.split_lines(gsw_pack)
+        set gsw_recv_count = gw_decimal_value(word_at(gsw_parts, U64.literal(0)))
+        set gsw_recv_value = gw_decimal_value(word_at(gsw_parts, U64.literal(1)))
+        if is_word(word_at(gsw_parts, U64.literal(2)), "string"):
+          let gsw_pack_kind_ok = I64.literal(1)
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+        set gsw_recv_json = word_at(gsw_parts, U64.literal(3))
+        if is_word(gsw_recv_json, "-"):
+          set gsw_recv_json = ""
+        end if
+      else:
+        return "ERR:E-SH-IR-CALL-ARGUMENT"
+      end if
+    end if
+  end if
+  let gsw_const_id = base
+  match U64.checked_add(base, gsw_recv_count):
+    case ok(gsw_const_slot):
+      set gsw_const_id = gsw_const_slot
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gsw_lit_start = word_span_offset(words, src, cond_start, cond_idx, gsw_lit)
+  let gsw_lit_end = gsw_lit_start
+  match U64.checked_add(gsw_lit_start, sico.bytes.length(sico.text.encode(word_at(words, gsw_lit)))):
+    case ok(gsw_after_lit):
+      set gsw_lit_end = gsw_after_lit
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gsw_const = scalar_const_instruction_json(gsw_const_id, "string", json_string_token(word_at(words, gsw_lit)), gsw_lit_start, gsw_lit_end)
+  let gsw_total = gsw_recv_count
+  match U64.checked_add(gsw_recv_count, U64.literal(2)):
+    case ok(gsw_total_sum):
+      set gsw_total = gsw_total_sum
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gsw_result = gsw_const_id
+  match U64.checked_add(gsw_const_id, U64.literal(1)):
+    case ok(gsw_intr_slot):
+      set gsw_result = gsw_intr_slot
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gsw_cond_end = next_index(word_span_offset(words, src, cond_start, cond_idx, gsw_close), sico.bytes.length(src))
+  let gsw_intr = intrinsic_instruction_json(gsw_result, "bool", "sico.text.starts_with", sico.text.concat("[", sico.text.concat(sico.u64.to_text(gsw_recv_value), sico.text.concat(",", sico.text.concat(sico.u64.to_text(gsw_const_id), "]")))), cond_start, gsw_cond_end)
+  let gsw_json = ""
+  if U64.less_than(U64.literal(0), sico.text.length(gsw_recv_json)):
+    set gsw_json = sico.text.concat(gsw_recv_json, ",")
+  end if
+  set gsw_json = sico.text.concat(gsw_json, sico.text.concat(gsw_const, sico.text.concat(",", gsw_intr)))
+  let gsw_out = sico.u64.to_text(gsw_result)
+  set gsw_out = sico.text.concat(gsw_out, sico.text.concat("\n", sico.text.concat(sico.u64.to_text(gsw_total), sico.text.concat("\n", gsw_json))))
+  return gsw_out
+end function
+
 function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_idx: U64, line_end: U64, cond_start: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
   if is_word(word_at(words, cond_idx), "I64"):
     return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
   end if
   if is_word(word_at(words, cond_idx), "U64"):
     return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  end if
+  if is_intrinsic_path(words, cond_idx, "text", "starts_with"):
+    return gw_starts_with_condition_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
   end if
   if is_word(word_at(words, cond_idx), "sico"):
     if is_intrinsic_path(words, cond_idx, "bytes", "is_utf8"):

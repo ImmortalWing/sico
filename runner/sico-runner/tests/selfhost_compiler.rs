@@ -1860,6 +1860,77 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0340: sico.text.starts_with conditions in the general-while
+    // machine (gw_starts_with_condition_packed: receiver param/cell/call via
+    // gw_rhs_packed, string-literal argument, intrinsic bool condition) —
+    // the most common guard shape in parser.sico (185 sites). Five more
+    // functions flip: is_punct_byte and type_json with the fourteen-function
+    // census prefix, declared_return_kind with the fifteen-function prefix,
+    // and binding_parameter_kind/parameter_kind_by_id with the
+    // twenty-eight-function all-flipped prefix.
+    let mut census14 = census_source.clone();
+    for callee in [
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+    ] {
+        census14.push_str(&parser_function_text(callee));
+        census14.push('\n');
+    }
+    for name in ["is_punct_byte", "type_json"] {
+        let mut source = census14.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census15 = census14.clone();
+    census15.push_str(&parser_function_text("scalar_type_kind"));
+    census15.push('\n');
+    let mut source = census15.clone();
+    source.push_str(&parser_function_text("declared_return_kind"));
+    source.push('\n');
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("declared_return_kind must compile through existing families")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let mut census28 = census15.clone();
+    for callee in [
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "type_json",
+        "declared_return_kind",
+    ] {
+        census28.push_str(&parser_function_text(callee));
+        census28.push('\n');
+    }
+    for name in ["binding_parameter_kind", "parameter_kind_by_id"] {
+        let mut source = census28.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]
