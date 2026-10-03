@@ -1798,7 +1798,7 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     }
 
     // STEP-0338: the guard-chain machine gains host-call lets (gw_rhs_packed
-    // reuse), cell/host-call guard operands (chain_condition_packed, with the
+    // reuse), cell/host-call guard operands (chain_condition_packed with the
     // bytes.at literal-cursor form verified against the oracle) and locals
     // emission — is_digit_token and is_string_token flip byte-exactly.
     // is_ident_byte flips through the control_if-declined general-while
@@ -1808,6 +1808,54 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {
             panic!("parser function {name} must compile through the widened guard chain")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0339: full-function census over the widened machines — seven more
+    // parser functions flip with the line_end callee prefix, and two more
+    // (function_declaration_index/ordinal) with the extended eleven-function
+    // prefix that includes the pass-2 flips.
+    for name in [
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+    ] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census_source = line_end_source.clone();
+    for callee in [
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+    ] {
+        census_source.push_str(&parser_function_text(callee));
+        census_source.push('\n');
+    }
+    for name in ["function_declaration_index", "function_declaration_ordinal"] {
+        let mut source = census_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
         };
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
