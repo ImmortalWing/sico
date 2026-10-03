@@ -1,10 +1,12 @@
 # M22 交接手稿（living handoff，STEP-0294 本机基线）
 
-> - 更新：2026-09-26；工作目录 `E:\github\sico`，分支 `codex/m22-w1-ci`。
-> - `origin/dev` 已前进至 `550059a`，包含另一套 STEP-0279–0283 W1/W2 历史，与本分支源码及 STEP 编号冲突。不得覆盖或隐式合并。
+> - 更新：2026-10-03（STEP-0338）；工作目录 `E:\github\sico-w2`（git worktree），分支 `codex/m22-w2`（0ef908e 历史与原权威线 `codex/m22-w1-ci` 相同；w1-ci 本地分支已清理、远端仍在；远端快照推 gitcode `origin`）。
+> - `origin/dev` 已前进至 `550059a`，包含另一套 STEP-0279–0283 W1/W2 历史，与本分支源码及 STEP 编号冲突。不得覆盖或隐式合并。STEP-0330–0337 为 M24 并行轨（worktree `sico-m24`，提交 `095227b`）占用；M22 线自 STEP-0338 起编。
 > - 权威裁决：[STATUS](./STATUS.md)、[M22 计划](./plans/M22-compiler-self-host.md)、[STEP-0292](./steps/STEP-0292-m22-w1-independent-ci.md)、[STEP-0293](./steps/STEP-0293-m22-w2-u64-to-text-while-rhs.md) 与 [STEP-0294](./steps/STEP-0294-m22-w2-map-get-match-subject.md)。本手稿只提供恢复路径。
 
 ## 0. 当前状态
+
+**STEP-0338（2026-10-03）**：守卫链机器（`fixed_guard_chain_ir`）三加宽落地——宿主调用 let（守卫间/前 `let` 经 `gw_rhs_packed` 复用打包 + `write_local` 入条件块前缀 + cell 三列表注册，cell local = cell 下标）、条件打包器 `chain_condition_packed`（双 SKIP 后第三 fallback：`sico.text.length`/`sico.bytes.length`/`sico.bytes.at` 左值 + param/cell/字面量右值，其余形状委托字节已证 `gw_compare_packed`；守卫与 final 两处接线）、有 cell 时发射 `"locals"` 数组。`while_bytes_at_local_src_packed` 字面量 cursor 形态（form 2）按 oracle 转储落地（STEP-0327 遗留疑点裁决）。`is_digit_token`/`is_string_token`/`is_ident_byte` 翻绿 → parser **20/115**，canary +3，R3 0，套件 58/58、runner 全量绿。**宽度约定已钉死**：`fixed_operation_operand_width` 返回 token 数，`atom+width` = 操作数自身 `)` 之后的下一个 token——一切操作数走位依赖此约定（`bytes.at` 字面量游标的逗号 = 游标+width 本身）。**存疑标记**：同函数的 "sico" 规则（1db4624 移植件）对 `sico.<f>.<m>` 以 +4 判 `(`（实际 open 在 +5），当前不在已证路径，修复/验证前不得扩用。下片候选：`has_return_at`（用户调用 let + else 守卫 + 参数接收者 at，本片探针 EXPRESSION→CALL-TARGET）、`json_string_token`（while+match 嵌套 → match 栈机器）、Bool 参数守卫（`if f:` → read_local bool，T2 族）。会话从 `1db4624`（中断会话 WIP 快照：scalar_ir gw-decline fallback + rustfmt 修正）续起——该快照承载 is_ident_byte 的 control_if-declined→gw 翻绿路径，勿回退。
 
 M22 整体 **NO-GO**。S1/S2 声明子集完成，S3/S4/S5 partial，S6/S7 未进入。R0 已接受 ADR-0017 Option A 与 RFC-0047。STEP-0292 对 `e8495f9` 的独立 Windows GNU [GitHub CI](https://github.com/ImmortalWing/sico/actions/runs/36087222284) 成功，**W1 在本隔离分支快照裁为 GO**。该裁决不覆盖 `origin/dev` 的并行历史。
 

@@ -1796,6 +1796,22 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0338: the guard-chain machine gains host-call lets (gw_rhs_packed
+    // reuse), cell/host-call guard operands (chain_condition_packed, with the
+    // bytes.at literal-cursor form verified against the oracle) and locals
+    // emission — is_digit_token and is_string_token flip byte-exactly.
+    // is_ident_byte flips through the control_if-declined general-while
+    // retry. All three use only intrinsics, so no callee prefix is needed.
+    for name in ["is_digit_token", "is_string_token", "is_ident_byte"] {
+        let source = format!("{}\n", parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the widened guard chain")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]
