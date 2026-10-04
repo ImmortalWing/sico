@@ -1949,6 +1949,24 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0342: the deferred-join emission no longer reuses gmt_len as its
+    // scan variable (gdefer_scan instead), so the match-stack length survives
+    // deferred-block assembly. find_body_end and count_until_end_function —
+    // while + match with an if/else whose BOTH arms return inside the match
+    // arm, the post-dominated return join — flip byte-exactly with the same
+    // line_end callee prefix.
+    for name in ["find_body_end", "count_until_end_function"] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the match-stack machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]

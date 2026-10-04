@@ -10629,6 +10629,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   let gblk_re = sico.list.empty[U64]()
   let gseal_from = sico.list.empty[U64]()
   let gseal_to = sico.list.empty[U64]()
+  let gdefer_scan = U64.literal(0)
   let gbr_from = sico.list.empty[U64]()
   let gbr_cond = sico.list.empty[U64]()
   let gbr_then = sico.list.empty[U64]()
@@ -11668,12 +11669,12 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
           let gelse_target = u64_list_at(gbr_else, gbri, U64.literal(0))
           if U64.equal(u64_list_at(gbr_deferred, gbri, U64.literal(0)), U64.literal(1)):
             set gbrk_len = U64.literal(0)
-            set gmt_len = U64.literal(0)
-            while U64.less_than(gmt_len, gdefer_len):
-              if U64.less_than(u64_list_at(gdefer_rs, gmt_len, U64.literal(0)), u64_list_at(gdefer_rs, gelse_target, U64.literal(0))):
+            set gdefer_scan = U64.literal(0)
+            while U64.less_than(gdefer_scan, gdefer_len):
+              if U64.less_than(u64_list_at(gdefer_rs, gdefer_scan, U64.literal(0)), u64_list_at(gdefer_rs, gelse_target, U64.literal(0))):
                 set gbrk_len = next_index(gbrk_len, gbrk_len)
               end if
-              set gmt_len = next_index(gmt_len, gmt_len)
+              set gdefer_scan = next_index(gdefer_scan, gdefer_scan)
             end while
             match U64.checked_add(gcount, gbrk_len):
               case ok(gdeferred_target):
@@ -11741,12 +11742,12 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
   end while
   let gdi = U64.literal(0)
   while U64.less_than(gdi, gdefer_len):
-    set gmt_len = U64.literal(0)
-    while U64.less_than(gmt_len, gdefer_len):
+    set gdefer_scan = U64.literal(0)
+    while U64.less_than(gdefer_scan, gdefer_len):
       set gbrk_len = U64.literal(0)
       set gbsi = U64.literal(0)
       while U64.less_than(gbsi, gdefer_len):
-        if U64.less_than(u64_list_at(gdefer_rs, gbsi, U64.literal(0)), u64_list_at(gdefer_rs, gmt_len, U64.literal(0))):
+        if U64.less_than(u64_list_at(gdefer_rs, gbsi, U64.literal(0)), u64_list_at(gdefer_rs, gdefer_scan, U64.literal(0))):
           set gbrk_len = next_index(gbrk_len, gbrk_len)
         end if
         set gbsi = next_index(gbsi, gbsi)
@@ -11762,11 +11763,11 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         let gdefer_json = "{\"id\":"
         set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(gdefer_id))
         set gdefer_json = sico.text.concat(gdefer_json, ",\"instructions\":[],\"terminator\":{\"kind\":\"jump\",\"data\":")
-        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_to, gmt_len, U64.literal(0))))
+        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_to, gdefer_scan, U64.literal(0))))
         set gdefer_json = sico.text.concat(gdefer_json, "},\"range\":{\"start\":")
-        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_rs, gmt_len, U64.literal(0))))
+        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_rs, gdefer_scan, U64.literal(0))))
         set gdefer_json = sico.text.concat(gdefer_json, ",\"end\":")
-        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_re, gmt_len, U64.literal(0))))
+        set gdefer_json = sico.text.concat(gdefer_json, sico.u64.to_text(u64_list_at(gdefer_re, gdefer_scan, U64.literal(0))))
         set gdefer_json = sico.text.concat(gdefer_json, "}}")
         if U64.less_than(U64.literal(0), sico.text.length(gblocks)):
           set gblocks = sico.text.concat(gblocks, ",")
@@ -11774,7 +11775,7 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
         set gblocks = sico.text.concat(gblocks, gdefer_json)
         break
       end if
-      set gmt_len = next_index(gmt_len, gmt_len)
+      set gdefer_scan = next_index(gdefer_scan, gdefer_scan)
     end while
     set gdi = next_index(gdi, gdi)
   end while

@@ -79,8 +79,11 @@ fn selfhost_link_unit_stays_inside_ir_verifier_limits() {
     // trips on any further growth while the nested-match frontier slices
     // (both-arms-return, header-region matches) land; the hard
     // MAX_LOCALS_PER_FUNCTION ceiling above is unchanged.
+    // STEP-0342: the deferred-join scan variable is split out of the reused
+    // gmt_len slot (gdefer_scan, 244 -> 245) so the match-stack length is not
+    // clobbered by deferred-block assembly; the floor moves 12 -> 11.
     assert!(
-        busiest + 12 <= sico_ir::MAX_LOCALS_PER_FUNCTION,
+        busiest + 11 <= sico_ir::MAX_LOCALS_PER_FUNCTION,
         "busiest function holds {busiest} locals; frontier work needs headroom"
     );
 }
