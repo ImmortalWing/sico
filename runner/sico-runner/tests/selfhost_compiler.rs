@@ -2130,6 +2130,50 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_gw_slice_plain_subjects_and_utf8_decode_args_byte_exactly() {
+    // STEP-0347: the general machine's bytes.slice match subject accepts a
+    // plain third argument — a u64 cell and an X.literal(N) const span
+    // (previously only sub(bytes.length(...)) and two-argument user calls,
+    // refusing CALL-TARGET) — and the text.concat argument grammar accepts a
+    // nested sico.bytes.utf8_decode call (gw_intrinsic_call_packed reuse,
+    // mirroring the trim branch). json_string_token's remaining frontier is
+    // the after-region match/if (STATEMENT), a separate CFG slice.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    // Slice match subject with a plain cell third argument, ok-arm binding
+    // feeding utf8_decode in a concat — the json_string_token in-loop shape.
+    let g2 = format!(
+        "{base}function probe2(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let start = U64.literal(0)\n  let len = U64.literal(1)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, start, len):\n      case ok(seg):\n        set out = sico.text.concat(out, sico.bytes.utf8_decode(seg))\n      case error(_):\n        set out = \"e\"\n    end match\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g2);
+    let RunOutcome::Output(output) = run_guest(&g2) else {
+        panic!("slice plain-cell subject must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Slice match subject with an X.literal(N) third argument — const_u64
+    // span emission via fixed_literal_const_instruction.
+    let g3 = format!(
+        "{base}function probe3(src: Bytes) returns Text:\n  let out = \"\"\n  let i = U64.literal(0)\n  let n = sico.bytes.length(src)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, i, U64.literal(2)):\n      case ok(seg):\n        set out = sico.bytes.utf8_decode(seg)\n      case error(_):\n        set out = \"e\"\n    end match\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g3);
+    let RunOutcome::Output(output) = run_guest(&g3) else {
+        panic!("slice literal-arg3 subject must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // text.concat argument grammar accepting a nested utf8_decode call.
+    let g1 = format!(
+        "{base}function probe1(token: Text) returns Text:\n  let bytes = sico.text.encode(token)\n  let n = sico.bytes.length(bytes)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set out = sico.text.concat(out, sico.bytes.utf8_decode(bytes))\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g1);
+    let RunOutcome::Output(output) = run_guest(&g1) else {
+        panic!("concat utf8_decode argument must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // STEP-0321: first compiler_parser.sico flips — `same` (byte compare
     // delegation) and `add`/`sub` (match-subject checked arithmetic), the
