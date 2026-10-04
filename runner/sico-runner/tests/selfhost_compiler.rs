@@ -1967,6 +1967,30 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0343: two stack bookkeeping repairs in the general machine —
+    // the while-frame stack and the match stack are physically truncated on
+    // pop (previously only their length counters shrank, so a sibling
+    // while/match re-push read a stale frame slot). expression_shape_depth
+    // (two sequential top-level whiles + recursive self-call in a concat
+    // argument), expression_shape and return_shapes flip byte-exactly with
+    // the seven-function callee prefix; the chain composes cumulatively
+    // (expression_shape wraps depth, return_shapes calls expression_shape).
+    let mut shape_source = line_end_source.clone();
+    for callee in ["is_string_token", "is_digit_token", "matching_close"] {
+        shape_source.push_str(&parser_function_text(callee));
+        shape_source.push('\n');
+    }
+    for name in ["expression_shape_depth", "expression_shape", "return_shapes"] {
+        shape_source.push_str(&parser_function_text(name));
+        shape_source.push('\n');
+        let expected = rust_ir(&shape_source);
+        let RunOutcome::Output(output) = run_guest(&shape_source) else {
+            panic!("parser chain through {name} must compile through the general machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]
@@ -1976,7 +2000,7 @@ fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // exact frozen function text against the Rust oracle.
     for name in ["same", "add", "sub"] {
         let start = COMPILER_PARSER_SOURCE
-            .find(&format!("function {name}"))
+            .find(&format!("function {name}("))
             .expect("compiler_parser keeps the function");
         let end = COMPILER_PARSER_SOURCE[start..]
             .find("\nend function\n")
@@ -1995,7 +2019,7 @@ fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
 
 fn parser_function_text(name: &str) -> String {
     let start = PARSER_SOURCE
-        .find(&format!("function {name}"))
+        .find(&format!("function {name}("))
         .expect("parser keeps the function");
     let end = PARSER_SOURCE[start..]
         .find("\nend function\n")
