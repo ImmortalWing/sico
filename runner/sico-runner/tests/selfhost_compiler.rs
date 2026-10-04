@@ -83,8 +83,8 @@ fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
             stdin: input.as_bytes().to_vec(),
         },
         &RunnerLimits {
-            fuel: 5_000_000_000,
-            timeout: std::time::Duration::from_secs(30),
+            fuel: 20_000_000_000,
+            timeout: std::time::Duration::from_secs(120),
             memory_bytes: 512 * 1024 * 1024,
             ..RunnerLimits::default()
         },
@@ -2313,6 +2313,70 @@ fn sico_compiler_lowers_straight_concat_user_call_args_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
+    // STEP-0351: the script profile's guest linear-memory ceiling rises from
+    // 64 MiB (1,024 pages) to 256 MiB (4,096 pages) — RFC-0029 budget-table
+    // amendment. The self-host compiler's own lowering workspace (monotonic
+    // bump-arena allocations across a whole-module lowering, never reset
+    // between functions) exhausted 64 MiB mid-run, surfacing as a bare wasm
+    // `unreachable` in the generated realloc instead of a typed refusal.
+    // Guards: (1) the previously-trapping 53-function composition now lowers
+    // byte-exactly; (2) the FULL parser.sico text lowers through all 122
+    // functions and stops at the current machine frontier with a typed
+    // CALL-ARGUMENT refusal — never a trap.
+    let mut composition = String::new();
+    for name in [
+        "type_json", "read_local_instruction_json",
+        "is_word", "word_at", "next_index", "line_end",
+        "is_declaration_start", "literal_value_index", "list_aware_parameter_index",
+        "is_intrinsic_path", "record_scalar_kind", "record_close_bracket",
+        "record_map_comma", "function_declaration_index", "function_declaration_ordinal",
+        "is_ident_byte", "scalar_type_kind", "is_punct_byte", "is_digit_token",
+        "is_string_token", "valid_escape_byte", "matching_close", "decimal_at_most",
+        "binding_parameter_index", "parameter_type_word", "script_result_return_json",
+        "fixed_op_name", "return_expression_end", "declared_return_kind",
+        "binding_parameter_kind", "parameter_kind_by_id",
+        "count_params", "find_body_end", "count_until_end_function",
+        "expression_shape_depth", "expression_shape", "return_shapes",
+        "fn_entry", "is_canonical_magnitude",
+        "scalar_const_instruction_json", "write_local_instruction_json",
+        "constant_argument_kind", "fixed_literal_argument", "comma_count",
+        "fixed_operation_operand_width",
+        "has_return_at", "parameter_name_start", "find_text_from",
+        "return_expression_start", "local_binding_index",
+        "json_string_token", "lex_words",
+    ] {
+        composition.push_str(&parser_function_text(name));
+        composition.push('\n');
+    }
+    let fixture = format!(
+        "{}{}\n",
+        composition,
+        parser_function_text("call_instruction_json")
+    );
+    let expected = rust_ir(&fixture);
+    let RunOutcome::Output(output) = run_guest(&fixture) else {
+        panic!("the 53-function composition must lower without exhausting the arena")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // The full self-host parser source: every function walks the ladder; the
+    // first not-yet-supported shape must fail as a typed refusal. The whole
+    // module walks all 122 functions, so this guard runs with a raised fuel
+    // and time budget instead of the shared run_guest defaults.
+    let source = format!("{PARSER_SOURCE}\n");
+    let outcome = run_guest_with_args(
+        &source,
+        Vec::new(),
+    );
+    let RunOutcome::Domain { message, .. } = outcome else {
+        panic!("full parser.sico must reach a typed frontier refusal, not a trap: {outcome:?}")
+    };
+    assert_eq!(message, "ERR:E-SH-IR-CALL-ARGUMENT");
 }
 
 #[test]

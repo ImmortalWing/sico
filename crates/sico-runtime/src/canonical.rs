@@ -14,7 +14,7 @@ pub const MAX_ARGUMENT_BYTES: usize = 64 * 1024;
 pub const MAX_TOTAL_ARGUMENT_BYTES: usize = 1024 * 1024;
 pub const MAX_CHANNEL_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_ERROR_MESSAGE_BYTES: usize = 64 * 1024;
-pub const ARENA_LIMIT: usize = 64 * 1024 * 1024;
+pub const ARENA_LIMIT: usize = 128 * 1024 * 1024;
 
 /// Canonical ABI result area for `result<script-output, script-error>`.
 pub const RESULT_SIZE: usize = 32;

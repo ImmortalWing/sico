@@ -22,6 +22,14 @@ record_named_type（gw 位）留待后续片。
 
 ## 2. 既有 guest trap 登记（本片 bisect 副产品，HEAD 09faacc 上复现，非本片引入）
 
+> **更正（STEP-0351）**：本节当时记录的三个"trap"中，两个经四结局探针
+> （OK/REFUSE/DOMAIN/REAL-TRAP）复检为**探针误标**——`RunOutcome::Domain`
+> 是 typed refusal 而非 trap（纯 return split_lines 与缺被调用例均正常
+> DOMAIN 拒绝）。唯一真实的 trap 是 **arena 耗尽**（见 STEP-0351）：guest
+> 线性内存 64 MiB 上限内，自宿主编译器的跨函数累计分配（bump 指针全局、
+> 整个 run 不重置）在约 52 函数的 fixture 上触顶，realloc 的 ARENA_LIMIT
+> 检查发出裸 `unreachable`。已在 STEP-0351 通过 RFC-0029 预算表修订修复。
+
 三个 trap 全部为 **typed-refusal 违规**（应拒绝却 wasm unreachable），最小复现：
 
 1. **纯 return `sico.text.split_lines("x")`**：单函数 fixture 即 trap

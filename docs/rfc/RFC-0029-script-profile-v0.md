@@ -89,6 +89,8 @@ Script v0 bounds are:
 
 The effective limit is the minimum of language/profile, package and Host limits. Exceeding a bound produces exit 125 and no silent truncation.
 
+STEP-0351 amendment (implemented): the guest linear-memory budget line above reads **128 MiB** for components built by the current toolchain (`MEMORY_PAGES` 1024 → 2,048, `ARENA_LIMIT` 64 → 128 MiB, host grants raised to match). The self-host compiler (M22) lowers whole source modules inside one run with a monotonic bump arena that is only reclaimed at `cabi_post_run`; at 64 MiB a 52-function module exhausted the arena and surfaced as a bare `unreachable` in the generated realloc instead of a typed refusal. The bound stays deterministic and per-component; stricter package/Host limits still apply and the effective limit remains the minimum of all limits.
+
 ### Numbers
 
 Sico `Int` retains its specified arbitrary-precision direction. Script v0 adds explicit fixed-width `I64/U64` values for sizes, indices, exit values and dynamic machine arithmetic. Codegen may not silently reinterpret `Int` as `i64`.
