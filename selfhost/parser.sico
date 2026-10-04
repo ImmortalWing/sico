@@ -8438,13 +8438,55 @@ function gw_text_list_binary_packed(words: List[Text], src: Bytes, name_idx: U64
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
   end if
-  if U64.equal(next_index(gla_text_idx, line_end), gla_close):
-    let gla_arity_ok = I64.literal(1)
+  if U64.less_than(gla_text_idx, gla_close):
+    let gla_shape_scan = gla_text_idx
+    let gla_shape_depth = U64.literal(0)
+    let gla_shape_ok = I64.literal(1)
+    while U64.less_than(gla_shape_scan, gla_close):
+      if is_word(word_at(words, gla_shape_scan), "("):
+        set gla_shape_depth = next_index(gla_shape_depth, gla_shape_depth)
+      else:
+        if is_word(word_at(words, gla_shape_scan), ")"):
+          match U64.checked_sub(gla_shape_depth, U64.literal(1)):
+            case ok(gla_shape_popped):
+              set gla_shape_depth = gla_shape_popped
+            case error(_):
+              set gla_shape_ok = I64.literal(0)
+          end match
+        else:
+          if U64.equal(gla_shape_depth, U64.literal(0)):
+            if is_word(word_at(words, gla_shape_scan), ","):
+              set gla_shape_ok = I64.literal(0)
+            end if
+          end if
+        end if
+      end if
+      set gla_shape_scan = next_index(gla_shape_scan, gla_close)
+    end while
+    if I64.equal(gla_shape_ok, I64.literal(1)):
+      let gla_arity_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
   else:
     return "ERR:E-SH-IR-CALL-SHAPE"
   end if
   let gla_list_start = word_span_offset(words, src, expr_start, receiver_idx, gla_list_idx)
-  let gla_list_pack = gw_rhs_packed(words, src, name_idx, gla_list_idx, gla_comma, gla_list_start, gla_list_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+  let gla_list_cursor = gla_list_idx
+  let gla_list_last = gla_list_idx
+  while U64.less_than(gla_list_cursor, gla_comma):
+    set gla_list_last = gla_list_cursor
+    set gla_list_cursor = next_index(gla_list_cursor, gla_comma)
+  end while
+  let gla_list_last_off = word_span_offset(words, src, gla_list_start, gla_list_idx, gla_list_last)
+  let gla_list_end = gla_list_last_off
+  match U64.checked_add(gla_list_last_off, sico.bytes.length(sico.text.encode(word_at(words, gla_list_last)))):
+    case ok(gla_list_after):
+      set gla_list_end = gla_list_after
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gla_list_pack = gw_rhs_packed(words, src, name_idx, gla_list_idx, gla_comma, gla_list_start, gla_list_end, cell_names, cell_kinds, cell_locals, parameter_count, base)
   if sico.text.starts_with(gla_list_pack, "ERR:"):
     return gla_list_pack
   end if
@@ -8469,7 +8511,21 @@ function gw_text_list_binary_packed(words: List[Text], src: Bytes, name_idx: U64
       return "ERR:E-SH-IR-RANGE"
   end match
   let gla_text_start = word_span_offset(words, src, expr_start, receiver_idx, gla_text_idx)
-  let gla_text_pack = gw_rhs_packed(words, src, name_idx, gla_text_idx, gla_close, gla_text_start, gla_text_start, cell_names, cell_kinds, cell_locals, parameter_count, gla_text_base)
+  let gla_text_cursor = gla_text_idx
+  let gla_text_last = gla_text_idx
+  while U64.less_than(gla_text_cursor, gla_close):
+    set gla_text_last = gla_text_cursor
+    set gla_text_cursor = next_index(gla_text_cursor, gla_close)
+  end while
+  let gla_text_last_off = word_span_offset(words, src, gla_text_start, gla_text_idx, gla_text_last)
+  let gla_text_end = gla_text_last_off
+  match U64.checked_add(gla_text_last_off, sico.bytes.length(sico.text.encode(word_at(words, gla_text_last)))):
+    case ok(gla_text_after):
+      set gla_text_end = gla_text_after
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let gla_text_pack = gw_rhs_packed(words, src, name_idx, gla_text_idx, gla_close, gla_text_start, gla_text_end, cell_names, cell_kinds, cell_locals, parameter_count, gla_text_base)
   if sico.text.starts_with(gla_text_pack, "ERR:"):
     return gla_text_pack
   end if

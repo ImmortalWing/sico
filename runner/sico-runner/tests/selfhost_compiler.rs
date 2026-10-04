@@ -2224,6 +2224,64 @@ fn sico_compiler_lowers_gw_after_region_match_and_if_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_gw_text_list_binary_nested_args_byte_exactly() {
+    // STEP-0349: gw_text_list_binary_packed (sico.text.join / sico.list.append
+    // packer) accepts multi-token second arguments — the arity gate required a
+    // single atom and both argument spans passed their start offset as the
+    // range end, emitting zero-width ranges for nested calls. The widened
+    // gate requires at least one token; argument range ends now come from the
+    // last token of each argument (the STEP-0347 slice-argument pattern).
+    // lex_words flips byte-exactly (List[Text] appends with nested
+    // utf8_decode-of-slice calls inside match ok arms and nested if/else).
+    let base = format!(
+        "{}\n{}\n{}\n{}\n",
+        parser_function_text("next_index"),
+        parser_function_text("valid_escape_byte"),
+        parser_function_text("is_ident_byte"),
+        parser_function_text("is_punct_byte"),
+    );
+    // List[Text] append with a string literal, in a while body.
+    let l1 = format!(
+        "{base}function probe1(src: Bytes) returns List[Text]:\n  let n = sico.bytes.length(src)\n  let words = sico.text.split_lines(\"\")\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set words = sico.list.append(words, \"<nl>\")\n    set i = next_index(i, n)\n  end while\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l1);
+    let RunOutcome::Output(output) = run_guest(&l1) else {
+        panic!("List[Text] append with a literal must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Call in return position (split_lines with a literal).
+    let l2 = format!(
+        "{base}function probe2(src: Bytes) returns List[Text]:\n  let words = sico.text.split_lines(\"\")\n  if U64.equal(sico.bytes.length(src), U64.literal(0)):\n    return sico.text.split_lines(\"ERR-x\")\n  end if\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l2);
+    let RunOutcome::Output(output) = run_guest(&l2) else {
+        panic!("split_lines in return position must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Append with a nested utf8_decode-of-slice call, match ok arm in a while
+    // body — the lex_words inner shape.
+    let l3 = format!(
+        "{base}function probe3(src: Bytes) returns List[Text]:\n  let words = sico.text.split_lines(\"\")\n  let i = U64.literal(0)\n  let n = sico.bytes.length(src)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, i, U64.literal(1)):\n      case ok(seg):\n        set words = sico.list.append(words, sico.bytes.utf8_decode(seg))\n      case error(_):\n        set words = sico.text.split_lines(\"ERR-slice\")\n    end match\n    set i = next_index(i, n)\n  end while\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l3);
+    let RunOutcome::Output(output) = run_guest(&l3) else {
+        panic!("append with a nested call must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The target: exact frozen lex_words text (the module lexer).
+    let lsrc = format!("{base}{}", parser_function_text("lex_words"));
+    let expected = rust_ir(&lsrc);
+    let RunOutcome::Output(output) = run_guest(&lsrc) else {
+        panic!("lex_words must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // STEP-0321: first compiler_parser.sico flips — `same` (byte compare
     // delegation) and `add`/`sub` (match-subject checked arithmetic), the
