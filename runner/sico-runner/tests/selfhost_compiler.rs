@@ -2083,6 +2083,50 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // STEP-0346: chain_condition_packed (the general machine's chained
+    // comparison condition path) accepts nested sico.bytes.at call operands —
+    // the left operand dispatches to the parameter-source packer when the
+    // first argument is a bytes parameter (previously cell-only, refusing
+    // CALL-ARGUMENT), and the right operand accepts a nested bytes.at call in
+    // addition to parameter/cell/literal. Five functions flip on a cumulative
+    // callee chain: has_return_at, parameter_name_start and find_text_from
+    // (the bisected shapes; find_text_from exercises both operands as nested
+    // calls) plus return_expression_start and local_binding_index for free
+    // from the census fixpoint.
+    let mut call_operand_source = String::new();
+    for callee in ["is_word", "word_at", "next_index", "is_ident_byte"] {
+        call_operand_source.push_str(&parser_function_text(callee));
+        call_operand_source.push('\n');
+    }
+    for name in [
+        "has_return_at",
+        "parameter_name_start",
+        "find_text_from",
+        "return_expression_start",
+        "local_binding_index",
+    ] {
+        call_operand_source.push_str(&parser_function_text(name));
+        call_operand_source.push('\n');
+        let expected = rust_ir(&call_operand_source);
+        let RunOutcome::Output(output) = run_guest(&call_operand_source) else {
+            panic!("parser chain through {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Minimal regression guard: the bytes-parameter left operand of an
+    // I64.equal condition inside a while body, the exact bisected shape.
+    let probe = format!(
+        "{}function probe(src: Bytes, from_i: U64) returns Bool:\n  let n = sico.bytes.length(src)\n  let i = from_i\n  while U64.less_than(i, n):\n    if I64.equal(sico.bytes.at(src, i, I64.literal(0)), I64.literal(114)):\n      return true\n    end if\n    set i = next_index(i, n)\n  end while\n  return false\nend function\n",
+        call_operand_source
+    );
+    let expected = rust_ir(&probe);
+    let RunOutcome::Output(output) = run_guest(&probe) else {
+        panic!("bytes-parameter compare operand must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }
 
 #[test]
