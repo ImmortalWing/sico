@@ -2174,6 +2174,56 @@ fn sico_compiler_lowers_gw_slice_plain_subjects_and_utf8_decode_args_byte_exactl
 }
 
 #[test]
+fn sico_compiler_lowers_gw_after_region_match_and_if_byte_exactly() {
+    // STEP-0348: the general machine accepts match and if statements in the
+    // after region (the block following a closed while) — the region gates in
+    // gw_match_open_pack and the if handler were conservative refusals; the
+    // block assembly is region-agnostic (case arms reuse the current region
+    // string, end-match seals the join, end-if restores to join). The
+    // json_string_token tail (match, then if-wrapped match) was the last gate;
+    // the exact frozen text now flips byte-exactly.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    // match directly in the after region.
+    let a1 = format!(
+        "{base}function probe1(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set out = sico.text.concat(out, \"x\")\n    set i = next_index(i, n)\n  end while\n  match sico.bytes.slice(src, i, U64.literal(1)):\n    case ok(seg):\n      set out = sico.bytes.utf8_decode(seg)\n    case error(_):\n      set out = \"e\"\n  end match\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a1);
+    let RunOutcome::Output(output) = run_guest(&a1) else {
+        panic!("match in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // if/else directly in the after region.
+    let a2 = format!(
+        "{base}function probe2(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set i = next_index(i, n)\n  end while\n  if U64.equal(i, n):\n    set out = \"done\"\n  else:\n    set out = \"mid\"\n  end if\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a2);
+    let RunOutcome::Output(output) = run_guest(&a2) else {
+        panic!("if in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // if + nested match in the after region — the json_string_token tail shape.
+    let a3 = format!(
+        "{base}function probe3(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set i = next_index(i, n)\n  end while\n  match sico.bytes.slice(src, i, U64.literal(1)):\n    case ok(seg):\n      set out = sico.bytes.utf8_decode(seg)\n    case error(_):\n      set out = \"e\"\n  end match\n  let tail_len = U64.literal(0)\n  match U64.checked_sub(n, i):\n    case ok(length):\n      set tail_len = length\n    case error(_):\n      set tail_len = U64.literal(0)\n  end match\n  if U64.less_than(U64.literal(0), tail_len):\n    match sico.bytes.slice(src, i, tail_len):\n      case ok(tail):\n        set out = sico.text.concat(out, sico.bytes.utf8_decode(tail))\n      case error(_):\n        set out = \"t\"\n    end match\n  end if\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a3);
+    let RunOutcome::Output(output) = run_guest(&a3) else {
+        panic!("if+match in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The target: exact frozen json_string_token text (tail match + tail if).
+    let jsrc = format!("{base}{}", parser_function_text("json_string_token"));
+    let expected = rust_ir(&jsrc);
+    let RunOutcome::Output(output) = run_guest(&jsrc) else {
+        panic!("json_string_token must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // STEP-0321: first compiler_parser.sico flips — `same` (byte compare
     // delegation) and `add`/`sub` (match-subject checked arithmetic), the

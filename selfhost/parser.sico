@@ -10789,9 +10789,6 @@ function gw_match_open_pack(words: List[Text], src: Bytes, name_idx: U64, gi: U6
   if is_word(region, "entry"):
     return "ERR:E-SH-IR-STATEMENT"
   end if
-  if is_word(region, "after"):
-    return "ERR:E-SH-IR-STATEMENT"
-  end if
   if is_word(region, "header"):
     return "ERR:E-SH-IR-STATEMENT"
   end if
@@ -11330,9 +11327,6 @@ function general_while_function_ir(words: List[Text], src: Bytes, name_idx: U64,
       end if
     end if
     if is_word(gw_word, "if"):
-      if is_word(gregion, "after"):
-        return "ERR:E-SH-IR-STATEMENT"
-      end if
       let gil_end = line_end(words, gi)
       let gif_offset = find_text_from(src, "if", gcursor)
       let gif_end = return_expression_end(src, gif_offset)
