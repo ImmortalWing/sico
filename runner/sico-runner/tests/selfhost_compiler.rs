@@ -2020,6 +2020,69 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0345: gw_condition_packed routes I64/U64 receivers through
+    // chain_condition_packed first (host-call left operands — bytes.at /
+    // text.length / bytes.length — already byte-proven there) and falls
+    // back to gw_compare_packed on SKIP. is_canonical_magnitude flips with
+    // the four-function line_end prefix; the census over the forty-function
+    // flipped prefix adds constant_argument_kind, fixed_literal_argument
+    // and comma_count on pass one, and fixed_operation_operand_width on
+    // pass two over the pass-one flips (census compositions frozen
+    // exactly).
+    let mut magnitude_source = line_end_source.clone();
+    magnitude_source.push_str(&parser_function_text("is_canonical_magnitude"));
+    magnitude_source.push('\n');
+    let expected = rust_ir(&magnitude_source);
+    let RunOutcome::Output(output) = run_guest(&magnitude_source) else {
+        panic!("is_canonical_magnitude must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let mut census40 = String::new();
+    for callee in [
+        "is_word", "word_at", "next_index", "line_end",
+        "is_declaration_start", "literal_value_index", "list_aware_parameter_index",
+        "is_intrinsic_path", "record_scalar_kind", "record_close_bracket",
+        "record_map_comma", "function_declaration_index", "function_declaration_ordinal",
+        "is_ident_byte", "scalar_type_kind", "is_punct_byte", "is_digit_token",
+        "is_string_token", "valid_escape_byte", "matching_close", "decimal_at_most",
+        "binding_parameter_index", "parameter_type_word", "script_result_return_json",
+        "fixed_op_name", "return_expression_end", "type_json", "declared_return_kind",
+        "binding_parameter_kind", "parameter_kind_by_id",
+        "count_params", "find_body_end", "count_until_end_function",
+        "expression_shape_depth", "expression_shape", "return_shapes",
+        "fn_entry", "is_canonical_magnitude",
+        "scalar_const_instruction_json", "write_local_instruction_json",
+    ] {
+        census40.push_str(&parser_function_text(callee));
+        census40.push('\n');
+    }
+    for name in ["constant_argument_kind", "fixed_literal_argument", "comma_count"] {
+        let mut source = census40.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census44 = census40.clone();
+    for callee in ["constant_argument_kind", "fixed_literal_argument", "comma_count"] {
+        census44.push_str(&parser_function_text(callee));
+        census44.push('\n');
+    }
+    let mut source = census44;
+    source.push_str(&parser_function_text("fixed_operation_operand_width"));
+    source.push('\n');
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("fixed_operation_operand_width must compile through existing families")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }
 
 #[test]

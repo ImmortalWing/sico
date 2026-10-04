@@ -7472,10 +7472,18 @@ end function
 
 function gw_condition_packed(words: List[Text], src: Bytes, name_idx: U64, cond_idx: U64, line_end: U64, cond_start: U64, cell_names: List[Text], cell_kinds: List[Text], cell_locals: List[U64], parameter_count: U64, base: U64) returns Text:
   if is_word(word_at(words, cond_idx), "I64"):
-    return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    let gwc_chain = chain_condition_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    if sico.text.starts_with(gwc_chain, "SKIP:"):
+      return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    end if
+    return gwc_chain
   end if
   if is_word(word_at(words, cond_idx), "U64"):
-    return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    let gwc_chain2 = chain_condition_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    if sico.text.starts_with(gwc_chain2, "SKIP:"):
+      return gw_compare_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
+    end if
+    return gwc_chain2
   end if
   if is_intrinsic_path(words, cond_idx, "text", "starts_with"):
     return gw_starts_with_condition_packed(words, src, name_idx, cond_idx, line_end, cond_start, cell_names, cell_kinds, cell_locals, parameter_count, base)
