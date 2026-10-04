@@ -1991,6 +1991,35 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
+
+    // STEP-0344: straight machines accept sico.text.concat right-hand sides
+    // via the shared straight_text_concat_packed helper (nested concat, a
+    // sico.u64.to_text argument, string literals, params, and locals in ssa
+    // or cell mode), wired into straight_environment let/return positions
+    // and straight_cell set/return positions. fn_entry (eight counter lets
+    // + seven concat sets with nested to_text + concat return) flips on the
+    // cumulative STEP-0343 chain; the two instruction-json helpers flip
+    // standalone.
+    let mut fn_entry_source = shape_source.clone();
+    fn_entry_source.push_str(&parser_function_text("count_until_end_function"));
+    fn_entry_source.push('\n');
+    fn_entry_source.push_str(&parser_function_text("fn_entry"));
+    fn_entry_source.push('\n');
+    let expected = rust_ir(&fn_entry_source);
+    let RunOutcome::Output(output) = run_guest(&fn_entry_source) else {
+        panic!("fn_entry must compile through the straight machines")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    for name in ["scalar_const_instruction_json", "write_local_instruction_json"] {
+        let source = format!("{}\n", parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("helper {name} must compile standalone")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }
 
 #[test]
