@@ -5836,21 +5836,113 @@ function straight_text_concat_packed(words: List[Text], src: Bytes, name_idx: U6
             else:
               return "ERR:E-SH-IR-CALL-TYPE"
             end if
-          else:
-            if is_string_token(stc_atom):
-              let stc_lit_end = stc_seg_offset
-              match U64.checked_add(stc_seg_offset, sico.bytes.length(sico.text.encode(stc_atom))):
-                case ok(stc_after_lit):
-                  set stc_lit_end = stc_after_lit
-                case error(_):
-                  return "ERR:E-SH-IR-RANGE"
-              end match
-              set stc_arg_instr = scalar_const_instruction_json(stc_value, "string", json_string_token(stc_atom), stc_seg_offset, stc_lit_end)
-              set stc_arg_value = stc_value
-              set stc_advance = U64.literal(1)
             else:
-              return "ERR:E-SH-IR-CALL-ARGUMENT"
-            end if
+              if is_string_token(stc_atom):
+                let stc_lit_end = stc_seg_offset
+                match U64.checked_add(stc_seg_offset, sico.bytes.length(sico.text.encode(stc_atom))):
+                  case ok(stc_after_lit):
+                    set stc_lit_end = stc_after_lit
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                set stc_arg_instr = scalar_const_instruction_json(stc_value, "string", json_string_token(stc_atom), stc_seg_offset, stc_lit_end)
+                set stc_arg_value = stc_value
+                set stc_advance = U64.literal(1)
+              else:
+                let stc_callee_idx = function_declaration_index(words, stc_atom)
+                if U64.less_than(stc_callee_idx, stc_words_len):
+                  let stc_call_open = next_index(stc_seg, stc_words_len)
+                  if is_word(word_at(words, stc_call_open), "("):
+                    let stc_call_close = matching_close(words, stc_call_open, stc_seg_end)
+                    if U64.equal(next_index(stc_call_close, stc_words_len), stc_seg_end):
+                      let stc_callee_ret = declared_return_kind(words, next_index(stc_callee_idx, stc_words_len))
+                      if is_word(stc_callee_ret, "string"):
+                        let stc_a0 = next_index(stc_call_open, stc_words_len)
+                        if U64.equal(next_index(stc_a0, stc_words_len), stc_call_close):
+                          let stc_a0w = word_at(words, stc_a0)
+                          let stc_a0_param = binding_parameter_index(words, name_idx, stc_a0w)
+                          let stc_call_base = stc_value
+                          let stc_a0_instr = ""
+                          let stc_a0_value = stc_value
+                          if U64.less_than(stc_a0_param, parameter_count):
+                            set stc_a0_value = stc_a0_param
+                          else:
+                            let stc_a0_local = local_binding_index(local_names, stc_a0w)
+                            if U64.less_than(stc_a0_local, sico.list.length(local_names)):
+                              if is_word(mode, "cell"):
+                                let stc_a0_off = word_span_offset(words, src, expr_start, receiver_idx, stc_a0)
+                                let stc_a0_off_end = stc_a0_off
+                                match U64.checked_add(stc_a0_off, sico.bytes.length(sico.text.encode(stc_a0w))):
+                                  case ok(stc_a0_atom_end):
+                                    set stc_a0_off_end = stc_a0_atom_end
+                                  case error(_):
+                                    return "ERR:E-SH-IR-RANGE"
+                                end match
+                                set stc_a0_instr = read_local_instruction_json(stc_value, word_at(local_kinds, stc_a0_local), u64_list_at(local_values, stc_a0_local, U64.literal(0)), stc_a0_off, stc_a0_off_end)
+                                set stc_a0_value = stc_value
+                                set stc_call_base = next_index(stc_value, stc_value)
+                              else:
+                                set stc_a0_value = u64_list_at(local_values, stc_a0_local, stc_value)
+                              end if
+                            else:
+                              if is_string_token(stc_a0w):
+                                let stc_a0_lit_off = word_span_offset(words, src, expr_start, receiver_idx, stc_a0)
+                                let stc_a0_lit_end = stc_a0_lit_off
+                                match U64.checked_add(stc_a0_lit_off, sico.bytes.length(sico.text.encode(stc_a0w))):
+                                  case ok(stc_a0_lit_after):
+                                    set stc_a0_lit_end = stc_a0_lit_after
+                                  case error(_):
+                                    return "ERR:E-SH-IR-RANGE"
+                                end match
+                                set stc_a0_instr = scalar_const_instruction_json(stc_value, "string", json_string_token(stc_a0w), stc_a0_lit_off, stc_a0_lit_end)
+                                set stc_a0_value = stc_value
+                                set stc_call_base = next_index(stc_value, stc_value)
+                              else:
+                                return "ERR:E-SH-IR-CALL-ARGUMENT"
+                              end if
+                            end if
+                          end if
+                          let stc_call_close_off = word_span_offset(words, src, expr_start, receiver_idx, stc_call_close)
+                          let stc_call_end = stc_call_close_off
+                          match U64.checked_add(stc_call_close_off, U64.literal(1)):
+                            case ok(stc_call_after):
+                              set stc_call_end = stc_call_after
+                            case error(_):
+                              return "ERR:E-SH-IR-RANGE"
+                          end match
+                          set stc_arg_instr = stc_a0_instr
+                          if U64.less_than(U64.literal(0), sico.text.length(stc_a0_instr)):
+                            set stc_arg_instr = sico.text.concat(stc_a0_instr, ",")
+                          end if
+                          set stc_arg_instr = sico.text.concat(stc_arg_instr, call_instruction_json(stc_call_base, stc_callee_ret, function_declaration_ordinal(words, stc_callee_idx), sico.text.concat("[", sico.text.concat(sico.u64.to_text(stc_a0_value), "]")), stc_seg_offset, stc_call_end))
+                          set stc_arg_value = stc_call_base
+                          match U64.checked_add(stc_call_base, U64.literal(1)):
+                            case ok(stc_call_total):
+                              match U64.checked_sub(stc_call_total, stc_value):
+                                case ok(stc_call_delta):
+                                  set stc_advance = stc_call_delta
+                                case error(_):
+                                  return "ERR:E-SH-IR-RANGE"
+                              end match
+                            case error(_):
+                              return "ERR:E-SH-IR-RANGE"
+                          end match
+                        else:
+                          return "ERR:E-SH-IR-CALL-ARITY"
+                        end if
+                      else:
+                        return "ERR:E-SH-IR-CALL-TYPE"
+                      end if
+                    else:
+                      return "ERR:E-SH-IR-CALL-SHAPE"
+                    end if
+                  else:
+                    return "ERR:E-SH-IR-CALL-ARGUMENT"
+                  end if
+                else:
+                  return "ERR:E-SH-IR-CALL-ARGUMENT"
+                end if
+              end if
           end if
         end if
       end if

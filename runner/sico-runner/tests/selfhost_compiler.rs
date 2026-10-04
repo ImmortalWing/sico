@@ -2282,6 +2282,40 @@ fn sico_compiler_lowers_gw_text_list_binary_nested_args_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_lowers_straight_concat_user_call_args_byte_exactly() {
+    // STEP-0350: straight_text_concat_packed's argument grammar accepts a
+    // single-argument user call (type_json(kind)) — param, cell-mode
+    // read_local, ssa-mode value-forward and string-literal arguments, with
+    // the call emitted through call_instruction_json at the callee's ordinal.
+    // Three JSON-constructor functions flip. Frozen compositions avoid the
+    // pre-existing sequential-lowering trap (see the STEP for the frontier).
+    let tj = format!("{}\n", parser_function_text("type_json"));
+    for name in [
+        "read_local_instruction_json",
+        "call_instruction_json",
+        "intrinsic_instruction_json",
+    ] {
+        let source = format!("{}{}\n", tj, parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Minimal regression guard: the bisected shape — concat with a user call
+    // taking a Text param, in a set statement (scc machine).
+    let rl = parser_function_text("read_local_instruction_json");
+    let guard = format!("{tj}{rl}function probe_guard(kind: Text) returns Text:\n  let out = \"\"\n  set out = sico.text.concat(\"a:\", type_json(kind))\n  return out\nend function\n");
+    let expected = rust_ir(&guard);
+    let RunOutcome::Output(output) = run_guest(&guard) else {
+        panic!("concat with a user-call argument must compile through the cell machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // STEP-0321: first compiler_parser.sico flips — `same` (byte compare
     // delegation) and `add`/`sub` (match-subject checked arithmetic), the
