@@ -25,6 +25,7 @@ use compiler_parser.parse_metadata
 use compiler_parser.lossless_tokens
 use parser.lex_words
 use parser.scalar_ir
+use codegen.component_hex_for_minimal
 
 function is_ident_byte(b: I64) returns Bool:
   if I64.equal(b, I64.literal(95)):
@@ -871,6 +872,13 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
         return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
       end if
       return ok(ScriptOutput(stdout: sico.text.encode(codegen_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-component-hex"):
+      let component_hex = codegen.component_hex_for_minimal(input.stdin)
+      if U64.equal(sico.text.length(component_hex), U64.literal(0)):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
+      end if
+      return ok(ScriptOutput(stdout: sico.text.encode(component_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
     end if
   end if
   let general_words = parser.lex_words(input.stdin)

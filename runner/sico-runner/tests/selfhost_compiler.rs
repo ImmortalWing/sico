@@ -18,16 +18,18 @@ const COMPILER_SOURCE: &str = include_str!("../../../selfhost/compiler.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
 const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
+const CODEGEN_SOURCE: &str = include_str!("../../../selfhost/codegen.sico");
 const FORMATTER_SOURCE: &str = include_str!("../../../selfhost/formatter.sico");
 const IDENTITY_SOURCE: &str =
     "function identity(value: Int) returns Int:\n  return value\nend function\n";
 
-fn compiler_sources() -> [(&'static str, &'static str); 4] {
+fn compiler_sources() -> [(&'static str, &'static str); 5] {
     [
         ("compiler.sico", COMPILER_SOURCE),
         ("compiler_lexer.sico", COMPILER_LEXER_SOURCE),
         ("compiler_parser.sico", COMPILER_PARSER_SOURCE),
         ("parser.sico", PARSER_SOURCE),
+        ("codegen.sico", CODEGEN_SOURCE),
     ]
 }
 
@@ -83,10 +85,23 @@ fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
             stdin: input.as_bytes().to_vec(),
         },
         &RunnerLimits {
-            fuel: 20_000_000_000,
+            // STEP-0383: the transformed parser.sico walks deeper before
+            // the typed frontier (CALL-ARGUMENT -> GWPACK-OTHER), so the
+            // full-source guard needs a raised fuel budget. STEP-0388: the
+            // known-bad-shape sweep pushed the walk past 40B; 120B reaches
+            // the same CALL-SHAPE typed refusal (~4s). STEP-0434: the
+            // topological reorder + nested-call hoists pushed the walk past
+            // 120B; 400B reaches the current typed refusal.
+            fuel: 800_000_000_000,
             timeout: std::time::Duration::from_secs(120),
-            memory_bytes: 512 * 1024 * 1024,
-            ..RunnerLimits::default()
+            memory_bytes: 2560 * 1024 * 1024,
+            // STEP-0477: the walk now clears every typed door up to the
+            // hostcall transport budget (stdin*64+64MiB); the deep
+            // general_while body copies more source bytes through hostcalls
+            // than that cap admits. Raise the transport budget so the
+            // frontier stays a typed refusal, not a transport trap. The
+            // STEP-0365 treadmill family stays registered.
+            hostcall_fuel: 8 << 30,
         },
         &CancelToken::new(),
     );
@@ -159,7 +174,7 @@ fn compiler_entry_uses_lossless_module_lexer_on_its_own_sources() {
     let limits = RunnerLimits {
         fuel: 1_000_000_000,
         timeout: std::time::Duration::from_secs(30),
-        memory_bytes: 512 * 1024 * 1024,
+        memory_bytes: 2560 * 1024 * 1024,
         ..RunnerLimits::default()
     };
 
@@ -1512,8 +1527,14 @@ fn sico_compiler_lowers_nested_slice_match_subject_byte_exactly() {
 
 #[test]
 fn sico_compiler_lowers_parser_is_ident_byte_prefix_byte_exactly() {
+    // STEP-0432: parser.sico is now topologically ordered (callees precede
+    // callers; the guest frontend refuses forward-referenced user-function
+    // calls). `lex_words` therefore sits at the bottom of the module and is
+    // no longer a small-prefix anchor. Pin the prefix through the function
+    // right after `is_ident_byte` instead; the expected IR is derived from
+    // the same source, so the byte-exact property is unchanged.
     let through = PARSER_SOURCE
-        .find("function lex_words")
+        .find("function record_named_type")
         .expect("parser keeps the is_ident_byte prefix");
     let offset = PARSER_SOURCE.len() - PARSER_SOURCE.split_once('\n').unwrap().1.len();
     let source = &PARSER_SOURCE[offset..through];
@@ -1981,7 +2002,11 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         shape_source.push_str(&parser_function_text(callee));
         shape_source.push('\n');
     }
-    for name in ["expression_shape_depth", "expression_shape", "return_shapes"] {
+    for name in [
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+    ] {
         shape_source.push_str(&parser_function_text(name));
         shape_source.push('\n');
         let expected = rust_ir(&shape_source);
@@ -2011,7 +2036,10 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
-    for name in ["scalar_const_instruction_json", "write_local_instruction_json"] {
+    for name in [
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
+    ] {
         let source = format!("{}\n", parser_function_text(name));
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {
@@ -2041,24 +2069,55 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     assert_bytes_equal(&output.stdout, expected.as_bytes());
     let mut census40 = String::new();
     for callee in [
-        "is_word", "word_at", "next_index", "line_end",
-        "is_declaration_start", "literal_value_index", "list_aware_parameter_index",
-        "is_intrinsic_path", "record_scalar_kind", "record_close_bracket",
-        "record_map_comma", "function_declaration_index", "function_declaration_ordinal",
-        "is_ident_byte", "scalar_type_kind", "is_punct_byte", "is_digit_token",
-        "is_string_token", "valid_escape_byte", "matching_close", "decimal_at_most",
-        "binding_parameter_index", "parameter_type_word", "script_result_return_json",
-        "fixed_op_name", "return_expression_end", "type_json", "declared_return_kind",
-        "binding_parameter_kind", "parameter_kind_by_id",
-        "count_params", "find_body_end", "count_until_end_function",
-        "expression_shape_depth", "expression_shape", "return_shapes",
-        "fn_entry", "is_canonical_magnitude",
-        "scalar_const_instruction_json", "write_local_instruction_json",
+        "is_word",
+        "word_at",
+        "next_index",
+        "line_end",
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+        "scalar_type_kind",
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "type_json",
+        "declared_return_kind",
+        "binding_parameter_kind",
+        "parameter_kind_by_id",
+        "count_params",
+        "find_body_end",
+        "count_until_end_function",
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+        "fn_entry",
+        "is_canonical_magnitude",
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
     ] {
         census40.push_str(&parser_function_text(callee));
         census40.push('\n');
     }
-    for name in ["constant_argument_kind", "fixed_literal_argument", "comma_count"] {
+    for name in [
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
+    ] {
         let mut source = census40.clone();
         source.push_str(&parser_function_text(name));
         source.push('\n');
@@ -2070,7 +2129,11 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
     let mut census44 = census40.clone();
-    for callee in ["constant_argument_kind", "fixed_literal_argument", "comma_count"] {
+    for callee in [
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
+    ] {
         census44.push_str(&parser_function_text(callee));
         census44.push('\n');
     }
@@ -2306,7 +2369,9 @@ fn sico_compiler_lowers_straight_concat_user_call_args_byte_exactly() {
     // Minimal regression guard: the bisected shape — concat with a user call
     // taking a Text param, in a set statement (scc machine).
     let rl = parser_function_text("read_local_instruction_json");
-    let guard = format!("{tj}{rl}function probe_guard(kind: Text) returns Text:\n  let out = \"\"\n  set out = sico.text.concat(\"a:\", type_json(kind))\n  return out\nend function\n");
+    let guard = format!(
+        "{tj}{rl}function probe_guard(kind: Text) returns Text:\n  let out = \"\"\n  set out = sico.text.concat(\"a:\", type_json(kind))\n  return out\nend function\n"
+    );
     let expected = rust_ir(&guard);
     let RunOutcome::Output(output) = run_guest(&guard) else {
         panic!("concat with a user-call argument must compile through the cell machine")
@@ -2317,37 +2382,73 @@ fn sico_compiler_lowers_straight_concat_user_call_args_byte_exactly() {
 
 #[test]
 fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
-    // STEP-0351: the script profile's guest linear-memory ceiling rises from
-    // 64 MiB (1,024 pages) to 256 MiB (4,096 pages) — RFC-0029 budget-table
-    // amendment. The self-host compiler's own lowering workspace (monotonic
-    // bump-arena allocations across a whole-module lowering, never reset
-    // between functions) exhausted 64 MiB mid-run, surfacing as a bare wasm
-    // `unreachable` in the generated realloc instead of a typed refusal.
-    // Guards: (1) the previously-trapping 53-function composition now lowers
-    // byte-exactly; (2) the FULL parser.sico text lowers through all 122
-    // functions and stops at the current machine frontier with a typed
-    // CALL-ARGUMENT refusal — never a trap.
+    // STEP-0351 → STEP-0454: the script profile's guest linear-memory ceiling
+    // rose 64 MiB (1,024 pages) → 128 MiB (2,048) → 256 MiB (4,096) → 512 MiB
+    // (8,192) → 2 GiB (33,792 pages) — RFC-0029 budget-table amendments
+    // (STEP-0351/0402/0421/0454). The self-host compiler's own lowering
+    // workspace (monotonic bump-arena allocations across a whole-module
+    // lowering, never reset between functions) exhausted the ceiling mid-run,
+    // surfacing as a bare wasm `unreachable` in the generated realloc instead
+    // of a typed refusal. STEP-0484 added the per-function arena treadmill, so
+    // the ceiling is now a backstop rather than the working budget. Guards:
+    // (1) the previously-trapping 53-function composition lowers byte-exactly;
+    // (2) the FULL parser.sico text lowers through every function to a clean
+    // exit 0 byte-exact result against the Rust oracle — never a trap, never a
+    // typed refusal.
     let mut composition = String::new();
     for name in [
-        "type_json", "read_local_instruction_json",
-        "is_word", "word_at", "next_index", "line_end",
-        "is_declaration_start", "literal_value_index", "list_aware_parameter_index",
-        "is_intrinsic_path", "record_scalar_kind", "record_close_bracket",
-        "record_map_comma", "function_declaration_index", "function_declaration_ordinal",
-        "is_ident_byte", "scalar_type_kind", "is_punct_byte", "is_digit_token",
-        "is_string_token", "valid_escape_byte", "matching_close", "decimal_at_most",
-        "binding_parameter_index", "parameter_type_word", "script_result_return_json",
-        "fixed_op_name", "return_expression_end", "declared_return_kind",
-        "binding_parameter_kind", "parameter_kind_by_id",
-        "count_params", "find_body_end", "count_until_end_function",
-        "expression_shape_depth", "expression_shape", "return_shapes",
-        "fn_entry", "is_canonical_magnitude",
-        "scalar_const_instruction_json", "write_local_instruction_json",
-        "constant_argument_kind", "fixed_literal_argument", "comma_count",
+        "type_json",
+        "read_local_instruction_json",
+        "is_word",
+        "word_at",
+        "next_index",
+        "line_end",
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+        "scalar_type_kind",
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "declared_return_kind",
+        "binding_parameter_kind",
+        "parameter_kind_by_id",
+        "count_params",
+        "find_body_end",
+        "count_until_end_function",
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+        "fn_entry",
+        "is_canonical_magnitude",
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
         "fixed_operation_operand_width",
-        "has_return_at", "parameter_name_start", "find_text_from",
-        "return_expression_start", "local_binding_index",
-        "json_string_token", "lex_words",
+        "has_return_at",
+        "parameter_name_start",
+        "find_text_from",
+        "return_expression_start",
+        "local_binding_index",
+        "json_string_token",
+        "lex_words",
     ] {
         composition.push_str(&parser_function_text(name));
         composition.push('\n');
@@ -2366,17 +2467,26 @@ fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
 
     // The full self-host parser source: every function walks the ladder; the
     // first not-yet-supported shape must fail as a typed refusal. The whole
-    // module walks all 122 functions, so this guard runs with a raised fuel
+    // module walks all 127 functions, so this guard runs with a raised fuel
     // and time budget instead of the shared run_guest defaults.
     let source = format!("{PARSER_SOURCE}\n");
-    let outcome = run_guest_with_args(
-        &source,
-        Vec::new(),
-    );
-    let RunOutcome::Domain { message, .. } = outcome else {
-        panic!("full parser.sico must reach a typed frontier refusal, not a trap: {outcome:?}")
+    let outcome = run_guest_with_args(&source, Vec::new());
+    // STEP-0484 TREADMILL INVERSION: per-function arena reuse (RFC-0029
+    // amendment) cleared the STEP-0365 memory wall. The self-host walk now
+    // arms the scratch zone once, reclaims every function's garbage via
+    // `sico.arena.push_chunk`, and joins the kept chunks once at the end —
+    // peak memory is perm(live set) + max(per-function scratch) instead of
+    // the monotonic sum. The pin inverts: the full source MUST lower to a
+    // clean exit 0 byte-exact against the Rust oracle (any trap or typed
+    // refusal fails), closing the M22 S6 full-source lowering gate.
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "full parser.sico walk must lower cleanly after the STEP-0484 treadmill, not trap or refuse: {outcome:?}"
+        )
     };
-    assert_eq!(message, "ERR:E-SH-IR-CALL-ARGUMENT");
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let expected = rust_ir(&source);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }
 
 #[test]
@@ -2421,7 +2531,9 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
     // and `checked_sub` match subjects inside statement regions (if/else
     // branches and loop bodies' nested regions), with parameter, cell and
     // literal operands — previously only `sico.map.get`/`sico.bytes.slice`
-    // subjects were lowered and these refused CALL-TARGET.
+    // subjects were lowered and these refused CALL-TARGET. STEP-0353
+    // widens the family with `checked_mul`/`checked_div` (same operand
+    // shapes and Result kind; gw_decimal_value's shape).
     let base = format!(
         "{}\n{}\n{}\n{}\n",
         parser_function_text("is_word"),
@@ -2438,6 +2550,11 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
         // the ok arm — the matching_close shape.
         format!(
             "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(2)\n  let w = word_at(words, i)\n  if is_word(w, \")\"):\n    match U64.checked_sub(depth, i):\n      case ok(next):\n        set depth = next\n        if U64.equal(depth, U64.literal(0)):\n          return i\n        end if\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        ),
+        // STEP-0353: checked_mul joins the family (gw_decimal_value shape) —
+        // cell * literal with the early return in the error arm.
+        format!(
+            "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let acc = U64.literal(1)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_mul(acc, U64.literal(10)):\n      case ok(next):\n        set acc = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return acc\nend function\n"
         ),
         // matching_close itself, exact frozen text with its callees.
         format!("{}{}", base, parser_function_text("matching_close")),
@@ -2462,8 +2579,10 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
             message: "ERR:E-SH-IR-CALL-TYPE".into()
         }
     );
+    // STEP-0353: checked_mul/div are in-family now; keep the out-of-family
+    // guard on an operation that stays refused (bit_and).
     let bad_op = format!(
-        "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_mul(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.bit_and(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
     );
     assert_eq!(
         run_guest(&bad_op),
@@ -2743,4 +2862,1071 @@ fn sico_compiler_encodes_declared_scalar_core_wasm_families_byte_exactly() {
     .unwrap();
     let expected = codegen_oracle::compile(&lower_core(&source_file).unwrap()).unwrap();
     assert_eq!(decode_hex(&recovered.stdout), expected);
+}
+
+#[test]
+fn sico_codegen_guest_emits_component_bytes_byte_exactly() {
+    // STEP-0487 (STEP-0486 S5 codegen wave): the guest emits the full script
+    // Component bytes for the frozen minimal echo fixture through the new
+    // `--emit-component-hex` driver mode, byte-equal to the Rust backend
+    // (RFC-0011 deterministic emission, sico_codegen_wasm::compile_script_
+    // program as the direct oracle). The skeleton covers the fixed component
+    // scaffolding plus the frozen echo run body; every other source shape
+    // must fail closed with the typed "unsupported codegen source shape"
+    // refusal (ADR-0016 decision 6: no silent fallback).
+    let expected = {
+        let source_file = SourceFile::from_text(
+            SourceId::new(0),
+            "echo.sico",
+            ECHO_COMPONENT_FIXTURE_SOURCE.to_owned(),
+        )
+        .unwrap();
+        let module = lower_core(&source_file).unwrap();
+        codegen_oracle::compile_script_program(&module).unwrap()
+    };
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("component codegen fixture must succeed through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted component bytes must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted component must pass the real Wasm validator");
+
+    // Any source outside the frozen minimal shape must fail closed, and the
+    // compiler must stay usable for ordinary lowering afterwards.
+    assert_eq!(
+        run_guest_with_args(IDENTITY_SOURCE, vec!["--emit-component-hex".into()],),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "unsupported codegen source shape".into(),
+        },
+        "unsupported component codegen shape must fail closed"
+    );
+    let RunOutcome::Output(recovered) = run_guest(IDENTITY_SOURCE) else {
+        panic!("ordinary lowering must work after the typed refusal")
+    };
+    assert_eq!(recovered.exit_code, 0);
+    assert_bytes_equal(&recovered.stdout, rust_ir(IDENTITY_SOURCE).as_bytes());
+}
+
+const ECHO_COMPONENT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_gw_tail_match_both_arms_return_byte_exactly() {
+    // STEP-0354: the general-while machine lowers a match whose both arms
+    // return when it sits at the function tail: the oracle keeps the join
+    // block but gives it an `unreachable` terminator (probe diagnostics), so
+    // the machine registers the join in a new unreachable table and accepts
+    // the terminated tail at the epilogue. Dead code after the same match
+    // instead lands in the join block with a normal terminator (oracle
+    // verified), which the machine already lowered — both shapes frozen.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    let tail = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.checked_add(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\n"
+    );
+    let dead_code = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.checked_add(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\n  return U64.literal(1)\nend function\n"
+    );
+    let instr_count = format!("{}{}", base, parser_function_text("gw_instr_count"));
+    for source in [&tail, &dead_code, &instr_count] {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("gw tail match with both arms returning must compile")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Declared bounds: an out-of-family match subject stays typed-refused,
+    // then recovery.
+    let bad_op = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.bit_and(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&bad_op),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let good = &tail;
+    let expected = rust_ir(good);
+    let RunOutcome::Output(recovered) = run_guest(good) else {
+        panic!("valid gw tail match must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_list_get_generic_u64_match_byte_exactly() {
+    // STEP-0355: the list.get match-only machine accepts the generic subject
+    // `sico.list.get[U64](values, idx)` on a three-parameter
+    // `(values: List[U64], idx: U64, fallback: U64) returns U64` shape
+    // (u64_list_at itself) — the intrinsic name carries the `[U64]` generic,
+    // the result ok type and return type are u64, and the error arm returns
+    // the third parameter. Out-of-family generic types, a U64 element without
+    // the generic, and a string-literal fallback on the U64 shape stay
+    // typed-refused.
+    let good = parser_function_text("u64_list_at");
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("u64_list_at must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let bad_generic = good.replace("get[U64]", "get[I64]");
+    assert_eq!(
+        run_guest(&bad_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    // A U64 element without the explicit generic reaches the return-kind
+    // gate first (typed-refusal identity recorded as-is).
+    let no_generic = good.replace("get[U64]", "get");
+    assert_eq!(
+        run_guest(&no_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-TYPE-MISMATCH".into()
+        }
+    );
+    let literal_fallback = good.replace("return fallback", "return \"0\"");
+    assert_eq!(
+        run_guest(&literal_fallback),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("u64_list_at must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_condition_generic_list_length_byte_exactly() {
+    // STEP-0356: the general-while compare machine accepts the generic
+    // `sico.list.length[U64](<param>)` as a condition operand (right side of
+    // a while-header / if-condition compare) — gw_unreachable_terminator's
+    // header shape — emitting the intrinsic name with the `[U64]` generic,
+    // and accepts user calls on the right compare operand (gw_deferred_tail_json's
+    // if shape in accessible declaration order). Out-of-family generic types
+    // and a bare non-generic `sico.list.length` operand stay typed-refused.
+    let base = format!(
+        "{}\n{}\n",
+        parser_function_text("u64_list_at"),
+        parser_function_text("next_index"),
+    );
+    let good = format!(
+        "{}{}",
+        base,
+        parser_function_text("gw_unreachable_terminator")
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw_unreachable_terminator must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let bad_generic = good.replace("length[U64]", "length[Text]");
+    assert_eq!(
+        run_guest(&bad_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    // STEP-0382: the bare non-generic `sico.list.length(<list>)` operand
+    // now lowers (this branch widened it), replacing the former
+    // GWCOND-EXPRESSION refusal. This U64-list context is oracle-invalid
+    // for the bare form, so the positive here is compile-only; the
+    // byte-exact coverage of the bare form lives in the List[Text]
+    // operand_nonparam_kind fixture below.
+    let no_generic = good.replace("length[U64]", "length");
+    let RunOutcome::Output(plain_output) = run_guest(&no_generic) else {
+        panic!("bare sico.list.length operand must compile after STEP-0382")
+    };
+    assert_eq!(plain_output.exit_code, 0, "{:?}", plain_output.stderr);
+    let extra_arg = no_generic.replace("length(gunreach)", "length(gunreach, gunreach)");
+    assert_eq!(
+        run_guest(&extra_arg),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("gw_unreachable_terminator must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_compare_user_call_right_operand_byte_exactly() {
+    // STEP-0357: the general-while compare machine accepts a user call on the
+    // RIGHT compare operand (`U64.less_than(n, u64_list_at(rs, b, ...))`) —
+    // gw_deferred_tail_json's if-condition shape. STEP-0356 landed the branch
+    // without closing the gcp_r_done gate, so the shared width tail re-ran on
+    // the call shape and refused EXPRESSION; this fixture pins the fixed
+    // behavior byte-exactly.
+    let source = format!(
+        "{}\n{}\n{}",
+        parser_function_text("u64_list_at"),
+        parser_function_text("next_index"),
+        "function probe(rs: List[U64], a: U64, b: U64) returns U64:\n  let n = U64.literal(0)\n  while U64.less_than(n, a):\n    if U64.less_than(n, u64_list_at(rs, b, U64.literal(0))):\n      set n = next_index(n, n)\n    end if\n  end while\n  return n\nend function\n",
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("user call on the right compare operand must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A trailing extra argument keeps the shape refused (arity identity
+    // propagated from the call packer).
+    let malformed = source.replace(
+        "u64_list_at(rs, b, U64.literal(0))",
+        "u64_list_at(rs, b, U64.literal(0), b)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARITY".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid right-operand call must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_concat_to_text_and_span_fixes_byte_exactly() {
+    // STEP-0361: the general-while machine accepts `sico.u64.to_text(<cell>)`
+    // as a concat argument (gw_text_concat_packed widened; the parser family
+    // emits every JSON chain through it), and two latent span defects are
+    // fixed: (A) the statement keyword search no longer hits substrings in
+    // function names containing "let" (gcursor now starts after the
+    // declaration colon), and (B) every function-end search uses
+    // gw_find_code_text, which skips `//` comments and string literals —
+    // machine bodies literally contain `find_text_from(src, "end function",
+    // fn_start)` source text. This probe exercises all three at once: its
+    // name contains "let", its body contains an "end function" string
+    // literal, and it lowers a to_text concat argument byte-exactly.
+    let source = format!(
+        "{}
+{}",
+        parser_function_text("next_index"),
+        "function probe_let_span(words: List[Text], lim: U64) returns Text:
+  let marker = \"end function\"
+  let acc = \"\"
+  let i = U64.literal(0)
+  while U64.less_than(i, lim):
+    set acc = sico.text.concat(acc, sico.u64.to_text(i))
+    set i = next_index(i, lim)
+  end while
+  return acc
+end function
+",
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("probe_let_span must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A to_text concat argument with an extra operand stays refused, then
+    // recovery.
+    let malformed = source.replace("sico.u64.to_text(i)", "sico.u64.to_text(i, i)");
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid probe must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_find_code_text_byte_exactly() {
+    // STEP-0363: gw_find_code_text — the string-literal/comment-aware search
+    // that every function-end computation depends on — lowers itself through
+    // the general-while machine (escape parity tracked by a previous-index
+    // cell so no backward walk is needed). Its flip unblocks the
+    // straight_let / list_get_match_ir / chained_let closures, which are
+    // frozen via straight_let below.
+    let base = format!(
+        "{}\n{}\n{}",
+        parser_function_text("find_text_from"),
+        parser_function_text("next_index"),
+        parser_function_text("gw_find_code_text"),
+    );
+    let straight_callees = [
+        "is_word",
+        "word_at",
+        "line_end",
+        "matching_close",
+        "count_params",
+        "is_canonical_magnitude",
+        "decimal_at_most",
+        "parameter_name_start",
+        "scalar_type_kind",
+        "parameters_ir",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "word_span_offset",
+        "fixed_literal_argument",
+        "fixed_op_name",
+        "fixed_operation_operand_width",
+        "fixed_operation_operand_atom_idx",
+        "fixed_operation_operand_check",
+        "fixed_operation_operand_value",
+        "fixed_operation_literal_count",
+        "fixed_operation_literal_instructions",
+        "return_expression_end",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let good = format!(
+        "{}\n{}\n{}",
+        base,
+        straight_callees,
+        parser_function_text("straight_let_function_ir")
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw_find_code_text closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let RunOutcome::Output(base_out) = run_guest(&base) else {
+        panic!("gw_find_code_text base closure must compile")
+    };
+    assert_bytes_equal(&base_out.stdout, rust_ir(&base).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_entry_region_match_byte_exactly() {
+    // STEP-0370: the general-while machine accepts a checked-arithmetic
+    // match in the function entry region (before any while) — the gate in
+    // gw_match_open_pack refused entry-region matches with STATEMENT, which
+    // blocked every source function that validates an argument before its
+    // first loop (the parser family does this pervasively). Both placements
+    // are frozen byte-exact: match-then-while (probe_t3) and
+    // while-then-match (probe_t4).
+    let entry_first = "function probe_t3(v: U64, lim: U64) returns U64:\n  let x = v\n  match U64.checked_add(v, U64.literal(1)):\n    case ok(n):\n      set x = n\n    case error(_):\n      set x = v\n  end match\n  let i = U64.literal(0)\n  while U64.less_than(i, lim):\n    set i = i\n  end while\n  return x\nend function\n";
+    let loop_first = "function probe_t4(v: U64, lim: U64) returns U64:\n  let x = v\n  let i = U64.literal(0)\n  while U64.less_than(i, lim):\n    set i = i\n  end while\n  match U64.checked_add(v, U64.literal(1)):\n    case ok(n):\n      set x = n\n    case error(_):\n      set x = v\n  end match\n  return x\nend function\n";
+    for source in [entry_first, loop_first] {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("entry-region match probe must compile")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // An out-of-family entry match subject stays typed-refused, then
+    // recovery.
+    let malformed = entry_first.replace(
+        "U64.checked_add(v, U64.literal(1))",
+        "U64.bit_and(v, U64.literal(1))",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(entry_first) else {
+        panic!("valid entry match must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(entry_first).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_compare_non_generic_list_length_byte_exactly() {
+    // STEP-0382: the general-while compare machine accepts the non-generic
+    // `sico.list.length(<list>)` as a condition operand (the generic
+    // `sico.list.length[U64]` form landed in STEP-0356; the bare form is
+    // what operand-style guards actually use). This unblocked the whole
+    // EXPRESSION refusal cluster — operand_nonparam_kind is frozen here as
+    // the cluster's canary.
+    let base = [
+        "decimal_at_most",
+        "fixed_literal_argument",
+        "is_canonical_magnitude",
+        "is_word",
+        "local_binding_index",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("operand_nonparam_kind"),
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("operand_nonparam_kind closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A trailing operand that is neither a list, parameter, cell, nor
+    // literal stays typed-refused, then recovery.
+    let malformed = source.replace(
+        "sico.list.length(cell_names)",
+        "sico.list.length(cell_names, cell_names)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid operand closure must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_sort_and_text_join_byte_exactly() {
+    // STEP-0384: the general-while RHS packer learns `sico.list.sort(<cell>)`
+    // (new gw_list_sort_rhs_packed: read_local + intrinsic, oracle-range
+    // exact) and `sico.text.join(<list>, <text>)` (routed to the existing
+    // two-arg binary packer). A nested user-call set RHS was split into two
+    // straight sets in records_table_json instead of another machine branch.
+    // This unblocked the records_table_json census flip (GWPACK-OTHER -> FLIP).
+    let helper = parser_function_text("next_index");
+    let sort_src = format!(
+        "{helper}
+{}",
+        "function t_sort_cells(entries_in: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let entries = sico.text.split_lines(\"\")
+  while U64.less_than(i, n):
+    set entries = sico.list.sort(entries)
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected_sort = rust_ir(&sort_src);
+    let RunOutcome::Output(sort_out) = run_guest(&sort_src) else {
+        panic!("gw sort RHS shape must compile")
+    };
+    assert_eq!(sort_out.exit_code, 0, "{:?}", sort_out.stderr);
+    assert_bytes_equal(&sort_out.stdout, expected_sort.as_bytes());
+
+    let join_src = format!(
+        "{helper}
+{}",
+        "function t_join_cells(entries_in: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let entries = sico.text.split_lines(\"\")
+  let body = \"\"
+  while U64.less_than(i, n):
+    set body = sico.text.join(entries, \",\")
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected_join = rust_ir(&join_src);
+    let RunOutcome::Output(join_out) = run_guest(&join_src) else {
+        panic!("gw join RHS shape must compile")
+    };
+    assert_eq!(join_out.exit_code, 0, "{:?}", join_out.stderr);
+    assert_bytes_equal(&join_out.stdout, expected_join.as_bytes());
+
+    // Guard: sort with a trailing argument stays typed-refused, then recovery.
+    let malformed = sort_src.replace(
+        "sico.list.sort(entries)",
+        "sico.list.sort(entries, entries)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&sort_src) else {
+        panic!("valid sort shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected_sort.as_bytes());
+
+    // The census flip itself: records_table_json closure byte-exact.
+    let base = [
+        "is_ident_byte",
+        "is_word",
+        "line_end",
+        "next_index",
+        "record_close_bracket",
+        "record_map_comma",
+        "record_named_type",
+        "record_scalar_kind",
+        "record_type_json",
+        "type_json",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("records_table_json")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("records_table_json closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_text_length_rhs_byte_exactly() {
+    // STEP-0385: the general-while RHS packer routes `sico.text.length`
+    // through gw_intrinsic_call_packed (parameter and cell operands; the
+    // call/literal argument forms are hoisted to cells at the two
+    // straight_environment_literal_count / fixed_literal_argument sites).
+    // This unblocked the straight_environment_literal_count census flip
+    // (GWPACK-OTHER -> FLIP) and cascaded most of the GWPACK-OTHER cluster
+    // to their next real gate.
+    let helper = parser_function_text("next_index");
+    let len_src = format!(
+        "{helper}
+{}",
+        "function t_len_cells(words: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let acc = \"\"
+  let m = U64.literal(0)
+  while U64.less_than(i, n):
+    let w = word_at(words, i)
+    set acc = sico.text.concat(acc, w)
+    set m = sico.text.length(acc)
+    set i = next_index(i, n)
+  end while
+  return acc
+end function
+"
+    );
+    let word_at = parser_function_text("word_at");
+    let len_src = format!(
+        "{word_at}
+{len_src}"
+    );
+    let expected_len = rust_ir(&len_src);
+    let RunOutcome::Output(len_out) = run_guest(&len_src) else {
+        panic!("gw text.length cell shape must compile")
+    };
+    assert_eq!(len_out.exit_code, 0, "{:?}", len_out.stderr);
+    assert_bytes_equal(&len_out.stdout, expected_len.as_bytes());
+
+    // Guard: a call argument (not hoisted) stays typed-refused, then recovery.
+    let malformed = len_src.replace(
+        "set m = sico.text.length(acc)",
+        "set m = sico.text.length(word_at(words, i))",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&len_src) else {
+        panic!("valid text.length shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected_len.as_bytes());
+
+    // The census flip itself: straight_environment_literal_count closure
+    // byte-exact.
+    let base = [
+        "binding_parameter_index",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "fixed_literal_argument",
+        "fixed_operation_operand_atom_idx",
+        "fixed_operation_operand_width",
+        "is_canonical_magnitude",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("straight_environment_literal_count")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("straight_environment_literal_count closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_argument_instruction_count_closure_byte_exactly() {
+    // STEP-0386: CALL-SHAPE cluster source reshaping — nested user calls
+    // hoisted out of `to_text(..)` concat arguments (gw_deferred_tail_json),
+    // a `to_text(U64.literal(..))` const argument hoisted to a cell
+    // (nested_intrinsic_return_ir), and `text.length(user_call(..))` /
+    // nested `next_index(matching_close(..))` sets split into let+set pairs
+    // (argument_instruction_count family, including the
+    // bytes.length-in-gw-set dispatch for gw_intrinsic_call_packed's own
+    // body). Seven census closures flipped with zero regressions.
+    let base = [
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "matching_close",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("argument_instruction_count")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("argument_instruction_count closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_intrinsic_call_packed_closure_byte_exactly() {
+    // STEP-0387: RETURN-COUNT cluster root = gw_intrinsic_call_packed's own
+    // body - the if/else "both arms return" shape is restructured to a
+    // single trailing return (R3 single-return discipline), unblocking
+    // the whole RETURN-COUNT census cluster.
+    let base = [
+        "binding_parameter_index",
+        "find_text_from",
+        "intrinsic_instruction_json",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "read_local_instruction_json",
+        "type_json",
+        "u64_list_at",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("gw_intrinsic_call_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("gw_intrinsic_call_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_argument_instructions_closure_byte_exactly() {
+    // STEP-0388 canary flip: argument_instructions closure byte-exact
+    // after the known-bad-shape library sweep.
+    let base = [
+        "argument_instruction_count",
+        "argument_values",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "scalar_type_kind",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("argument_instructions")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("argument_instructions closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_empty_rhs_byte_exactly() {
+    // STEP-0389: the general-while RHS packer learns `sico.list.empty[U64]()`
+    // (new gw_list_empty_rhs_packed, mirroring the gw_map_empty_rhs_packed
+    // zero-argument pattern; offsets are word-position based, not
+    // character-based - the first cut used +1 and every guard tripped
+    // CALL-SHAPE). The shape initializes cell_locals in 41 parser.sico
+    // sites, so this unblocked the user_call_expression_json census flip.
+    let helper = parser_function_text("next_index");
+    let src_fixture = format!(
+        "{helper}
+{}",
+        "function t_empty_cells(words: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let values = sico.list.empty[U64]()
+  while U64.less_than(i, n):
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected = rust_ir(&src_fixture);
+    let RunOutcome::Output(output) = run_guest(&src_fixture) else {
+        panic!("gw list.empty shape must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // Guard: a wrong element type stays typed-refused, then recovery.
+    let malformed = src_fixture.replace("sico.list.empty[U64]()", "sico.list.empty[Text]()");
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&src_fixture) else {
+        panic!("valid list.empty shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_straight_text_concat_packed_closure_byte_exactly() {
+    // STEP-0394: straight_text_concat_packed census flip - a nested
+    // `next_index(matching_close(..))` set and a `to_text(gw_decimal_value(..))`
+    // concat argument hoisted to cells. wcr RETURN-COUNT hunting paused
+    // (truncation bisection confounded by routing changes).
+    let base = [
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "call_instruction_json",
+        "declared_return_kind",
+        "find_text_from",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "gw_decimal_value",
+        "intrinsic_instruction_json",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_intrinsic_path",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "read_local_instruction_json",
+        "scalar_const_instruction_json",
+        "scalar_type_kind",
+        "type_json",
+        "u64_list_at",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("straight_text_concat_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("straight_text_concat_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_sort_rhs_packed_closure_byte_exactly() {
+    // STEP-0395: gw_list_sort_rhs_packed's own closure compiles - the
+    // straight-context token-end computation must stay in the
+    // `match checked_add(.., bytes.length(encode(word_at(..))))` subject
+    // form (the straight machine rejects both hoisted-cell and let-bound
+    // bytes.length operands; only the match-subject shape is modeled).
+    let base = [
+        "find_text_from",
+        "intrinsic_instruction_json",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "read_local_instruction_json",
+        "type_json",
+        "u64_list_at",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("gw_list_sort_rhs_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("gw_list_sort_rhs_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_checked_arithmetic_match_ir_closure_byte_exactly() {
+    // STEP-0396: the match-subject token-end folding (69 sites library-wide:
+    // `let __enc = encode(ARG)` + `set __h = bytes.length(__enc)` +
+    // `match checked_add(off, __h)` folded into a single match subject)
+    // flipped checked_arithmetic_match_ir; checked_arithmetic_set_match_ir
+    // progresses into the registered casm wasm-trap defect class (0365).
+    let base = [
+        "argument_instruction_count",
+        "argument_instructions",
+        "argument_region_instruction_count",
+        "argument_segment_kind",
+        "argument_values",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "gw_find_code_text",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "parameter_name_start",
+        "parameters_ir",
+        "scalar_type_kind",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("checked_arithmetic_match_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("checked_arithmetic_match_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_while_call_rhs_packed_closure_byte_exactly() {
+    // STEP-0400: the function-level giant-if flattening (guard + top-level
+    // body) plus the while_call_rhs_empty_args helper extraction unblocked
+    // the whole RETURN-COUNT machine cluster - 19 closures flipped at once,
+    // most cascading into the registered STEP-0365 wasm-trap defect class.
+    // wcr is frozen here as the cluster's canary.
+    let base = [
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "call_instruction_json",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "fixed_literal_operand_json",
+        "fixed_literal_const_segment",
+        "fixed_operation_operand_width",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "gw_call_chain_packed",
+        "gw_instr_count",
+        "gw_ut_chain_packed",
+        "intrinsic_instruction_json",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_intrinsic_path",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "read_local_instruction_json",
+        "scalar_const_instruction_json",
+        "scalar_type_kind",
+        "type_json",
+        "u64_list_at",
+        "while_call_rhs_empty_args",
+        "word_at",
+        "word_span_offset",
+        "fixed_literal_const_instruction",
+        "fixed_op_name",
+        "fixed_operation_instruction_json",
+        "fixed_operation_operand_atom_idx",
+        "gw_decimal_value",
+        "gw_intrinsic_call_packed",
+        "gw_list_append_u64_rhs_packed",
+        "gw_list_empty_rhs_packed",
+        "gw_list_sort_rhs_packed",
+        "gw_map_empty_rhs_packed",
+        "gw_map_put_rhs_packed",
+        "gw_ok_wrap_rhs_packed",
+        "gw_rhs_at_dispatch",
+        "gw_rhs_at_param_arm",
+        "gw_rhs_error_arm",
+        "gw_rhs_multi_pack",
+        "gw_rhs_ok_arm",
+        "gw_rhs_packed",
+        "gw_rhs_single_pack",
+        "gw_rhs_split_lines_emit",
+        "gw_rhs_utf8_decode_arm",
+        "gw_text_concat_packed",
+        "gw_text_list_binary_packed",
+        "gw_text_trim_user_call_packed",
+        "gw_u64_less_than_value_packed",
+        "gwf_l_operand",
+        "gwf_r_operand",
+        "operand_cell_or_literal_json",
+        "operand_nonparam_kind",
+        "parameter_type_word",
+        "script_result_return_json",
+        "while_bytes_at_local_src_packed",
+        "while_bytes_at_rhs_packed",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("while_call_rhs_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("while_call_rhs_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }

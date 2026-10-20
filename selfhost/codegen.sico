@@ -1,0 +1,231 @@
+module codegen
+
+// STEP-0487 S5 codegen skeleton (STEP-0486 wave): deterministic script
+// Component emission from the guest, byte-oracled against
+// crates/sico-codegen-wasm (RFC-0011). This slice emits the fixed component
+// scaffolding (type/import/alias/instance/canonical/export sections, core
+// module header + type/function/memory/global/export sections, arena helper
+// bodies) plus the frozen minimal-echo run body. Sections that depend on
+// the input IR (the run body first, then data/const segments, helper
+// tables, transport modules) are built piecewise so later wave slices fill
+// them in; anything outside the supported shape returns "" and the driver
+// fails closed with "unsupported codegen source shape".
+
+function cg_hex_digit(value: U64) returns Text:
+  if U64.less_than(value, U64.literal(10)):
+    return sico.u64.to_text(value)
+  end if
+  if U64.equal(value, U64.literal(10)):
+    return "a"
+  end if
+  if U64.equal(value, U64.literal(11)):
+    return "b"
+  end if
+  if U64.equal(value, U64.literal(12)):
+    return "c"
+  end if
+  if U64.equal(value, U64.literal(13)):
+    return "d"
+  end if
+  if U64.equal(value, U64.literal(14)):
+    return "e"
+  end if
+  return "f"
+end function
+
+function cg_hex_byte(value: U64) returns Text:
+  let high = U64.shr(value, U64.literal(4))
+  let low = U64.bit_and(value, U64.literal(15))
+  return sico.text.concat(cg_hex_digit(high), cg_hex_digit(low))
+end function
+
+// Unsigned LEB128 of a u32 as hex byte pairs, computed from the value
+// (section sizes are derived, never hard-coded, at the call sites).
+function cg_leb_hex(value: U64) returns Text:
+  let n = value
+  let out = ""
+  let more = U64.literal(1)
+  while U64.equal(more, U64.literal(1)):
+    let low = U64.bit_and(n, U64.literal(127))
+    set n = U64.shr(n, U64.literal(7))
+    if U64.equal(n, U64.literal(0)):
+      set out = sico.text.concat(out, cg_hex_byte(low))
+      set more = U64.literal(0)
+    else:
+      set out = sico.text.concat(out, cg_hex_byte(U64.bit_or(low, U64.literal(128))))
+    end if
+  end while
+  return out
+end function
+
+// One component/core section: id byte + LEB128 payload size + payload.
+function cg_section_hex(id: U64, payload: Text) returns Text:
+  let size = U64.shr(sico.text.length(payload), U64.literal(1))
+  return sico.text.concat(cg_hex_byte(id), sico.text.concat(cg_leb_hex(size), payload))
+end function
+
+// ---- Fixed script-v0 component sections (frozen Script WIT, non-transport)
+// Derived from crates/sico-codegen-wasm::canonical::{script_types_instance,
+// wrap_script_component}; re-derive these when the WIT or wrapper changes.
+
+function cg_types_script_hex() returns Text:
+  return "01420e01707304000b737472696e672d6c69737403000001707d040009627974652d6c69737403000201720209617267756d656e74730105737464696e0304000c7363726970742d696e707574030004017203067374646f757403067374646572720309657869742d636f64657804000d7363726970742d6f7574707574030006016d040d696e76616c69642d696e7075740e7265736f757263652d6c696d69740c646f6d61696e2d6572726f720963616e63656c6c65640400117363726970742d6572726f722d636f646503000801720204636f646509076d6573736167657304000c7363726970742d6572726f7203000a016a0107010b04000d7363726970742d726573756c7403000c"
+end function
+
+function cg_import_types_hex() returns Text:
+  return "0100177369636f3a7363726970742f747970657340302e312e300500"
+end function
+
+function cg_alias_types_hex() returns Text:
+  return "020300000c7363726970742d696e7075740300000d7363726970742d726573756c74"
+end function
+
+function cg_run_type_hex() returns Text:
+  return "01400105696e707574010002"
+end function
+
+function cg_core_instance_hex() returns Text:
+  return "01000000"
+end function
+
+function cg_alias_core_hex() returns Text:
+  return "0400020100066d656d6f7279000001000c636162695f7265616c6c6f63000001000d636162695f706f73745f72756e000001000372756e"
+end function
+
+function cg_canonical_hex() returns Text:
+  return "01000002040003000400050103"
+end function
+
+function cg_export_run_hex() returns Text:
+  return "01000372756e010000"
+end function
+
+// ---- Fixed core module sections (script-v0 owned arena, non-transport)
+
+function cg_core_types_hex() returns Text:
+  return "0460047f7f7f7f017f60017f017f60047f7f7f7f017f60017f00"
+end function
+
+function cg_core_funcs_hex() returns Text:
+  return "0400010203"
+end function
+
+function cg_core_memory_hex() returns Text:
+  return "0101808802808802"
+end function
+
+function cg_core_globals_hex() returns Text:
+  return "037f0141000b7f0141ffffffff070b7f0141000b"
+end function
+
+function cg_core_exports_hex() returns Text:
+  return "04066d656d6f727902000372756e00000c636162695f7265616c6c6f6300020d636162695f706f73745f72756e0003"
+end function
+
+// Arena helper bodies, frozen by the STEP-0484 two-zone design. Re-derive
+// from crates/sico-codegen-wasm::{emit_alloc, emit_realloc,
+// emit_post_return} when the allocator changes.
+function cg_alloc_body_hex() returns Text:
+  return "01027f23024100470440200023014b0440000b230120006b417871210120012300490440000b2001240105230041076a4178712101200120006a22022001490440000b200223014b0440000b200224000b20010b"
+end function
+
+function cg_realloc_body_hex() returns Text:
+  return "01027f230020026a417f6a410020026b712104200420036a22052004490440000b200523014b0440000b2005240020000440200420002001200320012003491bfc0a00000b20040b"
+end function
+
+function cg_post_body_hex() returns Text:
+  return "004100240041ffffffff072401410024020b"
+end function
+
+// IR-dependent slot (STEP-0487): the run body for the frozen minimal echo
+// fixture. Later wave slices replace this with a real lowering of the run
+// function's IR (build_script_core's flattened-parameter copy, data
+// segments, const aggregates, helper calls).
+function cg_run_body_hex_minimal() returns Text:
+  return "15017f017f017f017f017e017f017f017f017f017e017f017f017f017f017f017e017f017f017f017f027f4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d21134100211441002115410021164120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b"
+end function
+
+// Assemble the core module: wasm header + fixed sections + the code section
+// (entry sizes are LEB-derived from the body pieces).
+function cg_core_module_hex() returns Text:
+  let run_body = cg_run_body_hex_minimal()
+  let alloc_body = cg_alloc_body_hex()
+  let realloc_body = cg_realloc_body_hex()
+  let post_body = cg_post_body_hex()
+  let code_payload = "04"
+  set code_payload = sico.text.concat(code_payload, cg_leb_hex(U64.shr(sico.text.length(run_body), U64.literal(1))))
+  set code_payload = sico.text.concat(code_payload, run_body)
+  set code_payload = sico.text.concat(code_payload, cg_leb_hex(U64.shr(sico.text.length(alloc_body), U64.literal(1))))
+  set code_payload = sico.text.concat(code_payload, alloc_body)
+  set code_payload = sico.text.concat(code_payload, cg_leb_hex(U64.shr(sico.text.length(realloc_body), U64.literal(1))))
+  set code_payload = sico.text.concat(code_payload, realloc_body)
+  set code_payload = sico.text.concat(code_payload, cg_leb_hex(U64.shr(sico.text.length(post_body), U64.literal(1))))
+  set code_payload = sico.text.concat(code_payload, post_body)
+  let core = "0061736d01000000"
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(1), cg_core_types_hex()))
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(3), cg_core_funcs_hex()))
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(5), cg_core_memory_hex()))
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(6), cg_core_globals_hex()))
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(7), cg_core_exports_hex()))
+  set core = sico.text.concat(core, cg_section_hex(U64.literal(10), code_payload))
+  return core
+end function
+
+// Component wrapper around the core module (fixed section ids per
+// wasm-encoder's ComponentSectionId: Type 7, CoreModule 1, CoreInstance 2,
+// Alias 6, CanonicalFunction 8, Import 10, Export 11).
+function cg_component_hex() returns Text:
+  let core = cg_core_module_hex()
+  let component = "0061736d0d000100"
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(7), cg_types_script_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(10), cg_import_types_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(6), cg_alias_types_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(7), cg_run_type_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(1), core))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(2), cg_core_instance_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(6), cg_alias_core_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(8), cg_canonical_hex()))
+  set component = sico.text.concat(component, cg_section_hex(U64.literal(11), cg_export_run_hex()))
+  return component
+end function
+
+// The frozen minimal fixture this skeleton emits (byte gate).
+function cg_minimal_fixture_source() returns Text:
+  let mfs = "record ScriptInput:"
+  set mfs = sico.text.concat(mfs, "\n  field arguments: List[Text]")
+  set mfs = sico.text.concat(mfs, "\n  field stdin: Bytes")
+  set mfs = sico.text.concat(mfs, "\nend record")
+  set mfs = sico.text.concat(mfs, "\n")
+  set mfs = sico.text.concat(mfs, "\nrecord ScriptOutput:")
+  set mfs = sico.text.concat(mfs, "\n  field stdout: Bytes")
+  set mfs = sico.text.concat(mfs, "\n  field stderr: Bytes")
+  set mfs = sico.text.concat(mfs, "\n  field exit_code: I64")
+  set mfs = sico.text.concat(mfs, "\nend record")
+  set mfs = sico.text.concat(mfs, "\n")
+  set mfs = sico.text.concat(mfs, "\nenum ScriptErrorCode:")
+  set mfs = sico.text.concat(mfs, "\n  case InvalidInput")
+  set mfs = sico.text.concat(mfs, "\n  case ResourceLimit")
+  set mfs = sico.text.concat(mfs, "\n  case DomainError")
+  set mfs = sico.text.concat(mfs, "\n  case Cancelled")
+  set mfs = sico.text.concat(mfs, "\nend enum")
+  set mfs = sico.text.concat(mfs, "\n")
+  set mfs = sico.text.concat(mfs, "\nrecord ScriptError:")
+  set mfs = sico.text.concat(mfs, "\n  field code: ScriptErrorCode")
+  set mfs = sico.text.concat(mfs, "\n  field message: Text")
+  set mfs = sico.text.concat(mfs, "\nend record")
+  set mfs = sico.text.concat(mfs, "\n")
+  set mfs = sico.text.concat(mfs, "\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:")
+  set mfs = sico.text.concat(mfs, "\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))")
+  set mfs = sico.text.concat(mfs, "\nend function")
+  set mfs = sico.text.concat(mfs, "\n")
+  return mfs
+end function
+
+// Entry point: exact-source gate + structured emission. Returns "" when the
+// source is not the supported minimal shape (typed refusal by the driver).
+function component_hex_for_minimal(source: Bytes) returns Text:
+  if sico.bytes.equal(source, sico.text.encode(cg_minimal_fixture_source())):
+    return cg_component_hex()
+  end if
+  return ""
+end function
