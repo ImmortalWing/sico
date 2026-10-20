@@ -1,10 +1,12 @@
-# M22 交接手稿（living handoff，基线 STEP-0283）
+# M22 交接手稿（living handoff，合并基线：`dev` 线 STEP-0283 + `codex/m22-w1-ci` 线 STEP-0324 / M24 STEP-0337）
 
-> - 更新：2026-09-24（STEP-0283 落地后；0279–0283 五批已随本条提交进库并推送）
+> - 更新：2026-10-20（`codex/m24-vision-ui` 合并入 `dev` 完成：两线事实并集，重复 STEP 编号并集登记未重编号）
 > - 前一份：[`handoff-m22-line-tokens.md`](./handoff-m22-line-tokens.md)（STEP-0260 基线，已被 0278 版取代，同批删除）
 > - 权威事实仍以 [`docs/steps`](./steps/README.md) / [`docs/STATUS.md`](./STATUS.md) 为准；本文只管「下一刀从哪下、哪些验证还没闭环」
+> - 平行线注记（合并前原文保留）：`origin/dev` 已前进至 `550059a`，包含另一套 STEP-0279–0283 W1/W2 历史，与 `codex/m22-w1-ci` 线源码及 STEP 编号冲突，不得覆盖或隐式合并 —— **本次合并已按此要求逐项处理**（重复编号并集登记未重编号、语料保留 `dev` 线 235 条全集、`compiler_semantics.sico` 取 `dev` 已验证实现），**但仍不得把该线 CI 结论当作合并后 `dev` 的验证结果**。
+> - 权威裁决：[STATUS](./STATUS.md)、[M22 计划](./plans/M22-compiler-self-host.md)、[STEP-0292](./steps/STEP-0292-m22-w1-independent-ci.md)、[STEP-0293](./steps/STEP-0293-m22-w2-u64-to-text-while-rhs.md) 与 [STEP-0294](./steps/STEP-0294-m22-w2-map-get-match-subject.md)。本手稿只提供恢复路径。
 
-## 0. 一句话状态
+## 0. 当前状态
 
 M22 处于 **R 阶段后半 + W2 已收官**：R0 已拍板（Option A，ADR-0017），
 records v0 全封（STEP-0271..0275），**W1 合并债四片全清已关闭**
@@ -16,8 +18,15 @@ records v0 全封（STEP-0271..0275），**W1 合并债四片全清已关闭**
 多行字面量 + EC-3 canonical IR JSON 快照。**
 
 ## 1. 本批已落地（自 fd802c4 / STEP-0262 起；0279–0283 五批已提交推送）
+M22 整体 **NO-GO**。S1/S2 声明子集完成，S3/S4/S5 partial，S6/S7 未进入。R0 已接受 ADR-0017 Option A 与 RFC-0047。STEP-0292 对 `e8495f9` 的独立 Windows GNU [GitHub CI](https://github.com/ImmortalWing/sico/actions/runs/36087222284) 成功，**W1 在本隔离分支快照裁为 GO**。该裁决不覆盖 `origin/dev` 的并行历史。
 
-| STEP | 内容 | 证据 |
+STEP-0293 是 22-C 首个 R3 计数实现片：while 体 sico.u64.to_text RHS 与 Rust oracle byte-exact，错误参数类型 typed 拒绝；formatter canary 22/30，nearest_match 从 GWPACK-OTHER 移至 CALL-TARGET，整份 exit 122。cb371c5 的独立 Windows GNU CI 运行 36090403437 成功，S1 于本隔离分支裁为 GO。R3 连续停滞数 0。
+
+STEP-0294 是 22-C S2：`sico.map.get[Text,U64]` 的受限 match 主语与 Rust oracle 字节一致；错误 Map/key 类型、参数数和泛型数 typed 拒绝。formatter canary 仍 22/30，`nearest_match` 前沿 CALL-TARGET → STATEMENT，整份 exit 122，R3 连续停滞数仍为 0。本机 0261/0262/0245 全绿，`5a6d0bb` 的独立 Windows GNU [CI 运行 36147743130](https://github.com/ImmortalWing/sico/actions/runs/36147743130) 成功，**S2 于本隔离分支裁为 GO**。
+
+## 1. 证据与边界
+
+| 检查 | 当前结果 | 证据边界 |
 |---|---|---|
 | 0264 | M22–M26 路线重划（R 阶段收敛门 + R3 止损预登记） | planning-only |
 | 0265 | 重启评估（不回退，分层重启；W1/W2/W3 波次） | [`M22 restart assessment v1`](./plans/M22-restart-assessment-v1.md) |
@@ -32,6 +41,16 @@ records v0 全封（STEP-0271..0275），**W1 合并债四片全清已关闭**
 | 0281 | W2 片 1：indent structural 修复——semantics 第二遍顶格非声明行按语句处理（process_body_line + body 检查块搬出 if/else）；IND-005→strict E7002、IND-004→E4001（首码 E2031 待补）、waiver 10→9、分区 (116,38,72,9) | 本机 235/235 零回归（208s）；CI 待裁决 |
 | 0282 | W2 主片：records 重授权——裸字段注册（bare_field_line）+ `field` 形放宽 parts>2（修 `List[Text]` 字段静默丢失）+ E2022 + local 类型表 + E2023 dot_before_equal + let 行 E2021(count_field_label)/E2010/E2001 + E2024(words==3) + E2011 dot_access_field（子串+词边界 at_word_boundary+引号外 outside_quotes）；误伤面三次实证修复；8 条豁免全关、waiver 9→1、分区 (116,45,73,1)；途中修复 0280 批次测试不自洽（语义臂补 E1001） | 本机 strict 235/235（263s）+ 12 条 record 逐一 12/12；selfhost_checker.rs rustfmt 绿；CI 待裁决 |
 | 0283 | W2 收官片：IND-004 首码 E2031 identity——`use` 行注册 imported_roots + move/borrow 形注册 resource 型 local + E2031 body 检查（内建/形参/local/enum/record/nominal/imported 七重排除 + has_dot_call 词边界〔前字节非`.`〕+引号外+`(`）；两处误伤实证修复（`sico.text.encode` 中段组件 → at_word_boundary 收 `.` 前字节；resource 型 local 被 E2011 误扫 → E2011 仅扫 record 型）；DIVERGENCE_WAIVER 1→0（机制留空表）、分区 (116,46,73,0)——235 条全部 strict，**W2 收官** | 本机零豁免 235/235（296s）+ 关键 8 条 8/8；CI 待裁决 |
+| STEP-0292 fresh-runner CI | `e8495f9` 的完整 `run-ci.ps1` 作业 success | W1 快照；Windows 2025 GNU |
+| STEP-0293 fresh-runner CI | 修复版 `cb371c5` 的完整 `run-ci.ps1` 作业 success（[运行 36090403437](https://github.com/ImmortalWing/sico/actions/runs/36090403437)） | S1 本片；Windows 2025 GNU |
+| STEP-0294 fresh-runner CI | 最终 `5a6d0bb` 的完整 `run-ci.ps1` 作业 success（[运行 36147743130](https://github.com/ImmortalWing/sico/actions/runs/36147743130)） | S2 本片；Windows 2025 GNU |
+| `selfhost_checker` | 9/9，原 215 项 + W1 五项 Rust/guest 对照 | Windows x64 GNU 真实 runner；internal-fixture |
+| S1 新增 compiler 用例 | while 体 `u64.to_text` canonical IR byte-exact，双参数与错误类型 parameter/local typed 拒绝 | 真实 runner；internal-fixture |
+| S2 新增 compiler 用例 | literal/parameter/local Text key 字节相等，extra arg/generic、wrong Map/key type typed 拒绝，拒绝后恢复 | 真实 runner；internal-fixture |
+| `validate-step-0262.ps1` | compiler 23/23、parser 2/2、local-bounds 1/1、22 函数 IR 快照、现行前沿均绿 | S2 本机复跑；gw 最繁忙函数 240 locals |
+| `validate-step-0261.ps1` | 同上及 17 函数历史快照绿 | S2 本机复跑 |
+| `validate-step-0245.ps1` | semantic 6+11、bundle 4、checker 9、compiler 23、runner clippy 全绿 | S2 本机复跑 |
+| `report-m22-canary.ps1` | 22/30，`nearest_match` / `STATEMENT`，exit 122 | S2 当前树；栈高水位仍未测得 |
 
 代码面汇总（0279–0283 批已提交）：`selfhost/compiler_semantics.sico`
 （E7002 结构性 + records 全族：第一遍裸字段/field 放宽/E2022，第二遍
@@ -44,7 +63,11 @@ at_word_boundary/outside_quotes/dot_access_field/record_lacks_field）；
 + 分区 (116,45,73,1) + 语义臂补 E1001/E2021–E2024）；
 `bootstrap_bundle.rs` 235；STEP-0279/0280/0281/0282/0283 文档 + README + STATUS。
 
-## 2. 验证状态（重要：两部分没闭环）
+## 2. 下一步
+
+1. 按 [STEP-0291](./steps/STEP-0291-m22-nearest-match-design.md) 开始 S3：match 臂内嵌 if/return 的控制流降低，重新钉定 `nearest_match` 字节差分与下一个前沿，并取得本片独立 CI。
+2. 合并 `origin/dev` 的并行历史前的三项处理（重复 STEP 编号 / 235 项语料 / `compiler_semantics.sico` 差异）**已于 2026-10-20 完成**，裁决见本文件顶部与 [`steps/README.md`](./steps/README.md) 表后登记；**CI 纪律不变**：不得把 `codex/m22-w1-ci` 线的 CI 结论声称为合并后 `dev` 的验证结果，合并后仍需重新取得独立 CI 裁决。
+3. M23 的 RFC-0048/0049、M24 的 RFC-0050/0051/0052 与 ADR-0018、M26 的 RFC-0053/0054 仍各自等待 owner 接受；它们不阻挡本分支 22-C S3。
 
 **本机已绿**：sico check 集成链；checker 组件构建成功；**235 条全量探针
 零豁免（WAIVER 已清零）strict 235/235**（预构建 runner CLI 8 路并行约 263 s；驱动
@@ -122,3 +145,21 @@ selfhost_checker.rs rustfmt --check 绿。
   五批均系 owner 显式指令进库并推送。
 - 冻结合同（语言/WIT）动前走 RFC；跨组件架构动前走 ADR。
 - W2 收官前 S3/S4 源层维持 SOA 不变式（ADR-0016 仍强制）。
+## 7. 本机复核命令（`codex/m22-w1-ci` 线原 §3「本机复核命令」，合并后随文保留）
+
+> 本节原为 `codex/m22-w1-ci` 线手稿的 §3（STEP-0283 文档中的「handoff §3.1」指向本节）；合并后编号为 §7，原编号保留在标题内以便交叉引用解析。
+
+```powershell
+git status --short
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
+$binutils = Join-Path (Get-Location) 'target\tooling\msys2-binutils\mingw64\bin'
+$env:Path = "$binutils;$env:Path"
+.\tools\validate-step-0245.ps1
+.\tools\validate-step-0261.ps1
+.\tools\validate-step-0262.ps1
+.\tools\report-m22-canary.ps1
+.\tools\validate-step-0124.ps1 -SelfTest
+git diff --check
+```
+
+STEP-0261/0262 会重复执行较慢的 compiler/parser 差分；只在源码或当前前沿变化后重跑。S6 还必须实测 guest memory/stack 预算，不能将缺失的栈高水位写成已有证据。

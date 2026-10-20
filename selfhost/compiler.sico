@@ -125,11 +125,20 @@ end function
 
 
 
+function canonical_function_source(name: Text, params: Text, return_ty: Text, body_line: Text) returns Text:
+  let source = sico.text.concat("function ", name)
+  set source = sico.text.concat(source, "(")
+  set source = sico.text.concat(source, params)
+  set source = sico.text.concat(source, ") returns ")
+  set source = sico.text.concat(source, return_ty)
+  set source = sico.text.concat(source, ":\n  return ")
+  set source = sico.text.concat(source, body_line)
+  set source = sico.text.concat(source, "\nend function\n")
+  return source
+end function
+
 function const_source(fname: Text, rtype: Text, literal: Text) returns Text:
-  let source = sico.text.concat("function ", fname)
-  set source = sico.text.concat(source, sico.text.concat("() returns ", rtype))
-  set source = sico.text.concat(source, sico.text.concat(":\n  return ", literal))
-  return sico.text.concat(source, "\nend function\n")
+  return canonical_function_source(fname, "", rtype, literal)
 end function
 
 function all_digits(text: Text) returns Bool:
@@ -355,12 +364,24 @@ function positive_sleb_length(initial: U64) returns U64:
   end match
 end function
 
-function constant_core_hex(name: Text, value: U64) returns Text:
+function hex_text_bytes(text: Text) returns U64:
+  match U64.checked_div(sico.text.length(text), U64.literal(2)):
+    case ok(length):
+      return length
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+function wasm_module_hex(name: Text, type_content: Text, body_len: U64, body_hex: Text) returns Text:
   let name_len = sico.text.length(name)
   let export_payload_len = add_u64(add_u64(U64.literal(3), name_len), uleb_length(name_len))
-  let body_len = add_u64(U64.literal(32), positive_sleb_length(value))
   let code_payload_len = add_u64(add_u64(U64.literal(1), uleb_length(body_len)), body_len)
-  let output = "0061736d010000000105016000017e03020100"
+  let output = "0061736d01000000"
+  set output = sico.text.concat(output, "01")
+  set output = sico.text.concat(output, uleb_hex(hex_text_bytes(type_content)))
+  set output = sico.text.concat(output, type_content)
+  set output = sico.text.concat(output, "03020100")
   set output = sico.text.concat(output, "07")
   set output = sico.text.concat(output, uleb_hex(export_payload_len))
   set output = sico.text.concat(output, "01")
@@ -371,9 +392,461 @@ function constant_core_hex(name: Text, value: U64) returns Text:
   set output = sico.text.concat(output, uleb_hex(code_payload_len))
   set output = sico.text.concat(output, "01")
   set output = sico.text.concat(output, uleb_hex(body_len))
-  set output = sico.text.concat(output, "02017e017f41002101024003402001410046044042")
-  set output = sico.text.concat(output, positive_sleb_hex(value))
-  return sico.text.concat(output, "210020000f0b000b0b000b")
+  return sico.text.concat(output, body_hex)
+end function
+
+function constant_core_hex(name: Text, value: U64) returns Text:
+  let body_len = add_u64(U64.literal(32), positive_sleb_length(value))
+  let body = "02017e017f41002101024003402001410046044042"
+  set body = sico.text.concat(body, positive_sleb_hex(value))
+  set body = sico.text.concat(body, "210020000f0b000b0b000b")
+  return wasm_module_hex(name, "016000017e", body_len, body)
+end function
+
+function scalar_type_hex(text: Text) returns Text:
+  if same_text(text, "I64"):
+    return "7e"
+  end if
+  if same_text(text, "U64"):
+    return "7e"
+  end if
+  if same_text(text, "Bool"):
+    return "7f"
+  end if
+  return ""
+end function
+
+function int_constant_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(8)):
+    let ic_name = word_at(words, U64.literal(1))
+    let ic_type = word_at(words, U64.literal(3))
+    let ic_literal = word_at(words, U64.literal(5))
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "returns"):
+        if same_text(ic_type, "Int"):
+          if same_text(word_at(words, U64.literal(4)), "return"):
+            if same_text(word_at(words, U64.literal(6)), "end"):
+              if same_text(word_at(words, U64.literal(7)), "function"):
+                if all_digits(ic_literal):
+                  if decimal_at_most(ic_literal, "9223372036854775807"):
+                    if sico.bytes.equal(source, sico.text.encode(const_source(ic_name, ic_type, ic_literal))):
+                      return constant_core_hex(ic_name, decimal_u64(ic_literal))
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function i64_const_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(10)):
+    let kc_name = word_at(words, U64.literal(1))
+    let kc_literal = word_at(words, U64.literal(7))
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "returns"):
+        if same_text(word_at(words, U64.literal(3)), "I64"):
+          if same_text(word_at(words, U64.literal(4)), "return"):
+            if same_text(word_at(words, U64.literal(5)), "I64"):
+              if same_text(word_at(words, U64.literal(6)), "literal"):
+                if same_text(word_at(words, U64.literal(8)), "end"):
+                  if same_text(word_at(words, U64.literal(9)), "function"):
+                    if all_digits(kc_literal):
+                      if decimal_at_most(kc_literal, "9223372036854775807"):
+                        let kc_canonical = canonical_function_source(kc_name, "", "I64", sico.text.concat("I64.literal(", sico.text.concat(kc_literal, ")")))
+                        if sico.bytes.equal(source, sico.text.encode(kc_canonical)):
+                          return constant_core_hex(kc_name, decimal_u64(kc_literal))
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function u64_const_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(10)):
+    let uc_name = word_at(words, U64.literal(1))
+    let uc_literal = word_at(words, U64.literal(7))
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "returns"):
+        if same_text(word_at(words, U64.literal(3)), "U64"):
+          if same_text(word_at(words, U64.literal(4)), "return"):
+            if same_text(word_at(words, U64.literal(5)), "U64"):
+              if same_text(word_at(words, U64.literal(6)), "literal"):
+                if same_text(word_at(words, U64.literal(8)), "end"):
+                  if same_text(word_at(words, U64.literal(9)), "function"):
+                    if all_digits(uc_literal):
+                      if decimal_at_most(uc_literal, "9223372036854775807"):
+                        let uc_canonical = canonical_function_source(uc_name, "", "U64", sico.text.concat("U64.literal(", sico.text.concat(uc_literal, ")")))
+                        if sico.bytes.equal(source, sico.text.encode(uc_canonical)):
+                          return constant_core_hex(uc_name, decimal_u64(uc_literal))
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function bool_const_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(8)):
+    let bc_name = word_at(words, U64.literal(1))
+    let bc_literal = word_at(words, U64.literal(5))
+    let bc_bit = "00"
+    if same_text(bc_literal, "true"):
+      set bc_bit = "01"
+    else:
+      if same_text(bc_literal, "false"):
+        set bc_bit = "00"
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "returns"):
+        if same_text(word_at(words, U64.literal(3)), "Bool"):
+          if same_text(word_at(words, U64.literal(4)), "return"):
+            if same_text(word_at(words, U64.literal(6)), "end"):
+              if same_text(word_at(words, U64.literal(7)), "function"):
+                if sico.bytes.equal(source, sico.text.encode(canonical_function_source(bc_name, "", "Bool", bc_literal))):
+                  let bc_body = "02017f017f410021010240034020014100460440"
+                  set bc_body = sico.text.concat(bc_body, "41")
+                  set bc_body = sico.text.concat(bc_body, bc_bit)
+                  set bc_body = sico.text.concat(bc_body, "210020000f0b000b0b000b")
+                  return wasm_module_hex(bc_name, "016000017f", U64.literal(33), bc_body)
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function identity_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(10)):
+    let id_name = word_at(words, U64.literal(1))
+    let id_param = word_at(words, U64.literal(2))
+    let id_type = word_at(words, U64.literal(3))
+    let id_hex = scalar_type_hex(id_type)
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(id_param, "value"):
+        if same_text(word_at(words, U64.literal(4)), "returns"):
+          if same_text(word_at(words, U64.literal(5)), id_type):
+            if same_text(word_at(words, U64.literal(6)), "return"):
+              if same_text(word_at(words, U64.literal(7)), "value"):
+                if same_text(word_at(words, U64.literal(8)), "end"):
+                  if same_text(word_at(words, U64.literal(9)), "function"):
+                    if U64.equal(sico.text.length(id_hex), U64.literal(2)):
+                      let id_params = sico.text.concat("value: ", id_type)
+                      let id_canonical = canonical_function_source(id_name, id_params, id_type, "value")
+                      if sico.bytes.equal(source, sico.text.encode(id_canonical)):
+                        let id_type_content = "016001"
+                        set id_type_content = sico.text.concat(id_type_content, id_hex)
+                        set id_type_content = sico.text.concat(id_type_content, "01")
+                        set id_type_content = sico.text.concat(id_type_content, id_hex)
+                        let id_body = "01017f41002101024003402001410046044020000f0b000b0b000b"
+                        return wasm_module_hex(id_name, id_type_content, U64.literal(27), id_body)
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function identity_pair_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(12)):
+    let ip_name = word_at(words, U64.literal(1))
+    let ip_type = word_at(words, U64.literal(3))
+    let ip_hex = scalar_type_hex(ip_type)
+    let ip_second = word_at(words, U64.literal(9))
+    let ip_slot = "00"
+    if same_text(ip_second, "a"):
+      set ip_slot = "00"
+    else:
+      if same_text(ip_second, "b"):
+        set ip_slot = "01"
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "a"):
+        if same_text(word_at(words, U64.literal(4)), "b"):
+          if same_text(word_at(words, U64.literal(6)), "returns"):
+            if same_text(word_at(words, U64.literal(7)), ip_type):
+              if same_text(word_at(words, U64.literal(8)), "return"):
+                if same_text(word_at(words, U64.literal(10)), "end"):
+                  if same_text(word_at(words, U64.literal(11)), "function"):
+                    if U64.equal(sico.text.length(ip_hex), U64.literal(2)):
+                      if same_text(word_at(words, U64.literal(5)), ip_type):
+                        let ip_params = sico.text.concat(sico.text.concat("a: ", ip_type), sico.text.concat(", b: ", ip_type))
+                        let ip_canonical = canonical_function_source(ip_name, ip_params, ip_type, ip_second)
+                        if sico.bytes.equal(source, sico.text.encode(ip_canonical)):
+                          let ip_type_content = "016002"
+                          set ip_type_content = sico.text.concat(ip_type_content, ip_hex)
+                          set ip_type_content = sico.text.concat(ip_type_content, ip_hex)
+                          set ip_type_content = sico.text.concat(ip_type_content, "01")
+                          set ip_type_content = sico.text.concat(ip_type_content, ip_hex)
+                          let ip_body = "01017f41002102024003402002410046044020"
+                          set ip_body = sico.text.concat(ip_body, ip_slot)
+                          set ip_body = sico.text.concat(ip_body, "0f0b000b0b000b")
+                          return wasm_module_hex(ip_name, ip_type_content, U64.literal(27), ip_body)
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function less_than_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(15)):
+    let lt_name = word_at(words, U64.literal(1))
+    let lt_type = word_at(words, U64.literal(3))
+    let lt_hex = scalar_type_hex(lt_type)
+    let lt_family = word_at(words, U64.literal(9))
+    let lt_opcode = "53"
+    if same_text(lt_family, "I64"):
+      set lt_opcode = "53"
+    else:
+      if same_text(lt_family, "U64"):
+        set lt_opcode = "54"
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "a"):
+        if same_text(word_at(words, U64.literal(4)), "b"):
+          if same_text(word_at(words, U64.literal(6)), "returns"):
+            if same_text(word_at(words, U64.literal(7)), "Bool"):
+              if same_text(word_at(words, U64.literal(8)), "return"):
+                if same_text(word_at(words, U64.literal(10)), "less_than"):
+                  if same_text(word_at(words, U64.literal(11)), "a"):
+                    if same_text(word_at(words, U64.literal(12)), "b"):
+                      if same_text(word_at(words, U64.literal(13)), "end"):
+                        if same_text(word_at(words, U64.literal(14)), "function"):
+                          if U64.equal(sico.text.length(lt_hex), U64.literal(2)):
+                            if same_text(word_at(words, U64.literal(5)), lt_type):
+                              if same_text(lt_type, lt_family):
+                                let lt_params = sico.text.concat(sico.text.concat("a: ", lt_type), sico.text.concat(", b: ", lt_type))
+                                let lt_canonical = canonical_function_source(lt_name, lt_params, "Bool", sico.text.concat(lt_family, ".less_than(a, b)"))
+                                if sico.bytes.equal(source, sico.text.encode(lt_canonical)):
+                                  let lt_type_content = "016002"
+                                  set lt_type_content = sico.text.concat(lt_type_content, lt_hex)
+                                  set lt_type_content = sico.text.concat(lt_type_content, lt_hex)
+                                  set lt_type_content = sico.text.concat(lt_type_content, "017f")
+                                  let lt_body = "02017f017f41002103024003402003410046044020002001"
+                                  set lt_body = sico.text.concat(lt_body, lt_opcode)
+                                  set lt_body = sico.text.concat(lt_body, "210220020f0b000b0b000b")
+                                  return wasm_module_hex(lt_name, lt_type_content, U64.literal(36), lt_body)
+                                end if
+                              end if
+                            end if
+                          end if
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function checked_add_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(17)):
+    let ca_name = word_at(words, U64.literal(1))
+    let ca_type = word_at(words, U64.literal(3))
+    let ca_hex = scalar_type_hex(ca_type)
+    let ca_family = word_at(words, U64.literal(11))
+    let ca_body = ""
+    let ca_body_len = U64.literal(0)
+    if same_text(ca_family, "I64"):
+      set ca_body = "03017f017e017f410021040240034020044100460440200020017c210320002003852001200385834200530440410121022000420053ad210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+      set ca_body_len = U64.literal(89)
+    else:
+      if same_text(ca_family, "U64"):
+        set ca_body = "03017f017e017f410021040240034020044100460440200020017c210320032000540440410121024200210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+        set ca_body_len = U64.literal(76)
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "a"):
+        if same_text(word_at(words, U64.literal(4)), "b"):
+          if same_text(word_at(words, U64.literal(6)), "returns"):
+            if same_text(word_at(words, U64.literal(7)), "Result"):
+              if same_text(word_at(words, U64.literal(9)), "NumericError"):
+                if same_text(word_at(words, U64.literal(10)), "return"):
+                  if same_text(word_at(words, U64.literal(12)), "checked_add"):
+                    if same_text(word_at(words, U64.literal(13)), "a"):
+                      if same_text(word_at(words, U64.literal(14)), "b"):
+                        if same_text(word_at(words, U64.literal(15)), "end"):
+                          if same_text(word_at(words, U64.literal(16)), "function"):
+                            if U64.equal(sico.text.length(ca_hex), U64.literal(2)):
+                              if same_text(word_at(words, U64.literal(5)), ca_type):
+                                if same_text(word_at(words, U64.literal(8)), ca_type):
+                                  if same_text(ca_type, ca_family):
+                                    let ca_canonical = canonical_function_source(ca_name, "a: I64, b: I64", "Result[I64, NumericError]", sico.text.concat(ca_family, ".checked_add(a, b)"))
+                                    if same_text(ca_type, "U64"):
+                                      set ca_canonical = canonical_function_source(ca_name, "a: U64, b: U64", "Result[U64, NumericError]", sico.text.concat(ca_family, ".checked_add(a, b)"))
+                                    end if
+                                    if sico.bytes.equal(source, sico.text.encode(ca_canonical)):
+                                      return wasm_module_hex(ca_name, "0160027e7e037f7e7f", ca_body_len, ca_body)
+                                    end if
+                                  end if
+                                end if
+                              end if
+                            end if
+                          end if
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function checked_sub_core_hex(source: Bytes, words: List[Text]) returns Text:
+  if U64.equal(sico.list.length(words), U64.literal(17)):
+    let cs_name = word_at(words, U64.literal(1))
+    let cs_type = word_at(words, U64.literal(3))
+    let cs_hex = scalar_type_hex(cs_type)
+    let cs_family = word_at(words, U64.literal(11))
+    let cs_body = ""
+    let cs_body_len = U64.literal(0)
+    if same_text(cs_family, "I64"):
+      set cs_body = "03017f017e017f410021040240034020044100460440200020017d210320002001852000200385834200530440410121022000420053ad210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+      set cs_body_len = U64.literal(89)
+    else:
+      if same_text(cs_family, "U64"):
+        set cs_body = "03017f017e017f410021040240034020044100460440200020017d210320002001540440410121024201210305410021020b2002200342002002451b2003a741002002451b0f0b000b0b000b"
+        set cs_body_len = U64.literal(76)
+      else:
+        return ""
+      end if
+    end if
+    if same_text(word_at(words, U64.literal(0)), "function"):
+      if same_text(word_at(words, U64.literal(2)), "a"):
+        if same_text(word_at(words, U64.literal(4)), "b"):
+          if same_text(word_at(words, U64.literal(6)), "returns"):
+            if same_text(word_at(words, U64.literal(7)), "Result"):
+              if same_text(word_at(words, U64.literal(9)), "NumericError"):
+                if same_text(word_at(words, U64.literal(10)), "return"):
+                  if same_text(word_at(words, U64.literal(12)), "checked_sub"):
+                    if same_text(word_at(words, U64.literal(13)), "a"):
+                      if same_text(word_at(words, U64.literal(14)), "b"):
+                        if same_text(word_at(words, U64.literal(15)), "end"):
+                          if same_text(word_at(words, U64.literal(16)), "function"):
+                            if U64.equal(sico.text.length(cs_hex), U64.literal(2)):
+                              if same_text(word_at(words, U64.literal(5)), cs_type):
+                                if same_text(word_at(words, U64.literal(8)), cs_type):
+                                  if same_text(cs_type, cs_family):
+                                    let cs_canonical = canonical_function_source(cs_name, "a: I64, b: I64", "Result[I64, NumericError]", sico.text.concat(cs_family, ".checked_sub(a, b)"))
+                                    if same_text(cs_type, "U64"):
+                                      set cs_canonical = canonical_function_source(cs_name, "a: U64, b: U64", "Result[U64, NumericError]", sico.text.concat(cs_family, ".checked_sub(a, b)"))
+                                    end if
+                                    if sico.bytes.equal(source, sico.text.encode(cs_canonical)):
+                                      return wasm_module_hex(cs_name, "0160027e7e037f7e7f", cs_body_len, cs_body)
+                                    end if
+                                  end if
+                                end if
+                              end if
+                            end if
+                          end if
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return ""
+end function
+
+function declared_core_hex(source: Bytes, words: List[Text]) returns Text:
+  let dc_hex = int_constant_core_hex(source, words)
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = i64_const_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = u64_const_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = bool_const_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = identity_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = identity_pair_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = less_than_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = checked_add_core_hex(source, words)
+  end if
+  if U64.equal(sico.text.length(dc_hex), U64.literal(0)):
+    set dc_hex = checked_sub_core_hex(source, words)
+  end if
+  return dc_hex
 end function
 
 
@@ -393,32 +866,11 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
     end if
     if same_text(word_at(input.arguments, U64.literal(0)), "--emit-core-hex"):
       let codegen_words = lex_words(input.stdin)
-      if U64.equal(sico.list.length(codegen_words), U64.literal(8)):
-        let codegen_name = word_at(codegen_words, U64.literal(1))
-        let codegen_type = word_at(codegen_words, U64.literal(3))
-        let codegen_literal = word_at(codegen_words, U64.literal(5))
-        if same_text(word_at(codegen_words, U64.literal(0)), "function"):
-          if same_text(word_at(codegen_words, U64.literal(2)), "returns"):
-            if same_text(codegen_type, "Int"):
-              if same_text(word_at(codegen_words, U64.literal(4)), "return"):
-                if same_text(word_at(codegen_words, U64.literal(6)), "end"):
-                  if same_text(word_at(codegen_words, U64.literal(7)), "function"):
-                    if all_digits(codegen_literal):
-                      if decimal_at_most(codegen_literal, "9223372036854775807"):
-                        if sico.bytes.equal(input.stdin, sico.text.encode(const_source(codegen_name, codegen_type, codegen_literal))):
-                          let core_hex = constant_core_hex(codegen_name, decimal_u64(codegen_literal))
-                          return ok(ScriptOutput(stdout: sico.text.encode(core_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
-                        end if
-                      end if
-                    end if
-                  end if
-                end if
-              end if
-            end if
-          end if
-        end if
+      let codegen_hex = declared_core_hex(input.stdin, codegen_words)
+      if U64.equal(sico.text.length(codegen_hex), U64.literal(0)):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
       end if
-      return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
+      return ok(ScriptOutput(stdout: sico.text.encode(codegen_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
     end if
   end if
   let general_words = parser.lex_words(input.stdin)

@@ -54,7 +54,14 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0045`](./RFC-0045-stdlib-batch2-byte-text-collections-v0.md) | accepted | stdlib batch 2：byte/text 访问、排序/格式化与集合扩展；2026-09-14 随 STEP-0174 落地 |
 | [`RFC-0046`](./RFC-0046-language-v1-batch2-for-loops-error-propagation-list-elements-v0.md) | accepted | 语言 v1 batch 2：for-loops、`expr?` 错误传播、裸字面量决策记录（不改语法）、`List[I64]`/`[U64]`；2026-09-14 owner 会话指令接受 |
 | [`RFC-0047`](./RFC-0047-record-types-v0.md) | accepted | record 类型最小封闭集（声明/具名字面量/字段访问/`List[record]`）：M22 R0 产出（ADR-0017 Option A），服务自举 re-baseline、M14 应用 profile 与 M23 人机工学；2026-09-24 owner 会话指令接受，冻结 gate 见 STEP-0270 |
+| [`RFC-0048`](./RFC-0048-language-v1-batch3-infix-comparison-logical-and.md) | draft（owner acceptance required） | 语言 v1 batch 3 item 1：中缀比较 `< <= > >= !=` 与 `&&`（desugar 到既有 EqualFixed/LessFixed，无新 IR 操作）；`||`/`!` 因零实测消费被排除；登记 `<=` 无消费记号的 check 绿/build 拒实测；实现另受 M23 双门约束 |
+| [`RFC-0049`](./RFC-0049-language-v1-batch3-let-bound-if-match.md) | draft（owner acceptance required） | 语言 v1 batch 3 item 2：`let x = if/else` 与 `let x = match` 两种 let 绑定块（单表达式臂；desugar 到 D2 已落地的 cell+分支写+汇合读机制，零新 IR 操作）；E2026/E2027 新码；实测 248+121 个 bind 型 match 模拟位点；实现另受 M23 双门约束 |
+| [`RFC-0050`](./RFC-0050-image-codec-jpeg-png-v0.md) | draft（owner acceptance required） | M24 image-codec@1 包：JPEG↔PNG 四纯函数（BGRA8 RFC-0041 契约），接受 profile/编码参数按名冻结（PNG Paeth+zlib9 无附属块；JPEG SOF0 quality90 4:4:4），字节级稳定；§8.5 拒绝面 typed 收口；消费走 M7 零 compiler/Runtime 变更 |
+| [`RFC-0051`](./RFC-0051-model-provenance-manifest-v0.md) | draft（owner acceptance required） | M17 gate 4 模型/包 provenance manifest v0（`sico.m17.provenance.v0`）：封闭 manifest+SHA-256 复用 M7 单一信任路径+预算字段 typed 强制；fixture 模型证据集五项；不产生任何 live-model 主张 |
+| [`RFC-0052`](./RFC-0052-native-ui-source-binding-v0.md) | draft（owner acceptance required；配对 ADR-0018 proposed） | Sico 语言原生 UI 库源侧绑定：`sico:user/ui@1` 版本化包（window/column/row/text/button/dropdown/image_preview/progress + poll_event/run），零语法增长；对话框组合既有 file 能力；封闭 UiError + 节点/深度 limit+1 typed；帧=UI 状态纯函数 |
+| [`RFC-0053`](./RFC-0053-pdf-structural-reading-v0.md) | draft（owner acceptance required；实现另等 M25 v1.0 release GO） | M26 PDF 结构阅读子集 v0：`sico:user/pdf@1` open() 结构阅读（classic xref table/trailer/catalog/page tree/MediaBox//Rotate 继承），stream 有 /Filter 即 typed 拒绝，加密拒绝；xref stream/object stream/incremental update 各自扩展语料另列 |
+| [`RFC-0054`](./RFC-0054-pdf-limits-refusals-writer-v0.md) | draft（owner acceptance required；实现另等 M25 v1.0 release GO） | M26 PDF 限额/拒绝分类 v0：八项限额先检后分配（+1 typed）、封闭 PdfError 十四码带字节 span、字节级稳定 writer 契约（classic xref、规范重编号、幂等探测） |
 
-下一可用编号：`RFC-0048`。
+下一可用编号：`RFC-0055`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

@@ -1,10 +1,10 @@
 # Sico audited roadmap
 
-> - updated: 2026-09-24 (STEP-0264: M22–M26 route replan registered per owner directive 「重新规划路线，审视M22-M26，确保能落实到工程实现」 — M22 gains an R-phase convergence gate with a pre-registered stop-loss before further lowering STEPs; M23's implementation gate becomes dual-exit (Route A after M22 S7 GO / Route B immediately after an M22 R3 stop-loss declaration); M24 kickoff is unblocked (its entry gates never depended on M22/M23); M25's entry gate accepts an explicit M22 verdict (GO or stop-loss-registered, never implied); see [`M22–M26 route replan v1`](./plans/M22-M26-route-replan-v1.md); no capability contract, evidence class or RFC/ADR discipline changed; no implementation STEP numbers reserved)
+> - updated: 2026-09-28 (STEP-0310 exact-SHA CI adjudication: STEP-0300 f2fd7fc and STEP-0301–0305 8bee75b success; STEP-0306–0309 still local only. Formatter canary 29/30, `main` / SCICOND. Seven-gate M22 exit review NO-GO; R3 stall count 0; parallel origin/dev history unmerged.)
 > - previous update: 2026-09-24 (STEP-0263: M26 registered per owner directive — PDF document processing: structural reading, merge, rotate as a versioned package, plus a GUI PDF tool authored over the Sico-language native UI library; no STEP numbers reserved)
 > - previous update: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
-> - current phase: M14 GO；M15/M16 GO；M17 NO-GO（gate 1 GO，gate 2/4 待 M24）；M18 GO 4/5（组合项 4 application pilot 待 M24，2026-09-22 owner 指令删除 block-game pilot、改为 GUI 格式转换器）；M19 GO（部分，外部门控诚实登记）；M20 NO-GO（部分——language v1 由 M23/M25 接续、完成审计由 M25 接续）；M21 GO；M22 in progress（S1/S2 GO；S3/S4/S5 partial；S6 未进入；STEP-0264 起在执行队列外加 R 阶段收敛门：R0 架构决策（SOA 冻结 ADR vs `List[record]` RFC 二选一）、R1 canary 覆盖率与消耗燃料预算曲线仪器化、R3 预登记止损——连续 4 个实现 STEP `formatter.sico` canary 零增长且拒绝前沿不动即宣告 S6 在当前表面不收敛、记入双实现登记并触发 M23 Route B）；主线 = M22 R 阶段 ∥ M24 即刻开工盘点（其入口门不依赖 M22/M23）∥ M23 开工盘点（测量），随后 M23→M25；M26 planned（PDF document processing，owner 指令 2026-09-24，GUI 须用 Sico 语言原生界面库，排在 M25 之后）
+> - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1 and 22-C S1/S2 GO on separate isolated CI-tested commits; M23–M26 planned.
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -332,11 +332,29 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 验证支持：STEP-0254 在测试进程内复用 PreparedProgram，每次 guest 执行仍创建独立 Store；13 项差分串行实测从 801.46s 降至 66.99s，降低后续自举迭代成本，不改变语言支持或 bootstrap 状态。
 
+验证经济：STEP-0317（owner 指令 2026-09-29「规划好这些优化，完成M22」）落地差分循环降本——selfhost 源文本+编译器 crate 指纹键控的组件磁盘缓存（`SICO_SELFHOST_COMPONENT_CACHE=0` 可关）、runner dev 依赖 opt-level 1、每槽位独立 Engine 的懒增长并行池；run-ci 每步输出耗时。本机实测：单测调用 23.59s→1.82s（热缓存）/4.55s（冷缓存）、差分套件 57.05s→12.98s（串行）/9.35s（池并行 51/51）、runner 全套件 227.8s→102.7s；一次性 opt1 依赖重建 2m56s。oracle 纪律不变：每 fixture 独立 Store/fuel、字节级对比、Rust oracle 每次重算、CI 冷缓存恒新构建。产品级性能优化轨道按同指令登记为 M22 裁决后的独立工作包（本里程碑 §6 non-goal 不变，先 RFC 定预算目标，见 route replan §11）。
+
 规划支持：STEP-0255 细化 M22–M24 执行计划——M22 切片状态表（计划 §3.1）与执行队列（§3.2：item list.get match → formatter 尾 → selfhost 全源 → S5 → S6 → S7）、M23 逐项工作协议（§8）与排序依赖图（§9）、M24 逐 gate 工作分解与 pilot 循环映射（§8）；不预留未来 STEP 编号、不改任何 gate。
 
-重划片支持：STEP-0264 按 owner 指令（2026-09-24「重新规划路线，审视M22-M26，确保能落实到工程实现」）登记 M22–M26 路线重划片——M22 执行队列外加 R 阶段收敛门（R0 架构决策：SOA 冻结 ADR vs `List[record]` RFC 二选一；R1 canary 覆盖率与消耗燃料预算曲线仪器化；R3 预登记止损：连续 4 个实现 STEP `formatter.sico` canary 零增长且拒绝前沿不动即宣告 S6 在当前表面不收敛、记入双实现登记并触发 M23 Route B）；M23 实现门改双出口（Route A：M22 S7 GO 后；Route B：止损宣告后立即，自举于 richer surface 的 re-baseline 在 M23 出口审计后重启，ADR-0015 合同不变）；M24 入口门不依赖 M22/M23、即刻可开工盘点；M25 入口门接受显式 M22 结论（GO 或止损登记，绝不暗示）；不改任何能力合同、证据等级或 RFC/ADR 纪律；不预留实现 STEP 编号。详见 [`M22–M26 route replan v1`](./plans/M22-M26-route-replan-v1.md)。
+重划片支持：STEP-0264 按 owner 指令（2026-09-24「重新规划路线，审视M22-M26，确保能落实到工程实现」）登记 M22–M26 路线重划片——M22 执行队列外加 R 阶段收敛门（R0 架构决策现为已接受的 ADR-0017 Option A + RFC-0047；R1 canary/燃料区间已测，栈高水位待测；R3 预登记止损：自 W2 S3/S4 起连续 4 个实现 STEP 若当前阶段 canary 零增长且拒绝前沿不动，就登记止损并触发 M23 Route B；停滞实现 STEP 计数，文档/测量 STEP 不计；formatter 达 30/30 后使用其余 selfhost 差分，S5 使用独立 codegen 门）；M23 实现门改双出口（Route A：M22 S7 GO 后；Route B：止损宣告后立即，自举于 richer surface 的 re-baseline 在 M23 出口审计后重启，ADR-0015 合同不变）；M24 入口门不依赖 M22/M23、即刻可开工盘点；M25 入口门接受显式 M22 结论（GO 或止损登记，绝不暗示）；不改任何能力合同、证据等级或 RFC/ADR 纪律；不预留实现 STEP 编号。详见 [`M22–M26 route replan v1`](./plans/M22-M26-route-replan-v1.md)。
 
-状态：`in-progress：S1 formatter 已关闭；S2 声明式 checker 子集关闭（116 lexical / 34 identity / 65 accepted / 0 unsupported）。ADR-0016 冻结 SOA 与 compilation-unit 边界；STEP-0246 统一 parser/compiler lowering，STEP-0247 以 versioned-capacity List COW 消除完整源码 lexer trap，STEP-0248 将 typed user-call guard、literal 参数与 Text return 纳入 canonical CFG，formatter 前七函数至 word_kind 与 Rust byte-exact；STEP-0249 修复 256-local 构建越限（while_bytes_at_rhs_packed 抽取 + headroom 回归钉）、验证器落地 PowerShell 5.1、LF 语料冻结真实执行；STEP-0251 落地通用 while 体 if/else 语句区域（惰性块纪律）；STEP-0252 按 Rust oracle 顺序发射 nested sico.bytes.at + typed user call 条件；STEP-0253 以 parent-linked frame 与 deferred empty-else block 对齐 nested/sequential no-else CFG，并修复单指令/return-call SSA 计数；STEP-0256 以 `list_get_match_ir`/`nested_intrinsic_return_ir` 落地 item 的 result-match 与 append_pair 嵌套 intrinsic return；STEP-0260 在 general-while 机内收敛 line_tokens（通用调用条件、slice 主语逗号扫描、`#match<binding>` 绑定、List 类型 JSON 透传、固定运算 set RHS、break/continue），前十六函数 byte-exact；STEP-0261 将 general-while 机单槽 while 帧改为打包帧栈（嵌套/顺序 while byte-exact，首个嵌套 while 函数 source_has_lex_error 落地，break 按 brk_base 帧作用域，branch 终结子表 gwt_entries），并配套 `sico.list.length` 参数/cell 主语、`sico.text.split_lines` 非字面量实参与用户调用嵌套调用实参（递归打包、内层 span 精确），前十七函数 byte-exact（fixture step-0261 117,109 字节钉住），`selfhost_compiler` 19/19、`selfhost_parser` 99 例差分全绿，general_while_function_ir 240 locals 恰在界内，canary 前沿推进至 call_left（guard-chain 机 arity/set-臂/裸-cell 条件限制，typed E-SH-IR-EXPRESSION；format_code 另需 gw 机 body-if 用户调用条件）。S3/S4 仍 partial；S5 只有 bounded Core-Wasm seam，S6 A=B=C 未进入；后续 STEP 不预留`
+状态：in progress / NO-GO；S1/S2 声明子集完成，S3/S4/S5 partial，S6 未进入，S7 经 STEP-0310 复审为 NO-GO。STEP-0292 的独立 Windows GNU CI 在 e8495f9 成功，W1 于隔离分支裁为 GO；STEP-0293 修复 while 体 u64.to_text RHS 的类型拒绝缺口，独立 CI 在 cb371c5 成功，22-C S1 于该分支裁为 GO。STEP-0294 的 map.get match 主语本机真实 runner 差分与独立 CI 在 5a6d0bb 均绿，22-C S2 于该分支裁为 GO。STEP-0295 修复 match ok 臂内 if 的汇合块接线，本机真实 runner 对 formatter 前缀 through nearest_match 字节差分已绿；f7288b7 独立 CI 运行 36166445685 成功，S3 于隔离分支 GO。STEP-0296 降低无 while 的 if/match 路由及条件内 sico.text.length(Text)，904b86a 独立 CI 运行 36168754671 成功，S4 于隔离分支 GO。STEP-0297 降低嵌套 bytes.slice match 主语；ffcdd3f 独立 CI 运行 36209299222 成功，切片 5 于隔离分支 GO。STEP-0298 降低 map.put return 与双臂 return match；5ba175f 独立 CI 运行 36210200271 成功，切片 6 于隔离分支 GO。STEP-0299 降低 map.get 嵌套 u64.to_text key，f856bb1 独立 CI 运行 36212164872 成功。STEP-0300 本机降低 if then 臂内 while 的父区域保存与恢复，f2fd7fc 独立 CI 运行 36212509946 已核对成功；formatter canary 编译计数 28/30 且 f28 前缀字节差分绿。STEP-0301 本机降低 map.empty[Text,U64]() local RHS，normalize_source 前沿 GWPACK-OTHER → GWSKIP。STEP-0302 本机令 else 与 post-if join 区域内 while 通过 Rust IR 字节差分，前沿 GWSKIP → CALL-ARGUMENT；R3 连续停滞数 0。origin/dev 并行 STEP-0279–0283 历史未合并，不引用本分支 CI 为其证据。
+
+STEP-0303 本机将 `map.get[Text,U64]` match 主语扩至同型本地 Map，`read_local` 与嵌套 key 的 SSA 顺序经真实 runner 对 Rust IR 逐字节一致；`normalize_source` 前沿 CALL-ARGUMENT → EXPRESSION，canary 仍 28/30，R3 连续停滞数 0。该 STEP 尚无独立 CI 结论，不改变 M22 NO-GO。
+
+STEP-0304 本机降低固定比较左侧 user call，并修复返回参数后 SSA ID 错误回退；双函数和 formatter `close_code` 探针与 Rust IR 逐字节一致。`normalize_source` 前沿深入到 `text.concat` 嵌套实参的 CALL-ARGUMENT，canary 仍 28/30、R3 连续停滞数 0；独立 CI 尚未裁决，M22 仍 NO-GO。
+
+STEP-0305 本机降低 `text.concat` 两个 Text user-call 实参，真实 runner 与 Rust IR 逐字节一致，错型返回保留 typed 拒绝。`normalize_source` 前沿深入到嵌套 trim 实参，诊断仍 CALL-ARGUMENT，canary 仍 28/30、R3 连续停滞数 0；独立 CI 尚未裁决，M22 仍 NO-GO。
+
+STEP-0306 本机降低 `text.concat` 实参里的 `text.trim(item(tokens, add(...)))`，真实 runner 对 Rust IR 逐字节一致，错型返回 typed 拒绝且恢复。`normalize_source` 前沿移至 `output` 的 `sico.list.append` RHS，诊断 GWPACK-OTHER；canary 仍 28/30、R3 连续停滞数 0。独立 CI 未运行，M22 仍 NO-GO。
+
+STEP-0307 本机降低 `List[Text]` 的 `sico.list.append` RHS（Text 字面量/本地值），真实 runner 对 Rust IR 逐字节一致，额外实参与错型值 typed 拒绝且恢复。`normalize_source` 前沿移至 `active` 的 `sico.map.put[Text,U64](active, block_key, U64.literal(0))`，诊断 CALL-SHAPE；canary 仍 28/30、R3 连续停滞数 0。独立 CI 未运行，M22 仍 NO-GO。
+
+STEP-0308 本机降低 `sico.map.put[Text,U64]` 的固定 U64 字面量末实参，真实 runner 与 Rust IR 逐字节一致，额外实参与错型字面量 typed 拒绝且恢复。把 `normalize_source` 末行 join 返回临时替换为字面量时，此前整段真实 runner 与 Rust IR 字节一致；原文件前沿移至末行 `text.concat(text.join(output, "\n"), "\n")` 的 CALL-ARGUMENT。canary 仍 28/30、R3 连续停滞数 0；独立 CI 未运行，M22 仍 NO-GO。
+
+STEP-0309 本机降低 `text.concat` 实参里的 `sico.text.join(List[Text],Text)`，真实 runner 与 Rust IR 逐字节一致，错型列表和额外实参 typed 拒绝且恢复。formatter 实际源码前缀 through `normalize_source` 全部字节一致，canary 增至 29/30，下一前沿 `main` / SCICOND，R3 连续停滞数 0；独立 CI 未运行，M22 仍 NO-GO。
+
+STEP-0310 核对 [GitHub CI 36212509946](https://github.com/ImmortalWing/sico/actions/runs/36212509946) 对 `f2fd7fc` 的成功与 [CI 36366432845](https://github.com/ImmortalWing/sico/actions/runs/36366432845) 对 `8bee75b` 的成功，分别裁决 STEP-0300 与包含 STEP-0301–0305 的已提交快照；0306–0309 工作区改动未获独立 CI。按 §4 七门完成 [M22 出口复审](./reports/m22-exit-audit-2026-09-28.md)：**NO-GO**，S3/S4/S5 partial、S6 未进入，S7 已审计但不能 GO。R3 四步停损未触发，M23 Route B 不得凭本次 NO-GO 启动。
 
 把编译器前端与语言工具用 Sico 自身重写，分两级验收：L1 工具自宿（Sico 写 formatter/checker 子集，在冻结语料上与 Rust 版逐字节差分）；L2 编译器自举（Sico 写 script profile 子集编译器 lex→parse→check→lower→codegen，语料产物与 Rust 后端逐字节一致，并编译其自身源码形成自举闭环，经 M7 信任链打包为 `.sapp` 由真实 runner 执行）。Rust 实现永久的差分 oracle，不退役；runner/Host providers 按架构留在原生，自举不含"去 Rust"主张。
 
@@ -344,31 +362,31 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 已记录的后续语言摩擦（v1 batch 3 候选：中缀比较/逻辑运算符、表达式位置条件、裸字面量 AI 噪音复称）见 [`M22 计划 §8`](./plans/M22-compiler-self-host.md)。
 
-退出条件：L1 差分逐字节 + 幂等；L2 语料产物逐字节等于 Rust 输出；自举闭环（A≡B、语料复验、M7 打包、runner 实测）；自编译 wall-time/fuel 预算实测登记（吞吐回归如实登记，无 SLA 主张）；双实现登记（Rust 保持 oracle）；M0–M21 回归绿 + 显式出口审计。
+退出条件：L1 差分逐字节 + 幂等；L2 语料产物逐字节等于 Rust 输出；ADR-0015 自举闭环 A == B == C、语料复验、M7 打包和 runner 实测；自编译 wall-time/fuel/peak guest memory 预算实测登记；双实现登记（Rust 保持 oracle）；M0–M21 回归绿 + 显式出口审计。R3 止损是 M22 NO-GO/转 M23 Route B，不是自举 GO。
 
 执行计划：[`M22 compiler self-host track`](./plans/M22-compiler-self-host.md)。
 
 ## M23: Language v1 batch 3 — expression ergonomics（planned; 2026-09-17）
 
-状态：`planned / owner session directive（2026-09-17「继续完成sico，M22-M25」）；M22 计划 §8 记录的语言摩擦升格为本里程碑；no step numbers reserved yet；RFC/合同起草可与 M22 S6/S7 并行；2026-09-24（STEP-0264）实现门改双出口：Route A = 等 M22 S7 出口审计 GO；Route B = M22 R3 止损宣告（S6 收敛不被证明）后立即实现，自举 re-baseline 在 M23 出口审计后以新表面重启；Route B 期间「语言面 churn 不得打断在飞闭环」约束仍成立（止损只在与飞尝试无关时宣告）；细化：逐项工作协议见计划 §8、排序与依赖见 §9（STEP-0255）`
+状态：planned；开工盘点已由 STEP-0284（卡 23-A）完成——[`m23-ceremony-census-2026-09-25.json`](./reports/m23-ceremony-census-2026-09-25.json) 冻结四项仪式计数；item 1 的 [`RFC-0048`](./rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)（STEP-0285）与 item 2 的 [`RFC-0049`](./rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)（STEP-0286，仅两种最小 let 绑定块，desugar 到 D2 机制）均已起草（draft，待 owner 接受；RFC-0048 并实测登记 `<=` 无消费记号的 check 绿/build 拒分裂）；item 4 按计划 §8.4 决策规则收口（组合式为最终形态）；item 3 因 AI 语料外部门 deferred。实现双入口：Route A = M22 S7 GO，Route B = W2 S3/S4 的 R3 四步无进展停损登记后；Route B 的自举 re-baseline 在 M23 出口审计后重启。
 
 关闭 RFC-0044/0045/0046 已实测但未移除的语言表面摩擦，逐项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断）：中缀比较/逻辑运算符（最小封闭算符集由 RFC 决定；实测消费者 = selfhost 源码本身的仪式密度）、表达式位置条件（`let x = if/match …`，记录在案的最大结构性冗余税）、裸字面量复称（按 RFC-0046 D3 记录的复测政策，先测后议、不改语法不做承诺）、`text.chars`（RFC-0046 §2 排队项，按消费者证据决定）。
 
-进入条件：M22 门双出口显式其一（STEP-0264）——Route A：M22 S7 出口审计 GO；或 Route B：M22 R3 止损宣告（S6 收敛不被证明，且非在飞闭环中段）；逐项 RFC 接受；每项有实测消费者证据。
+进入条件：实现前须明确 Route A（M22 S7 GO）或 Route B（M22 R3 止损宣告），并逐项接受 RFC、冻结实测消费者证据；盘点和合同起草不等待这两个实现门。
 
 退出条件：每个接受项 e2e byte-exact 语料（含 limit+1 typed 拒绝）；格式化幂等 + 冻结快照 append-only；支持矩阵行与校验器扩展、未声明 check/build/run 缺口保持为零；稳定诊断码与行动提示扩展；self-host 前端 re-baseline 登记（消费新表面或声明不相交子集）；M0–M22 回归绿 + 显式出口审计。AI 噪音下降主张只能来自 owner 凭据的 live-model 重测。
 
 执行计划：[`M23 Language v1 batch 3 — expression ergonomics`](./plans/M23-language-v1-batch-3.md)。
 
-## M24: Vision closure and GUI application pilot（planned; 2026-09-17）
+## M24: Vision closure and GUI application pilot（executing; §3 逐门 NO-GO on offline evidence host — STEP-0333 审计）
 
-状态：`planned / owner session directive（2026-09-17）；关闭 M17 剩余 gate（2 加速 provider ADR、4 model RFC）与 RFC-0043 roster 包（template match/grid/contour），将 M17 翻为 GO；随后关闭 M18 组合项 4 application pilot NO-GO。2026-09-22 两次 owner 指令重定试点：(1)「方块游戏pilot改为GUI和原生界面库（风格类似winui3）」+「原生界面库是sico语言原生界面库」（STEP-0257，计划 §8.6.1）；(2)「方块游戏pilot目标删除，改为带GUI界面的格式转换器，第一步可以先实现图片格式互相转换，例如jpg互转png」（STEP-0258）——block-game pilot 从 M24 删除（capture→vision→solver→input 闭环不再属于本里程碑，M16 证据停在 M16 GO 级别不再延伸），试点目标改为以 Sico 语言原生界面库（WinUI3/Fluent 风格）编写的带 GUI 格式转换器应用，第一步实现 JPEG↔PNG 双向互转；细化：逐 gate 工作分解与试点工作包见计划 §8（STEP-0255/0257/0258）；no step numbers reserved yet`
+状态：**executing / §3 audit = NO-GO on this host**（2026-09-30，详见 [`STEP-0333`](./steps/STEP-0333-m24-exit-audit.md)）。前置合同已由 STEP-0330 owner 复裁决全部接受（[`RFC-0050`](./rfc/RFC-0050-image-codec-jpeg-png-v0.md)+A1、[`RFC-0051`](./rfc/RFC-0051-model-provenance-manifest-v0.md)、[`RFC-0052`](./rfc/RFC-0052-native-ui-source-binding-v0.md)+A1、[`ADR-0018`](./adr/ADR-0018-native-renderer-fluent-subset-v0.md) + 新增 [`ADR-0019`](./adr/ADR-0019-rust-compiled-package-core-production-v0.md)）。逐门裁决：**gate 2 加速器=具名外部门**（无具名硬件，reference-only 不翻）；**#2 PNG codec ✓**（STEP-0331，digest-pinned Rust core，runner 5/5）；**#5 `ui@1` 绑定 + 默认拒绝授权 ✓ 含 end-to-end runtime-verified**（STEP-0332，`tests/ui_authority.rs` 2/2；受权真实渲染帧仍 gated on #4）；**gate 4 model provenance=未达但本机唯一可离线推进项**（fixture model 路线不需硬件/JPEG/Direct2D/record；**STEP-0334 已落 `sico.m17.provenance.v0` 封闭 schema + 载入校验原语（`sico-package::provenance`，10/10 单测），gate 仍未达**——余 budget/cancel 的 runner 接线 + 一份冻结 fixture model 载荷）；**gate 3 roster=#E8017 合同门阻挡**（record 返回类型不在已接受包接口值集，须 owner 裁决 region 编码，见 STEP-0330 §8）；**#3 JPEG / #4 Direct2D=具名外部门**（离线无 JPEG crate / 无 Direct2D 绑定）；**gate 5 GUI 转换器随 #3/#4/roster 延期 NO-GO**。⇒ **M24 本机不翻 full GO**；不替代、不静默改合同。M17 gate 2/4/roster 分别裁决，M17 整体保持 NO-GO。
 
 本里程碑承载 M17 视觉收口与重定后的应用试点。俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138 ✓）与其 Python 案例 oracle，不再作为 M18/M24 验收载体（owner 指令 2026-09-22）。
 
 进入条件：M16 GO ✓；M17 gate 1 GO ✓；M18 组合 4/5 ✓（组合项 4 即登记的 NO-GO，目标已重定为 GUI 格式转换器）；逐包/逐 gate RFC 先接受再实现（含格式转换器 codec 合同 RFC）；试点作为本地应用在用户授权下运行，文件访问经既有文件能力 + 用户选定路径组合，不消费 capture/input 授权。
 
-退出条件：M17 gate 2（容差内一致 + provider 故障隔离）与 gate 4（digest 绑定加载、预算 limit+1 typed、推理中取消、恶意资产拒绝、provider 崩溃隔离）GO；roster 包确定性语料 byte-exact 且消费者经 M7 registry 路径安装；GUI 格式转换器试点在 Windows 证据主机上以 Sico + Sico 语言原生界面库构建运行，第一步 JPEG↔PNG 双向互转冻结语料输出 byte-stable + §8.5 全部 fail-closed 语料绿（错误魔法数/截断/尾部数据/超限维度/不支持 profile/转换中取消/保存失败/重复转换 byte-stable/长时采样）+ 无静默回退、无原生逃逸、无核心补丁；证据标签严格分级；M0–M23 回归绿 + 显式出口审计。
+退出条件：M17 gate 2 需具名硬件/provider 的真实对照与隔离证据，reference-only 不翻 GO；gate 4/roster 逐项验收。Sico 原生 UI 库按 RFC→ADR→真实渲染语料验收，Windows GUI 转换器 JPEG↔PNG 双向冻结语料 byte-stable、§8.5 fail-closed 全绿；M18 组合项 4 在转换器 GO 后独立增补审计。M24 审计回归覆盖 M0–M22 和审计时已落地的 M23 变更；M25 统一重跑 M0–M24。
 
 执行计划：[`M24 Vision closure and GUI application pilot`](./plans/M24-vision-closure-gui-application-pilot.md)。本里程碑不提供验证码/认证/反作弊绕过、隐藏监控、全桌面捕获或凭据/进程控制；macOS/Linux/Android 不产生无原生证据的声明。
 
@@ -378,9 +396,9 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 以 AGENT_GOAL §13 为准发布版本化 v1.0 产品结论：语言 v1 freeze（batch 1–3 纳入版本化发布：规范/语料/诊断/格式化互洽 + 迁移说明）；§13 逐项审计以 M21–M24 全证据链重发（每项 GO 或显式 deferred + 外部门名称）；M19 残余 gate 在输入允许处收口（全范围签名安装演练、registry 对 v1.0 bundle 的发布演练——公网 rollout 仍 owner 门控，不作声明）；平台广度按 owner 实际提供的 runner 声明（无 runner 处 contract-verified；Android 按 M20 两路出口记录）；v1.0 release bundle 经 M19 管线可复现（两次独立构建字节相同）。
 
-进入条件：M23 出口审计显式；M24 application pilot gate 显式（关闭或诚实 deferred + 外部门名称）；M22 行在双实现登记中携带显式结论（GO 或止损宣告 + Route B re-baseline 登记，STEP-0264——缺失不暗示成功）；M19 CI 绿且对 release candidate 现行；生产/外部项的 owner 输入已提供或显式声明 deferred。
+进入条件：M23/M24/M22 裁决均显式，可据此启动审计；v1.0 发布 GO 另要求 M23 第三批 GO、M24 Sico 原生 GUI 转换器 GO、M19 release-candidate CI/签名演练绿。M22 止损仅作 NO-GO 登记，不能冒充自举 GO；外部输入缺失逐项命名。
 
-退出条件：§13 逐项审计发布（每项证据链接、总结论 `complete` 或 `complete-with-deferrals`，绝不暗示成功）；语言 v1 freeze 快照重跑全冻结语料 byte-exact；v1.0 bundle 两次干净构建字节相同 + 干净 Windows 主机 install/run/upgrade/uninstall 签名演练；平台矩阵诚实（无标签洗白）；双实现登记与 AI 工作流状态记录；M0–M24 一命令回归绿 + 文档审计通过；按 §13 发出产品退出结论与残余清单。
+退出条件：分别发布 v1.0 release GO/NO-GO 与 project §13 completion GO/NO-GO。M23 或 M24 转换器未通过则发布 NO-GO；语言 v1 freeze、可复现签名 bundle、干净 Windows install/run/upgrade/uninstall、平台矩阵、M0–M24 一命令回归和文档审计均须有证据。§13 任一项未达时项目完成 NO-GO，外部延期不转换为 complete。
 
 执行计划：[`M25 Release v1.0 — platform breadth, completion audit and product exit`](./plans/M25-release-v1-completion.md)。
 
@@ -390,9 +408,9 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 以 versioned package（RFC-0043 roster 模式）提供 PDF 结构化阅读（对象模型、xref table/stream、对象流、页树、元数据、页面几何、内容流原始访问）、合并（页树嫁接、对象重编号、xref 重建、字节稳定输出）与旋转（`/Rotate` 90° 步进读写、继承解析）。GUI 试点为以 Sico 语言原生界面库（M24 计划 §8.6.1，WinUI 3-like Fluent）编写的 PDF 工具应用：文件打开/保存对话框、页列表/元数据视图、旋转与合并操作，authority 沿用 M24 格式转换器先例（本地应用 + 用户选定路径 + 既有文件能力）。纯能力里程碑：不进核心语言语义，不新增宿主 authority，标准库/包助手只收窄不扩权。
 
-进入条件：M14 GO ✓；M7 versioned 二进制承载边界实测 ✓（M17 gate 1）；PDF 数据合同 RFC 与限额/拒绝合同 RFC 先接受再实现（加密/损坏/超限/不支持特性全部 typed fail-closed，无静默回退）；GUI 部分的界面库合同（RFC 源码绑定 + ADR 渲染架构，M24 §8.6.1）先冻结——owner 调度规则（2026-09-24）：开工盘点实测界面库不足以承载 PDF 工具时，缺口先回 M24 §8.6.1 完善（该工作流 RFC+ADR 先行纪律不变），M26 包切片不等 GUI、不回退 web UI；inflate 路线（纯 Sico vs 确定性 Host provider）由 kickoff 盘点实测后在 RFC 中冻结。
+进入条件：M25 v1.0 release GO 后才开始 PDF 包或 GUI 实现；盘点与 RFC 起草可先行——STEP-0290（卡 26-A）已完成盘点（[`m26-inventory-2026-09-25.json`](./reports/m26-inventory-2026-09-25.json)）并起草 [`RFC-0053`](./rfc/RFC-0053-pdf-structural-reading-v0.md)/[`RFC-0054`](./rfc/RFC-0054-pdf-limits-refusals-writer-v0.md)（draft，待 owner 接受）。M14 GO ✓、M7 versioned binary 边界 ✓；PDF 数据及限额/拒绝 RFC 先接受；GUI 须等 M24 原生 UI 库合同（RFC-0052+ADR-0018）与真实渲染证据；按合同→结构阅读子集→xref stream/object stream/incremental-update 扩展→合并/旋转→原生 GUI 分片；M25 后的 UI 增补以新版本和 v1.0 快照兼容性语料承载。
 
-退出条件：阅读/合并/旋转切片在冻结合成语料（固定 writer 生成、Python 参考 oracle，ISO 32000-2 钉住接受子集）上 byte-exact/byte-stable 且恶意语料 100% typed 拒绝；GUI 试点在 Windows 证据主机上以 Sico + Sico 语言原生界面库构建运行、帧语料确定性、失败全 typed；消费者经 M7 registry 路径安装不改 compiler/Runtime；M0–M25 回归绿 + 显式出口审计。页面光栅化、内容流编辑、表单、签名、OCR、加密文档打开（typed 拒绝）均为 non-goals；证据等级限 internal-fixture 与 clean-room-consumer。
+退出条件：完整阅读/合并/旋转子集的冻结语料 byte-exact/byte-stable 与恶意输入 typed 拒绝；Windows 原生 GUI 构建运行且帧语料确定性；经 M7 安装的消费者不改 compiler/Runtime；M0–M25 回归绿 + 显式审计。各阶段局部 GO 不等于 M26 整体 GO。
 
 执行计划：[`M26 PDF document processing`](./plans/M26-pdf-document-processing.md)。
 
@@ -420,26 +438,25 @@ M19 production engineering
 M20 cross-platform, language v1, completion audit
           |
           v
-M21 DX/stdlib batch 2  →  M22 compiler self-host (S6/S7)
-          |                   (R-phase convergence gate + stop-loss, STEP-0264)
-          v                        |
-   M23 language v1 batch 3   M24 vision closure + GUI application pilot
-   (dual-exit: Route A after      (entry gates independent of M22/M23 —
-    M22 S7 GO / Route B after      kickoff may start immediately, STEP-0264)
-    M22 stop-loss, STEP-0264)
-          \                        /
-           v                      v
-        M25 release v1.0 completion audit
-                    |
-                    v
-        M26 PDF document processing
-        （GUI 部分另依赖 M24 §8.6.1 界面库合同与真实渲染证据）
+M21 DX/stdlib batch 2 ──→ M22 compiler self-host R-phase
+                            ├─ S7 GO ────────┐
+                            └─ R3 stop-loss ──┤→ M23 language v1 batch 3
+
+M16 GO + M17 gate 1 + M7 boundary ─────────────→ M24 vision/native GUI pilot
+                                                (independent of M22/M23)
+
+M23 batch 3 GO + M24 native converter GO + M19 release gates
+                         ↓
+               M25 v1.0 release verdict
+               + separate project §13 verdict
+                         ↓
+               M26 PDF package and native GUI
+               (GUI also depends on versioned M24 native UI library)
 ```
 
-STEP-0264 重划片备注：M24 与 M22 R 阶段/M23 开工盘点并行（其入口门不依赖
-M22/M23）；M23 实现双出口（M22 S7 GO 或 M22 R3 止损宣告）；M25 入口要求 M22
-行在双实现登记中显式（GO 或止损登记）。上图中 M23→M24 的并列画法自
-STEP-0264 起为真实依赖关系，不再是纯叙事顺序。
+STEP-0279 审查明确：M24 可先于 M23 收口，但 M25 的 v1.0 发布 GO 等待两者的
+内部产品 gate 均 GO；M22 R3 止损只是 M23 Route B 入口和 M22 NO-GO 登记。
+M26 排在 M25 后；发布后 UI 增补以新版本和兼容性语料承载。
 
 ## Immediate dependency chain
 

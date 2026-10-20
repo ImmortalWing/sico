@@ -1,6 +1,6 @@
 # M22 Compiler self-host track
 
-> Status: entry satisfied (conditions 3/4 closed by STEP-0175 on 2026-09-14; condition 5 closed by accepted ADR-0015 / STEP-0198 on 2026-09-17); executable audit through STEP-0261: S1 and the declared S2 identity/outline subset complete; S3/S4/S5 partial; S6 not entered. ADR-0016 freezes SOA and compilation-unit roles; STEP-0246 unifies parser/compiler lowering without exact-source IR fallback; STEP-0247 removes quadratic List-builder exhaustion; STEP-0248 adds typed user-call guard chains, literal arguments and Text returns; STEP-0249 repairs the 256-local build failure, makes the validators host-runnable and re-pins the canary; STEP-0250 opens `Bytes` parameters; STEP-0251 lands `general_while_function_ir` with the canonical lazy-block discipline; STEP-0252 lowers nested `ident_continue` conditions; STEP-0253 adds parent-linked append-only if frames; STEP-0254 reuses the prepared compiler inside the differential harness; STEP-0256 lands `item`/`append_pair`; STEP-0260 lands `line_tokens`; STEP-0261 replaces the single-slot while frame with a packed frame stack (nested/sequential whiles byte-exact through `source_has_lex_error`), adds `sico.list.length`/`sico.text.split_lines` parameter surfaces and nested user-call arguments; STEP-0262 routes while-less statement-bearing functions through the general machine as a dispatcher last resort (bare-cell conditions, entry-region if/return, open-order deferred empty-else blocks, `sico.text.concat` intrinsic RHS with nested concat arguments) and lands `call_left`/`format_code`/`repeat_indent`. The formatter prefix is byte-exact through `repeat_indent` (twenty-two functions); the typed frontier was `nearest_match`'s `Map[Text,U64]` parameter surface, absorbed into the guest by STEP-0276 (alongside the `count_params` bracket-depth fix, the `dump_nm_region_ir` probe and the `scalar_ir` `records`-table emission repair for the STEP-0272 selfhost differential regression — formatter-prefix differential 14/16 byte-exact, the two `close_code`/`direct_close` refusals pre-existing and outside the gated set), so the guest frontier now sits at `close_code`/`direct_close` (`SKIP:GENERAL-WHILE-IF-REGION`, honest `ERR:E-SH-IR-GWPACK-OTHER`). Full rendered diagnostic parity is not claimed; no STEP numbers reserved beyond the completed sequence. STEP-0264 (2026-09-24, owner directive 「重新规划路线，审视M22-M26，确保能落实到工程实现」) registers the M22–M26 route replan: the per-shape queue below is suspended as the organizing principle behind an R-phase convergence gate — R0 architecture decision (SOA freeze ADR vs `List[record]` RFC), R1 canary-coverage and consumed-fuel budget instrumentation, R2 convergence under the gate, R3 pre-registered stop-loss (4 consecutive implementation STEPs with zero `formatter.sico` canary growth and an unmoved refusal frontier declares S6 convergence not demonstrated on the current surface and triggers M23 Route B) — see [M22–M26 route replan v1](./M22-M26-route-replan-v1.md). STEP-0265 (2026-09-24, owner directive 「查看M22已有步骤，是不是需要回退重新开始。规划好之后重新实现M22」) registers the [M22 restart assessment v1](./M22-restart-assessment-v1.md) as the R0 decision input: measured layer verdicts (no git-level rollback; corpus/harness/oracle and S1/S2 kept unconditionally; S3/S4 machine logic kept, source-layer data-model re-authoring hangs on R0; legacy lexer/parser consolidation debt registered), a records-RFC vs SOA-freeze-ADR cost table, and the sequenced restart plan (R1 instrumentation → R0 decision → W1 consolidation → W2 source-layer re-authoring → W3 S5/S6/S7). STEP-0266 (2026-09-24) lands the R1 instrumentation and measured numbers: canary 22/30 functions (frontier `nearest_match` @ `ERR:E-SH-IR-GWPACK-OTHER` — the uncommitted Map-parameter WIP passed the `Map[Text,U64]` parameter surface), fuel brackets (1k/4k lines ∈ (1e8,1e9]; 8k/16k ∈ (1e9,5e9], no cliff; consumed ≥100× the runner default), and complexity-dominated wall time (22 formatter functions ≈ 46 s vs 565 trivial functions ≈ 0.3 s on the debug runner) — review P0-3 closed with measurements; S6 budget provisioning must declare a ~5e9-class fuel cap per ADR-0015 and re-measure wall time on a release runner before the qualifying run. STEP-0267 (2026-09-24) drafts the R0 decision document [`ADR-0017`](../adr/ADR-0017-selfhost-data-model-architecture-v0.md) (status: proposed, owner acceptance pending). STEP-0268 (same-day owner criteria directive 「我只看最终效果和稳定性、长期可维护性」) amends the recommendation to **Option A — records RFC first**: Option B's "permanence" is illusory because M14/M23 records pressure does not disappear (B = SOA maintenance plus a later rewrite anyway; A = one rewrite and a single canonical end-state data model); records ships as the minimal closed set under the full RFC-0033 gate, SOA invariants stay enforced until the re-baseline lands, and W1 consolidation debts continue regardless; Option B remains the documented fallback if the owner declines the cost. STEP-0269 (2026-09-24, owner 「开始」 accepting the Option A direction) drafts the R0 outcome — [`RFC-0047`](../rfc/RFC-0047-record-types-v0.md), status draft, acceptance required before any implementation STEP: the minimal closed record set (declarations, named literals with zero lexer-table growth, field access with qualified-name disambiguation by typed refusal, executable `List[record]` lowering to the existing ADR-0016 parallel-array representation at the List boundary), RFC-0033 four-part evidence, EC-1..EC-5 exit corpora and the dual measured-consumer census (selfhost column shapes + application profile) frozen before implementation. STEP-0270 (2026-09-24, owner directive 「接受」) registers RFC-0047 acceptance (draft → accepted) and freezes the EC-4 dual census as the first pre-implementation STEP: selfhost corpus 16,931 lines with 360 list-ceremony lines (2.13%, the SOA-reduction ceiling proxy) and 16 functions with ≥3 `List[` parameters; application e2e corpus with only 14 distinct map-as-struct literal keys (validating the v0 exclusion of `Map`/`Set` record keys/values) and 5 functions with ≥5 parameters; frozen evidence at [`m22-ec4-census-2026-09-24.json`](../reports/m22-ec4-census-2026-09-24.json) via `tools/census-ec4-records.ps1` (schema `sico.m22.ec4.v0`). Next pre-implementation STEP: freeze EC-1..EC-3 exit corpora, then the Rust kernel full-chain implementation; the in-flight WIP (parser.sico Map-parameter surface, +228/−34, plus the `dump_nm_region_ir` probe) remains uncommitted and must land as its own STEP or be absorbed before W1/W2 touches parser.sico; no implementation STEP numbers reserved.
+> Status: in progress / NO-GO after STEP-0310 exit review. S1/S2 declared subsets complete; S3/S4/S5 partial; S6 not entered; S7 reviewed NO-GO. STEP-0300 independent CI succeeded on f2fd7fc (run 36212509946), and the 8bee75b snapshot containing STEP-0301–0305 succeeded (run 36366432845). STEP-0306–0309 are local only and advance the formatter canary to 29/30, with `main` / SCICOND next and R3 consecutive stall count 0. ADR-0017 Option A and RFC-0047 are accepted. The parallel origin/dev W1/W2 history remains unmerged; neither branch CI nor this review proves M22 completion. See [2026-09-28 exit review](../reports/m22-exit-audit-2026-09-28.md).
 
 ## 1. Objective
 
@@ -72,7 +72,7 @@ language surface without an accepted RFC.
 - **S7 — exit audit**: evidence pack, budget tables, dual-implementation
   register, explicit GO/NO-GO.
 
-### 3.1 Slice status (measured 2026-09-23, through STEP-0262)
+### 3.1 Historical slice baseline (measured 2026-09-23, through STEP-0262)
 
 | Slice | Status | Closed evidence | Remaining bounded work |
 |---|---|---|---|
@@ -80,10 +80,24 @@ language surface without an accepted RFC.
 | S1 formatter (L1) | complete | frozen corpus byte-exact + idempotent; `formatter.sico` runs on its own sources through the real runner | — |
 | S2 checker subset (L1) | complete for the declared subset | frozen diagnostic partition 116 lexical / 34 identity / 65 accepted / 0 unsupported | widening the subset requires its own declared-contract update (no silent growth) |
 | S3 lexer + parser (L2) | partial | `lexer.sico` / `tokens.sico` / `declaration_parser.sico` differentials green; `parser.sico` exercised through driver paths (recursive return-expression trees; verifier-accepted scalar IR + noncanonical refusals) | full declared-shape coverage of `parser.sico` (12,202 lines, the largest selfhost unit) on the frozen corpus |
-| S4 semantics + lowering (L2) | partial | formatter prefix byte-exact through `repeat_indent` (22 of 30 functions; nested whiles via the STEP-0261 frame stack, while-less statement functions via the STEP-0262 last-resort routing); typed refusal-first discipline with re-pinned canary each step | the 8 remaining formatter functions (`nearest_match` … `main`), then the remaining selfhost sources lower byte-exactly |
+| S4 semantics + lowering (L2) | partial | local real-runner formatter prefix byte-exact through `normalize_source` (29 of 30 functions); typed refusal-first discipline with re-pinned canary each step; STEP-0306–0309 independent CI pending | `main`, then the remaining selfhost sources lower byte-exactly |
 | S5 codegen (L2) | partial | bounded Core-Wasm seam: nonnegative `Int` constant emission byte-equal to Rust codegen; every other shape typed-refused (`unsupported codegen source shape`) | RFC-0011 deterministic backend subset over the frozen corpus |
 | S6 bootstrap closure | not entered | — | ADR-0015 contract: `A == B == C`, `.sapp` via the M7 trust chain, runner-executed self-compile, budget re-measurement |
-| S7 exit audit | not entered | — | evidence pack + explicit GO/NO-GO |
+| S7 exit audit | reviewed / NO-GO | STEP-0310 reviewed all seven exit gates against current executed evidence | repeat full audit only after S3/S4/S5/S6 and final regression close |
+
+Current delta: RFC-0047 record types have since landed through STEP-0275;
+STEP-0276 absorbed the Map-parameter WIP and repaired `records` table
+emission. STEP-0278 retired the three legacy S3 units named in the historical
+S3 row. STEP-0280 replaced the L1 E7002 keyword fingerprint and added a
+SHA-frozen five-case W1 delta corpus covering renamed parameters and
+zero-indent function bodies. Its real-runner test passed along with the
+original 215-case partition locally. STEP-0221/0245/0261/0262 canaries
+passed locally after their frozen-records/frontier expectations were updated.
+That was the STEP-0280 local snapshot; STEP-0292 subsequently closed W1 on an
+independent CI-tested SHA. The current M22 verdict is the
+[2026-09-28 exit review](../reports/m22-exit-audit-2026-09-28.md); the
+[M14–M26 audit](../reports/m14-m26-milestone-audit-2026-09-24.md) remains
+historical planning evidence.
 
 ### 3.2 Execution queue (planned ordering; no STEP numbers reserved)
 
@@ -92,34 +106,123 @@ and since STEP-0264 it runs **under the R-phase convergence gate** (see the
 plan status header and [M22–M26 route replan v1](./M22-M26-route-replan-v1.md)
 §3): R0 architecture decision, R1 canary/budget instrumentation, then the
 items below as R2 convergence content, with the R3 stop-loss counter
-evaluated at each R-review. Each item lands under the standing discipline:
+evaluated after each eligible W2 S3/S4 implementation STEP. Each item lands
+under the standing discipline:
 observe the typed refusal,
 lower to byte-exactness, re-pin the canary at the next typed refusal, keep
 the refusal-recovery and local-bounds regressions green, and never emit a
-partial lowering that is unverifiable or semantically different; and each
-item must advance `formatter.sico` canary function coverage or move the
-refusal frontier — a STEP that does neither does not count against the
-stop-loss window.
+partial lowering that is unverifiable or semantically different. Each
+implementation STEP records before/after canary coverage and the refusal
+frontier. A stalled implementation STEP **does count** toward the four-STEP
+stop-loss window; documentation/measurement-only STEPs do not. Pending CI
+leaves a STEP unadjudicated until its runner evidence arrives. The W2 canary begins with byte-exact
+`formatter.sico` functions / 30; after 30/30 it uses byte-exact differential
+progress across the remaining frozen selfhost source set. S5 is judged by
+its independent byte-equal codegen corpus. A four-STEP W2 stall declares
+Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
 
-1. **`item` region** — extend self-host match lowering to a match subject
-   that consumes an intrinsic result (`sico.list.get` on a `List[Text]`
-   parameter indexed by `U64`); today this is typed-refused as
-   `E-SH-IR-CALL-TARGET`. Exit test: formatter prefix byte-exact through
-   `item`; canary re-pinned at the next declared refusal.
-2. **Formatter tail in source order** — `append_pair`, `line_tokens`,
-   `source_has_lex_error`, `no_space_before`/`no_space_after`, `call_left`,
-   `format_code`, `repeat_indent`, the `Map[Text,U64]` region
-   (`nearest_match`/`set_nearest_match`/`match_arm_levels`),
-   `close_code`/`direct_close`/`opener_close`, `normalize_source`, `main`.
-   Each region lands as its own byte-exact prefix differential. Exit test:
+1. **W1 exit and W2 baseline** — STEP-0292 obtained independent CI success
+   for STEP-0278/0280 on the isolated `e8495f9` branch snapshot; W1 is GO
+   at that revision. The records-surface W2 baseline itself is frozen
+   (STEP-0282, execution card 22-B): [`m22-w2-baseline-2026-09-25.json`](../reports/m22-w2-baseline-2026-09-25.json)
+   pins the executed 22/30 formatter prefix, the `nearest_match` /
+   `ERR:E-SH-IR-GWPACK-OTHER` starting frontier, the four-size fuel ladder and the
+   8-source / 16,390-line tracked selfhost tree by SHA256; stack
+   high-water is recorded as unmeasured. STEP-0293 is the first W2 S3/S4
+   implementation STEP: its local runner result moves the frontier to
+   `ERR:E-SH-IR-CALL-TARGET` with 22/30 functions, and independent CI
+   succeeded on repaired commit `cb371c5`. This starts the R3 counter with zero consecutive
+   stagnant steps. STEP-0294 is the second implementation STEP: the bounded
+   `sico.map.get[Text,U64]` match subject passes local byte-exact differential
+   and refusal regressions, moving the frontier to `ERR:E-SH-IR-STATEMENT`
+   at 22/30; independent CI succeeded on `5a6d0bb`, giving S2 GO with the
+   consecutive-stall count still zero. STEP-0295 locally lowers nested `if`
+   with a conditional `return` in the match `ok` arm; the formatter prefix
+   through `nearest_match` is byte-exact against Rust, moving the canary to
+   23/30 and the typed frontier to `set_nearest_match` / `STATEMENT`.
+   STEP-0296 locally routes a while-less if/match shape through the general
+   machine and lowers a nested `sico.text.length(Text)` comparison operand
+   byte-exactly. The canary remains 23/30; the `set_nearest_match` refusal
+   moves from `STATEMENT` to `CALL-SHAPE` at the `bytes.slice` match subject.
+   STEP-0297 locally lowers the nested `bytes.slice` match subject byte-exactly;
+   STEP-0298 locally lowers the `sico.map.put[Text,U64]` return and both
+   returning match arms, advancing the canary to 24/30. STEP-0299 locally
+   lowers the nested `u64.to_text` key in `map.get`, advancing compilation
+   coverage to 27/30 with a separately byte-exact `direct_close` prefix.
+   STEP-0300 locally preserves the parent if region across a nested while,
+   advancing coverage to 28/30 with a byte-exact `opener_close` prefix;
+   STEP-0301 locally lowers `map.empty[Text,U64]()` RHS; the canary remains
+   28/30 and `normalize_source` moves to `GWSKIP`. STEP-0302 locally admits
+   while loops in else and post-if join regions with two real-runner
+   byte-exact IR differentials; the canary remains 28/30 and the next
+   typed frontier is `CALL-ARGUMENT`. STEP-0303 locally reads a
+   `Map[Text,U64]` local before its `map.get` key with byte-exact SSA
+   order, moving the next frontier to `EXPRESSION` while the canary
+   remains 28/30. STEP-0304 locally lowers a user call as the left operand
+   of a fixed comparison and repairs SSA numbering after returning a
+   parameter, moving the next refusal into nested `text.concat` arguments.
+   STEP-0305 locally lowers two Text-returning user calls as `text.concat`
+   arguments and moves the refusal deeper into the nested trim argument.
+   STEP-0306 locally lowers that nested trim/user-call argument and moves
+   the refusal to the output `list.append` RHS / GWPACK-OTHER.
+   STEP-0307 locally lowers the Text `list.append` RHS and moves the
+   refusal to `map.put` with a fixed-literal value / CALL-SHAPE.
+   STEP-0308 locally lowers that fixed-literal `map.put` value and proves
+   the `normalize_source` prefix byte-exact when only its final join
+   return is replaced by a literal; the real source next refuses at
+   `text.join` inside the final `text.concat` / CALL-ARGUMENT.
+   STEP-0309 locally lowers that `text.join` expression; the actual
+   formatter prefix through `normalize_source` is byte-exact and the
+   canary advances to 29/30, with `main` / SCICOND next.
+   R3 consecutive-stall count remains zero. Independent CI for
+   S3 succeeded on `f7288b7` (run 36166445685), and S4 succeeded on `904b86a`
+   (run 36168754671), giving each a GO on the isolated branch; STEP-0297
+   independent CI succeeded on `ffcdd3f` (run 36209299222), and STEP-0298
+   succeeded on `5ba175f` (run 36210200271). STEP-0299 independent CI run
+   36212164872 succeeded on exact SHA `f856bb1`, and STEP-0300 run
+   36212509946 succeeded on exact SHA `f2fd7fc`; run 36366432845 succeeded on `8bee75b`, which contains STEP-0301–0305. Independent CI for STEP-0306–0309 and the STEP-0310 audit snapshot succeeded on exact SHA `9c94e7d` (run 36406396074, adjudicated 2026-09-29), so those STEPs carry formal progress credit. On 2026-09-29 the owner designated this branch the authoritative M22 working line, to be merged into `dev` after M22 completes; the parallel `origin/dev` history is not otherwise adjudicated by this branch's CI.
+   STEP-0317 (2026-09-30, validation economics under the same owner directive
+   「规划好这些优化，完成M22」) landed the differential-loop cost reductions
+   recorded in §5. STEP-0318 (2026-09-30) lands the first lex_words-region
+   family: `checked_arithmetic_set_match_ir`, a whole-function shape for
+   `let cell = T.literal(k)` + `T.checked_add` match whose ok arm is
+   `set cell = bind` — six byte-equal variants, eleven typed refusals with
+   recovery, suite 53/53. No parser.sico function flips green (5/115 and the
+   `lex_words`/CALL-TARGET frontier unchanged), so under the §3.2 discipline
+   this implementation STEP counts as R3 stall 1/4; the next slices should
+   move the frontier (lex_words let-RHS host-call family first).
+   STEP-0319 (2026-09-30) extends the canary metric to per-function
+   differential coverage over the frozen sources (rearranged subsets, exact
+   function text): `next_index`, `word_at` and `valid_escape_byte` flip
+   green through existing families, parser coverage 5/115 → 8/115, canary
+   +3 and the R3 consecutive-stall count resets to zero. The contiguous
+   prefix frontier stays at `lex_words`/CALL-TARGET; measured next-slice
+   inputs: `is_digit_token`/`is_string_token` refuse EXPRESSION (missing
+   text.encode/text.length/bytes.at let-RHS shapes) and
+   `line_end`/`matching_close` refuse CALL-TARGET (missing user-call RHS).
+   STEP-0320 (2026-09-30) flips `line_end` itself (while + if + user-call
+   consumer, callees reordered first): parser coverage 8/115 → 9/115, R3
+   stays zero. Probe census of its downstream pins the next family:
+   user-call RHS/argument-position shapes (six CALL-TARGET refusals plus
+   return_shapes' CALL-ARGUMENT) and the text.encode/bytes.at let-RHS
+   host-call family (json_string_token's EXPRESSION).
+2. **Formatter tail from the current frontier** — `main`.
+   The `Map[Text,U64]` region through `match_arm_levels`, `close_code`,
+   `direct_close` and `opener_close` passed the real-runner
+   byte differential. `normalize_source` passed at STEP-0309, and `item` through `repeat_indent` also passed; do not
+   re-implement those regions or treat their historical refusals as current.
+   Each remaining region lands as its own byte-exact prefix differential. Exit test:
    the complete `formatter.sico` lowers byte-exactly against the Rust
    oracle with the full suite green.
-3. **Remaining selfhost sources** — lower `checker.sico`, `lexer.sico`,
-   `tokens.sico`, `declaration_parser.sico`, `parser.sico`,
-   `compiler*.sico` corpora byte-exactly (the S3/S4 convergence completes
-   together; `parser.sico` is the bounded largest unit). Exit test: every
-   selfhost source's frozen corpus differential is byte-exact and the
-   `E-SH-IR-*` refusal set shrinks only by declared regions.
+3. **Remaining selfhost sources** — inventory the current tracked
+   `selfhost/*.sico` set at the start of W2; lower each remaining source's
+   frozen corpus byte-exactly. `parser.sico` is a large bounded unit;
+   split its declared shapes by corpus and refusal frontier before editing.
+   STEP-0278 retired `lexer.sico`, `tokens.sico` and
+   `declaration_parser.sico`; they are historical evidence, not queue
+   items. Exit test: every current selfhost source's frozen differential
+   is byte-exact and the `E-SH-IR-*` refusal set shrinks only by declared
+   regions.
 4. **S5 widening** — extend the Core-Wasm seam from nonnegative constants
    to the RFC-0011 deterministic subset. Exit test: emitted bytes equal
    the Rust backend on the frozen corpus; out-of-subset shapes stay
@@ -157,19 +260,28 @@ Every fixture still executes with a fresh Store and the original limits.
 Measured serial suite time is 66.99s versus STEP-0253's 801.46s; this is test
 harness overhead reduction, not guest self-compilation performance evidence.
 
+STEP-0317 extends the harness economics (owner directive 2026-09-29): a
+shared on-disk component cache keyed by the selfhost source texts plus a
+compiler-crate fingerprint (kill switch `SICO_SELFHOST_COMPONENT_CACHE=0`),
+opt-level 1 for runner dev dependencies, and a lazily-grown pool of
+engine-isolated prepared programs replacing the global mutex. On this host
+the filtered single-test invocation drops 23.59s → 1.82s warm (4.55s cold),
+the differential suite 57.05s → 12.98s serial (9.35s pool-parallel, 51/51),
+and the full runner suite 227.8s → 102.7s. Still harness overhead reduction
+only: fixture limits, fresh-Store isolation and the byte-exact oracle are
+unchanged, and none of it is gate-4 self-compilation performance evidence.
+
 All M22 evidence is `internal-fixture`. Differential corpus runs are
 runtime evidence when executed through a real runner; corpus presence
 alone stays `contract-verified`. No external-pilot or production claims
 arise from self-hosting.
 
-Validation-host note (recorded with STEP-0254): this evidence machine's
-runner artifacts build under the pinned `1.98.0-x86_64-pc-windows-msvc`
-toolchain; the documented GNU flow additionally needs a real gcc for
-`ring` (the rustup self-contained gcc is linker-only) and dlltool from
-`target/tooling/msys2-binutils`, which this host no longer has.
-Validators must pin the toolchain matching the local cache until the GNU
-path is re-provisioned; this is an environment repair, not a product
-support change.
+Validation-host note: STEP-0254 used the pinned Windows MSVC cache. STEP-0280
+subsequently provisioned the local Windows GNU path and ran the real runner
+with `1.98.0-x86_64-pc-windows-gnu` plus the repository-local
+`target/tooling/msys2-binutils/mingw64/bin` gcc/dlltool. Reproduce with the
+commands in [the M22 handoff](../handoff-m22.md) §4 and report the actual
+toolchain/runner used; toolchain setup is not a product support claim.
 
 ## 6. Non-goals
 
@@ -193,10 +305,10 @@ support change.
 - Deep recursion in a Sico-written parser consumes the bounded recursion
   budget; parser depth is budgeted per corpus (limit+1 fixtures).
 - Host-toolchain reproducibility: the GNU evidence path depends on
-  msys2-binutils plus a C compiler that the evidence host lost after
-  2026-09-20; until re-provisioned, every M22 validator must pin the
-  toolchain that matches the cached artifacts (see §5), or a full rebuild
-  fails at `ring`/`windows-sys` and masks the actual differential result.
+  msys2-binutils plus a real C compiler; STEP-0280's local provisioning
+  passed, but a different host must first verify both tools and pin the
+  matching toolchain (see §5), or a rebuild can fail at `ring`/
+  `windows-sys` before reaching the differential test.
 
 ## 8. v1 batch 3 candidates — recorded language friction (owner session directive 2026-09-14)
 

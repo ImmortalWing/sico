@@ -31,14 +31,17 @@ $env:Path = "$pythonDir;$env:Path"
 $failures = New-Object System.Collections.Generic.List[string]
 function Invoke-Step([string]$name, [scriptblock]$body) {
     Write-Host "=== CI: $name" -ForegroundColor Cyan
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
     $output = & $body 2>&1 | Out-String
     $code = $LASTEXITCODE
+    $timer.Stop()
+    $elapsed = $timer.Elapsed.ToString('hh\:mm\:ss')
     if ($code -ne 0) {
         $output.Substring([Math]::Max(0, $output.Length - 2000)) | Write-Host
         $failures.Add($name) | Out-Null
-        Write-Host "=== FAIL: $name" -ForegroundColor Red
+        Write-Host "=== FAIL: $name ($elapsed)" -ForegroundColor Red
     } else {
-        Write-Host "=== PASS: $name" -ForegroundColor Green
+        Write-Host "=== PASS: $name ($elapsed)" -ForegroundColor Green
     }
 }
 

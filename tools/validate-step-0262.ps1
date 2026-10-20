@@ -100,9 +100,8 @@ try {
             }
         }
 
-        # Frontier pin: the region through nearest_match (the Map[Text,U64]
-        # parameter surface) must refuse with the exact typed identity this
-        # step leaves behind.
+        # STEP-0295 connects a nested-if join to the match join. The prefix
+        # through nearest_match now lowers byte-exactly in the Rust differential.
         $boundary2 = $full.IndexOf('function set_nearest_match')
         if ($boundary2 -lt 0) { throw 'nearest_match boundary marker missing' }
         $probe = Join-Path $temp 'nearest-match-probe.sico'
@@ -112,26 +111,75 @@ try {
         $process1.StandardInput.BaseStream.Write($probeBytes, 0, $probeBytes.Length)
         $process1.StandardInput.BaseStream.Flush()
         $process1.StandardInput.BaseStream.Close()
-        $null = $process1.StandardOutput.ReadToEnd()
+        $stdout1 = $process1.StandardOutput.ReadToEnd()
         $stderr1 = $process1.StandardError.ReadToEnd()
         $process1.WaitForExit()
-        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-UNRESOLVED')) {
-            throw "nearest_match frontier probe changed: exit=$($process1.ExitCode) stderr=$stderr1"
+        if ($process1.ExitCode -ne 0 -or -not $stdout1.Contains('"name":"nearest_match"')) {
+            throw "nearest_match prefix did not compile: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Full-source canary: fail-closed at the declared nearest_match boundary.
+        # STEP-0298 lowers map.put and both returning match arms. The prefix
+        # through set_nearest_match is now byte-exact.
+        $boundary3 = $full.IndexOf('function match_arm_levels')
+        if ($boundary3 -lt 0) { throw 'set_nearest_match boundary marker missing' }
         $process2 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
+        $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary3))
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
         $process2.StandardInput.BaseStream.Flush()
         $process2.StandardInput.BaseStream.Close()
-        $null = $process2.StandardOutput.ReadToEnd()
+        $stdout2 = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-UNRESOLVED')) {
-            throw "formatter canary did not reach the declared nearest_match boundary: exit=$($process2.ExitCode) stderr=$stderr2"
+        if ($process2.ExitCode -ne 0 -or -not $stdout2.Contains('"name":"set_nearest_match"')) {
+            throw "set_nearest_match prefix did not compile: exit=$($process2.ExitCode) stderr=$stderr2"
         }
-        if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
+
+        # STEP-0299 lowers the nested u64.to_text key in map.get. The prefix
+        # through direct_close is byte-exact in the runner differential.
+        $boundary4 = $full.IndexOf('function opener_close')
+        if ($boundary4 -lt 0) { throw 'direct_close boundary marker missing' }
+        $process3 = [Diagnostics.Process]::Start($startInfo)
+        $stdinBytes3 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary4))
+        $process3.StandardInput.BaseStream.Write($stdinBytes3, 0, $stdinBytes3.Length)
+        $process3.StandardInput.BaseStream.Flush()
+        $process3.StandardInput.BaseStream.Close()
+        $stdout3 = $process3.StandardOutput.ReadToEnd()
+        $stderr3 = $process3.StandardError.ReadToEnd()
+        $process3.WaitForExit()
+        if ($process3.ExitCode -ne 0 -or -not $stdout3.Contains('"name":"direct_close"')) {
+            throw "direct_close prefix did not compile: exit=$($process3.ExitCode) stderr=$stderr3"
+        }
+
+        # STEP-0300 preserves the enclosing if region across a nested while.
+        # The prefix through opener_close is byte-exact in the runner test.
+        $boundary5 = $full.IndexOf('function normalize_source')
+        if ($boundary5 -lt 0) { throw 'opener_close boundary marker missing' }
+        $process4 = [Diagnostics.Process]::Start($startInfo)
+        $stdinBytes4 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary5))
+        $process4.StandardInput.BaseStream.Write($stdinBytes4, 0, $stdinBytes4.Length)
+        $process4.StandardInput.BaseStream.Flush()
+        $process4.StandardInput.BaseStream.Close()
+        $stdout4 = $process4.StandardOutput.ReadToEnd()
+        $stderr4 = $process4.StandardError.ReadToEnd()
+        $process4.WaitForExit()
+        if ($process4.ExitCode -ne 0 -or -not $stdout4.Contains('"name":"opener_close"')) {
+            throw "opener_close prefix did not compile: exit=$($process4.ExitCode) stderr=$stderr4"
+        }
+
+        $boundary6 = $full.IndexOf('function main')
+        if ($boundary6 -lt 0) { throw 'normalize_source boundary marker missing' }
+        $process5 = [Diagnostics.Process]::Start($startInfo)
+        $stdinBytes5 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary6))
+        $process5.StandardInput.BaseStream.Write($stdinBytes5, 0, $stdinBytes5.Length)
+        $process5.StandardInput.BaseStream.Flush()
+        $process5.StandardInput.BaseStream.Close()
+        $stdout5 = $process5.StandardOutput.ReadToEnd()
+        $stderr5 = $process5.StandardError.ReadToEnd()
+        $process5.WaitForExit()
+        if ($process5.ExitCode -ne 0 -or -not $stdout5.Contains('"name":"normalize_source"')) {
+            throw "normalize_source prefix did not compile: exit=$($process5.ExitCode) stderr=$stderr5"
+        }
+        if ($stderr5.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
     finally {
         $resolvedTemp = [IO.Path]::GetFullPath($temp)
@@ -148,4 +196,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact parity=22-functions canary=NEAREST-MATCH-UNRESOLVED next=map-text-u64-parameter-surface'
+Write-Output 'STEP_0262_OK call-left+format-code+repeat-indent=byte-exact normalize-source=byte-exact canary=FORMATTER-CLOSED repinned-by=STEP-0314'

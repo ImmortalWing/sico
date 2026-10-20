@@ -1,0 +1,16 @@
+// W1 zero-indent body: Rust must still diagnose the versioned payload use.
+newtype Revision from Int
+
+record Model:
+  field text: Text
+  field revision: Revision
+end record
+
+record Loaded:
+  field text: Text
+  field revision: Revision
+end record
+
+function apply_loaded(current: Model, candidate: Loaded) returns Model:
+return Model(text: candidate.text, revision: current.revision)
+end function

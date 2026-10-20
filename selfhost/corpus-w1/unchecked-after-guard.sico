@@ -1,0 +1,19 @@
+// W1 guard scope: a comparison no longer protects use after end if.
+newtype Revision from Int
+
+record Model:
+  field text: Text
+  field revision: Revision
+end record
+
+record Loaded:
+  field text: Text
+  field revision: Revision
+end record
+
+function apply_loaded(current: Model, candidate: Loaded) returns Model:
+  if candidate.revision == current.revision:
+    return current
+  end if
+  return Model(text: candidate.text, revision: current.revision)
+end function

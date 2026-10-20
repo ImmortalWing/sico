@@ -1,0 +1,65 @@
+{
+  "schema": "sico.m24.roster-support.v0",
+  "package": "sico:user/image-match@1",
+  "rfc": "RFC-0043 (result frozen by Amendment A1, input frozen by Amendment A2, both owner re-adjudication 2026-10-01)",
+  "adr": "ADR-0019 (Rust-compiled package core production path, accepted 2026-09-30)",
+  "step": "STEP-0335",
+  "production-path": {
+    "class": "rust-compiled-core",
+    "guest-crate": "guests/image-match",
+    "committed-core": "crates/sico-codegen-wasm/artifacts/image-match-core.wasm",
+    "core-sha256": "d06b6a08cc95c8880c06db6eb3f443ce261279b675fc694098399d4625a6351f",
+    "reproducibility-validator": "tools/validate-package-core.ps1",
+    "reproducible": true,
+    "import-free": true,
+    "dependencies": []
+  },
+  "functions": [
+    {
+      "name": "template",
+      "signature": "template(bmp: Bytes, tpl: Bytes) -> Result[Bytes, Text]",
+      "input-encoding": "RFC-0043-A2 self-describing packed header: width u32 LE, height u32 LE, format u8 (0=bgra8,1=grey8), reserved u8[3]=0, pixels (width*height*bpp)",
+      "result-encoding": "RFC-0043-A1 region: 16 B little-endian x u32, y u32, width u32, height u32 (width/height = template dims); error arm = RFC-0041 image-error case name Text",
+      "algorithm": "SAD template match, integer-only, row-major scan (y outer, x inner), ties by lowest (y,x)",
+      "check": true,
+      "build": true,
+      "run": true,
+      "evidence": "runtime-verified",
+      "runner": "windows-native (wasmtime 47.0.2 component, empty linker)",
+      "runner-test": "runner/sico-runner/tests/image_match_package.rs"
+    }
+  ],
+  "refusal-corpus": {
+    "source": "independent oracle (pure stdlib Python SAD re-implementation, no shared code with the Rust core; numpy absent offline)",
+    "generator": "prototypes/image-match-probe/tools/make-fixtures.py",
+    "manifest": "runner/sico-runner/tests/corpus/image-match/manifest.json",
+    "closed-error-set": [
+      "unsupported-format",
+      "stride-mismatch",
+      "dimension-overflow",
+      "allocation-limit",
+      "region-out-of-bounds"
+    ],
+    "cases": 14,
+    "ok": 5,
+    "typed-refusals": 9,
+    "ok-shapes": [
+      "grey-exact-offset",
+      "grey-best-nonzero",
+      "grey-tie-lowest-yx",
+      "bgra-exact-offset",
+      "bgra-best-nonzero"
+    ],
+    "coverage": "all five RFC-0041 image-error cases reachable through template; ties assert lowest (y,x); byte-stability + fresh-store repeat asserted",
+    "limit-plus-one": "allocation-limit and dimension-overflow exercised at the 2^28 byte ceiling and the u64 w*h*bpp overflow edge"
+  },
+  "honest-scope": {
+    "covered-here": "image-match SAD template-match package content contract at the pure-package Component level (RFC-0043 A1/A2 frozen input+result framing, integer determinism, ties, typed refusals, byte-stability)",
+    "deferred": [
+      "image-grid@1 (detect-lines) and image-contour@1 (find): the other two gate-3 roster packages, each its own ADR-0019 core + independent numpy-oracle content corpus + runner content test, one STEP each",
+      "install/registry path (M7 sico-lock.json entry) lands with the first consumer pilot",
+      "cancellation/save-failure: runner + pilot (#6) concerns, not package-level"
+    ],
+    "not-claimed": "this is 1 of 3 gate-3 packages: M24 §3 gate 3 stays UNMET until image-grid and image-contour also land byte-exact corpora; M24 §3 gate 1 (accelerator) and #4 Direct2D remain external doors; no gate flips from this row"
+  }
+}

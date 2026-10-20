@@ -13,6 +13,7 @@ pub mod bootstrap;
 mod dap;
 pub mod http2;
 pub mod scheduler;
+pub mod ui;
 
 pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
 use scheduler::{ReadinessClass, RunIdentity, SchedulerCore, TerminalKind};
@@ -1136,6 +1137,9 @@ struct RunState {
     /// Per-Store `http@0.2.0` state (RFC-0037): engine, pool and
     /// abandonment flag; dies with the Store.
     http2: crate::http2::Http2State,
+    /// Per-Store `ui@1.0.0` state (RFC-0052 A1): frozen default-deny UI
+    /// capability plus the shared renderer backend; dies with the Store.
+    ui: crate::ui::Ui1State,
     /// RFC-0039 §2.4 (STEP-0147): per-Store package instances; indexes are
     /// captured by the bridge closures at link time.
     package_instances: Vec<wasmtime::component::Instance>,
@@ -1354,6 +1358,11 @@ pub struct Runner {
     /// Process-local monotonic counter backing synthetic run identities on
     /// the unobserved `run` path (M10 callers pass their own identity).
     run_counter: Arc<AtomicU64>,
+    /// Host-level UI capability (RFC-0052 A1): the default-deny grants plus
+    /// the optional ADR-0018 renderer backend. The default carries no backend,
+    /// so `sico:script/ui@1.0.0` is not linked and a guest importing it fails
+    /// to instantiate (an honest "UI backend unavailable" outcome).
+    ui: crate::ui::UiHost,
 }
 
 type ComponentCache = Arc<std::sync::Mutex<Vec<([u8; 32], Component)>>>;
@@ -1453,7 +1462,24 @@ impl Runner {
             components: Arc::new(std::sync::Mutex::new(Vec::new())),
             debug_enabled: debug,
             run_counter: Arc::new(AtomicU64::new(0)),
+            ui: crate::ui::UiHost::default(),
         })
+    }
+
+    /// Returns a runner with the host UI capability wired to a renderer
+    /// backend (RFC-0052 A1, ADR-0018 #4). Only with a backend present is
+    /// `sico:script/ui@1.0.0` linked; the grant still defaults to deny, so
+    /// every call fails closed with `authority-denied` until `grants` allows
+    /// it. The production backend is the Direct2D/DirectWrite adapter, which
+    /// is externally gated on this host (STEP-0330 §5).
+    #[must_use]
+    pub fn with_ui_backend(
+        mut self,
+        grants: crate::ui::UiGrants,
+        renderer: std::sync::Arc<dyn crate::ui::UiRenderer>,
+    ) -> Self {
+        self.ui = crate::ui::UiHost::with_backend(grants, renderer);
+        self
     }
 
     /// True when the component imports `sico:script/streams@0.1.0` (RFC-0030
@@ -1737,6 +1763,16 @@ impl Runner {
         if let Err(error) = crate::http2::link_http2(&mut linker, net) {
             return Err(RunOutcome::Launch(format!(
                 "http@0.2.0 host setup failed: {error}"
+            )));
+        }
+        // RFC-0052 A1: only advertise `sico:script/ui@1.0.0` when a renderer
+        // backend exists (#4). Without one, a guest importing it fails to
+        // instantiate — an honest "UI backend unavailable", never a faked frame.
+        if self.ui.has_backend()
+            && let Err(error) = crate::ui::link_ui(&mut linker)
+        {
+            return Err(RunOutcome::Launch(format!(
+                "ui@1.0.0 host setup failed: {error}"
             )));
         }
         link_packages(&mut linker, &component, &prepared_packages)?;
@@ -2064,6 +2100,7 @@ impl PreparedProgram {
                     generation_id,
                 }),
                 http2: crate::http2::Http2State::new(&self.http_policy),
+                ui: self.runner.ui.state(),
                 package_instances: Vec::new(),
                 package_instances_capacity: self.packages.len(),
             },
@@ -2274,6 +2311,7 @@ impl PreparedProgram {
                 io: spawn_io_workers(),
                 scheduler: SchedulerCore::new(identity),
                 http2: crate::http2::Http2State::new(&self.http_policy),
+                ui: self.runner.ui.state(),
                 package_instances: Vec::new(),
                 package_instances_capacity: self.packages.len(),
             },
@@ -4006,6 +4044,7 @@ mod tests {
                 cancel: CancelToken::new(),
                 io: spawn_io_workers(),
                 http2: crate::http2::Http2State::new(&HttpPolicy::default()),
+                ui: crate::ui::UiHost::default().state(),
                 scheduler: SchedulerCore::new(RunIdentity {
                     run_id: "debug-probe".to_owned(),
                     generation_id: 1,

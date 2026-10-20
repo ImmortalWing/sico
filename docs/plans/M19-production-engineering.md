@@ -1,6 +1,6 @@
 # M19 Production engineering and release readiness
 
-> Status: planned; owner session directive "规划M18-M20" (2026-09-13); refined 2026-09-13 after M17 gate-1 GO (STEP-0166) and the M18 exit audit (STEP-0165) — entry gates re-measured, CI inventory pinned to the validators that now exist, flake policy grounded in the actually observed env-sensitive tests; no STEP numbers reserved
+> Status: partial GO per STEP-0168 (gates 1/2/4/7 GO; signed clean-host install, budgets and documentation partial); historical plan refined 2026-09-13; M25 owns release-candidate residual closure; no STEP numbers reserved
 
 ## 1. Objective
 

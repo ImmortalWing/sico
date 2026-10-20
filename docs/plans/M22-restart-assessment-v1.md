@@ -77,8 +77,9 @@ desugar, source-map identity, formatter idempotence, typed diagnostics,
 measured consumer. The selfhost sources are then **re-authored** on records
 — the parallel-array simulation in `parser.sico` and the 18 parallel
 `List[Text]` columns in `compiler_semantics.sico` collapse into typed
-shapes; expected source-size reduction is large (the SOA simulation is the
-dominant share of the 12.7k lines), but the *lowering machines' logic* is
+shapes. STEP-0270's later EC-4 census measured 360 direct list-ceremony
+lines in 16,931 selfhost lines (2.13% ceiling proxy), so a large line-count
+reduction is not evidenced. The *lowering machines' logic* is
 language-shape-independent: they are re-hosted against the record-based AST,
 re-verified byte-exact against the Rust oracle, not re-discovered.
 
@@ -152,11 +153,13 @@ R0 document's; this assessment supplies the cost table above.
 5. **W3 — S5 widening → S6 closure → S7 audit** per ADR-0015 and the M22
    plan exit gates, unchanged.
 
-Stop-loss (replan R3) is armed from W2 onward: 4 consecutive implementation
-STEPs with zero `formatter.sico` canary growth and an unmoved refusal
-frontier still declares S6 not demonstrated on the current surface — a
-re-authoring wave that fails to move the canary is itself the signal to
-switch options, which is why R0 is a documented decision and not a mood.
+Stop-loss (replan R3) is armed from W2 S3/S4 onward: 4 consecutive
+implementation STEPs with zero current-phase canary growth and an unmoved
+refusal frontier declare S6 not demonstrated on the current surface. Stalled
+implementation STEPs count; documentation/measurement-only STEPs do not.
+After the formatter reaches 30/30, the remaining frozen selfhost source-set
+differential is the canary. The accepted Option A decision remains recorded;
+the stop-loss triggers M23 Route B, not an unreviewed architecture switch.
 
 ## 7. Entry gate / Exit gates / Non-goals
 
@@ -176,8 +179,9 @@ claim; S6's A=B=C contract unchanged.
 ## 8. Risks
 
 - **Sunk-cost defense.** "Keep everything" can itself be the bias. The
-  mitigation is the stop-loss: W2 must move the canary or the option
-  switches — the assessment defends *assets*, not *trajectory*.
+  mitigation is the stop-loss: four stalled W2 S3/S4 implementation STEPs
+  declare Route B, while the accepted Option A decision remains in the
+  register — the assessment defends *assets*, not *trajectory*.
 - **R1 measurement gaming.** Fuel numbers depend on input choice; the
   probe pins corpus inputs (1k/4k/8k lines from the frozen set), not
   ad-hoc programs.

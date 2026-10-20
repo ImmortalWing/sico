@@ -1,6 +1,6 @@
 # M18 Representative AI applications and external pilots
 
-> Status: planned; owner-approved 2026-09-04; refined 2026-09-13 at owner directive "规划M18-M20" (entry-gate statuses measured, dependency on M19 added); no STEP numbers reserved
+> Status: historical STEP-0165 audit GO for four of five portfolio applications; item 4 re-designated as the M24 native GUI format converter by STEP-0258, addendum pending per STEP-0259; external pilot remains NO-GO; no STEP numbers reserved
 
 ## 1. Objective
 

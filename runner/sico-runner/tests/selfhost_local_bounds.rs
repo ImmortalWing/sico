@@ -12,12 +12,8 @@ const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
 
 #[test]
 fn selfhost_link_unit_stays_inside_ir_verifier_limits() {
-    let entry = SourceFile::from_text(
-        SourceId::new(0),
-        "parser_driver.sico",
-        DRIVER_SOURCE,
-    )
-    .expect("driver source is bounded");
+    let entry = SourceFile::from_text(SourceId::new(0), "parser_driver.sico", DRIVER_SOURCE)
+        .expect("driver source is bounded");
     let parser = SourceFile::from_text(SourceId::new(1), "parser.sico", PARSER_SOURCE)
         .expect("parser source is bounded");
     let imports = vec![ModuleImport {
@@ -77,7 +73,8 @@ fn selfhost_link_unit_stays_inside_ir_verifier_limits() {
     ranked.sort_by_key(|&(locals, _)| std::cmp::Reverse(locals));
     for (locals, name) in ranked.iter().take(5) {
         println!("  {name}: {locals} locals");
-    }    assert!(
+    }
+    assert!(
         busiest + 16 <= sico_ir::MAX_LOCALS_PER_FUNCTION,
         "busiest function holds {busiest} locals; frontier work needs headroom"
     );

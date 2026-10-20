@@ -1,6 +1,6 @@
 # ADR-0017: Self-host data-model architecture — records RFC vs SOA permanence v0
 
-> - status: proposed (R0 decision draft; **recommendation: Option A, amended 2026-09-24 per owner criteria directive** 「我只看最终效果和稳定性、长期可维护性」; pending owner acceptance)
+> - status: accepted (Option A, owner 2026-09-24 「开始」 recorded by STEP-0269; RFC-0047 accepted separately by STEP-0270)
 > - date: 2026-09-24
 > - owners: autonomous-agent
 > - supersedes: -
@@ -60,11 +60,12 @@ force until the re-baseline lands — no drift in the meantime.
 
 Evaluation against the owner's criteria:
 
-- *Final effect:* strictly better end state.  A language with a real
-  structural data model; the self-host source layer shrinks dramatically (the
-  SOA simulation is the dominant share of `parser.sico`'s 12.7k lines); the
-  M14 application profile and AI-generation ergonomics unblock — the same
-  RFC serves M14/M23 rather than M22 carrying the cost alone.
+- *Final effect:* a language with a real structural data model and one
+  canonical authored representation for records. STEP-0270's later EC-4
+  census measured only 360 direct list-ceremony lines in 16,931 selfhost
+  lines (2.13% ceiling proxy), so a dramatic source-size reduction is not
+  an evidenced premise. The investment is justified by typed invariants
+  and long-term maintenance across M14/M23 consumers.
 - *Stability:* worse short-term (a new language semantics surface inside the
   trusted Rust kernel; S6 delayed by RFC + re-baseline), better long-term.
   The delay costs no working state — M22 is NO-GO today.  The change is
@@ -105,10 +106,9 @@ Rejected unchanged: this is the P0-2 debt itself.
 
 ## Decision
 
-**Recommendation: Option A** (amended 2026-09-24 per the owner's criteria
-directive; the initial draft recommended B under cost-minimisation — see
-STEP-0268 for the evaluation trail).  Status `proposed`, pending owner
-acceptance.  Scope of the records RFC: the minimal closed set only (record
+**Accepted: Option A** (owner direction recorded by STEP-0269; the initial
+draft recommended B under cost-minimisation, then STEP-0268 amended the
+recommendation before owner acceptance). Scope of the records RFC: the minimal closed set only (record
 declarations, field access, literals, typed record lists); RFC-0033 gate
 intact; SOA invariants remain enforced until the re-baseline lands; ADR-0015
 closure contract and ADR-0016 compilation-unit contract unchanged.
@@ -134,9 +134,10 @@ re-work, not a reset.
 
 ## Validation
 
-STEP-0266 validated the R1 instrumentation; STEP-0268 records the
-criteria-based evaluation amending this recommendation.  This ADR's own
-validation gate if Option A is accepted: the records RFC carries the RFC-0033
+STEP-0266 validated the available R1 instrumentation; STEP-0268 records the
+criteria-based evaluation, STEP-0269 records owner acceptance of Option A,
+and STEP-0270 records separate acceptance of RFC-0047. This ADR's
+validation gate for Option A: the records RFC carries the RFC-0033
 four-part evidence plus a measured-consumer section on both the selfhost
 corpus and an application-profile corpus; the first post-re-baseline M22 STEP
 regenerates the canary report on the records surface and re-pins the baseline;

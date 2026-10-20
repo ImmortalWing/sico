@@ -1,0 +1,66 @@
+{
+  "schema": "sico.m24.codec-support.v0",
+  "package": "sico:user/image-codec@1",
+  "rfc": "RFC-0050 (as amended by A1, owner re-adjudication 2026-09-30)",
+  "adr": "ADR-0019 (Rust-compiled package core production path, accepted 2026-09-30)",
+  "step": "STEP-0331",
+  "production-path": {
+    "class": "rust-compiled-core",
+    "guest-crate": "guests/image-codec",
+    "committed-core": "crates/sico-codegen-wasm/artifacts/image-codec-core.wasm",
+    "core-sha256": "28917071c355bc5fc826502d4d2ca85a14c7b11d7f225f164d8d6d3b34ad9322",
+    "reproducibility-validator": "tools/validate-package-core.ps1",
+    "reproducible": true,
+    "import-free": true
+  },
+  "functions": [
+    {
+      "name": "decode-png",
+      "signature": "decode-png(data: Bytes) -> Result[Bytes, Text]",
+      "check": true,
+      "build": true,
+      "run": true,
+      "evidence": "runtime-verified",
+      "runner": "windows-native (wasmtime 47.0.2 component, empty linker)",
+      "runner-test": "runner/sico-runner/tests/image_codec_package.rs"
+    },
+    {
+      "name": "encode-png",
+      "signature": "encode-png(pixels: Bytes, width: U64, height: U64) -> Result[Bytes, Text]",
+      "check": true,
+      "build": true,
+      "run": true,
+      "evidence": "runtime-verified",
+      "runner": "windows-native (wasmtime 47.0.2 component, empty linker)",
+      "runner-test": "runner/sico-runner/tests/image_codec_package.rs"
+    }
+  ],
+  "refusal-corpus": {
+    "source": "independent oracle (Python zlib + manual chunk/CRC), no shared code with png =0.18.1",
+    "generator": "prototypes/image-codec-probe/tools/make-fixtures.py",
+    "manifest": "runner/sico-runner/tests/corpus/image-codec/manifest.json",
+    "closed-error-set": [
+      "bad-signature",
+      "truncated",
+      "trailing-data",
+      "oversized",
+      "unsupported-profile",
+      "corrupt-stream",
+      "encode-buffer-mismatch"
+    ],
+    "decode-cases": 9,
+    "decode-ok": 1,
+    "decode-typed-refusals": 8,
+    "encode-buffer-mismatch": "asserted (encode-only case, A1)",
+    "byte-stable-repeat": "asserted (encode round-trip + determinism)"
+  },
+  "honest-scope": {
+    "covered-here": "PNG decode/encode package content contract at the pure-package Component level (RFC-0050 §1/§2/§3 frozen profiles, limits, typed refusals, byte-stability)",
+    "deferred": [
+      "JPEG decode/encode (M24 #3, needs its own independent-oracle probe)",
+      "cancellation mid-decode/encode and typed save-failure: runner execution-harness concerns exercised by the converter pilot (M24 #6) that runs Sico scripts end to end with the file capability",
+      "batch sampling: a pilot-level concern (M24 #6)"
+    ],
+    "not-claimed": "no M24 gate flips from this row; M24 §3 gate 1 (accelerator hardware) and the #4 Direct2D renderer remain external doors"
+  }
+}

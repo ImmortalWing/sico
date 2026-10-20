@@ -4,8 +4,9 @@
 
 ## 1. Objective
 
-Deliver the versioned v1.0 product verdict that AGENT_GOAL §13 defines,
-on top of the full M14–M24 evidence chain instead of partial audits:
+Deliver two explicit verdicts over the M14–M24 evidence chain: whether the
+versioned v1.0 release is ready, and whether the whole project satisfies
+AGENT_GOAL §13. A completed audit is not itself either GO verdict:
 
 1. **Language v1 freeze**: batches 1–3 (RFC-0044/0046 + M23) incorporated
    into a versioned language release — spec, corpus, diagnostics and
@@ -29,9 +30,15 @@ on top of the full M14–M24 evidence chain instead of partial audits:
 
 ## 2. Entry gate
 
-- M23 exit audit explicit (GO or NO-GO with deferrals recorded).
-- M24 application-pilot gate explicit (the M18 portfolio-4 pilot closed or
-  honestly deferred with its external gate named).
+- M23 exit audit explicit (GO or NO-GO with residuals recorded); M23 GO is
+  required for **v1.0 release GO** because batch 3 is part of its freeze.
+- M24 native UI library and GUI format-converter pilot gate explicit (GO or
+  NO-GO with residuals recorded); converter GO on a real Windows native
+  renderer is required for **v1.0 release GO**. M17 acceleration and
+  external-adoption verdicts remain separately named.
+- M22 dual-implementation row explicit: S7 GO or an R3 stop-loss NO-GO
+  with Route-B re-baseline registered. The latter may enter this audit but
+  must never be described as self-host GO.
 - M19 CI/release engineering green and current (run-ci green on the
   release candidate).
 - Owner inputs for production/external items either provided or
@@ -40,14 +47,18 @@ on top of the full M14–M24 evidence chain instead of partial audits:
 
 ## 3. Exit gates
 
-1. §13 per-item audit published: every item linked to evidence, verdict
-   GO / deferred-with-gate; the overall product verdict explicit
-   (`complete` or `complete-with-deferrals`), never implied.
-2. Language v1 freeze: versioned spec/corpus/diagnostics snapshot,
+1. §13 per-item audit published: every item linked to evidence and given
+   GO, NO-GO or named external deferral. Publish **separate** `v1.0 release
+   GO/NO-GO` and `project §13 completion GO/NO-GO` verdicts. Project
+   completion is GO only when every §13 condition is actually met; a
+   deferral is never renamed completion.
+2. For v1.0 release GO, M23 batch 3 is GO and the language v1 freeze has a
+   versioned spec/corpus/diagnostics snapshot,
    formatter idempotence, matrix rows consistent, migration notes for
    everything batch 1–3 changed; the freeze re-runs the full frozen
    corpus byte-exact.
-3. v1.0 bundle reproducibility: two independent clean builds
+3. For v1.0 release GO, the M24 native GUI converter is GO and the v1.0
+   bundle reproducibility gate passes: two independent clean builds
    byte-identical; bundle installs and runs on a clean Windows host;
    upgrade/uninstall drill signed and recorded.
 4. Platform matrix honest: declared platforms carry native or
@@ -59,8 +70,10 @@ on top of the full M14–M24 evidence chain instead of partial audits:
 6. M0–M24 regression green from one command; documentation audit
    (docs vs executable behavior) passed; STATUS/ROADMAP consistent
    with the verdict.
-7. Product exit verdict issued against AGENT_GOAL §13, including the
-   residual list, without promoting any deferred item.
+7. Both verdicts issued against their respective gates, with the residual
+   list and M22 self-host state explicit. The audit may finish while the
+   v1.0 release is NO-GO; external platform or adoption deferrals may be
+   listed, but cannot satisfy the project §13 completion gate.
 
 ## 4. Non-goals
 
@@ -74,10 +87,10 @@ on top of the full M14–M24 evidence chain instead of partial audits:
 
 ## 5. Risks
 
-- The §13 refresh can surface evidence gaps late; mitigation is the
-  entry-gate requirement that M23/M24 audits are explicit first, and
-  the audit publishes deferrals rather than blocking the release
-  verdict on owner-gated externals.
+- The §13 refresh can surface evidence gaps late. M23/M24 audits are
+  explicit first. Internal M23 batch-3 or M24 native-converter failures
+  block v1.0 release GO; owner-gated externals are named separately and
+  block project completion where §13 requires them.
 - Freeze discipline vs late fixes: any post-freeze language change
   re-runs the frozen corpus and gets a versioned amendment, not a
   silent patch.

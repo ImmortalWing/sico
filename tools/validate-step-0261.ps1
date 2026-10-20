@@ -12,7 +12,8 @@ foreach ($marker in @(
     'let gwh_frames = sico.text.split_lines("")',
     'let gwh_len = U64.literal(0)',
     'let gwt_entries = sico.text.split_lines("")',
-    'SKIP:GENERAL-WHILE-IF-REGION',
+    'if is_word(gregion, "else"):',
+    'if is_word(gregion, "join"):',
     'let scl_uc_callee = function_declaration_index(words, scl_atom)',
     'let scl_uc_pack = while_call_rhs_packed(words, src, name_idx, scl_seg_start, line_end, scl_seg_offset, scl_uc_end',
     '"u64", "sico.list.length")',
@@ -31,6 +32,9 @@ foreach ($marker in @(
 # The single-nested-while entry guard is gone: nested whiles now lower.
 if ($parser.Contains('SKIP:GENERAL-WHILE-NESTED')) {
     throw 'stale SKIP:GENERAL-WHILE-NESTED guard still present in parser.sico'
+}
+if ($parser.Contains('SKIP:GENERAL-WHILE-IF-REGION')) {
+    throw 'stale SKIP:GENERAL-WHILE-IF-REGION guard still present in parser.sico'
 }
 
 # Refusal identity must not carry diagnostic suffixes again.
@@ -105,8 +109,9 @@ try {
             }
         }
 
-        # Frontier pin: call_left alone (with same defined) must refuse with
-        # the exact typed identity this step leaves behind.
+        # STEP-0262 subsequently implemented call_left. Keep this historical
+        # probe as a regression check for successful lowering, while the
+        # current frontier is measured by report-m22-canary.ps1.
         $sameStart = $full.IndexOf('function same')
         $sameEnd = $full.IndexOf('end function', $sameStart) + 'end function'.Length + 1
         $clStart = $full.IndexOf('function call_left')
@@ -121,11 +126,12 @@ try {
         $null = $process1.StandardOutput.ReadToEnd()
         $stderr1 = $process1.StandardError.ReadToEnd()
         $process1.WaitForExit()
-        if ($process1.ExitCode -ne 122 -or -not $stderr1.Contains('ERR:E-SH-IR-EXPRESSION')) {
-            throw "call_left frontier probe changed: exit=$($process1.ExitCode) stderr=$stderr1"
+        if ($process1.ExitCode -ne 0) {
+            throw "call_left regression probe failed: exit=$($process1.ExitCode) stderr=$stderr1"
         }
 
-        # Full-source canary: fail-closed at the declared call_left boundary.
+        # STEP-0314 completes main's ok return: the full formatter source now
+        # compiles through the guest compiler (canary 30/30).
         $process2 = [Diagnostics.Process]::Start($startInfo)
         $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full)
         $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
@@ -134,8 +140,8 @@ try {
         $null = $process2.StandardOutput.ReadToEnd()
         $stderr2 = $process2.StandardError.ReadToEnd()
         $process2.WaitForExit()
-        if ($process2.ExitCode -ne 122 -or -not $stderr2.Contains('ERR:E-SH-IR-EXPRESSION')) {
-            throw "formatter canary did not reach the declared call_left boundary: exit=$($process2.ExitCode) stderr=$stderr2"
+        if ($process2.ExitCode -ne 0) {
+            throw "formatter canary changed from the closed frontier: exit=$($process2.ExitCode) stderr=$stderr2"
         }
         if ($stderr2.Contains('"class":"trap"')) { throw 'formatter canary regressed to a guest trap' }
     }
@@ -154,4 +160,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions canary=CALL-LEFT-EXPRESSION next=guard-chain-arity2-and-gw-if-call-conds'
+Write-Output 'STEP_0261_OK nested-while=stack-frames parity=17-functions call_left=supported current_canary=FORMATTER-CLOSED repinned-by=STEP-0314'
