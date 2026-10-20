@@ -82,7 +82,7 @@ impl Rng {
 #[test]
 fn seeded_input_and_result_roundtrips_are_byte_and_value_exact() {
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
-    let mut arena = Arena::new(2048, ARENA_LIMIT);
+    let mut arena = Arena::new(33792, ARENA_LIMIT);
     for _ in 0..10_000 {
         let input = rng.input();
         let params = lower_input(&mut arena, &input).unwrap();
@@ -97,7 +97,7 @@ fn seeded_input_and_result_roundtrips_are_byte_and_value_exact() {
 
 #[test]
 fn m8_bounds_are_enforced_before_writing() {
-    let mut arena = Arena::new(2048, ARENA_LIMIT);
+    let mut arena = Arena::new(33792, ARENA_LIMIT);
     let input = |arguments: Vec<String>, stdin: Vec<u8>| ScriptInput { arguments, stdin };
 
     let at_count = input(vec![String::new(); MAX_ARGUMENTS], Vec::new());
@@ -163,7 +163,7 @@ fn m8_bounds_are_enforced_before_writing() {
 
 #[test]
 fn malformed_memory_fails_closed() {
-    let mut arena = Arena::new(2048, ARENA_LIMIT);
+    let mut arena = Arena::new(33792, ARENA_LIMIT);
     let result = ScriptResult::Error(ScriptError {
         code: ScriptErrorCode::DomainError,
         message: "honest failure".into(),
@@ -273,7 +273,7 @@ fn malformed_memory_fails_closed() {
 
 #[test]
 fn invalid_utf8_in_argument_fails_closed() {
-    let mut arena = Arena::new(2048, ARENA_LIMIT);
+    let mut arena = Arena::new(33792, ARENA_LIMIT);
     let input = ScriptInput {
         arguments: vec!["valid".into()],
         stdin: Vec::new(),
@@ -292,13 +292,13 @@ fn invalid_utf8_in_argument_fails_closed() {
 #[test]
 fn cleanup_is_deterministic_idempotent_and_bounded() {
     let mut rng = Rng(0xdead_beef_cafe_f00d);
-    let mut arena = Arena::new(2048, ARENA_LIMIT);
+    let mut arena = Arena::new(33792, ARENA_LIMIT);
     let input = rng.input();
     let first = lower_input(&mut arena, &input).unwrap();
     let first_image = arena.memory().to_vec();
     arena.reset();
     arena.reset();
-    assert_eq!(arena.heap_high_water(), 2048);
+    assert_eq!(arena.heap_high_water(), 33792);
     let second = lower_input(&mut arena, &input).unwrap();
     assert_eq!(first, second);
     assert_eq!(first_image, arena.memory());

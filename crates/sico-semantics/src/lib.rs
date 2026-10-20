@@ -4055,7 +4055,10 @@ fn infer_stdlib_call(
             vec![list_text(), named("U64")],
             numeric_result(named("Text")),
         ),
-        "sico.list.append" => (vec![list_text(), named("Text")], list_text()),
+        // STEP-0484: arena push_chunk shares the list append shape.
+        "sico.list.append" | "sico.arena.push_chunk" => {
+            (vec![list_text(), named("Text")], list_text())
+        }
         // RFC-0045 stdlib batch 2 (STEP-0174).
         "sico.bytes.at" => (
             vec![named("Bytes"), named("U64"), named("I64")],
@@ -4071,6 +4074,8 @@ fn infer_stdlib_call(
         "sico.list.sort" => (vec![list_text()], list_text()),
         "sico.u64.to_text" => (vec![named("U64")], named("Text")),
         "sico.i64.to_text" => (vec![named("I64")], named("Text")),
+        // STEP-0484 arena treadmill (RFC-0029 amendment): owned-arena cores.
+        "sico.arena.enter_scratch" | "sico.arena.exit_scratch" => (vec![], named("U64")),
         "sico.fs.read" => (
             vec![named("Text")],
             Type::Generic {

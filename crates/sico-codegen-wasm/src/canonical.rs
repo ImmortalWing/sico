@@ -17,8 +17,8 @@ use wit_parser::{PackageId, Resolve, SizeAlign, Type, TypeDefKind, TypeId, World
 pub const SCRIPT_WIT: &str = include_str!("../../../wit/script-profile-v0/world.wit");
 pub(crate) const TYPES_INSTANCE: &str = "sico:script/types@0.1.0";
 /// RFC-0029 guest linear memory ceiling: 64 MiB = 1,024 Wasm pages.
-pub(crate) const ARENA_LIMIT: u32 = 128 * 1024 * 1024;
-pub(crate) const MEMORY_PAGES: u32 = 2048;
+pub(crate) const ARENA_LIMIT: u32 = 2048 * 1024 * 1024;
+pub(crate) const MEMORY_PAGES: u32 = 33792;
 
 /// Component import name of the scoped read-side file channel.
 pub(crate) const FS_READ_INTERFACE: &str = "sico:script/fs-read@0.1.0";

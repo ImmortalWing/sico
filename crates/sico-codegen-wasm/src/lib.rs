@@ -556,6 +556,9 @@ fn helper_dependencies(name: &str) -> &'static [&'static str] {
 /// Script standard-library intrinsics implemented by emitted helper
 /// functions (STEP-0083); every other registered intrinsic is emitted inline.
 const INTRINSIC_HELPERS: &[&str] = &[
+    "sico.arena.enter_scratch",
+    "sico.arena.exit_scratch",
+    "sico.arena.push_chunk",
     "sico.bytes.concat",
     "sico.bytes.utf8_decode",
     "sico.i64.to_text",
@@ -1185,6 +1188,30 @@ fn build_script_core(
             &helper,
         ));
     }
+    // STEP-0484: the arena treadmill helpers address the owned-arena core
+    // globals (perm bump, scratch floor, mode); transport modules share the
+    // transport allocator and refuse the intrinsics at build.
+    let arena_used = module.functions.iter().any(|function| {
+        function.blocks.iter().any(|block| {
+            block.instructions.iter().any(|instruction| {
+                matches!(
+                    &instruction.operation,
+                    Operation::Intrinsic { name, .. } if name.starts_with("sico.arena.")
+                )
+            })
+        })
+    });
+    let transport = emit.fs.any()
+        || emit.streams.any()
+        || emit.http
+        || emit.http2
+        || !emit.user_imports.is_empty();
+    if transport && arena_used {
+        return Err(unsupported(
+            "sico.arena",
+            "arena treadmill intrinsics require the owned-arena module shape",
+        ));
+    }
     let bytes = finish_script_core(run, emit, function_indices, &types, &functions, &code)?;
     Ok(CoreCompilation {
         bytes,
@@ -1239,6 +1266,26 @@ fn finish_script_core(
                 shared: false,
             },
             &ConstExpr::i32_const(i32::try_from(emit.arena_base).unwrap_or(i32::MAX)),
+        );
+        // STEP-0484 arena treadmill: scratch floor (init ceiling) and mode
+        // (init 0 = perm/legacy). Unused by programs that never call the
+        // `sico.arena.*` intrinsics; legacy allocation behavior is unchanged
+        // because the perm ceiling is `min(ARENA_LIMIT, scratch floor)`.
+        globals.global(
+            GlobalType {
+                val_type: ValType::I32,
+                mutable: true,
+                shared: false,
+            },
+            &ConstExpr::i32_const(i32::try_from(canonical::ARENA_LIMIT).unwrap_or(i32::MAX)),
+        );
+        globals.global(
+            GlobalType {
+                val_type: ValType::I32,
+                mutable: true,
+                shared: false,
+            },
+            &ConstExpr::i32_const(0),
         );
     }
     let run_index = function_indices
@@ -1388,9 +1435,42 @@ fn emit_post_return_noop() -> Function {
 }
 
 /// Arena allocation with checked 32-bit arithmetic: any wrap or ceiling
-/// crossing traps instead of silently corrupting memory.
+/// crossing traps instead of silently corrupting memory. Mode 0 (default)
+/// is the legacy upward perm bump with ceiling `min(ARENA_LIMIT, scratch
+/// floor)` — identical to the historical behavior while the treadmill is
+/// unused; mode 1 allocates downward from the scratch floor so per-function
+/// garbage can be reclaimed by resetting the floor (STEP-0484).
 fn emit_alloc() -> Function {
     let mut body = Function::new(vec![(2, ValType::I32)]);
+    body.instruction(&Instruction::GlobalGet(2));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::I32Ne);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    // Scratch: trap on size > floor (underflow), then start = (floor -
+    // size) & -8; trap when start crosses the perm bump; floor = start.
+    body.instruction(&Instruction::LocalGet(0));
+    body.instruction(&Instruction::GlobalGet(1));
+    body.instruction(&Instruction::I32GtU);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::Unreachable);
+    body.instruction(&Instruction::End);
+    body.instruction(&Instruction::GlobalGet(1));
+    body.instruction(&Instruction::LocalGet(0));
+    body.instruction(&Instruction::I32Sub);
+    body.instruction(&Instruction::I32Const(-8));
+    body.instruction(&Instruction::I32And);
+    body.instruction(&Instruction::LocalSet(1));
+    body.instruction(&Instruction::LocalGet(1));
+    body.instruction(&Instruction::GlobalGet(0));
+    body.instruction(&Instruction::I32LtU);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::Unreachable);
+    body.instruction(&Instruction::End);
+    body.instruction(&Instruction::LocalGet(1));
+    body.instruction(&Instruction::GlobalSet(1));
+    body.instruction(&Instruction::Else);
+    // Perm: aligned = (bump + 7) & -8; end = aligned + size; ceiling is the
+    // live scratch floor (ARENA_LIMIT when the treadmill is unused).
     body.instruction(&Instruction::GlobalGet(0));
     body.instruction(&Instruction::I32Const(7));
     body.instruction(&Instruction::I32Add);
@@ -1407,15 +1487,14 @@ fn emit_alloc() -> Function {
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
     body.instruction(&Instruction::LocalGet(2));
-    body.instruction(&Instruction::I32Const(
-        i32::try_from(canonical::ARENA_LIMIT).unwrap_or(i32::MAX),
-    ));
+    body.instruction(&Instruction::GlobalGet(1));
     body.instruction(&Instruction::I32GtU);
     body.instruction(&Instruction::If(BlockType::Empty));
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
     body.instruction(&Instruction::LocalGet(2));
     body.instruction(&Instruction::GlobalSet(0));
+    body.instruction(&Instruction::End);
     body.instruction(&Instruction::LocalGet(1));
     body.instruction(&Instruction::End);
     body
@@ -1445,10 +1524,10 @@ fn emit_realloc() -> Function {
     body.instruction(&Instruction::If(BlockType::Empty));
     body.instruction(&Instruction::Unreachable);
     body.instruction(&Instruction::End);
+    // Ceiling is the live scratch floor (ARENA_LIMIT while the treadmill
+    // is unused) so result marshalling can never overwrite scratch data.
     body.instruction(&Instruction::LocalGet(5));
-    body.instruction(&Instruction::I32Const(
-        i32::try_from(canonical::ARENA_LIMIT).unwrap_or(i32::MAX),
-    ));
+    body.instruction(&Instruction::GlobalGet(1));
     body.instruction(&Instruction::I32GtU);
     body.instruction(&Instruction::If(BlockType::Empty));
     body.instruction(&Instruction::Unreachable);
@@ -1485,6 +1564,14 @@ fn emit_post_return(arena_base: u32) -> Function {
         i32::try_from(arena_base).unwrap_or(i32::MAX),
     ));
     body.instruction(&Instruction::GlobalSet(0));
+    // STEP-0484: restoring the scratch floor and mode keeps repeated
+    // cleanup idempotent even after a guest left the treadmill armed.
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(canonical::ARENA_LIMIT).unwrap_or(i32::MAX),
+    ));
+    body.instruction(&Instruction::GlobalSet(1));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::GlobalSet(2));
     body.instruction(&Instruction::End);
     body
 }
@@ -4856,6 +4943,32 @@ fn emit_intrinsic(
             body.instruction(&Instruction::Call(helper(name)?));
             body.instruction(&Instruction::LocalSet(*length));
             body.instruction(&Instruction::LocalSet(*pointer));
+        }
+        // STEP-0484 arena treadmill (RFC-0029 amendment): owned-arena cores;
+        // transport modules were refused earlier in `build_script_core`.
+        "sico.arena.enter_scratch" | "sico.arena.exit_scratch" => {
+            let [value] = result else {
+                return Err(unsupported(&function.name, "arena mode result layout"));
+            };
+            body.instruction(&Instruction::Call(helper(name)?));
+            body.instruction(&Instruction::LocalSet(*value));
+        }
+        "sico.arena.push_chunk" => {
+            let [table, count] = result else {
+                return Err(unsupported(
+                    &function.name,
+                    "arena push_chunk result layout",
+                ));
+            };
+            let [chunks_table, chunks_count] = pair(0)?;
+            let [chunk_pointer, chunk_length] = pair(1)?;
+            body.instruction(&Instruction::LocalGet(chunks_table));
+            body.instruction(&Instruction::LocalGet(chunks_count));
+            body.instruction(&Instruction::LocalGet(chunk_pointer));
+            body.instruction(&Instruction::LocalGet(chunk_length));
+            body.instruction(&Instruction::Call(helper("sico.arena.push_chunk")?));
+            body.instruction(&Instruction::LocalSet(*count));
+            body.instruction(&Instruction::LocalSet(*table));
         }
         _ => return Err(unsupported(&function.name, "stdlib intrinsic")),
     }

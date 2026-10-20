@@ -46,7 +46,7 @@ impl Default for HostLimits {
         Self {
             fuel: 10_000_000,
             timeout_ms: 10_000,
-            memory_bytes: 128 * 1024 * 1024,
+            memory_bytes: 2048 * 1024 * 1024,
             table_elements: 100_000,
             instances: 32,
             tables: 32,
