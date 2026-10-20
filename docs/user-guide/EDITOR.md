@@ -52,9 +52,11 @@ target/release/sico-lsp.exe
 - workspace diagnostics；
 - semantic tokens；
 - file watcher/background index；
-- source debugger/DAP。
+- 已发布的编辑器扩展（当前需手工配置 generic LSP client）。
 
-`sico.debug` 会明确返回错误 `-32004`。plan 的 `runtime_locations`/`debug_adapter` 也固定为 false；在 Runtime 尚无 pause/step/stack/variable hooks 时，不应把普通运行包装成“调试”。
+## 调试（DAP v0）
+
+runner 已实现 minimal DAP 子集（12 个支持的请求、20 个 typed 拒绝、6 个事件；真实断点、暂停、嵌套 stack 与 scalar locals，Windows runtime-verified，M10 GO）。LSP 不内嵌调试器：`sico.debug` 命令接收一个 launch descriptor（`component`/`debugMap`/`debugIdentity`/`source`/`documentId`），返回 data-only 的 `sico.debug-launch-plan.v0`，由编辑器负责启动 `sico-dap` 适配器进程。普通 execution plan 的 `runtime_locations`/`debug_adapter` 仍为 false；不应把普通运行包装成“调试”。
 
 ## 资源限制
 

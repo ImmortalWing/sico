@@ -4,10 +4,16 @@
 
 ```text
 source.sico
-    │ sico build
+    │ sico run                                    （script 直达路径，经独立 sico-runner）
+    ▼
+Wasmtime（sico-runner）
+
+source.sico
+    │ sico build [--profile component-v0|script-v0]
     ▼
 WebAssembly Component
-    │ sico-app pack
+    │ sico-app compose（可选：Program → command Component）
+    │ sico-app pack [--script]
     ▼
 .sapp
     │ sico-app run / sico-desktop-host open
@@ -85,16 +91,21 @@ sico-app run --trusted-key trusted-public-key.hex demo.sapp
 
 Runtime 查找顺序为 `--runtime`、`SICO_WASMTIME`、已安装 SDK 的 bundled Runtime、`PATH`。
 
-## 为什么不再直接运行源码
+## 两条显式执行路径
 
-`main` 不提供 `sico run app.sico`。显式的编译、打包、授权和运行步骤使以下边界可审计：
+`main` 提供两条互不隐含的执行路径：
+
+1. **Script 直达**：`sico run app.sico` 把源码编译为 Script Profile Program Component，经独立 `sico-runner` 直接执行，provider grants（`--fs-read-root`/`--fs-write-root`/`--allow-net`）在命令行显式给出；
+2. **Component → `.sapp` → Host**：`sico build` + `sico-app pack` + `sico-app run`，面向带信任与能力声明的应用分发。
+
+这些显式步骤使以下边界可审计：
 
 - 编译器不获得签名密钥或 Host 权限；
-- Runtime 不隐式编译源码；
-- `.sapp` 是唯一应用信任输入；
+- Runtime/runner 不隐式授予能力；
+- `.sapp` 路径中包是唯一应用信任输入；
 - 平台 Host 只消费已经验证和授权的包。
 
-旧的一体化 source-run/cache 流程保存在 `v0.0.1` 与归档分支中。
+`v0.0.1` 的一体化 source-run/cache 流程保存在标签与归档分支中。
 
 ## stdout、stderr 与退出码
 
@@ -115,3 +126,5 @@ sico-app run `
 ```
 
 Host grant 不能创造 package 没有请求的能力。先用 `sico-app inspect --json` 查看已验证请求；storage grant 缺少 `--storage-root` 会被拒绝。
+
+Script 直达路径的 HTTP 授权由 runner 提供：endpoint grant、TLS trust roots 与 secret 注入分别通过 `--allow-net`/`--allow-endpoint`、`--http-trust-roots`、`--secret-file` 显式给出，默认拒绝一切出站请求；细节见 [CLI 参考](./CLI.md)的 `sico-runner` 一节。

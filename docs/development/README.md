@@ -37,7 +37,7 @@
 - [RFC](../rfc/README.md)
 - [STEP 执行记录](../steps/README.md)
 - [验证报告](../reports/README.md)
-- [任务交接](../TASK-HANDOFF.md)
+- [任务交接](../handoffs/README.md)
 
 ## 仓库结构
 

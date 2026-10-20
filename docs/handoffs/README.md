@@ -4,6 +4,6 @@
 
 | Active handoff | Status | Scope |
 |---|---|---|
-| [`M22 STEP-0280`](../handoff-m22.md) | W1 本机验证完成；独立 CI 待裁决，M22 NO-GO | 215+5 差分、canary、未提交工作树与 W2 入口 |
+| [`handoff-m22.md`](../handoff-m22.md) | living handoff；M22 仍 NO-GO，当前 STEP 号与覆盖数以 [`STATUS.md`](../STATUS.md) 和 [`M22 计划`](../plans/M22-compiler-self-host.md) 为准 | M22 编译器自举轨的恢复路径：差分语料、canary、未提交工作树与下一步命令 |
 
 [`M10 STEP-0098`](./M10-STEP-0098.md) 等旧 handoff 作为历史执行上下文保留；已完成 step 的权威事实记录位于 `docs/steps` 与 `docs/reports`。
