@@ -2,3 +2,5 @@
 /.workbuddy/
 /.zcode/
 target/
+__pycache__/
+*.pyc
