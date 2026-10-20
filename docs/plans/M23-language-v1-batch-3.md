@@ -280,7 +280,7 @@ section records their current state; it does not change any exit gate.
 | Residual | State after STEP-0489 | Depends on M22? |
 |---|---|---|
 | `diagnostics/catalog.json` + `semantic-case-map.json` full protocol extension (E2021–E2027, E2031) | **closed** — the eight implemented-but-unregistered semantic codes are now registered with catalog templates, and a new implementation-level corpus proves every one of them against the real compiler (`sico check --json`: code, key, argument set and rendered message byte-identical to the catalog) | no |
-| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **still deferred-external** — the selfhost-side measurement leg is frozen (STEP-0284: 2,169 literal-constructor calls, 3.199/KB); the owner-credentialed live-model leg is the only missing measurement, and no grammar change is proposed | no |
+| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **still deferred-external** — STEP-0490 closed everything that does not need credentials: the selfhost leg is re-measured at a pinned commit (literal-constructor density **3.199 → 3.055 per KB**, i.e. the explicit-width ceremony did not get denser even though the absolute count grew 2,169 → 3,236), and the AI leg now has a frozen corpus source (the 10 A0 generation tasks of `sico-ai-eval-v1`), a versioned DeepSeek adapter with M13-identical identity/parameters/cost accounting, and an offline fixture self-test. **The provider key is not on this host** (M13's key was delivered in-session on 2026-09-05 and was never persisted), and the owner-review leg is still ahead of the freeze | no |
 | STEP-0328/0329 independent CI adjudication | **still an external gate** — this host cannot reach GitHub Actions; the gitcode snapshot carries the work | no |
 
 Two catalog-scope boundaries are now recorded explicitly in
@@ -299,3 +299,15 @@ implicit:
 The self-host interaction is unchanged: the batch-3 surface stays a declared
 disjoint subset (§9), so the M22 differential corpus stays byte-stable and
 this step introduces no M22 re-baseline obligation.
+
+### 10.1 STEP-0490 — item 3 preparation (2026-10-21)
+
+| Item | State |
+|---|---|
+| selfhost leg re-measured | **done** at a pinned commit (2531427; 9/9 selfhost blobs byte-identical to the commit): literal-constructor calls 2,169 → 3,236, but density **3.199 → 3.055 per KB**, comparison-predicate density 59.671 → 54.166 per 1,000 lines. A second, independent measurement tool agrees exactly (3,236) and also prices the hypothetical typed-literal form (42,042 bytes, 3.88% of the corpus) |
+| AI corpus source | **frozen** — the 10 A0 `generation` tasks of `sico-ai-eval-v1` (`tools/prepare-ai-eval.ps1 -Category generation -Syntax A0`); B/C are alternative candidate syntaxes and are excluded from a current-Sico ceremony count |
+| DeepSeek adapter | **versioned** — `tools/ai-eval/deepseek_generation_corpus.py` (standard library only, key read from `DEEPSEEK_API_KEY` and never persisted), M13-identical identity/parameters, cost computed from provider-reported tokens at the published rates, hard USD 10 cap; the M13 adapter was lost with `target/` and is not repeated here |
+| offline proof | **done** — fixture mode produces the run file (SHA), the corpus candidates, the per-file SHA manifest and the cost line; `--dry-run` prints the full call plan |
+| provider credential | **missing** — the endpoint answers 401 (network fine), but M13's key was delivered in-session and never stored; the owner must supply it |
+| owner review of the corpus | **pending** — the corpus is frozen only after the owner reviews it (plan §8.3) |
+| D3 decision record | **not written** — no grammar change may precede the recorded measurement; the selfhost leg alone does not decide it |

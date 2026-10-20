@@ -1,0 +1,166 @@
+{
+    "schema":  "sico.m23.ceremony.v0",
+    "step":  "STEP-0284",
+    "card":  "23-A",
+    "repo_root":  "E:\\github\\sico-w2\\target\\tmp\\pin-2531427",
+    "pattern_notes":  "textual line/regex proxies per file header; recomputable byte-deterministically",
+    "gaps":  {
+                 "ai_generated_corpus":  "not measured; owner-gated external corpus (plan 8.3) recorded as gap",
+                 "runtime_call_or_alloc_counts":  "not measured; runner CLI exposes no call/allocation counters (plan 8.4 runtime side recorded as gap)"
+             },
+    "selfhost":  {
+                     "totals":  {
+                                    "total_lines":  24517,
+                                    "bytes":  1082777,
+                                    "arith_checked_match_blocks":  423,
+                                    "comparison_if_lines":  1328,
+                                    "comparison_return_lines":  13,
+                                    "nested_comparison_if2_sites":  82,
+                                    "bind_value_match_blocks":  401,
+                                    "literal_constructor_calls":  3236,
+                                    "chars_api_call_sites":  249,
+                                    "word_kind_chars_call_sites":  0,
+                                    "files":  9,
+                                    "literal_calls_per_kb":  3.06,
+                                    "comparison_lines_per_1000":  54.166
+                                },
+                     "per_file":  [
+                                      {
+                                          "file":  "selfhost/checker.sico",
+                                          "total_lines":  42,
+                                          "bytes":  1317,
+                                          "arith_checked_match_blocks":  0,
+                                          "comparison_if_lines":  2,
+                                          "comparison_return_lines":  0,
+                                          "nested_comparison_if2_sites":  0,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  3,
+                                          "chars_api_call_sites":  2,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/codegen.sico",
+                                          "total_lines":  231,
+                                          "bytes":  11176,
+                                          "arith_checked_match_blocks":  0,
+                                          "comparison_if_lines":  7,
+                                          "comparison_return_lines":  0,
+                                          "nested_comparison_if2_sites":  0,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  36,
+                                          "chars_api_call_sites":  5,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/compiler.sico",
+                                          "total_lines":  890,
+                                          "bytes":  35627,
+                                          "arith_checked_match_blocks":  5,
+                                          "comparison_if_lines":  67,
+                                          "comparison_return_lines":  0,
+                                          "nested_comparison_if2_sites":  1,
+                                          "bind_value_match_blocks":  6,
+                                          "literal_constructor_calls":  256,
+                                          "chars_api_call_sites":  24,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/compiler_lexer.sico",
+                                          "total_lines":  462,
+                                          "bytes":  11395,
+                                          "arith_checked_match_blocks":  2,
+                                          "comparison_if_lines":  50,
+                                          "comparison_return_lines":  2,
+                                          "nested_comparison_if2_sites":  6,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  83,
+                                          "chars_api_call_sites":  0,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/compiler_parser.sico",
+                                          "total_lines":  686,
+                                          "bytes":  20540,
+                                          "arith_checked_match_blocks":  2,
+                                          "comparison_if_lines":  36,
+                                          "comparison_return_lines":  4,
+                                          "nested_comparison_if2_sites":  0,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  112,
+                                          "chars_api_call_sites":  3,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/compiler_semantics.sico",
+                                          "total_lines":  889,
+                                          "bytes":  34962,
+                                          "arith_checked_match_blocks":  2,
+                                          "comparison_if_lines":  75,
+                                          "comparison_return_lines":  2,
+                                          "nested_comparison_if2_sites":  14,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  178,
+                                          "chars_api_call_sites":  10,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/formatter.sico",
+                                          "total_lines":  827,
+                                          "bytes":  22639,
+                                          "arith_checked_match_blocks":  2,
+                                          "comparison_if_lines":  61,
+                                          "comparison_return_lines":  2,
+                                          "nested_comparison_if2_sites":  6,
+                                          "bind_value_match_blocks":  5,
+                                          "literal_constructor_calls":  165,
+                                          "chars_api_call_sites":  1,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/parser.sico",
+                                          "total_lines":  20441,
+                                          "bytes":  943734,
+                                          "arith_checked_match_blocks":  410,
+                                          "comparison_if_lines":  1030,
+                                          "comparison_return_lines":  3,
+                                          "nested_comparison_if2_sites":  55,
+                                          "bind_value_match_blocks":  390,
+                                          "literal_constructor_calls":  2399,
+                                          "chars_api_call_sites":  204,
+                                          "word_kind_chars_call_sites":  0
+                                      },
+                                      {
+                                          "file":  "selfhost/parser_driver.sico",
+                                          "total_lines":  49,
+                                          "bytes":  1387,
+                                          "arith_checked_match_blocks":  0,
+                                          "comparison_if_lines":  0,
+                                          "comparison_return_lines":  0,
+                                          "nested_comparison_if2_sites":  0,
+                                          "bind_value_match_blocks":  0,
+                                          "literal_constructor_calls":  4,
+                                          "chars_api_call_sites":  0,
+                                          "word_kind_chars_call_sites":  0
+                                      }
+                                  ]
+                 },
+    "application":  {
+                        "totals":  {
+                                       "total_lines":  3995,
+                                       "bytes":  131418,
+                                       "arith_checked_match_blocks":  46,
+                                       "comparison_if_lines":  36,
+                                       "comparison_return_lines":  0,
+                                       "nested_comparison_if2_sites":  5,
+                                       "bind_value_match_blocks":  124,
+                                       "literal_constructor_calls":  806,
+                                       "chars_api_call_sites":  19,
+                                       "word_kind_chars_call_sites":  0,
+                                       "files":  53,
+                                       "literal_calls_per_kb":  6.28,
+                                       "comparison_lines_per_1000":  9.011
+                                   },
+                        "per_file_count":  53
+                    },
+    "ok":  "CENSUS_M23_CEREMONY_OK"
+}

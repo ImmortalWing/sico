@@ -25,7 +25,13 @@
 # each JSON field names its exact pattern so an independent run recomputes it.
 
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    # The default output path is the STEP-0284 frozen artifact, so the
+    # original reproduction contract (same bytes on the same tree) is
+    # unchanged. A dated re-measurement on a moved tree MUST pass an explicit
+    # -OutputPath: writing over the frozen file would silently replace the
+    # evidence of record.
+    [string]$OutputPath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -152,7 +158,11 @@ $result = [ordered]@{
     ok = 'CENSUS_M23_CEREMONY_OK'
 }
 
-$out = [IO.Path]::Combine($RepoRoot, 'docs', 'reports', 'm23-ceremony-census-2026-09-25.json')
+$out = if ($OutputPath) {
+    if ([IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { [IO.Path]::Combine($RepoRoot, $OutputPath) }
+} else {
+    [IO.Path]::Combine($RepoRoot, 'docs', 'reports', 'm23-ceremony-census-2026-09-25.json')
+}
 [IO.File]::WriteAllText($out, ($result | ConvertTo-Json -Depth 6) + "`n", [Text.UTF8Encoding]::new($false))
 Write-Host "CENSUS_M23_CEREMONY_OK selfhost_files=$($perFile.Count) app_files=$($appPerFile.Count)"
 Write-Host "selfhost: lines=$($selfhostTotals.total_lines) checked_matches=$($selfhostTotals.arith_checked_match_blocks) cmp_if=$($selfhostTotals.comparison_if_lines) nested_if2=$($selfhostTotals.nested_comparison_if2_sites) bind_matches=$($selfhostTotals.bind_value_match_blocks) literals=$($selfhostTotals.literal_constructor_calls) chars_calls=$($selfhostTotals.chars_api_call_sites)"
