@@ -115,6 +115,30 @@ selfhost_checker.rs rustfmt --check 绿。
   关闭，全部清零。
 - **E2031 已知近似**：裸调用（无点）unresolved target 未实现（语料无
   首码用例）；跨行调用未建模——declared-subset 观察项。
+- **CI 触发面缺口（2026-10-21 登记，阻塞合并后 CI 裁决）**：本仓唯一工作流
+  `.github/workflows/m22-w1-ci.yml` 的触发条件是 `push: branches:
+  [codex/m22-w1-ci]` 与手动 `workflow_dispatch`——**push 到 `dev` 不产生任何
+  CI run**（GitHub API 实测：`head_sha=95b80cd` 的 workflow run
+  `total_count=0`，`branch=dev` 历史 run 亦为 0）。⇒ 合并 `codex/m24-vision-ui`
+  后的 `dev`（`95b80cd`，已推 origin/github）**没有 CI 证据**，M22 出口审计
+  要求的 exact-SHA 独立 CI 裁决仍然缺；关闭条件 = 对 `dev` 手动 dispatch
+  `M22 W1 independent CI`（workflow_dispatch 在所选 ref 上跑工作流，即合并后
+  的树），或向 `codex/m22-w1-ci` 推提交走自动路径。本机无 `gh` CLI 且不代用
+  owner 凭据，该步由 owner 执行。本条**不改任何 gate 数值与证据等级**。
+- **待 owner 裁决、已挂起至 M22 完成的两项（2026-10-21 登记）**：
+  ① **重复 STEP 编号 0279–0283**：两条并行线各指一份不同的执行记录，现为
+  「两行并存 + 标注归属」登记、**未重编号**（登记见
+  [`steps/README.md`](./steps/README.md) 表后）；重编号属 owner 裁决项
+  （AGENTS.md §3「每个非平凡实现步需唯一 STEP」）。
+  ② **`dev` 线既有红测的普查数口径**：语料 215→235 重冻结后，硬编码普查数
+  未同步——9 个根工作区目标（sico-ai-tools / sico-cli / sico-format /
+  sico-hir / sico-ir×2 / sico-lexer / sico-parser / sico-semantics）期望
+  `syntax-candidates/b` = 58（实为 66）、能力面 (20,5)（实为 (23,5)）、33 条
+  invalid（新增 IND-003 已越过 IR support dispatch）、revision oracle 4（实为 7）；
+  runner `selfhost_formatter` 期望 accepted=99/refused=116（清单实为 118/117）。
+  已在**合并前 `550059a`** 的独立 worktree 上实测复现同值 ⇒ **非合并引入**。
+  两项按 owner 指示「等 M22 完成后再定口径」：在此之前**不改数、不扩大化、
+  不掩盖失败**。
 
 ## 5. 环境备忘
 
