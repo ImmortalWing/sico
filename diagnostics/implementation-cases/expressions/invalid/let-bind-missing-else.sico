@@ -1,0 +1,10 @@
+// case: EXP-003
+// expect: reject(LET_BIND_MISSING_ELSE)
+
+function main() returns Int:
+  let a = I64.literal(3)
+  let x = if a < I64.literal(4):
+    "y"
+  end if
+  return 0
+end function

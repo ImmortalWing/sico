@@ -1432,7 +1432,7 @@ fn check_let_bound_match(
                 diagnostics,
                 "E2026",
                 "LET_BIND_ARM_NOT_EXPRESSION",
-                "let-bound match arm must be exactly one expression".to_owned(),
+                "let-bound arm must be exactly one expression".to_owned(),
                 [],
                 arm_line.range,
             );
@@ -1451,7 +1451,7 @@ fn check_let_bound_match(
                     diagnostics,
                     "E2026",
                     "LET_BIND_ARM_NOT_EXPRESSION",
-                    "let-bound match arm must be exactly one expression".to_owned(),
+                    "let-bound arm must be exactly one expression".to_owned(),
                     [],
                     body_line.range,
                 );
@@ -3020,7 +3020,12 @@ fn check_condition_atoms(tokens: &[HirToken], diagnostics: &mut Vec<SemanticDiag
                 format!(
                     "non-atom operand in a swap-form {operator} condition; evaluate the operand into a binding first or rewrite as {rewrite}"
                 ),
-                [],
+                // The operator and its non-swap rewrite are the varying
+                // values of this diagnostic: they used to live only in the
+                // human-readable message, so a machine consumer of the
+                // envelope could not recover them. The catalog template
+                // renders from exactly these two arguments.
+                [("operator", operator), ("rewrite", rewrite)],
                 token_range(side),
             );
             return;
@@ -3152,8 +3157,14 @@ fn infer_expression(
                 diagnostics,
                 "E2024",
                 "RECORD_COMPARISON",
-                format!("records do not support {operator}; compare fields explicitly"),
-                [("type", name.as_str())],
+                format!(
+                    "records of type {name} do not support {operator}; compare fields explicitly"
+                ),
+                // The refused operator used to live only in the message; the
+                // record type name used to live only in the arguments. Both
+                // are varying values of this diagnostic, so both are carried
+                // as arguments and the catalog template renders from them.
+                [("type", name.as_str()), ("operator", operator)],
                 side.range,
             );
         }

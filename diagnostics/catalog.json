@@ -160,6 +160,70 @@
       "required_arguments": ["record", "expression"]
     },
     {
+      "code": "E2021",
+      "key": "DUPLICATE_FIELD",
+      "category": "record",
+      "severity": "error",
+      "message_template": "duplicate field: {field}",
+      "required_arguments": ["field"]
+    },
+    {
+      "code": "E2022",
+      "key": "EMPTY_RECORD",
+      "category": "record",
+      "severity": "error",
+      "message_template": "record {record} declares no fields",
+      "required_arguments": ["record"]
+    },
+    {
+      "code": "E2023",
+      "key": "FIELD_IMMUTABLE",
+      "category": "record",
+      "severity": "error",
+      "message_template": "field {record}.{field} is immutable; replace the whole record with set",
+      "required_arguments": ["record", "field"]
+    },
+    {
+      "code": "E2024",
+      "key": "RECORD_COMPARISON",
+      "category": "type",
+      "severity": "error",
+      "message_template": "records of type {type} do not support {operator}; compare fields explicitly",
+      "required_arguments": ["type", "operator"]
+    },
+    {
+      "code": "E2025",
+      "key": "INFIX_SWAP_OPERAND_NOT_ATOM",
+      "category": "expression",
+      "severity": "error",
+      "message_template": "non-atom operand in a swap-form {operator} condition; evaluate the operand into a binding first or rewrite as {rewrite}",
+      "required_arguments": ["operator", "rewrite"]
+    },
+    {
+      "code": "E2026",
+      "key": "LET_BIND_ARM_NOT_EXPRESSION",
+      "category": "expression",
+      "severity": "error",
+      "message_template": "let-bound arm must be exactly one expression",
+      "required_arguments": []
+    },
+    {
+      "code": "E2027",
+      "key": "LET_BIND_MISSING_ELSE",
+      "category": "expression",
+      "severity": "error",
+      "message_template": "let-bound if requires an else arm",
+      "required_arguments": []
+    },
+    {
+      "code": "E2031",
+      "key": "UNRESOLVED_CALL_TARGET",
+      "category": "call",
+      "severity": "error",
+      "message_template": "unresolved call target {callee}",
+      "required_arguments": ["callee"]
+    },
+    {
       "code": "E3001",
       "key": "NON_EXHAUSTIVE_MATCH",
       "category": "match",

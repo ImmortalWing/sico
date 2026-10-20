@@ -1,0 +1,11 @@
+// case: EXP-001
+// expect: reject(INFIX_SWAP_OPERAND_NOT_ATOM)
+
+function main() returns Int:
+  let a = I64.literal(3)
+  if a > I64.literal(4):
+    return 1
+  else:
+    return 0
+  end if
+end function

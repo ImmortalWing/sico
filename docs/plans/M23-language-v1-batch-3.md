@@ -271,3 +271,31 @@ labels for planning, not allocated STEP identifiers.
 - Items 1 and 2 share one diagnostic-namespace decision (append-only
   codes); landing them under one RFC-set review keeps the code registry
   coherent, but they remain separately gated items.
+
+## 10. Residual closure (2026-10-20, STEP-0489)
+
+The 2026-09-30 exit audit closed items 1/2/4 and left three residuals. This
+section records their current state; it does not change any exit gate.
+
+| Residual | State after STEP-0489 | Depends on M22? |
+|---|---|---|
+| `diagnostics/catalog.json` + `semantic-case-map.json` full protocol extension (E2021–E2027, E2031) | **closed** — the eight implemented-but-unregistered semantic codes are now registered with catalog templates, and a new implementation-level corpus proves every one of them against the real compiler (`sico check --json`: code, key, argument set and rendered message byte-identical to the catalog) | no |
+| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **still deferred-external** — the selfhost-side measurement leg is frozen (STEP-0284: 2,169 literal-constructor calls, 3.199/KB); the owner-credentialed live-model leg is the only missing measurement, and no grammar change is proposed | no |
+| STEP-0328/0329 independent CI adjudication | **still an external gate** — this host cannot reach GitHub Actions; the gitcode snapshot carries the work | no |
+
+Two catalog-scope boundaries are now recorded explicitly in
+[`diagnostics/README.md`](../../diagnostics/README.md) instead of being left
+implicit:
+
+- **E8xxx stays outside the catalog.** RFC-0001 reserves `E8000–E8999`; the
+  RFC-0039 module/package codes are CLI link-channel identities, not
+  source-level compiler diagnostics, and registering them would change a
+  reserved partition (new protocol major version + RFC).
+- **E1014–E1016 remain unregistered.** They are syntax codes whose case maps
+  (`syntax-mutation-map.json`, `top-level-syntax-map.json`) are bound to the
+  frozen mutation and candidate corpora; extending those maps is a separate
+  bounded step, not a silent table growth inside this one.
+
+The self-host interaction is unchanged: the batch-3 surface stays a declared
+disjoint subset (§9), so the M22 differential corpus stays byte-stable and
+this step introduces no M22 re-baseline obligation.

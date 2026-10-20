@@ -42,7 +42,7 @@ end function
 
 - `let` 局部绑定、`if`、`match`（all-return 形态）、`while`、`for` 迭代（List、Map keys、Set[Text]，STEP-0175）、`break`/`continue`、`set` 可变单元（STEP-0130）；
 - 条件中的中缀比较（`<` `<=` `>` `>=` `!=` `==`）与逻辑与 `&&`（RFC-0048，STEP-0328），以及 let 绑定的语句形 `if`/`match`——`let x = if …:` … `end if`、`let x = match …:` … `end match`（RFC-0049，STEP-0329）；端到端样本 `tests/end-to-end/infix-comparisons.sico`、`tests/end-to-end/let-bind.sico`；
-- record/enum：构造、dot 字段访问（含链式）与 `set` 整记录替换（RFC-0047，STEP-0271..0273；typed 拒绝面 E2010–E2024）；`List[record]` 仍 gated（E2031）；
+- record/enum：构造、dot 字段访问（含链式）与 `set` 整记录替换（RFC-0047，STEP-0271..0273；typed 拒绝面 E2010–E2024）；条件中的中缀比较与逻辑与、let 绑定语句形另见上一条（E2025–E2027）；`List[record]` 仍 gated（E2031）；
 - `Result`/`Option`、checked 算术（STEP-0134）、位运算（STEP-0132）与 `?` 错误传播（STEP-0175）；`try` 表达式仍仅 check 阶段；
 - `Map`/`Set`（STEP-0131，实例化集合受限）与 `List[Text|I64|U64]`；
 - task scopes 的顺序执行（parallelism-1）；一等 Task/Future/Stream 值仍为 typed 拒绝；

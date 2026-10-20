@@ -188,23 +188,30 @@ function Invoke-Capture([string]$Arguments) {
 }
 
 $first = Invoke-Capture "format `"$compact`""
-# feed the formatted text back through stdin for the second pass
+# Feed the formatted text back for the second pass through a byte-exact file.
+# The stdin path is unusable on Windows PowerShell 5.1: the redirected
+# StandardInput writer emits the UTF-8 BOM of [Console]::OutputEncoding, and
+# `sico format -` then refuses the source with
+# `source contract error ByteOrderMark at bytes 0..3`. The file path keeps the
+# comparison byte-exact and matches the repair already applied to
+# tools/validate-step-0262.ps1.
+$secondPass = Join-Path $env:TEMP "sico-validate-0328-formatted.sico"
+[IO.File]::WriteAllText($secondPass, $first, [Text.UTF8Encoding]::new($false))
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $sico
-$psi.Arguments = "format -"
+$psi.Arguments = "format `"$secondPass`""
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
-$psi.RedirectStandardInput = $true
 $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
 $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
 $process = [System.Diagnostics.Process]::Start($psi)
-$process.StandardInput.Write($first)
-$process.StandardInput.Close()
 $second = $process.StandardOutput.ReadToEnd()
+$secondError = $process.StandardError.ReadToEnd()
 [void]$process.WaitForExit()
-if ($process.ExitCode -ne 0) { throw 'second formatter pass failed' }
+if ($process.ExitCode -ne 0) { throw "second formatter pass failed: $secondError" }
 Remove-Item -Force $compact
+Remove-Item -Force $secondPass
 if ($first -ne $second) { throw 'formatter is not idempotent on the batch-3 condition shapes' }
 if (-not $first.Contains('if a < b && b >= I64.literal(7):')) {
     throw 'formatter did not canonicalize the one-space operator spacing'

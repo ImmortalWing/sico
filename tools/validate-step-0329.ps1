@@ -185,20 +185,27 @@ if ($once.stdout -ne [IO.File]::ReadAllText($fixture).Replace("`r`n", "`n")) {
 }
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $sico
-$psi.Arguments = 'format -'
+# Feed the formatted text back through a byte-exact file. The stdin path is
+# unusable on Windows PowerShell 5.1: the redirected StandardInput writer
+# emits the UTF-8 BOM of [Console]::OutputEncoding, and `sico format -` then
+# refuses the source with `source contract error ByteOrderMark at bytes 0..3`
+# (an empty second pass, which the comparison below reports as a false
+# idempotence failure). The file path keeps the comparison byte-exact and
+# matches the repair already applied to tools/validate-step-0262.ps1.
+$secondPass = Join-Path $env:TEMP "sico-validate-0329-formatted.sico"
+[IO.File]::WriteAllText($secondPass, $once.stdout, [Text.UTF8Encoding]::new($false))
+$psi.Arguments = "format `"$secondPass`""
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true
-$psi.RedirectStandardInput = $true
 $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
 $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
 $process = [System.Diagnostics.Process]::Start($psi)
-$bytes = [Text.Encoding]::UTF8.GetBytes($once.stdout)
-$process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-$process.StandardInput.BaseStream.Flush()
-$process.StandardInput.Close()
 $second = $process.StandardOutput.ReadToEnd()
+$secondError = $process.StandardError.ReadToEnd()
 [void]$process.WaitForExit()
+if ($process.ExitCode -ne 0) { throw "second formatter pass failed: $secondError" }
+Remove-Item -Force $secondPass
 if ($second -ne $once.stdout) { throw 'formatter is not idempotent on the let-bound shapes' }
 
 Write-Host 'STEP-0329 validator OK (matrix, e2e corpus, refusal corpus, nesting budget, formatter)'
