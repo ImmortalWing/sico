@@ -955,6 +955,18 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
       end if
       return ok(ScriptOutput(stdout: sico.text.encode(crih_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
     end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-run-body-hex"):
+      let crbh_words = parser.lex_words(input.stdin)
+      let crbh_ir = parser.scalar_ir(crbh_words, input.stdin)
+      if sico.text.starts_with(crbh_ir, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: crbh_ir))
+      end if
+      let crbh_hex = codegen.cgs_run_body_hex(sico.text.encode(crbh_ir))
+      if sico.text.starts_with(crbh_hex, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: crbh_hex))
+      end if
+      return ok(ScriptOutput(stdout: sico.text.encode(crbh_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    end if
   end if
   let general_words = parser.lex_words(input.stdin)
   let general_ir = parser.scalar_ir(general_words, input.stdin)

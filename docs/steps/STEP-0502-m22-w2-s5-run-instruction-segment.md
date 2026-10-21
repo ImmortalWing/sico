@@ -1,6 +1,6 @@
 # STEP-0502 m22-w2 S5 run 体指令段：guest 发射的指令段与 Rust backend 实际发射逐字节相同
 
-> - status: implementation complete locally（未提交快照；待 owner 授权后由独立 CI 取裁决）
+> - status: **complete（独立 CI 已裁决：run 39556951856 = `success`，12/12 内层步全 PASS）**
 > - date: 2026-10-21
 > - owners: autonomous-agent
 > - depends: [STEP-0501](./STEP-0501-m22-w2-s5-run-body-truth.md)（run 体发射真值与逐字节规则表）、[STEP-0499](./STEP-0499-m22-w2-s5-slot-plan.md)（槽位/局部声明计划）、[STEP-0496](./STEP-0496-m22-w2-s5-ir-ingestion-plan.md)（IR 摄取）
@@ -129,9 +129,27 @@ STEP-0501 把参考形态的 `run` 体切成两段：**指令段 182 hex（91 B�
 - **guest 的 `let` 无块作用域**这条硬约束意味着本片新增的 28 个函数里，每个函数的局部名必须**全局唯一**（同函数内）；这是本片代码量最大的隐性成本。
 - 本片**没有**触碰 37 语料阶梯、`.sapp` 链或 ADR-0015。门 3 仍为 NO-GO。
 
+## 7.2 独立 CI 裁决：**GO**（run 39556951856 = `success`）
+
+本片已**提交并推送**（owner 授权）：提交 `ee71719`，推送 `github/codex/m22-w1-ci`（fast-forward `a730ac6..ee71719`），远端 head 确认 = `ee717192468ae9a56a9bb1ff4771045f67db509d`。
+
+| 证据 | 值 |
+|---|---|
+| 独立 CI run | **39556951856**（run #24，`event: push`，head_branch `codex/m22-w1-ci`） |
+| head_sha | `ee717192468ae9a56a9bb1ff4771045f67db509d`（= 本片提交） |
+| 结论 | `status: completed` / **`conclusion: success`** |
+| 时间 | 06:41:12Z → 07:09:29Z（job `windows-gnu`，runner `GitHub Actions 1000000024`） |
+| job 内步骤 | `Set up job` / `checkout` / `Install GNU build tools` / **`Run repository CI on a fresh runner`** / `Post Run checkout` / `Complete job` —— **6/6 全部 success** |
+| 内层步数 | **12/12** 全 PASS（`fmt` / `fmt (runner)` / `clippy (workspace)` / `clippy (runner)` / `build (runner debug)` / `test (workspace)` / `test (runner)` / `module boundaries` / `planning contract (M14-M25)` / `application-profile matrix` / `cross-host matrix + UI corpus` / `whitespace (git diff --check)`） |
+
+**这条裁决同时回答了 §6.1 记的那个已登记的环境敏感红点**：`prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言在**独立 runner** 上通过 ⇒ 本片的新钉**不**把该断言推过预算线（本片的新钉是**纯 Rust**，与该断言无关）。**预算常量与该断言均未改动**，也不需要重新基线化。
+
+**本片最终状态**：**complete（独立 CI GO）**。
+
 ## 8. 下一片
 
 1. **STEP-0503 = Script 结果区返回**：需要五项**冻结**的组件级事实（分配器索引 1、结果区 32 B、载荷起始偏移 8、`ScriptOutput` 字段 @0/8/16、`ScriptError` @0/4）；本片的指令段可与之拼接成完整的 `run` 体。
+   —— **已于 2026-10-21 闭合**：[STEP-0503](./STEP-0503-m22-w2-s5-run-body-result-return.md) 把**整段 `run` 体（360 hex）**推成了与 backend 实际发射**逐字节相同**；§7 说的"整段 run 体还没有逐字节等同"**已被下一片解决**。
 2. **STEP-0504 = 用派生 run 体替换 STEP-0487 的冻结 run 体 hex**：参考形态的**整个组件**逐字节等同（参考形态无 data 段 ⇒ run 体是唯一的 IR 相关部分）。
 3. 然后才是 **37 语料 → formatter → 全源 → ADR-0015 `A == B == C` + `.sapp`** 的 canary 阶梯。
 4. （**可选**）仿 `tools/probe-m22-ir-plan-frontier.ps1` 加一个 `--emit-run-instr-hex` 的**前沿探针**：本片的两枚固件钉已经覆盖了"成功路径"与"IR 里没有 `run`"这一条拒绝路径，但**探针**能把"子集内可发射 / 子集外 typed 拒绝"的边界整张表钉下来。本片**没有**做这一项（owner 拍板的范围是"发射指令段 + 对拍 182 hex"），登记为后续可做。

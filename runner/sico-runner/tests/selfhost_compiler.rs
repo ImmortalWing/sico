@@ -3491,6 +3491,20 @@ fn oracle_run_instruction_segment_hex(source: &str) -> String {
     hex[..cut].to_owned()
 }
 
+/// The Script result-area return and the dispatcher epilogue: everything from
+/// the terminator to the end of the `run` body.
+///
+/// STEP-0503: the same unambiguous marker as the instruction segment; the
+/// result segment is what follows it.
+fn oracle_run_result_segment_hex(source: &str) -> String {
+    const RESULT_AREA_MARKER: &str = "41201001";
+    let hex = oracle_run_body_code_hex(source);
+    let cut = hex
+        .find(RESULT_AREA_MARKER)
+        .expect("the Script result-area marker is present");
+    hex[cut..].to_owned()
+}
+
 #[test]
 fn oracle_run_body_emission_table_is_pinned() {
     // STEP-0501: the run-body emission truth, measured from the Rust
@@ -3612,6 +3626,79 @@ fn sico_compiler_refuses_the_run_instruction_segment_outside_the_subset() {
     };
     assert_eq!(code, "invalid-input");
     assert_eq!(message, "ERR:E-SH-CG-IR-PLAN");
+}
+
+#[test]
+fn sico_compiler_emits_the_run_body_byte_exactly() {
+    // STEP-0503: the guest derives the whole `run` body -- the instruction
+    // segment, the Script result-area return and the dispatcher epilogue --
+    // from the ingested IR, and the bytes must be identical to the body the
+    // Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot
+    // assignment and emission match the backend's own emission rather than a
+    // parallel model of it.
+    let expected = oracle_run_body_code_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-run-body-hex".to_owned()],
+    ) else {
+        panic!("the run body must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The reference shape is pinned: the body is 180 bytes, it opens with the
+    // dispatcher shell and it ends with the dispatcher's epilogue.
+    assert_eq!(expected.len(), 360, "180 bytes of run body");
+    assert!(
+        expected.starts_with("410021170240034020174100460440"),
+        "dispatcher shell then the block dispatch head"
+    );
+    assert!(
+        expected.ends_with("0b000b0b000b"),
+        "the dispatcher epilogue closes the run body"
+    );
+    // The result-area return and the epilogue are the STEP-0503 slice on their
+    // own: the 89 bytes behind the unambiguous `i32.const 32` + `call 1`
+    // marker.
+    let result_segment = oracle_run_result_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    assert_eq!(
+        result_segment.len(),
+        178,
+        "89 bytes of result-area return and epilogue"
+    );
+    assert_eq!(
+        result_segment,
+        "4120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b"
+    );
+}
+
+#[test]
+fn sico_compiler_refuses_the_run_body_outside_the_subset() {
+    // STEP-0503: the result-area return is fail-closed (ADR-0016 decision 6).
+    // A module without a Script-profile `run` and a `run` whose result is not
+    // an `ok` variant of a `ScriptOutput` construct must each surface as their
+    // own typed identity -- never as an approximation of the result area.
+    for (source, message) in [
+        // No `run` function in the module.
+        (IDENTITY_SOURCE, "ERR:E-SH-CG-IR-PLAN"),
+        // A `run` that returns a scalar is not the Script result shape, so
+        // there is no result area to lower.
+        (
+            "function run() returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-EMIT",
+        ),
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-run-body-hex".to_owned()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "a shape outside the result-area subset must stay a typed refusal: {source}"
+        );
+    }
 }
 
 #[test]

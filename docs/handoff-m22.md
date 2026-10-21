@@ -7,7 +7,7 @@
 > - 权威裁决：[STATUS](./STATUS.md)、[M22 计划](./plans/M22-compiler-self-host.md)、[STEP-0292](./steps/STEP-0292-m22-w1-independent-ci.md)、[STEP-0293](./steps/STEP-0293-m22-w2-u64-to-text-while-rhs.md) 与 [STEP-0294](./steps/STEP-0294-m22-w2-map-get-match-subject.md)。本手稿只提供恢复路径。
 
 ## 0. 当前状态
-**STEP-0502（2026-10-21，implementation complete locally；本机全绿，未提交未推送）**：**run 体发射的"指令段刀" = guest 发射的指令段与 Rust backend 实际发射逐字节相同**（[STEP-0502](./steps/STEP-0502-m22-w2-s5-run-instruction-segment.md)）。**本片不推进门 3**。
+**STEP-0502（2026-10-21，complete，独立 CI GO）**：**run 体发射的"指令段刀" = guest 发射的指令段与 Rust backend 实际发射逐字节相同**（[STEP-0502](./steps/STEP-0502-m22-w2-s5-run-instruction-segment.md)）。**本片不推进门 3**。
 - **实测**：guest 推出的指令段 = **182 hex（91 B）**，与 backend **实际发射**的指令段**逐字节相同**（对照读 oracle 的**生产输出**，不是复刻）。
 - **guest 侧**：`selfhost/codegen.sico` 新增 **28 个函数**（算术 / 十进制 / 编码 / 布局 / 槽位 / 记录 / 发射七组）；`selfhost/compiler.sico` 新增 **`--emit-run-instr-hex`** 驱动模式。
 - **两个新编码助手**：`cgs_sleb_hex`（**有符号** LEB128 ⇒ `64` 编码为 `c000` 而非 `40`）与十进制解析（**至多 10 位**，保证不溢出且落在 i64 正半区）。
@@ -16,7 +16,19 @@
 - **槽宽交叉校验（fail-closed）**：guest 用"声明类型"计数而 oracle 用"推断布局" ⇒ 本片在 `project`/`construct` 上**显式校验两者相等**，不等即 typed 拒绝，**不静默取一侧**。
 - **踩到并修正 4 条 guest 前端真约束 + 2 条自造缺陷**（详见 §5 第 10/11/14 条与哨兵纪律条）：`record` 是保留关键字不得作形参名；**同函数内 `let` 无块作用域**（两个循环体各自 `let` 同名也会撞）；`U64.equal` 返回 **Bool** 不可再包一层；"**找不到**"与"**总数**"不能共用 0 哨兵；**布尔标志必须用中性名字 + 明确默认值**（写反的那次被字节对拍当场抓出）。
 - 回归：全源 census 字节等同（**自举形状前沿未破**）+ 固件 **9 + 99 + 1 + 2 = 111/111** + 前端前沿探针 **18/18** + 计划层前沿探针 **8/8** + **一键 CI 12/12** + 行尾审计（3 文件纯 LF、零 CRLF、零 BOM）。
-- **诚实收窄**：**本片只发射指令段**——`run` 体的 **Script 结果区返回 + dispatcher 尾声（178 hex）尚未发射** ⇒ 整段 run 体还没有逐字节等同（STEP-0503/0504）；`variant` 的 `error` 臂右对齐**只有源码依据**（参考形态不触发）。**门 3 仍 NO-GO**。
+- **诚实收窄**：**本片只发射指令段**——`run` 体的 **Script 结果区返回 + dispatcher 尾声（178 hex）**在本片**尚未**发射 ⇒ 整段 run 体还没有逐字节等同；`variant` 的 `error` 臂右对齐**只有源码依据**（参考形态不触发）。**后续已闭合**：该尾段已由 [STEP-0503](./steps/STEP-0503-m22-w2-s5-run-body-result-return.md) 发射（整段 `run` 体 **360 hex** 与 backend 实际发射**逐字节相同**）。**门 3 仍 NO-GO**。
+- **独立 CI 裁决**：已**提交并推送**（owner 授权）= 提交 `ee71719` → `github/codex/m22-w1-ci`（fast-forward `a730ac6..ee71719`）；独立 CI run **39556951856**（run #24，`event: push`，head_sha `ee71719`）= `status: completed` / **`conclusion: success`**，job `windows-gnu` 06:41:12Z → 07:09:29Z、job 内 6 步全 success、**内层 12/12 步全 PASS** ⇒ 本片闭合。**首轮一键 CI 那处环境敏感红点**（`prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言 22.16 ms vs 20 ms）经该裁决确认在**独立 runner 上通过** ⇒ **预算常量与断言均未改动**、不需重新基线化。
+**STEP-0503（2026-10-21，implementation complete locally；本机全绿，未提交未推送）**：**run 体发射的"结果区返回刀" = guest 推出整段 `run` 体并与 Rust backend 实际发射逐字节相同**（[STEP-0503](./steps/STEP-0503-m22-w2-s5-run-body-result-return.md)）。**本片不推进门 3**。
+- **实测**：guest 推出的 **Script 结果区返回 + dispatcher 尾声 = 178 hex（89 B）**，与 backend **实际发射**的同一段**逐字节相同**；**顺带把整段 run 体打通**——新增的 `--emit-run-body-hex` 输出 **360 hex（180 B）**，与 oracle 的整段 `run` 体**逐字节相同**（对照读 oracle 的**生产输出**，不是复刻；oracle 生产代码**零改动**）。
+- **guest 侧**：`selfhost/codegen.sico` 新增 **24 个函数**（冻结事实 8 + IR 导航 9 + 交叉校验 1 + 发射 6）；`selfhost/compiler.sico` 新增 **`--emit-run-body-hex`** 驱动模式。
+- **两类事实必须分清**：**组件级冻结事实由 guest 携带**（结果区 32 B、分配器索引 1、`ScriptOutput` 字段名/顺序/flat 种类/结果区偏移 8-12-16-20-24/flat 槽偏移 0-2-4 —— 与 STEP-0487 携带冻结核心模块段同性质，**不由 IR 派生**）；**IR 派生事实由 guest 重算**（判别值槽 = 变体值首槽；载荷基槽 = 判别值槽+1；`return_area`/`copy_destination` = dispatcher 槽 +1/+2）。
+- **交叉校验（fail-closed）**：字段名/顺序/flat 种类/槽数任一与冻结事实不符即 typed 拒绝 `ERR:E-SH-CG-IR-EMIT`，**不静默取一侧**。
+- **支持子集**：`run` 单块 + `return` 一个值 + 该值由 `variant ok` 产生 + 载荷由 `construct` 产生 + 字段恰好 3 个且与冻结 `ScriptOutput` 记录逐位一致。**`error` 臂与 oracle 的双载荷（`has_ok && has_error`）形态一律拒绝**（参考形态不触发 ⇒ `ScriptError` 结果区偏移**无实测真值**，不拿源码推导冒充支持）。
+- **两个新固件钉**：`sico_compiler_emits_the_run_body_byte_exactly`（整段 360 hex 逐字节等同 + 尾段 178 hex 固化断言）+ `sico_compiler_refuses_the_run_body_outside_the_subset`（`ERR:E-SH-CG-IR-PLAN` / `ERR:E-SH-CG-IR-EMIT`）。
+- **踩到并修正 1 条自造缺陷**（详见 §5 第 15 条）：把 `call <index>` 写成了「立即数的 LEB」而不是「操作码 + 立即数」⇒ **`cg_leb_hex` 是裸立即数编码器、不是指令编码器**。
+- **顺带纠正 STEP-0501 §4.3 两处表述偏差**：dispatcher 尾声实为 **6 字节**（原表列了 7 项）；`i32.store8` 的 memarg 是 **align+offset 两个 LEB** ⇒ `3a 00 00` 是 **3 字节**。**真值 hex 本身未变**。
+- 回归：全源 census 字节等同（**自举形状前沿未破**）+ 固件 **9 + 101 + 1 + 2 = 113/113** + 0245 exit 0 + 0262 `STEP_0262_OK` + 前端前沿探针 **18/18** + 计划层前沿探针 **8/8** + **一键 CI 12/12** + 行尾审计（4 文件纯 LF、零 CRLF、零 BOM）。
+- **诚实收窄**：**本片只覆盖参考形态**（oracle 只接受 Script v0 入口签名，其它形态根本无法取真值）；**整组件逐字节等同是 STEP-0504 的事**（用派生 run 体替换 STEP-0487 的冻结 run 体 hex）。**门 3 仍 NO-GO**。
 **STEP-0501（2026-10-21，complete，独立 CI GO）**：**run 体发射的"真值测量刀" = 逐字节实测 + 规则表 + 下一片可对拍切点**（[STEP-0501](./steps/STEP-0501-m22-w2-s5-run-body-truth.md)）。**本片不实现发射，不推进门 3**。
 - **只测量与登记**：guest 侧**仍然不会**发射 run 体字节；STEP-0487 的 `--emit-component-hex` 仍是冻结的最小 echo 骨架（run 体是硬编码 hex）。
 - **取值方式 = 读 oracle 的生产输出**（`compile_script_program` 真正产出的组件 → wasmparser → 导出 `run` 的 core module 函数体 → 跳过局部声明后的 code 字节），**不复刻发射器**；oracle 生产代码**零改动**（读取器写在测试文件内，与 STEP-0496/0499 同规）。
@@ -645,6 +657,7 @@ STEP-0261/0262 会重复执行较慢的 compiler/parser 差分；只在源码或
 | 12 | **扁平判定有固定次序：模块自己声明的 record 优先，其次内建名；且"不可扁平的自声明 record"等于"未声明"** | 次序写反时，一个字段不可扁平的自声明 record 会被误判成 1 × i32（落进 `ScriptErrorCode` 分支）。根因在 oracle 侧：`register_user_records` 对不可扁平的 record **不注册**（`flattenable = false` ⇒ 不入 `user_records`），因此它继续落到内建名分支。症状不是报错，而是"某个 fixture 的局部声明字节差一组"，且只在该 fixture 上出现 | 先查模块声明的 record，查不到再判内建名；不可扁平 ⇒ 返回空 ⇒ 一律 typed 拒绝（`ERR:E-SH-CG-IR-FLAT`），**不近似** |
 | 13 | **脚本 profile 有两套布局，不能混用** | 症状是"结果区字段整体偏移 4 字节"：按 8 字节 flat 槽算出来的字段偏移，套到**结果区**上就全错位。具体两套：**局部变量 / 槽位**用 `flat_ir_types` 的 **8 字节槽**（i32 也占 8 字节，`byte_offset = slot_start × 8`）；**结果区**用**冻结的 WIT 布局**（i32 占 4 字节，`i32.store` 的 ptr/len 落在 offset+0 / offset+4），`result_payload_offset = 8` | 局部用 flat 槽模型；结果区用冻结的 WIT 字段偏移表（`ScriptOutput` = stdout@0 / stderr@8 / exit_code@16；`ScriptError` = code@0 / message@4）。**两者不可互相推导**（`script-component-emission-v0.md` §3 的 flat 规则 vs §6 的结果区布局） |
 | 14 | **`U64.equal(a, b)` 的返回值是 `Bool`，不是 `U64`** | 编译报 `E2001 expected U64, found Bool`——把它当 U64 再包一层（`U64.equal(U64.equal(x, y), false)`）即中招。**取否定没有内建写法** | 要判否定就**写一个取反的助手函数**（STEP-0502 的 `cgs_decimal_bad`）；布尔量直接作 `if` 条件（`if csh_sign:`）；若要用 U64 承载布尔，就**只在一处**做 Bool→U64 转换，之后一律用 `U64.equal(flag, 1)` 读 |
+| 15 | **`cg_leb_hex` 是裸立即数编码器，不是指令编码器** | STEP-0503 实测：把 `call <index>` 写成 `cg_leb_hex(index)` ⇒ 输出是 `4120` 后面直接跟 `01`，**少了 `call` 的操作码 `10`** ⇒ 整段尾段**每一处都少 1 字节**。症状具有欺骗性：guest 侧**不报错**、字段顺序与槽位全对，只在逐字节对拍时表现为"每处少 1 字节" | 凡「操作码 + 立即数」形式的指令都要有**同形的助手函数**（`cgs_local_get_hex` = `"20" + cg_leb_hex(slot)`、`cgs_local_set_hex` = `"21" + cg_leb_hex(slot)`、`cgs_i32_const_hex` = `"41" + cgs_sleb_hex(v)`）。`call` 原先**没有**这样的助手 ⇒ 本片补 `cgs_frozen_alloc_call_hex()` = `"10" + cg_leb_hex(index)`。纪律：**`cg_leb_hex` 只能出现在"已经写了操作码"的位置**；`local.get`/`local.set`/`i32.const` 已有助手，`call` 之前漏了 |
 
 > 另一条**判定顺序**纪律（不属于语法，但在同一片里踩中并当场抓出）：`record_scalar_kind` 对**未知词返回的是 ERR 串**（`ERR:E-SH-IR-RECORD-TYPE`）而**不是空串**——所以"先看返回值长度、为 0 才当命名类型"的写法会把**命名类型判成错误**。正确顺序：先看是否以 `ERR:` 开头，是则转命名类型判定，否则才是标量。
 

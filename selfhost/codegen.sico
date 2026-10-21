@@ -2164,3 +2164,461 @@ function cgs_run_instr_hex(bytes: Bytes) returns Text:
   end while
   return crih_out
 end function
+
+// ---------------------------------------------------------------------------
+// STEP-0503: the Script result-area return and the dispatcher epilogue.
+//
+// The facts in this section are *component-level*, not IR-derived: they come
+// from the frozen Script WIT records and the frozen component skeleton, so
+// the guest carries them the same way STEP-0487 carries the frozen core
+// module segments. Everything else -- which slot holds the discriminant,
+// which slots hold the payload fields -- is derived from the ingested IR.
+// ---------------------------------------------------------------------------
+
+// The name of the frozen `ScriptOutput` record field at `index`, in the
+// frozen WIT record order; "" when the index is outside the record.
+function cgs_abi_field_name(index: U64) returns Text:
+  if U64.equal(index, U64.literal(0)):
+    return "stdout"
+  end if
+  if U64.equal(index, U64.literal(1)):
+    return "stderr"
+  end if
+  if U64.equal(index, U64.literal(2)):
+    return "exit_code"
+  end if
+  return ""
+end function
+
+// The flat kind of the frozen `ScriptOutput` record field at `index`:
+// "list" for the two byte lists and "i64" for the exit code; "" when the
+// index is outside the record.
+function cgs_abi_field_kind(index: U64) returns Text:
+  if U64.less_than(U64.literal(3), index):
+    return ""
+  end if
+  if U64.equal(index, U64.literal(2)):
+    return "i64"
+  end if
+  return "list"
+end function
+
+// The result-area byte offset of the field at `index`: the pointer of a
+// list, the value of a scalar; 0 when the index is outside the record.
+function cgs_abi_field_area(index: U64) returns U64:
+  if U64.equal(index, U64.literal(0)):
+    return U64.literal(8)
+  end if
+  if U64.equal(index, U64.literal(1)):
+    return U64.literal(16)
+  end if
+  if U64.equal(index, U64.literal(2)):
+    return U64.literal(24)
+  end if
+  return U64.literal(0)
+end function
+
+// The result-area byte offset of the field at `index`'s length component; 0
+// when the field is not a list.
+function cgs_abi_field_area_len(index: U64) returns U64:
+  if U64.equal(index, U64.literal(0)):
+    return U64.literal(12)
+  end if
+  if U64.equal(index, U64.literal(1)):
+    return U64.literal(20)
+  end if
+  return U64.literal(0)
+end function
+
+// The offset of the field at `index` inside the flat `ScriptOutput` record
+// layout; 0 when the index is outside the record.
+function cgs_abi_field_slot_offset(index: U64) returns U64:
+  if U64.equal(index, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  if U64.equal(index, U64.literal(1)):
+    return U64.literal(2)
+  end if
+  if U64.equal(index, U64.literal(2)):
+    return U64.literal(4)
+  end if
+  return U64.literal(0)
+end function
+
+// The frozen byte size of the Script result area.
+function cgs_frozen_result_area_size() returns U64:
+  return U64.literal(32)
+end function
+
+// The frozen core-module function index of the bump allocator in the frozen
+// Script component skeleton (0 = run, 1 = alloc, 2 = realloc, 3 = post).
+function cgs_frozen_alloc_index() returns U64:
+  return U64.literal(1)
+end function
+
+// The bytes of the call to the frozen bump allocator.
+function cgs_frozen_alloc_call_hex() returns Text:
+  return sico.text.concat("10", cg_leb_hex(cgs_frozen_alloc_index()))
+end function
+
+// The value id text the Script-profile `run` block returns; "" when the
+// block's terminator is not a `return` of a value.
+function cgs_run_return_value(bytes: Bytes, run: U64) returns Text:
+  let crrv_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(crrv_blocks, U64.literal(0)):
+    return ""
+  end if
+  let crrv_block = cgj_array_item(bytes, crrv_blocks, U64.literal(0))
+  if U64.equal(crrv_block, U64.literal(0)):
+    return ""
+  end if
+  let crrv_terminator = cgj_member(bytes, crrv_block, "terminator")
+  if U64.equal(crrv_terminator, U64.literal(0)):
+    return ""
+  end if
+  let crrv_kind = cgj_member(bytes, crrv_terminator, "kind")
+  if U64.equal(crrv_kind, U64.literal(0)):
+    return ""
+  end if
+  if cg_is_word(cgj_ident_text(bytes, crrv_kind), "return"):
+    let crrv_data = cgj_member(bytes, crrv_terminator, "data")
+    if U64.equal(crrv_data, U64.literal(0)):
+      return ""
+    end if
+    let crrv_value = cgj_value_text(bytes, crrv_data)
+    if cg_is_word(crrv_value, "null"):
+      return ""
+    end if
+    return crrv_value
+  end if
+  return ""
+end function
+
+// The instruction of `run` that produced the value with the id text `id`; 0
+// when no instruction produced it.
+function cgs_instruction_for_value(bytes: Bytes, run: U64, id: Text) returns U64:
+  let cifv_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(cifv_blocks, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let cifv_bindex = U64.literal(0)
+  let cifv_bmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), cifv_bmore):
+    let cifv_block = cgj_array_item(bytes, cifv_blocks, cifv_bindex)
+    if U64.equal(cifv_block, U64.literal(0)):
+      set cifv_bmore = U64.literal(0)
+    else:
+      let cifv_instructions = cgj_member(bytes, cifv_block, "instructions")
+      let cifv_iindex = U64.literal(0)
+      let cifv_imore = U64.literal(1)
+      while U64.less_than(U64.literal(0), cifv_imore):
+        let cifv_instruction = cgj_array_item(bytes, cifv_instructions, cifv_iindex)
+        if U64.equal(cifv_instruction, U64.literal(0)):
+          set cifv_imore = U64.literal(0)
+        else:
+          let cifv_rid = cgj_value_text(bytes, cgj_member(bytes, cifv_instruction, "result"))
+          if cg_is_word(cifv_rid, id):
+            return cifv_instruction
+          end if
+        end if
+        set cifv_iindex = cg_next(cifv_iindex)
+      end while
+    end if
+    set cifv_bindex = cg_next(cifv_bindex)
+  end while
+  return U64.literal(0)
+end function
+
+// The name of the instruction's operation; "" when the instruction carries
+// no operation.
+function cgs_op_name(bytes: Bytes, instr: U64) returns Text:
+  let con_operation = cgj_member(bytes, instr, "operation")
+  if U64.equal(con_operation, U64.literal(0)):
+    return ""
+  end if
+  let con_op = cgj_member(bytes, con_operation, "op")
+  if U64.equal(con_op, U64.literal(0)):
+    return ""
+  end if
+  return cgj_ident_text(bytes, con_op)
+end function
+
+// The data object of the instruction's operation; 0 when the instruction
+// carries no operation.
+function cgs_op_data(bytes: Bytes, instr: U64) returns U64:
+  let cod_operation = cgj_member(bytes, instr, "operation")
+  if U64.equal(cod_operation, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  return cgj_member(bytes, cod_operation, "data")
+end function
+
+// The arm name of a `variant` instruction; "" when the instruction is not a
+// variant.
+function cgs_variant_arm(bytes: Bytes, instr: U64) returns Text:
+  let cva_data = cgs_op_data(bytes, instr)
+  if U64.equal(cva_data, U64.literal(0)):
+    return ""
+  end if
+  let cva_name = cgj_member(bytes, cva_data, "name")
+  if U64.equal(cva_name, U64.literal(0)):
+    return ""
+  end if
+  return cgj_ident_text(bytes, cva_name)
+end function
+
+// The single payload value id of a `variant` instruction; "" when the
+// variant does not carry exactly one payload value.
+function cgs_variant_payload(bytes: Bytes, instr: U64) returns Text:
+  let cvp_data = cgs_op_data(bytes, instr)
+  if U64.equal(cvp_data, U64.literal(0)):
+    return ""
+  end if
+  let cvp_payload = cgj_member(bytes, cvp_data, "payload")
+  if U64.equal(cvp_payload, U64.literal(0)):
+    return ""
+  end if
+  if U64.less_than(U64.literal(0), cgj_array_item(bytes, cvp_payload, U64.literal(1))):
+    return ""
+  end if
+  let cvp_first = cgj_array_item(bytes, cvp_payload, U64.literal(0))
+  if U64.equal(cvp_first, U64.literal(0)):
+    return ""
+  end if
+  return cgj_value_text(bytes, cvp_first)
+end function
+
+// The name of the construct field at `index`; "" when the field is absent.
+function cgs_construct_field_name(bytes: Bytes, instr: U64, index: U64) returns Text:
+  let ccfn_data = cgs_op_data(bytes, instr)
+  if U64.equal(ccfn_data, U64.literal(0)):
+    return ""
+  end if
+  let ccfn_fields = cgj_member(bytes, ccfn_data, "fields")
+  if U64.equal(ccfn_fields, U64.literal(0)):
+    return ""
+  end if
+  let ccfn_item = cgj_array_item(bytes, ccfn_fields, index)
+  if U64.equal(ccfn_item, U64.literal(0)):
+    return ""
+  end if
+  let ccfn_name = cgj_member(bytes, ccfn_item, "name")
+  if U64.equal(ccfn_name, U64.literal(0)):
+    return ""
+  end if
+  return cgj_ident_text(bytes, ccfn_name)
+end function
+
+// The value id text of the construct field at `index`; "" when the field is
+// absent.
+function cgs_construct_field_value(bytes: Bytes, instr: U64, index: U64) returns Text:
+  let ccfv_data = cgs_op_data(bytes, instr)
+  if U64.equal(ccfv_data, U64.literal(0)):
+    return ""
+  end if
+  let ccfv_fields = cgj_member(bytes, ccfv_data, "fields")
+  if U64.equal(ccfv_fields, U64.literal(0)):
+    return ""
+  end if
+  let ccfv_item = cgj_array_item(bytes, ccfv_fields, index)
+  if U64.equal(ccfv_item, U64.literal(0)):
+    return ""
+  end if
+  let ccfv_value = cgj_member(bytes, ccfv_item, "value")
+  if U64.equal(ccfv_value, U64.literal(0)):
+    return ""
+  end if
+  return cgj_value_text(bytes, ccfv_value)
+end function
+
+// Whether the construct carries a field at `index`.
+function cgs_construct_has_field(bytes: Bytes, instr: U64, index: U64) returns Bool:
+  let cchf_data = cgs_op_data(bytes, instr)
+  if U64.equal(cchf_data, U64.literal(0)):
+    return false
+  end if
+  let cchf_fields = cgj_member(bytes, cchf_data, "fields")
+  if U64.equal(cchf_fields, U64.literal(0)):
+    return false
+  end if
+  if U64.equal(cgj_array_item(bytes, cchf_fields, index), U64.literal(0)):
+    return false
+  end if
+  return true
+end function
+
+// Whether the construct field at `index` carries the flat kind the frozen
+// `ScriptOutput` record declares for that field; false when it does not.
+function cgs_abi_field_matches(bytes: Bytes, run: U64, construct: U64, index: U64) returns Bool:
+  let cafm_value = cgs_construct_field_value(bytes, construct, index)
+  let cafm_ty = cgs_value_ty(bytes, run, cafm_value)
+  if U64.equal(cafm_ty, U64.literal(0)):
+    return false
+  end if
+  let cafm_slots = cgs_type_slots(bytes, cafm_ty)
+  let cafm_flat = cgs_flat_hex(bytes, cafm_ty)
+  if cg_is_word(cgs_abi_field_kind(index), "list"):
+    if U64.equal(cafm_slots, U64.literal(2)):
+      if cg_is_word(cgs_flat_slot_kind(cafm_flat, U64.literal(0)), "i32"):
+        return cg_is_word(cgs_flat_slot_kind(cafm_flat, U64.literal(1)), "i32")
+      end if
+    end if
+    return false
+  end if
+  if cg_is_word(cgs_abi_field_kind(index), "i64"):
+    if U64.equal(cafm_slots, U64.literal(1)):
+      return cg_is_word(cgs_flat_slot_kind(cafm_flat, U64.literal(0)), "i64")
+    end if
+    return false
+  end if
+  return false
+end function
+
+// The bytes that copy the list field at (`ptr_slot`, `len_slot`) into the
+// result area: the bounded copy into the arena, then the pointer and the
+// length stores.
+function cgs_result_list_hex(return_area: U64, copy_dest: U64, ptr_slot: U64, len_slot: U64, area: U64, area_len: U64) returns Text:
+  let crlh_out = cgs_local_get_hex(len_slot)
+  set crlh_out = sico.text.concat(crlh_out, sico.text.concat(cgs_frozen_alloc_call_hex(), cgs_local_set_hex(copy_dest)))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(copy_dest))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(ptr_slot))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(len_slot))
+  set crlh_out = sico.text.concat(crlh_out, "fc0a0000")
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(return_area))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(copy_dest))
+  set crlh_out = sico.text.concat(crlh_out, sico.text.concat("3602", cg_leb_hex(area)))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(return_area))
+  set crlh_out = sico.text.concat(crlh_out, cgs_local_get_hex(len_slot))
+  set crlh_out = sico.text.concat(crlh_out, sico.text.concat("3602", cg_leb_hex(area_len)))
+  return crlh_out
+end function
+
+// The bytes that store the scalar field at `slot` into the result area.
+function cgs_result_scalar_hex(return_area: U64, slot: U64, area: U64) returns Text:
+  let crsh_out = cgs_local_get_hex(return_area)
+  set crsh_out = sico.text.concat(crsh_out, cgs_local_get_hex(slot))
+  set crsh_out = sico.text.concat(crsh_out, sico.text.concat("3703", cg_leb_hex(area)))
+  return crsh_out
+end function
+
+// The bytes of the frozen `ScriptOutput` field at `index` copied into the
+// result area; an `ERR:` identity when the construct's field at `index` is
+// not the frozen field.
+function cgs_result_field_hex(bytes: Bytes, run: U64, construct: U64, index: U64, base: U64, return_area: U64, copy_dest: U64) returns Text:
+  let crfh_name = cgs_abi_field_name(index)
+  if cg_is_word(cgs_construct_field_name(bytes, construct, index), crfh_name):
+    if cgs_abi_field_matches(bytes, run, construct, index):
+      let crfh_slot = cgs_add(base, cgs_abi_field_slot_offset(index))
+      if cg_is_word(cgs_abi_field_kind(index), "list"):
+        return cgs_result_list_hex(return_area, copy_dest, crfh_slot, cgs_add(crfh_slot, U64.literal(1)), cgs_abi_field_area(index), cgs_abi_field_area_len(index))
+      end if
+      return cgs_result_scalar_hex(return_area, crfh_slot, cgs_abi_field_area(index))
+    end if
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of the frozen `ScriptOutput` fields copied into the result area.
+function cgs_result_fields_hex(bytes: Bytes, run: U64, construct: U64, base: U64, return_area: U64, copy_dest: U64) returns Text:
+  let crfs_out = ""
+  let crfs_index = U64.literal(0)
+  let crfs_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), crfs_more):
+    let crfs_name = cgs_abi_field_name(crfs_index)
+    if U64.equal(sico.text.length(crfs_name), U64.literal(0)):
+      set crfs_more = U64.literal(0)
+    else:
+      let crfs_field = cgs_result_field_hex(bytes, run, construct, crfs_index, base, return_area, copy_dest)
+      if sico.text.starts_with(crfs_field, "ERR:"):
+        return crfs_field
+      end if
+      set crfs_out = sico.text.concat(crfs_out, crfs_field)
+    end if
+    set crfs_index = cg_next(crfs_index)
+  end while
+  return crfs_out
+end function
+
+// The bytes of the Script result-area return of the `run` body: the result
+// area allocation, the discriminant store, the frozen `ScriptOutput` fields
+// and the returned area pointer.
+function cgs_result_return_hex(bytes: Bytes, run: U64) returns Text:
+  let crrh_out = ""
+  let crrh_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(crrh_blocks, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  if U64.less_than(U64.literal(0), cgj_array_item(bytes, crrh_blocks, U64.literal(1))):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let crrh_value = cgs_run_return_value(bytes, run)
+  if U64.equal(sico.text.length(crrh_value), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let crrh_variant = cgs_instruction_for_value(bytes, run, crrh_value)
+  if U64.equal(crrh_variant, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if cg_is_word(cgs_op_name(bytes, crrh_variant), "variant"):
+    if cg_is_word(cgs_variant_arm(bytes, crrh_variant), "ok"):
+      let crrh_payload = cgs_variant_payload(bytes, crrh_variant)
+      if U64.equal(sico.text.length(crrh_payload), U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let crrh_construct = cgs_instruction_for_value(bytes, run, crrh_payload)
+      if U64.equal(crrh_construct, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      if cg_is_word(cgs_op_name(bytes, crrh_construct), "construct"):
+        if cgs_construct_has_field(bytes, crrh_construct, U64.literal(3)):
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+        let crrh_slot1 = cgs_value_slot(bytes, run, crrh_value)
+        if U64.equal(crrh_slot1, U64.literal(0)):
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+        let crrh_dispatcher = cgs_dispatcher_slot(bytes, run)
+        if U64.equal(crrh_dispatcher, U64.literal(0)):
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+        let crrh_tag = cgs_sub(crrh_slot1, U64.literal(1))
+        let crrh_base = cgs_add(crrh_tag, U64.literal(1))
+        let crrh_area = cgs_add(crrh_dispatcher, U64.literal(1))
+        let crrh_copy = cgs_add(crrh_dispatcher, U64.literal(2))
+        set crrh_out = sico.text.concat(cgs_i32_const_hex(cgs_frozen_result_area_size()), sico.text.concat(cgs_frozen_alloc_call_hex(), cgs_local_set_hex(crrh_area)))
+        set crrh_out = sico.text.concat(crrh_out, cgs_local_get_hex(crrh_area))
+        set crrh_out = sico.text.concat(crrh_out, cgs_local_get_hex(crrh_tag))
+        set crrh_out = sico.text.concat(crrh_out, "3a0000")
+        set crrh_out = sico.text.concat(crrh_out, cgs_result_fields_hex(bytes, run, crrh_construct, crrh_base, crrh_area, crrh_copy))
+        set crrh_out = sico.text.concat(crrh_out, cgs_local_get_hex(crrh_area))
+        set crrh_out = sico.text.concat(crrh_out, "0f")
+      else:
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+    else:
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  return crrh_out
+end function
+
+// The whole `run` body: the instruction segment, the Script result-area
+// return and the dispatcher epilogue.
+function cgs_run_body_hex(bytes: Bytes) returns Text:
+  let crbh_instr = cgs_run_instr_hex(bytes)
+  if sico.text.starts_with(crbh_instr, "ERR:"):
+    return crbh_instr
+  end if
+  let crbh_run = cgs_run_function(bytes)
+  if U64.equal(crbh_run, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let crbh_return = cgs_result_return_hex(bytes, crbh_run)
+  if sico.text.starts_with(crbh_return, "ERR:"):
+    return crbh_return
+  end if
+  return sico.text.concat(crbh_instr, sico.text.concat(crbh_return, "0b000b0b000b"))
+end function
