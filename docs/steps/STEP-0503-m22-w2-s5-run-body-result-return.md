@@ -1,6 +1,6 @@
 # STEP-0503 m22-w2 S5 run 体结果区返回：guest 发射的整段 run 体与 Rust backend 实际发射逐字节相同
 
-> - status: implementation complete locally（未提交快照；待 owner 授权后由独立 CI 取裁决）
+> - status: **complete（独立 CI 已裁决：run 39572167889 = `success`，12/12 内层步全 PASS）**
 > - date: 2026-10-21
 > - owners: autonomous-agent
 > - depends: [STEP-0502](./STEP-0502-m22-w2-s5-run-instruction-segment.md)（指令段发射）、[STEP-0501](./STEP-0501-m22-w2-s5-run-body-truth.md)（run 体真值与规则表）、[STEP-0499](./STEP-0499-m22-w2-s5-slot-plan.md)（槽位/局部声明计划）、[STEP-0496](./STEP-0496-m22-w2-s5-ir-ingestion-plan.md)（IR 摄取）
@@ -138,6 +138,23 @@ STEP-0501 §4.3 的逐字节表把 dispatcher 尾声写成了 7 项（`end`/`unr
 
 **本机验证电池**（`target/tmp/step0503-battery.ps1`，一键 CI 放在最前、机器最空闲时跑）：`fmt (runner)` 00:02 / `one-key CI` 04:28 / `M22 regression (0245)` 00:58 / `M22 checker (0262)` 02:50 / `frontend frontier probe` 02:15 / `ir-plan frontier probe` 00:27 / `planning contract (0124)` 00:00 / `whitespace (git diff --check)` 00:00 ⇒ **8/8 PASS，BATTERY_GREEN**。
 
+## 7.1 独立 CI 裁决：**GO**（run 39572167889 = `success`）
+
+本片已**提交并推送**（owner 授权）：提交 `7cf2ece`，推送 `github/codex/m22-w1-ci`（fast-forward `ee71719..7cf2ece`），远端 head 确认 = `7cf2ece982d511f2a39362384eb831be3b394584`。同一次提交还带上了 **STEP-0502 的独立 CI 裁决回填**（owner 偏好一次提交推送、不拆两轮独立 CI）。
+
+| 证据 | 值 |
+|---|---|
+| 独立 CI run | **39572167889**（run #25，`event: push`，head_branch `codex/m22-w1-ci`） |
+| head_sha | `7cf2ece982d511f2a39362384eb831be3b394584`（= 本片提交） |
+| 结论 | `status: completed` / **`conclusion: success`** |
+| 时间 | 08:49:22Z → 09:11:57Z（job `windows-gnu`） |
+| job 内步骤 | `Set up job` / `checkout` / `Install GNU build tools` / **`Run repository CI on a fresh runner`** / `Post Run checkout` / `Complete job` —— **6/6 全部 success** |
+| 内层步数 | **12/12** 全 PASS（`fmt` / `fmt (runner)` / `clippy (workspace)` / `clippy (runner)` / `build (runner debug)` / `test (workspace)` / `test (runner)` / `module boundaries` / `planning contract (M14-M25)` / `application-profile matrix` / `cross-host matrix + UI corpus` / `whitespace (git diff --check)`） |
+
+**本片最终状态**：**complete（独立 CI GO）**。
+
+**门 3 仍为 NO-GO**：独立 CI 证明的是**本片**在独立 runner 上成立，不是门 3 成立。整组件逐字节等同、37 语料阶梯、ADR-0015 `A == B == C` + `.sapp` 链都还没做。
+
 ## 8. 诚实性
 
 - **本片只覆盖参考形态**。oracle 的 `compile_script_program` 只接受 Script v0 入口签名，其它形态根本不发射组件 ⇒ 真值只覆盖这一种形态。
@@ -153,7 +170,7 @@ STEP-0501 §4.3 的逐字节表把 dispatcher 尾声写成了 7 项（`end`/`unr
 
 ## 9. 下一片
 
-1. **STEP-0504 = 用派生 run 体替换 STEP-0487 的冻结 run 体 hex**：STEP-0487 已证明「冻结组件」与 oracle 逐字节相同；把 `--emit-component-hex` 里的硬编码 run 体换成**从 IR 派生的**那一份 ⇒ 参考形态的**整个组件**逐字节等同（参考形态无 data 段 ⇒ run 体是唯一的 IR 相关部分），门 3 的 `A == B` 在参考形态上即可达。
+1. **STEP-0504 = 用派生 run 体替换 STEP-0487 的冻结 run 体 hex**。切点已经找准：`selfhost/codegen.sico` 的 `cg_run_body_hex_minimal()` 现在返回的是**一条冻结常量** = `15`（局部声明组数 21 的 LEB128）+ **STEP-0499 的局部声明段** + **STEP-0503 的 360 hex run 体**；两段**现在都已经能 IR 派生**（局部声明段由 `cgs_local_hex` 给、run 体由 `cgs_run_body_hex` 给），所以本刀 = 把这条冻结常量换成 `cg_leb_hex(组数) + cgs_local_hex(ir) + cgs_run_body_hex(ir)`。替换后 `cg_core_module_hex()` 输出的**整个核心模块**都变成 IR 派生的 ⇒ 参考形态的**整个组件**逐字节等同（参考形态无 data 段 ⇒ run 体是唯一的 IR 相关部分），门 3 的 `A == B` 在参考形态上即可达。
 2. 然后才是 **37 语料 → formatter → 全源 → ADR-0015 `A == B == C` + `.sapp`** 的 canary 阶梯。
 3. （**可选**）给 `error` 臂取真值：写一个返回 `error(...)` 的 Script fixture，让 oracle 真正发射，再把 `ScriptError` 的结果区偏移从「冻结推导」升级为「实测」。
 4. （**可选**）仿 `tools/probe-m22-ir-plan-frontier.ps1` 加一个 `--emit-run-body-hex` 的**前沿探针**，把「子集内可发射 / 子集外 typed 拒绝」的边界整张表钉下来。

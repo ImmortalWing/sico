@@ -3046,6 +3046,79 @@ fn sico_codegen_guest_emits_component_bytes_byte_exactly() {
     assert_bytes_equal(&recovered.stdout, rust_ir(IDENTITY_SOURCE).as_bytes());
 }
 
+/// The Script-profile reference form with a different exit code: the same
+/// shape, one different constant. The Rust backend emits a different
+/// Component for it, so a guest that replayed a frozen run body would emit
+/// the wrong bytes.
+const ECHO_COMPONENT_FIXTURE_SOURCE_EXIT7: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_codegen_guest_emits_the_derived_component_bytes_byte_exactly() {
+    // STEP-0504: the guest's component emission is no longer a replay of a
+    // frozen run body. The run body is derived from the ingested IR -- the
+    // local declaration section (STEP-0499) followed by the code bytes
+    // (STEP-0502/STEP-0503) -- and the frozen constant is gone from the guest
+    // source.
+    //
+    // The proof that the emission follows the IR instead of replaying a
+    // constant: a second reference form that differs only in one constant
+    // must produce a *different* component, and both must equal the Rust
+    // backend's own production output byte for byte.
+    let mut guest_components = Vec::new();
+    for source in [
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        ECHO_COMPONENT_FIXTURE_SOURCE_EXIT7,
+    ] {
+        let source_file =
+            SourceFile::from_text(SourceId::new(0), "echo.sico", source.to_owned()).unwrap();
+        let module = lower_core(&source_file).unwrap();
+        let expected = codegen_oracle::compile_script_program(&module).unwrap();
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("component codegen must succeed through the guest")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "guest-emitted component bytes must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("guest-emitted component must pass the real Wasm validator");
+        guest_components.push(actual);
+    }
+    // The two reference forms differ in one constant, so their components
+    // must differ: a replayed frozen body would have produced identical bytes.
+    assert_ne!(
+        guest_components[0], guest_components[1],
+        "the component emission must follow the IR, not a frozen constant"
+    );
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_component_emission_outside_the_subset() {
+    // STEP-0504: the component emission is fail-closed (ADR-0016 decision 6).
+    // The frozen component sections describe a module with exactly one
+    // function -- the Script-profile `run` -- and no data section, so a
+    // module with an extra function (which the backend would emit as an extra
+    // core function) must be refused instead of silently dropping it.
+    let two_functions = format!(
+        "{ECHO_COMPONENT_FIXTURE_SOURCE}\nfunction helper() returns I64:\n  return I64.literal(0)\nend function\n"
+    );
+    for source in [IDENTITY_SOURCE, two_functions.as_str()] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-component-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "a shape outside the component subset must stay a typed refusal: {source}"
+        );
+    }
+}
+
 const ECHO_COMPONENT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n";
 
 #[test]

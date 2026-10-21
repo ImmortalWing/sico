@@ -137,18 +137,45 @@ function cg_post_body_hex() returns Text:
   return "004100240041ffffffff072401410024020b"
 end function
 
-// IR-dependent slot (STEP-0487): the run body for the frozen minimal echo
-// fixture. Later wave slices replace this with a real lowering of the run
-// function's IR (build_script_core's flattened-parameter copy, data
-// segments, const aggregates, helper calls).
-function cg_run_body_hex_minimal() returns Text:
-  return "15017f017f017f017f017e017f017f017f017f017e017f017f017f017f017f017e017f017f017f017f027f4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d21134100211441002115410021164120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b"
+// IR-dependent slot (STEP-0487; STEP-0504): the run body of the Script-profile
+// `run` function, *derived* from the ingested IR -- the local declaration
+// section (STEP-0499) followed by the code bytes (STEP-0502/STEP-0503). The
+// frozen constant this slot used to hold is gone: the bytes are computed, not
+// replayed. Returns "" when the IR is outside the supported subset, so the
+// caller fails closed instead of falling back to a frozen body.
+function cg_run_body_hex_from_ir(ir: Bytes) returns Text:
+  let cgrbhi_body = cgs_run_body_hex(ir)
+  if sico.text.starts_with(cgrbhi_body, "ERR:"):
+    return ""
+  end if
+  let cgrbhi_locals = cgs_local_hex(ir)
+  if sico.text.starts_with(cgrbhi_locals, "ERR:"):
+    return ""
+  end if
+  let cgrbhi_groups = U64.shr(sico.text.length(cgrbhi_locals), U64.literal(2))
+  return sico.text.concat(cg_leb_hex(cgrbhi_groups), sico.text.concat(cgrbhi_locals, cgrbhi_body))
 end function
 
 // Assemble the core module: wasm header + fixed sections + the code section
 // (entry sizes are LEB-derived from the body pieces).
-function cg_core_module_hex() returns Text:
-  let run_body = cg_run_body_hex_minimal()
+//
+// The core module carries a frozen function section (run, alloc, realloc,
+// post) and no data section, so it only describes a module with exactly one
+// function: the Script-profile `run`. A module with more functions would need
+// extra core functions the frozen section does not carry, so it must fail
+// closed rather than emit a component that silently drops them.
+function cg_core_module_hex(ir: Bytes) returns Text:
+  let cgmh_functions = cgj_member(ir, U64.literal(0), "functions")
+  if U64.equal(cgmh_functions, U64.literal(0)):
+    return ""
+  end if
+  if U64.less_than(U64.literal(0), cgj_array_item(ir, cgmh_functions, U64.literal(1))):
+    return ""
+  end if
+  let run_body = cg_run_body_hex_from_ir(ir)
+  if U64.equal(sico.text.length(run_body), U64.literal(0)):
+    return ""
+  end if
   let alloc_body = cg_alloc_body_hex()
   let realloc_body = cg_realloc_body_hex()
   let post_body = cg_post_body_hex()
@@ -174,8 +201,11 @@ end function
 // Component wrapper around the core module (fixed section ids per
 // wasm-encoder's ComponentSectionId: Type 7, CoreModule 1, CoreInstance 2,
 // Alias 6, CanonicalFunction 8, Import 10, Export 11).
-function cg_component_hex() returns Text:
-  let core = cg_core_module_hex()
+function cg_component_hex(ir: Bytes) returns Text:
+  let core = cg_core_module_hex(ir)
+  if U64.equal(sico.text.length(core), U64.literal(0)):
+    return ""
+  end if
   let component = "0061736d0d000100"
   set component = sico.text.concat(component, cg_section_hex(U64.literal(7), cg_types_script_hex()))
   set component = sico.text.concat(component, cg_section_hex(U64.literal(10), cg_import_types_hex()))
@@ -189,45 +219,14 @@ function cg_component_hex() returns Text:
   return component
 end function
 
-// The frozen minimal fixture this skeleton emits (byte gate).
-function cg_minimal_fixture_source() returns Text:
-  let mfs = "record ScriptInput:"
-  set mfs = sico.text.concat(mfs, "\n  field arguments: List[Text]")
-  set mfs = sico.text.concat(mfs, "\n  field stdin: Bytes")
-  set mfs = sico.text.concat(mfs, "\nend record")
-  set mfs = sico.text.concat(mfs, "\n")
-  set mfs = sico.text.concat(mfs, "\nrecord ScriptOutput:")
-  set mfs = sico.text.concat(mfs, "\n  field stdout: Bytes")
-  set mfs = sico.text.concat(mfs, "\n  field stderr: Bytes")
-  set mfs = sico.text.concat(mfs, "\n  field exit_code: I64")
-  set mfs = sico.text.concat(mfs, "\nend record")
-  set mfs = sico.text.concat(mfs, "\n")
-  set mfs = sico.text.concat(mfs, "\nenum ScriptErrorCode:")
-  set mfs = sico.text.concat(mfs, "\n  case InvalidInput")
-  set mfs = sico.text.concat(mfs, "\n  case ResourceLimit")
-  set mfs = sico.text.concat(mfs, "\n  case DomainError")
-  set mfs = sico.text.concat(mfs, "\n  case Cancelled")
-  set mfs = sico.text.concat(mfs, "\nend enum")
-  set mfs = sico.text.concat(mfs, "\n")
-  set mfs = sico.text.concat(mfs, "\nrecord ScriptError:")
-  set mfs = sico.text.concat(mfs, "\n  field code: ScriptErrorCode")
-  set mfs = sico.text.concat(mfs, "\n  field message: Text")
-  set mfs = sico.text.concat(mfs, "\nend record")
-  set mfs = sico.text.concat(mfs, "\n")
-  set mfs = sico.text.concat(mfs, "\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:")
-  set mfs = sico.text.concat(mfs, "\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))")
-  set mfs = sico.text.concat(mfs, "\nend function")
-  set mfs = sico.text.concat(mfs, "\n")
-  return mfs
-end function
 
-// Entry point: exact-source gate + structured emission. Returns "" when the
-// source is not the supported minimal shape (typed refusal by the driver).
-function component_hex_for_minimal(source: Bytes) returns Text:
-  if sico.bytes.equal(source, sico.text.encode(cg_minimal_fixture_source())):
-    return cg_component_hex()
-  end if
-  return ""
+// Entry point: the component emission is driven by the ingested IR. The
+// frozen component sections only describe a module with exactly one function
+// (the Script-profile `run`) and no data section, and the run body itself is
+// derived from the IR (STEP-0504), so any other shape fails closed here and
+// the driver reports the typed "unsupported codegen source shape" refusal.
+function component_hex_for_ir(ir: Bytes) returns Text:
+  return cg_component_hex(ir)
 end function
 
 // ---------------------------------------------------------------------------
