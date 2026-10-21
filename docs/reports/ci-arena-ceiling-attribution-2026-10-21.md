@@ -230,11 +230,31 @@ arena-exhaustion trap.
 
 Record: [STEP-0497](../steps/STEP-0497-m22-w2-ci-arena-ceiling-repair.md).
 
-### 8.4 What this section does *not* claim
+### 8.4 Independent CI verdict (2026-10-21)
 
-- It does not claim the CI runs are green: both runs 39454624507 and
-  39457030463 remain red. A post-fix run needs the change to be committed
-  and pushed, which requires the owner's authorization.
+The owner's authorization was granted, STEP-0496 and STEP-0497 were committed
+together as `7e5ad3c` (35 files, +4868/−99) and pushed to
+`github/codex/m22-w1-ci` (fast-forward `6808569..7e5ad3c`; the remote ref was
+read back and equals `7e5ad3c21197e40848beb403c53074e3458feaf8`). That
+triggered the independent runner:
+
+| Item | Value |
+|---|---|
+| run id | `39524849306` |
+| workflow | `M22 W1 independent CI` (`.github/workflows/m22-w1-ci.yml`) |
+| head_sha | `7e5ad3c21197e40848beb403c53074e3458feaf8` |
+| runner | `windows-2025` (GitHub Actions, independent of this workstation) |
+| started / completed | 2026-10-21T01:01:29Z → 2026-10-21T01:28:08Z |
+| **verdict** | **`status: completed` / `conclusion: success`** |
+| job | `windows-gnu`: every step success, including `Run repository CI on a fresh runner` |
+
+The red point is therefore green **on an independent runner**, not only on this
+workstation: the fix is not a local-only green. The two historical red runs
+(39454624507, 39457030463) stay red in the inventory — they are history, not
+retractions.
+
+### 8.5 What this section does *not* claim
+
 - It does not claim M22 gate 3 progress: run-body emission, the
   37-corpus / formatter / full-source canary ladder and the ADR-0015
   `A == B == C` + `.sapp` chain are untouched.
