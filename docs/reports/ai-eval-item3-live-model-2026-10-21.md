@@ -9,9 +9,15 @@
 > - scope of this report: the AI-corpus leg only. The selfhost leg is
 >   recorded in [`STEP-0490`](../../docs/steps/STEP-0490-m23-item3-bare-literal-preparation.md)
 >   and in the M23 plan §10.1.
-> - **This report does not decide D3.** The corpus is still under owner
->   review (M23 plan §8.3), and no grammar change may precede the decision
->   record.
+> - **This report does not decide D3.** The owner reviewed the corpus on
+>   2026-10-21 and the decision record is written in
+>   [`RFC-0046` §3 D3](../../docs/rfc/RFC-0046-language-v1-batch2-for-loops-error-propagation-list-elements-v0.md)
+>   ("D3 stands" — no grammar change); the frozen corpus is committed at
+>   [`ai-eval/runs/item3-2026-10-21/`](../../ai-eval/runs/item3-2026-10-21/)
+>   and the step record is
+>   [`STEP-0498`](../../docs/steps/STEP-0498-m23-item3-corpus-freeze-and-d3-record.md).
+>   This report is the measurement record those two decisions rest on; it
+>   proposes no grammar change of its own.
 
 ## 1. Model identity and run parameters
 
@@ -65,7 +71,7 @@ Raw run evidence (controlled experiment store, **not** committed — see
 100 candidate programs, 22,091 bytes, 1,190 lines, 560 expression lines,
 350 call sites.
 
-| task | files | distinct outputs | bytes | bare integers | literal-constructor calls |
+| task | files | distinct outputs | bytes (all files) | bare integers | literal-constructor calls |
 |---|---:|---:|---:|---:|---:|
 | `GEN-A0-CAP-001` | 10 | 2 | 2,583 | 0 | 0 |
 | `GEN-A0-COMP-001` | 10 | 1 | 1,150 | 0 | 0 |
@@ -190,8 +196,10 @@ only.
   density. The AI leg is **not commensurable** with the selfhost leg
   because the two corpora are written in different surface syntaxes, and
   the frozen protocol cannot produce current-Sico surface code.
-- **Does not**: decide D3. The corpus still needs owner review (M23 plan
-  §8.3) and the decision record has not been written. No grammar change is
+- **Does not**: decide D3 on its own. The measurement was the input to the
+  owner's D3 decision, which is recorded in RFC-0046 §3 ("D3 stands" — no
+  grammar change) after the owner reviewed the corpus on 2026-10-21. No
+  grammar change is
   proposed or implied here.
 - **Does not**: claim an `external-pilot` or production result. Evidence
   level is `measured` (provider-billed live model) on a controlled protocol.
