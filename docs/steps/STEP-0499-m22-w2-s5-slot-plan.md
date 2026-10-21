@@ -1,6 +1,6 @@
 # STEP-0499 m22-w2 S5 槽位计划：guest 局部声明计划与 Rust oracle 实际发射逐字节相同
 
-> - status: implementation complete locally（未提交快照；待 owner 授权后由独立 CI 取裁决）
+> - status: **complete（独立 CI 已裁决：run 39535461745 = `success`，12/12 内层步全 PASS）**
 > - date: 2026-10-21
 > - owners: autonomous-agent
 > - depends: [STEP-0496](./STEP-0496-m22-w2-s5-ir-ingestion-plan.md)（IR 摄取 + `run` 发射计划）、[STEP-0488](./STEP-0488-m22-w2-s5-frontend-record-variant-gap.md) §4 第 5 项（IR 扫描器 + 布局/槽位计划 + op 发射 + Script 返回发射）
@@ -98,7 +98,7 @@ run 体的每一条指令都写着**槽位索引**（`local.get <slot>` / `local
 | 全源 census（自举形状前沿） | 同上（`sico_guest_arena_accommodates_full_parser_selfhost_input`） | **ok** |
 | 前端前沿探针 | `tools/probe-m22-frontend-frontier.ps1` | **18/18** `FRONTIER_UNCHANGED` exit 0 |
 | IR 计划层前沿探针 | `tools/probe-m22-ir-plan-frontier.ps1` | **8/8** `PLAN_FRONTIER_UNCHANGED` exit 0 |
-| **完整验证电池**（5 步全绿） | 0245 M22 回归 / 0262 M22 checker / 前端前沿探针 / IR 计划层前沿探针 / `tools/run-ci.ps1` 一键 CI | **BATTERY_GREEN**（exit 0 / 0 / 0 / 0 / 0；一键 CI **11/11** 全 PASS，`test (workspace)` 1:40、`test (runner)` 3:24） |
+| **完整验证电池**（5 步全绿） | 0245 M22 回归 / 0262 M22 checker / 前端前沿探针 / IR 计划层前沿探针 / `tools/run-ci.ps1` 一键 CI | **BATTERY_GREEN**（exit 0 / 0 / 0 / 0 / 0；一键 CI **11/11** 全 PASS，`test (workspace)` 1:40、`test (runner)` 3:24）—— **步数口径**：本行的 11/11 是**补第 12 步之前**的那次本地运行；补步之后的一键 CI 与独立 CI 均为 **12/12**（见 §7.2） |
 | 行尾审计 | 11 个改动/新增文件逐字节扫描 | **纯 LF、零 CRLF、零 BOM** |
 
 ## 7.1 顺带暴露的一个 **CI 覆盖缺口**（实测；**owner 拍板后本片已修**）
@@ -124,6 +124,22 @@ Invoke-Step 'fmt (runner)' { & $cargo fmt --manifest-path .\runner\sico-runner\C
 
 **本片的修法为什么必须落在本片**：缺口是本片在**实现过程中**实测暴露的（同一棵树上两个工具给出互相矛盾的结果），而且它**直接让本片自己的一次验证红了**；把它留给后续片，等于明知 CI 仍会放过同类违规却继续推进。
 
+## 7.2 独立 CI 裁决：**GO**（run 39535461745 = `success`）
+
+本片已**提交并推送**（owner 授权）：提交 `ee2317f`，推送 `github/codex/m22-w1-ci`（fast-forward `0980034..ee2317f`），远端确认 head = `ee2317f8fe80d9ea9bf20b851ee0b3d7c6f346a4`。
+
+| 证据 | 值 |
+|---|---|
+| 独立 CI run | **39535461745**（run #22，`event: push`，head_branch `codex/m22-w1-ci`） |
+| head_sha | `ee2317f8fe80d9ea9bf20b851ee0b3d7c6f346a4`（= 本片提交） |
+| 结论 | `status: completed` / **`conclusion: success`** |
+| job | `windows-gnu`（runner `GitHub Actions 1000000022`），02:52:55Z → 03:19:49Z；job 内 6 个步骤全 success（含 `Run repository CI on a fresh runner`） |
+| 内层步数 | **12/12** 全 PASS —— `fmt` / **`fmt (runner)`** / `clippy (workspace)` / `clippy (runner)` / `build (runner debug)` / `test (workspace)` / `test (runner)` / `module boundaries` / `planning contract (M14-M25)` / `application-profile matrix` / `cross-host matrix + UI corpus` / `whitespace (git diff --check)` |
+
+**这条裁决同时回答了 §8 里那个已登记的环境敏感红点**：`prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言（20 ms 预算）在**独立 runner** 上**通过** —— 本片新增的那一次 2 GiB guest 实例，在干净页池、串行执行的独立环境下**没有**把该断言推过预算线。本机偶发红的归因（产物逐位相同 + 该断言本就登记为环境敏感 + 完整实测分布）由此得到独立佐证。**预算常量与该断言均未改动**，也不需要重新基线化。
+
+**本片最终状态**：**complete（独立 CI GO）**。
+
 ## 8. 诚实性
 
 - **本片只做槽位/局部声明计划**，**没有**发射任何 run 体字节；STEP-0487 的 `--emit-component-hex` 仍是**冻结的最小 echo 骨架**（run 体是硬编码 hex 常量），未接到计划上。
@@ -141,6 +157,7 @@ Invoke-Step 'fmt (runner)' { & $cargo fmt --manifest-path .\runner\sico-runner\C
 
   **诚实读数**：跳过与包含两组的**中位数存在约 2–3 ms 的稳定落差**（skip ≈ 16.5 ms，include ≈ 18–19.9 ms）——本片新增的固件钉**确实多了一次 2 GiB guest 实例**（`--emit-locals-hex` 模式必须实跑 guest 才能拿到输出），它把整机页池推到"2 GiB 清零变慢"的一侧；**红点还需要额外的主机负载**才会越过 20 ms 预算线（本机物理内存 15.61 GB、当时仅约 3 GB 空闲；2 GiB 线性内存预留 ≈ 2 GiB 清零 ≈ 17 ms，正落在预算线的 15% 余量内）。**本片没有改预算常量，也没有改该断言**（`tests/runner.rs` 零改动）。
   **裁决路径**：该断言的权威裁决是**独立 CI**（独立 runner、干净页池、串行执行）；历史两轮（`39524849306` / `39525367456`）在独立 runner 上均通过（`11/11`）。若独立 CI 因本片新增的那一次 guest 实例而红，则应按"预算余量已低于本机噪声"重新基线化该常量（需 owner 拍板），而不是删掉本片的字节对拍钉。
+  **裁决结果**：独立 CI run **39535461745**（本片提交 `ee2317f`）**`success`**，12/12 内层步全 PASS ⇒ 该断言在独立 runner 上通过，**未触发**重新基线化。详见 §7.2。
 - 计划文本（STEP-0496 的五类行格式）**未改动**；本片是**独立**的字节产物，不复用也不修改那套文本格式。
 - 本片**没有**触碰 37 语料阶梯、`.sapp` 链或 ADR-0015。门 3 仍为 NO-GO。
 

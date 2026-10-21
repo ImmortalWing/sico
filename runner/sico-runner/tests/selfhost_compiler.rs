@@ -3437,6 +3437,99 @@ fn oracle_run_locals_hex(source: &str) -> String {
         .collect()
 }
 
+/// The `run` function's code bytes -- after the local declarations -- exactly
+/// as the Rust backend emits them, in hexadecimal.
+///
+/// STEP-0501: the run-body emission truth. The oracle side reads the emitted
+/// Component (production output, not a re-implementation), so the measured
+/// table is the backend's own emission.
+fn oracle_run_body_code_hex(source: &str) -> String {
+    let module = rust_module(source);
+    let bytes = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the oracle emits the Script-profile Component");
+    let mut run_index = None;
+    let mut bodies: Vec<String> = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes).flatten() {
+        match payload {
+            wasmparser::Payload::ExportSection(reader) => {
+                for export in reader.into_iter().flatten() {
+                    if export.name == "run" && matches!(export.kind, wasmparser::ExternalKind::Func)
+                    {
+                        run_index = Some(export.index);
+                    }
+                }
+            }
+            wasmparser::Payload::CodeSectionEntry(body) => {
+                let mut reader = body
+                    .get_binary_reader_for_operators()
+                    .expect("the code body carries its operators");
+                let remaining = reader.range().end - reader.original_position();
+                let code = reader
+                    .read_bytes(remaining)
+                    .expect("the code body is bounded");
+                bodies.push(code.iter().map(|byte| format!("{byte:02x}")).collect());
+            }
+            _ => {}
+        }
+    }
+    let index = run_index.expect("the core module exports run");
+    bodies[index as usize].clone()
+}
+
+/// The instruction segment of the `run` body: everything before the Script
+/// result-area return.
+///
+/// STEP-0501: the terminator starts with `i32.const <result area size>`
+/// followed by `call <allocator>`. The marker occurs exactly once in the
+/// reference shape, so the cut is unambiguous and reproducible.
+fn oracle_run_instruction_segment_hex(source: &str) -> String {
+    const RESULT_AREA_MARKER: &str = "41201001";
+    let hex = oracle_run_body_code_hex(source);
+    let cut = hex
+        .find(RESULT_AREA_MARKER)
+        .expect("the Script result-area marker is present");
+    hex[..cut].to_owned()
+}
+
+#[test]
+fn oracle_run_body_emission_table_is_pinned() {
+    // STEP-0501: the run-body emission truth, measured from the Rust
+    // backend's production output (the Component `compile_script_program`
+    // really emits, opened with wasmparser). This is the target the
+    // guest-side emission has to reproduce byte for byte.
+    //
+    // The body splits at the Script result-area return: the terminator
+    // begins with `i32.const 32` (the 32-byte result area) followed by
+    // `call 1` (the allocator). The marker occurs exactly once in the
+    // reference shape, so the cut is unambiguous.
+    const FULL_BODY: &str = "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d21134100211441002115410021164120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b";
+    const INSTRUCTION_SEGMENT: &str = "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d2113410021144100211541002116";
+    const TERMINATOR_AND_EPILOGUE: &str = "4120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b";
+
+    let hex = oracle_run_body_code_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    assert_eq!(hex, FULL_BODY, "the run body the backend actually emits");
+    assert_eq!(
+        hex.matches("41201001").count(),
+        1,
+        "the result-area marker is unique in the reference shape"
+    );
+    let cut = hex
+        .find("41201001")
+        .expect("the result-area marker is present");
+    assert_eq!(&hex[..cut], INSTRUCTION_SEGMENT, "the instruction segment");
+    assert_eq!(
+        &hex[cut..],
+        TERMINATOR_AND_EPILOGUE,
+        "the Script result-area return and the dispatcher epilogue"
+    );
+    // The guest-side target for the next slice: the same segment, read from
+    // the same production output.
+    assert_eq!(
+        oracle_run_instruction_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE),
+        INSTRUCTION_SEGMENT
+    );
+}
+
 #[test]
 fn sico_compiler_emits_the_run_local_declaration_plan_byte_exactly() {
     // STEP-0499: the guest recomputes the local declaration plan of the
