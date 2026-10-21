@@ -223,6 +223,25 @@ labels for planning, not allocated STEP identifiers.
   owner-reviewed AI-generated corpus remains the unmet leg; the decision
   record is therefore **deferred**, the item stays open, and no grammar
   change is made.
+- **Status 2026-10-21 (STEP-0498) — item 3 closed.** Both legs ran and the
+  owner reviewed the corpus. The AI leg: 100 provider-billed
+  `deepseek-chat` calls (M13 identity, USD 0.027196) over the 10 frozen A0
+  generation tasks; the corpus is frozen under
+  [`ai-eval/runs/item3-2026-10-21/`](../../ai-eval/runs/item3-2026-10-21/)
+  with per-file SHA-256 and an explicit audit exception to the
+  "raw provider output is not committed" policy. The measurement:
+  **0 literal-constructor calls (0.000/KB)** on the AI corpus against
+  3,236 calls (3.055/KB) on the selfhost leg — and that zero is a
+  **surface-syntax artifact**, not a property of AI-written code (A0 is an
+  M1-era retained control syntax whose guide has no explicit-width literal
+  form and which no compiler can execute; 100/100 candidates are rejected
+  by the current front-end with `E1013`), so the AI leg is **not
+  commensurable** with the selfhost leg. The measured type facts
+  (`Int` already accepts bare literals; `I64` rejects them with `E2002`)
+  narrow the open question to a context-inferred width literal for
+  `I64`/`U64`. The decision record is written in
+  [`RFC-0046` §3 D3](../rfc/RFC-0046-language-v1-batch2-for-loops-error-propagation-list-elements-v0.md):
+  **D3 stands, no grammar change**, and no typed-literal RFC is opened.
 
 ### 8.4 Item 4 — `text.chars` (queued by RFC-0046 §2)
 
@@ -280,7 +299,7 @@ section records their current state; it does not change any exit gate.
 | Residual | State after STEP-0489 | Depends on M22? |
 |---|---|---|
 | `diagnostics/catalog.json` + `semantic-case-map.json` full protocol extension (E2021–E2027, E2031) | **closed** — the eight implemented-but-unregistered semantic codes are now registered with catalog templates, and a new implementation-level corpus proves every one of them against the real compiler (`sico check --json`: code, key, argument set and rendered message byte-identical to the catalog) | no |
-| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **still deferred-external, now with a live leg executed** (2026-10-21) — the selfhost leg is re-measured at a pinned commit (literal-constructor density **3.199 → 3.055 per KB**, i.e. the explicit-width ceremony did not get denser even though the absolute count grew 2,169 → 3,236), and the AI leg ran for real: 100 billed DeepSeek calls (M13 identity) over the 10 frozen A0 generation tasks, USD 0.0272 → a 100-file / 22,091-byte corpus that contains **0 literal-constructor calls**. That zero is a **surface-syntax artifact** (A0 is an M1-era retained control syntax with no explicit-width literal form and no compiler), so the AI leg is **not commensurable** with the selfhost leg; the measured type facts (`Int` accepts bare literals, `I64` does not) narrow the open question to a context-inferred width literal for `I64`/`U64`. The **owner review of the corpus is still ahead of the freeze**, and no D3 record has been written | no |
+| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **closed** (2026-10-21, STEP-0498) — the selfhost leg is re-measured at a pinned commit (literal-constructor density **3.199 → 3.055 per KB**, i.e. the explicit-width ceremony did not get denser even though the absolute count grew 2,169 → 3,236), and the AI leg ran for real: 100 billed DeepSeek calls (M13 identity) over the 10 frozen A0 generation tasks, USD 0.0272 → a 100-file / 22,091-byte corpus (560 expression lines by the repository tool's denominator) with **0 literal-constructor calls**. That zero is a **surface-syntax artifact** (A0 is an M1-era retained control syntax with no explicit-width literal form and no compiler), so the AI leg is **not commensurable** with the selfhost leg; the measured type facts (`Int` accepts bare literals, `I64` does not) narrow the open question to a context-inferred width literal for `I64`/`U64`. The owner reviewed and froze the corpus (now in the repository) and recorded the decision in RFC-0046 §3 D3: **D3 stands, no grammar change** | no |
 | STEP-0328/0329 independent CI adjudication | **exercised — red at an M22-owned point** (2026-10-21) — GitHub Actions is reachable again; two runs (`39454624507` on `2531427`, `39457030463` on `6808569`) failed at exactly one test, `sico-app-cli::run_executes_a_script_package_end_to_end`, with `forcing trap when growing memory to 2214592512 bytes`. The cause is a constant mismatch in the **M22** track: the codegen declares the guest memory minimum as `MEMORY_PAGES = 33792` pages (2,214,592,512 B) while the `sico-runtime` host ceiling is 2 GiB = 32,768 pages, introduced by `c50b3fd` (STEP-0484) — the in-process runner path is unaffected because `RunnerLimits` allows 2,560 MiB, which is why only the `sico-app` launch seam is red. Reproduced deterministically on this host with the repo-pinned wasmtime (case A reproduces the CI message byte-for-byte; the pre-`c50b3fd` shape and an equal-minimum module both pass), so it is a contract mismatch, not a runner-memory budget problem. See [`ci-arena-ceiling-attribution-2026-10-21.md`](../reports/ci-arena-ceiling-attribution-2026-10-21.md). Every other CI step is green in both runs and the M23 code footprint (`crates/sico-semantics` diagnostics text + `tools/`) is not implicated, but the gate itself is still red, so this residual stays open on an M22-owned defect | no |
 
 Two catalog-scope boundaries are now recorded explicitly in
@@ -313,5 +332,5 @@ this step introduces no M22 re-baseline obligation.
 | why the AI leg reads zero | **measured, not assumed** — the A0 candidate syntax writes integer literals plainly (`return keep_size(Bytes(16))`) and defines no explicit-width literal form; A0 is an M1-era *retained control* syntax that no compiler can execute (`syntax-candidates/README.md`), and the current front-end rejects all 100 files with `E1013` (the frozen prompts ask for declaration-only programs; the current language requires an explicit `main`). The zero is therefore a **surface-syntax artifact**: the AI leg as frozen is **not commensurable** with the selfhost leg and can neither corroborate nor refute its 3.055/KB |
 | type-system mechanism | **measured** (`sico check --json`) — bare `0` is **accepted** where an `Int` is expected; `return 0` in an `I64` context is `E2002` (`expected I64, found Int; convert explicitly`); `I64.literal(0)` in an `Int` context is `E2001`. `Int` and `I64` have no implicit conversion, so the constructor is forced wherever an `I64`/`U64` value is needed — the selfhost's density reflects its width-typed code, not a tax on all integer use. The narrowest open question is therefore a **context-inferred width literal for `I64`/`U64`**, not a general "bare literal" change |
 | corpus statistics | **14 distinct programs**, not 100 samples: at temperature 0 the provider is near-deterministic, so the 10 repetitions per task yield 1–2 outputs each. This is the M13 identity the owner required, but it caps the statistical value of the leg and must not be reported as 100 independent samples |
-| owner review of the corpus | **pending** — the corpus is frozen only after the owner reviews it (plan §8.3) |
-| D3 decision record | **not written** — no grammar change may precede the recorded measurement, and the AI leg as executed is degenerate for the metric, so the decision needs the owner's explicit call between "D3 stands" with the selfhost measurement plus the AI leg's negative result, and a minimal typed-literal RFC carrying the full RFC-0033 evidence |
+| owner review of the corpus | **done** — the owner reviewed the corpus on 2026-10-21 and approved it as-is; the frozen corpus is in the repository at [`ai-eval/runs/item3-2026-10-21/`](../../ai-eval/runs/item3-2026-10-21/) (100 files + manifest + run file, per-file SHA-256), under an explicit audit exception to the "raw provider output is not committed" policy |
+| D3 decision record | **written** — RFC-0046 §3 D3 now carries the 2026-10-21 re-measurement: selfhost numbers, the AI leg's negative result with its surface-syntax cause, the `Int`/`I64` type facts, and the decision **D3 stands — no grammar change**; the narrowed open question (a context-inferred width literal for `I64`/`U64`) is recorded as *not decided here*, and no typed-literal RFC is opened |

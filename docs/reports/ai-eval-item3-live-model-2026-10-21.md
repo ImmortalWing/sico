@@ -62,7 +62,7 @@ Raw run evidence (controlled experiment store, **not** committed — see
 
 ## 3. Corpus shape
 
-100 candidate programs, 22,091 bytes, 1,190 lines, 400 expression lines,
+100 candidate programs, 22,091 bytes, 1,190 lines, 560 expression lines,
 350 call sites.
 
 | task | files | distinct outputs | bytes | bare integers | literal-constructor calls |
@@ -93,7 +93,7 @@ the statistical value of the leg and must not be reported as 100 samples.
 | files | 100 | 14 |
 | bytes / KB | 22,091 / 21.573 | 1,084,773 / 1,059.349 |
 | lines | 1,190 | 24,600 |
-| expression lines | 400 | 18,347 |
+| expression lines | 560 | 18,347 |
 | call sites | 350 | 17,291 |
 | literal-constructor calls | **0** | **3,236** |
 | per KB | **0.000** | 3.055 |
@@ -107,6 +107,14 @@ The two tools that measure this agree: the repository measurement tool
 byte/line comparison against the run file's `raw_output` fields) both report
 **0**, and the run file's raw outputs match the corpus files byte-for-byte
 (22,091 bytes on both sides).
+
+One denominator caveat, recorded because it shows the same tooling friction
+as the syntax mismatch below: the repository tool counts 560 expression
+lines for this corpus, while the independent recount — which additionally
+treats A0's `fn` header as a declaration — counts 400. The tool's
+declaration rule names `function`, not `fn`, so A0-shaped headers land in
+its expression-line bucket. The ceremony count is **0 under both
+denominators**; the density conclusion does not depend on which is used.
 
 **The zero is a property of the surface syntax, not of AI-written code.**
 The A0 candidate syntax writes integer literals plainly — the numeric task

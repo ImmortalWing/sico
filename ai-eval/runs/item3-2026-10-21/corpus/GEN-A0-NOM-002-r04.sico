@@ -1,0 +1,8 @@
+record Feature
+  name: Text
+  enabled: Bool
+end
+
+fn main() -> Feature
+  return Feature(name: "search", enabled: true)
+end
