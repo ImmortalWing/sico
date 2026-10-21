@@ -33,6 +33,25 @@
 | prompt packets | `target/ai-eval-experiments/item3/prompt-packets.json`, SHA-256 `438c0bab18e6272c45e69a73a1cb7c3e9d3f40cde2fcaf8e24f5297986d6f34a` (10 A0 `generation` tasks of the frozen `sico-ai-eval-v1` protocol; B/C are alternative candidate syntaxes and are not part of a current-Sico ceremony count) |
 | adapter | `tools/ai-eval/deepseek_generation_corpus.py` (versioned; standard library only; key read from `DEEPSEEK_API_KEY` and never persisted) |
 
+### Alternative provider availability (checked 2026-10-21)
+
+The owner supplied a **MiniMax platform credential** on the same day. It
+works: `MiniMax-M3.1-Flash` answers 200 on the platform's OpenAI-compatible
+endpoint (`https://api.minimaxi.com/v1/chat/completions`, also reachable via
+`api.minimax.chat`), the provider echoes the model as `MiniMax-M3.1-Flash`
+and reports usage (prompt/completion/reasoning tokens). It is **not** usable
+on the runtime's Anthropic-style `agent.minimax.cn/mavis/...` endpoint, which
+answers 401 — that endpoint expects the runtime's OAuth token, not a platform
+key. A trial on the frozen A0 generation tasks reproduced the expected
+programs, and at temperature 0 it is near-deterministic in the same way (two
+repetitions differed only in the trailing newline).
+
+No credential is recorded anywhere in this repository, and **this leg was not
+used for item 3**: the frozen corpus is the M13-identical DeepSeek run, so
+the item-3 evidence keeps its M13 comparability. The MiniMax credential is
+recorded here only as an available alternative live provider for a future
+leg.
+
 The identity and parameters are the M13 ones
 ([`ai-eval-live-model-v1.md`](./ai-eval-live-model-v1.md)): `deepseek-chat`,
 temperature 0, top_p 1, seed unsupported, 4 in-flight requests, cost computed
@@ -85,12 +104,16 @@ Raw run evidence (controlled experiment store, **not** committed — see
 | `GEN-A0-TASK-002` | 10 | 2 | 2,382 | 30 | 0 |
 | **total** | **100** | **14** | **22,091** | **60** | **0** |
 
-**Only 14 distinct programs.** At temperature 0 the provider is
-near-deterministic, so the 10 repetitions per task are largely duplicates
-(one or two outputs per task). The corpus is therefore 10 distinct
-programs (14 variants), not 100 independent samples. This is a property of
-the M13 identity the owner required, not a defect of the run, but it caps
-the statistical value of the leg and must not be reported as 100 samples.
+**Only 14 byte-distinct raw outputs — 11 distinct programs.** At
+temperature 0 the provider is near-deterministic: 9 of the 10 tasks produced
+a single program across their 10 repetitions, and the 4 tasks that show two
+raw variants differ **only in the trailing newline** (the A0 guide asks for
+exactly one trailing newline; the model sometimes omits it). Only
+`GEN-A0-TASK-002` produced two genuinely different programs. The corpus is
+therefore 10 distinct programs (11 variants), not 100 independent samples.
+This is a property of the M13 identity the owner required, not a defect of
+the run, but it caps the statistical value of the leg and must not be
+reported as 100 samples.
 
 ## 4. The measurement: 0.000 literal-ceremony calls per KB
 

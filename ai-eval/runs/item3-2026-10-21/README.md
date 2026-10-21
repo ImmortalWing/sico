@@ -56,7 +56,10 @@ repetition index of every candidate.
   leg's 3,236 calls (3.055/KB). The zero is a surface-syntax artifact and
   makes the AI leg **not commensurable** with the selfhost leg.
 - At temperature 0 the provider is near-deterministic: the 100 calls yield
-  **14 distinct programs** (1–2 per task), not 100 independent samples.
+  **11 distinct programs** (10 tasks; 9 of them produced a single
+  program across their 10 repetitions, and the four tasks that show two raw
+  variants differ only in the trailing newline), not 100 independent
+  samples.
 
 The measured facts, the full analysis and the RFC-0046 D3 decision record
 live in [`docs/reports/ai-eval-item3-live-model-2026-10-21.md`](../../../docs/reports/ai-eval-item3-live-model-2026-10-21.md).
