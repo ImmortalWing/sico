@@ -1,6 +1,6 @@
 # STEP-0501 m22-w2 S5 run 体发射真值：逐字节实测、规则表与下一片的可对拍切点
 
-> - status: **diagnosis / registration + oracle truth measured and pinned**（本片**不**发射任何 run 体字节）——**本机全绿但未提交、未推送**（待 owner 授权；独立 CI 裁决尚未取得）
+> - status: **complete（独立 CI 已裁决：run 39549599204 = `success`，12/12 内层步全 PASS）** —— diagnosis / registration + oracle truth measured and pinned（本片**不**发射任何 run 体字节）
 > - date: 2026-10-21
 > - owners: autonomous-agent
 > - depends: [STEP-0499](./STEP-0499-m22-w2-s5-slot-plan.md)（槽位/局部声明计划）、[STEP-0487](./STEP-0487-m22-w2-s5-codegen-skeleton.md)（冻结的最小 echo 组件骨架）、[STEP-0496](./STEP-0496-m22-w2-s5-ir-ingestion-plan.md)（IR 摄取与发射计划）
@@ -98,7 +98,7 @@ STEP-0499 已把**槽位**钉死（局部声明段逐字节等同）。剩下的
 | 同上（第二组） | | `stderr`（ptr,len）→ 结果区 **16** / **20** |
 | `20 18 20 13 37 03 18` | `i64.store` | `exit_code` → 结果区 **24** |
 | `20 18` / `0f` | `local.get 24` / `return` | 返回结果区指针 |
-| `0b` / `00` / `0b` / `00` / `0b` / `00` / `0b` | `end`(if) `unreachable` `end`(loop) `unreachable` `end`(block) `unreachable` `end`(fn) | dispatcher 尾声 |
+| `0b` / `00` / `0b` / `0b` / `00` / `0b` | `end`(if) `unreachable` `end`(loop) `end`(block) `unreachable` `end`(fn) | dispatcher 尾声（**6 字节**：块体的 `if` 收尾 + loop/block 收尾 + 函数收尾） |
 
 ### 4.4 终止符依赖的**组件级事实**（不是 IR 派生的）
 
@@ -107,8 +107,8 @@ STEP-0499 已把**槽位**钉死（局部声明段逐字节等同）。剩下的
 | 分配器函数索引 | `1` | 核心模块函数序：0=run, 1=alloc, 2=realloc, 3=post（冻结的组件骨架） | **是**（观测到 `call 1`） |
 | 结果区大小 | `32` | `ScriptAbi::load()` 解析**冻结的 Script WIT** 后派生：`align_to(payload_offset + max(output.size, error.size), payload_align)`；仓库内 `canonical.rs` 的冻结布局测试断言 `(32, 8)` | **是**（观测到 `i32.const 32`） |
 | 结果区载荷起始偏移 | `8` | 同上：`payload_offset = align_to(1, max(output.align, error.align))` | **是**（观测到首个字段落在 8） |
-| `ScriptOutput` 结果区字段偏移 | `stdout` 0（ptr@0,len@4）、`stderr` 8（ptr@8,len@12）、`exit_code` 16（i64） | **冻结的 WIT 布局**（`record_layout` 从 WIT 类型算出：i32 占 4 字节、i64 占 8 字节） | **是**（观测到 store 落在 8 / 12 / 16 / 20 / 24） |
-| `ScriptError` 结果区字段偏移 | `code` 0（i32）、`message` 4（ptr@4,len@8） | 同上（**由 WIT 派生，参考形态不触发 ⇒ 未实测**） | **否** |
+| `ScriptOutput` 记录内字段偏移（结果区再叠加载荷偏移 **8**） | `stdout` 0（ptr@0,len@4）、`stderr` 8（ptr@8,len@12）、`exit_code` 16（i64） | **冻结的 WIT 布局**（`record_layout` 从 WIT 类型算出：i32 占 4 字节、i64 占 8 字节） | **是**（观测到 store 落在 8 / 12 / 16 / 20 / 24） |
+| `ScriptError` 记录内字段偏移（结果区再叠加载荷偏移 **8**） | `code` 0（i32）、`message` 4（ptr@4,len@8） | 同上（**由 WIT 派生，参考形态不触发 ⇒ 未实测**） | **否** |
 
 > **两套布局必须分清**：§4.1 的 8 字节 flat 槽布局用于**局部变量与槽位**；§4.4 的 4 字节 WIT 布局用于**结果区**。这正是 STEP-0499 §6 修掉的那处规范矛盾所指的同一件事（`script-component-emission-v0.md` §3 的 flat 规则 vs §6 的结果区布局）。
 >
@@ -151,6 +151,22 @@ STEP-0499 已把**槽位**钉死（局部声明段逐字节等同）。剩下的
 > **关于本机偶发红点的诚实说明**：本片第一次跑一键 CI 时，`test (runner)` 红在 `prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言（23.5 ms vs 20 ms 预算）——与 STEP-0499 §8 记录的是**同一个**已登记的环境敏感断言。**本片的新钉不参与其中**：它是**纯 Rust** 测试（只调 `compile_script_program` 与 wasmparser，**不跑 guest、不产生 2 GiB 线性内存预留**），因此**不增加** guest 实例冲刷量；失败二进制的源码与 `HEAD` 逐位相同。权威裁决仍是独立 CI。
 >
 > **重跑结果：全绿（12/12，exit 0）** —— 在机器空闲时重跑 `tools/run-ci.ps1`，`test (runner)` 通过，整套 12 步全 PASS。这与 STEP-0499 §8 记录的红点归属一致：该断言的红点是**本机负载/页池压力**相关，不是本片引入的代码回归；**预算常量与该断言均未改动**。
+
+## 7.1 独立 CI 裁决：**GO**（run 39549599204 = `success`）
+
+本片已**提交并推送**（owner 授权）：提交 `a730ac6`，推送 `github/codex/m22-w1-ci`（fast-forward `ee2317f..a730ac6`），远端 head 确认 = `a730ac6105fd94d8e5b11798615f60bb1f092282`。
+
+| 证据 | 值 |
+|---|---|
+| 独立 CI run | **39549599204**（run #23，`event: push`，head_branch `codex/m22-w1-ci`） |
+| head_sha | `a730ac6105fd94d8e5b11798615f60bb1f092282`（= 本片提交） |
+| 结论 | `status: completed` / **`conclusion: success`** |
+| 时间 | 05:26:51Z → 05:55:15Z |
+| 内层步数 | **12/12** 全 PASS（`fmt` / `fmt (runner)` / `clippy (workspace)` / `clippy (runner)` / `build (runner debug)` / `test (workspace)` / `test (runner)` / `module boundaries` / `planning contract (M14-M25)` / `application-profile matrix` / `cross-host matrix + UI corpus` / `whitespace (git diff --check)`） |
+
+**这条裁决同时回答了 §7 记的那个已登记的环境敏感红点**：`prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言在**独立 runner** 上通过 ⇒ 本片的新钉**不**把该断言推过预算线（本片的新钉是**纯 Rust**，与该断言无关）。**预算常量与该断言均未改动**，也不需要重新基线化。
+
+**本片最终状态**：**complete（独立 CI GO）**。
 
 ## 8. 诚实性
 

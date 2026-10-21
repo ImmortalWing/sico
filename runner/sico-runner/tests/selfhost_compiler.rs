@@ -3562,6 +3562,59 @@ fn sico_compiler_emits_the_run_local_declaration_plan_byte_exactly() {
 }
 
 #[test]
+fn sico_compiler_emits_the_run_instruction_segment_byte_exactly() {
+    // STEP-0502: the guest derives the instruction segment of the `run` body
+    // -- the dispatcher shell, the per-block dispatch heads and the block
+    // instructions, up to (but not including) the Script result-area return --
+    // from the ingested IR, and the bytes must be identical to the segment the
+    // Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot assignment
+    // and instruction emission match the backend's own emission rather than a
+    // parallel model of it.
+    let expected = oracle_run_instruction_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-run-instr-hex".to_owned()],
+    ) else {
+        panic!("the instruction segment must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The reference shape is pinned: the segment is 91 bytes, it opens with
+    // the dispatcher shell and the block dispatch head, and it ends with the
+    // zeroing of the inactive arm.
+    assert_eq!(expected.len(), 182, "91 bytes of instruction segment");
+    assert!(
+        expected.starts_with("410021170240034020174100460440"),
+        "dispatcher shell then the block dispatch head"
+    );
+    assert!(
+        expected.ends_with("4100211541002116"),
+        "the inactive arm is zeroed last"
+    );
+    assert_eq!(
+        expected,
+        "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d2113410021144100211541002116"
+    );
+}
+
+#[test]
+fn sico_compiler_refuses_the_run_instruction_segment_outside_the_subset() {
+    // STEP-0502: the emission subset is the one the reference Script shape
+    // uses. Anything else fails closed with a typed identity instead of an
+    // approximation.
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(IDENTITY_SOURCE, vec!["--emit-run-instr-hex".to_owned()])
+    else {
+        panic!("a source without a Script-profile run function must fail closed")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-CG-IR-PLAN");
+}
+
+#[test]
 fn sico_compiler_refuses_ir_shapes_outside_the_run_plan_subset() {
     // STEP-0496: the plan extraction is fail-closed (ADR-0016 decision 6).
     // A module without a `run` function, an operation outside the supported

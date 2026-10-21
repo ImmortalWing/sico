@@ -1336,3 +1336,831 @@ function cgs_local_hex(bytes: Bytes) returns Text:
   set cgslh_hex = sico.text.concat(cgslh_hex, "027f")
   return cgslh_hex
 end function
+
+// ---------------------------------------------------------------------------
+// STEP-0502 S5 emission, second slice: the run body's instruction segment.
+//
+// The Rust backend emits the `run` function as a dispatcher shell (the entry
+// block id into the dispatcher slot, then `block` and `loop`), then for every
+// block a dispatch head (the dispatcher slot, the block id, `i32.eq` and
+// `if`), then the block's instructions. The instruction segment is that part
+// of the body: everything up to, but not including, the Script result-area
+// return.
+//
+// The guest derives the same bytes from the ingested IR. The slot numbers come
+// from the backend's own assignment (parameters first, then the instruction
+// results in IR order, then the dispatcher slot), so the segment is directly
+// comparable with the backend's emission.
+//
+// The supported subset is the one the reference Script shape uses: `project`
+// of a declared record field, `const_i64` / `const_u64`, `construct` of a
+// declared record, and the `ok` / `error` variants. Anything else fails closed
+// with `ERR:E-SH-CG-IR-EMIT`.
+// ---------------------------------------------------------------------------
+
+// The sum of `left` and `right`; `left` when the addition overflows.
+function cgs_add(left: U64, right: U64) returns U64:
+  match U64.checked_add(left, right):
+    case ok(cga_value):
+      return cga_value
+    case error(_):
+      return left
+  end match
+end function
+
+// The difference of `left` and `right`; 0 when the subtraction underflows.
+function cgs_sub(left: U64, right: U64) returns U64:
+  match U64.checked_sub(left, right):
+    case ok(cgs_value):
+      return cgs_value
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+// The product of `left` and `right`; 0 when the multiplication overflows.
+function cgs_mul(left: U64, right: U64) returns U64:
+  match U64.checked_mul(left, right):
+    case ok(cgm_value):
+      return cgm_value
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+// True when `byte` is an ASCII decimal digit.
+function cgs_is_digit_byte(byte: I64) returns Bool:
+  if I64.less_than(byte, I64.literal(48)):
+    return false
+  end if
+  if I64.less_than(I64.literal(58), byte):
+    return false
+  end if
+  return true
+end function
+
+// The decimal value of an ASCII digit byte.
+function cgs_decimal_digit(byte: I64) returns U64:
+  if I64.equal(byte, I64.literal(48)):
+    return U64.literal(0)
+  end if
+  if I64.equal(byte, I64.literal(49)):
+    return U64.literal(1)
+  end if
+  if I64.equal(byte, I64.literal(50)):
+    return U64.literal(2)
+  end if
+  if I64.equal(byte, I64.literal(51)):
+    return U64.literal(3)
+  end if
+  if I64.equal(byte, I64.literal(52)):
+    return U64.literal(4)
+  end if
+  if I64.equal(byte, I64.literal(53)):
+    return U64.literal(5)
+  end if
+  if I64.equal(byte, I64.literal(54)):
+    return U64.literal(6)
+  end if
+  if I64.equal(byte, I64.literal(55)):
+    return U64.literal(7)
+  end if
+  if I64.equal(byte, I64.literal(56)):
+    return U64.literal(8)
+  end if
+  return U64.literal(9)
+end function
+
+// True when `value` is a canonical unsigned decimal of at most ten digits, so
+// that the parse below cannot overflow.
+function cgs_decimal_ok(value: Text) returns Bool:
+  let cdo_len = sico.text.length(value)
+  if U64.equal(cdo_len, U64.literal(0)):
+    return false
+  end if
+  if U64.less_than(U64.literal(10), cdo_len):
+    return false
+  end if
+  let cdo_bytes = sico.text.encode(value)
+  let cdo_index = U64.literal(0)
+  while U64.less_than(cdo_index, cdo_len):
+    let cdo_byte = sico.bytes.at(cdo_bytes, cdo_index, I64.literal(0))
+    if cgs_is_digit_byte(cdo_byte):
+      set cdo_index = cg_next(cdo_index)
+    else:
+      return false
+    end if
+  end while
+  return true
+end function
+
+// True when `value` is not a canonical unsigned decimal of at most ten digits.
+function cgs_decimal_bad(value: Text) returns Bool:
+  if cgs_decimal_ok(value):
+    return false
+  end if
+  return true
+end function
+
+// The decimal value of a canonical unsigned decimal of at most ten digits.
+function cgs_decimal_u64(value: Text) returns U64:
+  let cdu_bytes = sico.text.encode(value)
+  let cdu_len = sico.text.length(value)
+  let cdu_index = U64.literal(0)
+  let cdu_parsed = U64.literal(0)
+  while U64.less_than(cdu_index, cdu_len):
+    match U64.checked_mul(cdu_parsed, U64.literal(10)):
+      case ok(cdu_shifted):
+        let cdu_digit = cgs_decimal_digit(sico.bytes.at(cdu_bytes, cdu_index, I64.literal(0)))
+        match U64.checked_add(cdu_shifted, cdu_digit):
+          case ok(cdu_next):
+            set cdu_parsed = cdu_next
+          case error(_):
+            return U64.literal(0)
+        end match
+      case error(_):
+        return U64.literal(0)
+    end match
+    set cdu_index = cg_next(cdu_index)
+  end while
+  return cdu_parsed
+end function
+
+// Signed LEB128 of a non-negative value as hex byte pairs. The signed form
+// differs from the unsigned one once bit 6 of the final byte would be set, so
+// 64 encodes as `c000` and not as `40`.
+function cgs_sleb_hex(value: U64) returns Text:
+  let csh_n = value
+  let csh_out = ""
+  let csh_more = U64.literal(1)
+  while U64.equal(csh_more, U64.literal(1)):
+    let csh_low = U64.bit_and(csh_n, U64.literal(127))
+    set csh_n = U64.shr(csh_n, U64.literal(7))
+    let csh_byte = U64.bit_or(csh_low, U64.literal(128))
+    if U64.equal(csh_n, U64.literal(0)):
+      let csh_sign = U64.equal(U64.bit_and(csh_low, U64.literal(64)), U64.literal(0))
+      if csh_sign:
+        set csh_byte = csh_low
+        set csh_more = U64.literal(0)
+      end if
+    end if
+    set csh_out = sico.text.concat(csh_out, cg_hex_byte(csh_byte))
+  end while
+  return csh_out
+end function
+
+// The bytes of a `local.get` of the slot.
+function cgs_local_get_hex(slot: U64) returns Text:
+  return sico.text.concat("20", cg_leb_hex(slot))
+end function
+
+// The bytes of a `local.set` of the slot.
+function cgs_local_set_hex(slot: U64) returns Text:
+  return sico.text.concat("21", cg_leb_hex(slot))
+end function
+
+// The bytes of an `i32.const` of the value.
+function cgs_i32_const_hex(value: U64) returns Text:
+  return sico.text.concat("41", cgs_sleb_hex(value))
+end function
+
+// The bytes of an `i64.const` of the value.
+function cgs_i64_const_hex(value: U64) returns Text:
+  return sico.text.concat("42", cgs_sleb_hex(value))
+end function
+
+// The number of flat Wasm slots of the IR type at `ty`; 0 when the type is
+// outside the Script v0 flattening subset.
+function cgs_type_slots(bytes: Bytes, ty: U64) returns U64:
+  let cts_hex = cgs_flat_hex(bytes, ty)
+  if U64.equal(sico.text.length(cts_hex), U64.literal(0)):
+    return U64.literal(0)
+  end if
+  return U64.shr(sico.text.length(cts_hex), U64.literal(2))
+end function
+
+// The record name of a `named` IR type; "" when the type is not a named one.
+function cgs_named_text(bytes: Bytes, ty: U64) returns Text:
+  let cnt_kind_off = cgj_member(bytes, ty, "kind")
+  if U64.equal(cnt_kind_off, U64.literal(0)):
+    return ""
+  end if
+  let cnt_kind = cgj_ident_text(bytes, cnt_kind_off)
+  if cg_is_word(cnt_kind, "named"):
+    return cgj_ident_text(bytes, cgj_member(bytes, ty, "data"))
+  end if
+  return ""
+end function
+
+// The 1-based Wasm slot of the value with the id text `id`; 0 when the IR
+// carries no such value or one of the values does not flatten. Parameters come
+// first, then the instruction results in IR order, which is the backend's own
+// slot assignment.
+function cgs_value_slot(bytes: Bytes, run: U64, id: Text) returns U64:
+  let cvs_offset = U64.literal(0)
+  let cvs_params = cgj_member(bytes, run, "parameters")
+  if U64.less_than(U64.literal(0), cvs_params):
+    let cvs_pindex = U64.literal(0)
+    let cvs_pmore = U64.literal(1)
+    while U64.less_than(U64.literal(0), cvs_pmore):
+      let cvs_param = cgj_array_item(bytes, cvs_params, cvs_pindex)
+      if U64.equal(cvs_param, U64.literal(0)):
+        set cvs_pmore = U64.literal(0)
+      else:
+        let cvs_pid = cgj_value_text(bytes, cgj_member(bytes, cvs_param, "id"))
+        if cg_is_word(cvs_pid, id):
+          return cgs_add(cvs_offset, U64.literal(1))
+        else:
+          let cvs_pslots = cgs_type_slots(bytes, cgj_member(bytes, cvs_param, "ty"))
+          if U64.equal(cvs_pslots, U64.literal(0)):
+            return U64.literal(0)
+          end if
+          set cvs_offset = cgs_add(cvs_offset, cvs_pslots)
+        end if
+      end if
+      set cvs_pindex = cg_next(cvs_pindex)
+    end while
+  end if
+  let cvs_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(cvs_blocks, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let cvs_bindex = U64.literal(0)
+  let cvs_bmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), cvs_bmore):
+    let cvs_block = cgj_array_item(bytes, cvs_blocks, cvs_bindex)
+    if U64.equal(cvs_block, U64.literal(0)):
+      set cvs_bmore = U64.literal(0)
+    else:
+      let cvs_instructions = cgj_member(bytes, cvs_block, "instructions")
+      let cvs_iindex = U64.literal(0)
+      let cvs_imore = U64.literal(1)
+      while U64.less_than(U64.literal(0), cvs_imore):
+        let cvs_instruction = cgj_array_item(bytes, cvs_instructions, cvs_iindex)
+        if U64.equal(cvs_instruction, U64.literal(0)):
+          set cvs_imore = U64.literal(0)
+        else:
+          let cvs_rid = cgj_value_text(bytes, cgj_member(bytes, cvs_instruction, "result"))
+          if cg_is_word(cvs_rid, id):
+            return cgs_add(cvs_offset, U64.literal(1))
+          else:
+            let cvs_rslots = cgs_type_slots(bytes, cgj_member(bytes, cvs_instruction, "ty"))
+            if U64.equal(cvs_rslots, U64.literal(0)):
+              return U64.literal(0)
+            end if
+            set cvs_offset = cgs_add(cvs_offset, cvs_rslots)
+          end if
+        end if
+        set cvs_iindex = cg_next(cvs_iindex)
+      end while
+    end if
+    set cvs_bindex = cg_next(cvs_bindex)
+  end while
+  return U64.literal(0)
+end function
+
+// The IR offset of the type of the value with the id text `id`; 0 when the IR
+// carries no such value.
+function cgs_value_ty(bytes: Bytes, run: U64, id: Text) returns U64:
+  let cvt_params = cgj_member(bytes, run, "parameters")
+  if U64.less_than(U64.literal(0), cvt_params):
+    let cvt_pindex = U64.literal(0)
+    let cvt_pmore = U64.literal(1)
+    while U64.less_than(U64.literal(0), cvt_pmore):
+      let cvt_param = cgj_array_item(bytes, cvt_params, cvt_pindex)
+      if U64.equal(cvt_param, U64.literal(0)):
+        set cvt_pmore = U64.literal(0)
+      else:
+        let cvt_pid = cgj_value_text(bytes, cgj_member(bytes, cvt_param, "id"))
+        if cg_is_word(cvt_pid, id):
+          return cgj_member(bytes, cvt_param, "ty")
+        end if
+      end if
+      set cvt_pindex = cg_next(cvt_pindex)
+    end while
+  end if
+  let cvt_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(cvt_blocks, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let cvt_bindex = U64.literal(0)
+  let cvt_bmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), cvt_bmore):
+    let cvt_block = cgj_array_item(bytes, cvt_blocks, cvt_bindex)
+    if U64.equal(cvt_block, U64.literal(0)):
+      set cvt_bmore = U64.literal(0)
+    else:
+      let cvt_instructions = cgj_member(bytes, cvt_block, "instructions")
+      let cvt_iindex = U64.literal(0)
+      let cvt_imore = U64.literal(1)
+      while U64.less_than(U64.literal(0), cvt_imore):
+        let cvt_instruction = cgj_array_item(bytes, cvt_instructions, cvt_iindex)
+        if U64.equal(cvt_instruction, U64.literal(0)):
+          set cvt_imore = U64.literal(0)
+        else:
+          let cvt_rid = cgj_value_text(bytes, cgj_member(bytes, cvt_instruction, "result"))
+          if cg_is_word(cvt_rid, id):
+            return cgj_member(bytes, cvt_instruction, "ty")
+          end if
+        end if
+        set cvt_iindex = cg_next(cvt_iindex)
+      end while
+    end if
+    set cvt_bindex = cg_next(cvt_bindex)
+  end while
+  return U64.literal(0)
+end function
+
+// The total number of Wasm slots the `run` function's values occupy, which is
+// where the backend puts the dispatcher slot; 0 when a value does not flatten.
+function cgs_dispatcher_slot(bytes: Bytes, run: U64) returns U64:
+  let cds_total = U64.literal(0)
+  let cds_params = cgj_member(bytes, run, "parameters")
+  if U64.less_than(U64.literal(0), cds_params):
+    let cds_pindex = U64.literal(0)
+    let cds_pmore = U64.literal(1)
+    while U64.less_than(U64.literal(0), cds_pmore):
+      let cds_param = cgj_array_item(bytes, cds_params, cds_pindex)
+      if U64.equal(cds_param, U64.literal(0)):
+        set cds_pmore = U64.literal(0)
+      else:
+        let cds_slots = cgs_type_slots(bytes, cgj_member(bytes, cds_param, "ty"))
+        if U64.equal(cds_slots, U64.literal(0)):
+          return U64.literal(0)
+        end if
+        set cds_total = cgs_add(cds_total, cds_slots)
+      end if
+      set cds_pindex = cg_next(cds_pindex)
+    end while
+  end if
+  let cds_blocks = cgj_member(bytes, run, "blocks")
+  if U64.equal(cds_blocks, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let cds_bindex = U64.literal(0)
+  let cds_bmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), cds_bmore):
+    let cds_block = cgj_array_item(bytes, cds_blocks, cds_bindex)
+    if U64.equal(cds_block, U64.literal(0)):
+      set cds_bmore = U64.literal(0)
+    else:
+      let cds_instructions = cgj_member(bytes, cds_block, "instructions")
+      let cds_iindex = U64.literal(0)
+      let cds_imore = U64.literal(1)
+      while U64.less_than(U64.literal(0), cds_imore):
+        let cds_instruction = cgj_array_item(bytes, cds_instructions, cds_iindex)
+        if U64.equal(cds_instruction, U64.literal(0)):
+          set cds_imore = U64.literal(0)
+        else:
+          let cds_rslots = cgs_type_slots(bytes, cgj_member(bytes, cds_instruction, "ty"))
+          if U64.equal(cds_rslots, U64.literal(0)):
+            return U64.literal(0)
+          end if
+          set cds_total = cgs_add(cds_total, cds_rslots)
+        end if
+        set cds_iindex = cg_next(cds_iindex)
+      end while
+    end if
+    set cds_bindex = cg_next(cds_bindex)
+  end while
+  return cds_total
+end function
+
+// The 1-based slot offset of the field `field` inside the record
+// `record_name`'s flat layout; 0 when the record or the field is absent.
+function cgs_record_field_offset(bytes: Bytes, record_name: Text, field: Text) returns U64:
+  let crfo_records = cgj_member(bytes, U64.literal(0), "records")
+  if U64.equal(crfo_records, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crfo_fields = cgj_member(bytes, crfo_records, record_name)
+  if U64.equal(crfo_fields, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crfo_offset = U64.literal(0)
+  let crfo_index = U64.literal(0)
+  let crfo_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), crfo_more):
+    let crfo_item = cgj_array_item(bytes, crfo_fields, crfo_index)
+    if U64.equal(crfo_item, U64.literal(0)):
+      set crfo_more = U64.literal(0)
+    else:
+      let crfo_name = cgj_ident_text(bytes, cgj_member(bytes, crfo_item, "name"))
+      if cg_is_word(crfo_name, field):
+        return cgs_add(crfo_offset, U64.literal(1))
+      else:
+        let crfo_slots = cgs_type_slots(bytes, cgj_member(bytes, crfo_item, "ty"))
+        if U64.equal(crfo_slots, U64.literal(0)):
+          return U64.literal(0)
+        end if
+        set crfo_offset = cgs_add(crfo_offset, crfo_slots)
+      end if
+    end if
+    set crfo_index = cg_next(crfo_index)
+  end while
+  return U64.literal(0)
+end function
+
+// The number of flat Wasm slots of the field `field` inside the record
+// `record_name`; 0 when the record or the field is absent.
+function cgs_record_field_slots(bytes: Bytes, record_name: Text, field: Text) returns U64:
+  let crfs_records = cgj_member(bytes, U64.literal(0), "records")
+  if U64.equal(crfs_records, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crfs_fields = cgj_member(bytes, crfs_records, record_name)
+  if U64.equal(crfs_fields, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crfs_index = U64.literal(0)
+  let crfs_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), crfs_more):
+    let crfs_item = cgj_array_item(bytes, crfs_fields, crfs_index)
+    if U64.equal(crfs_item, U64.literal(0)):
+      set crfs_more = U64.literal(0)
+    else:
+      let crfs_name = cgj_ident_text(bytes, cgj_member(bytes, crfs_item, "name"))
+      if cg_is_word(crfs_name, field):
+        return cgs_type_slots(bytes, cgj_member(bytes, crfs_item, "ty"))
+      end if
+    end if
+    set crfs_index = cg_next(crfs_index)
+  end while
+  return U64.literal(0)
+end function
+
+// The "i32" or "i64" kind of the flat slot at `index` of the flat layout
+// `flat`; "" when the layout has no such slot.
+function cgs_flat_slot_kind(flat: Text, index: U64) returns Text:
+  let cfsk_bytes = sico.text.encode(flat)
+  let cfsk_start = cgs_mul(index, U64.literal(4))
+  let cfsk_end = cgs_add(cfsk_start, U64.literal(4))
+  if U64.less_than(sico.bytes.length(cfsk_bytes), cfsk_end):
+    return ""
+  end if
+  let cfsk_group = cgj_span_text(cfsk_bytes, cfsk_start, cfsk_end)
+  if cg_is_word(cfsk_group, "017f"):
+    return "i32"
+  end if
+  if cg_is_word(cfsk_group, "017e"):
+    return "i64"
+  end if
+  return ""
+end function
+
+// The bytes that zero the local slot `slot` of the given flat kind.
+function cgs_zero_hex(slot: U64, kind: Text) returns Text:
+  if cg_is_word(kind, "i32"):
+    return sico.text.concat("4100", cgs_local_set_hex(slot))
+  end if
+  if cg_is_word(kind, "i64"):
+    return sico.text.concat("4200", cgs_local_set_hex(slot))
+  end if
+  return ""
+end function
+
+// The bytes of a `project` instruction: the base's field slots copied into the
+// result's slots.
+function cgs_project_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let cph_base = cgj_value_text(bytes, cgj_member(bytes, data, "base"))
+  let cph_field = cgj_ident_text(bytes, cgj_member(bytes, data, "field"))
+  if U64.equal(sico.text.length(cph_field), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_base_ty = cgs_value_ty(bytes, run, cph_base)
+  if U64.equal(cph_base_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_record = cgs_named_text(bytes, cph_base_ty)
+  if U64.equal(sico.text.length(cph_record), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_base_slot = cgs_value_slot(bytes, run, cph_base)
+  if U64.equal(cph_base_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_offset = cgs_record_field_offset(bytes, cph_record, cph_field)
+  if U64.equal(cph_offset, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_count = cgs_record_field_slots(bytes, cph_record, cph_field)
+  if U64.equal(cph_count, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
+  if U64.equal(cph_result_slots, cph_count):
+    let cph_out = ""
+    let cph_base0 = cgs_sub(cph_base_slot, U64.literal(1))
+    let cph_offset0 = cgs_sub(cph_offset, U64.literal(1))
+    let cph_index = U64.literal(0)
+    while U64.less_than(cph_index, cph_count):
+      let cph_src_base = cgs_add(cph_base0, cph_offset0)
+      let cph_src = cgs_add(cph_src_base, cph_index)
+      let cph_dst = cgs_add(result0, cph_index)
+      set cph_out = sico.text.concat(cph_out, cgs_local_get_hex(cph_src))
+      set cph_out = sico.text.concat(cph_out, cgs_local_set_hex(cph_dst))
+      set cph_index = cg_next(cph_index)
+    end while
+    return cph_out
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of a `construct` instruction: the field values copied, in the op's
+// field order, into the result's slots.
+function cgs_construct_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let cch_fields = cgj_member(bytes, data, "fields")
+  if U64.equal(cch_fields, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cch_out = ""
+  let cch_offset = U64.literal(0)
+  let cch_index = U64.literal(0)
+  let cch_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cch_more):
+    let cch_item = cgj_array_item(bytes, cch_fields, cch_index)
+    if U64.equal(cch_item, U64.literal(0)):
+      set cch_more = U64.literal(0)
+    else:
+      let cch_value = cgj_value_text(bytes, cgj_member(bytes, cch_item, "value"))
+      let cch_src = cgs_value_slot(bytes, run, cch_value)
+      let cch_ty = cgs_value_ty(bytes, run, cch_value)
+      if U64.equal(cch_src, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      if U64.equal(cch_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cch_count = cgs_type_slots(bytes, cch_ty)
+      if U64.equal(cch_count, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cch_src0 = cgs_sub(cch_src, U64.literal(1))
+      let cch_i = U64.literal(0)
+      while U64.less_than(cch_i, cch_count):
+        let cch_from = cgs_add(cch_src0, cch_i)
+        let cch_to_base = cgs_add(result0, cch_offset)
+        let cch_to = cgs_add(cch_to_base, cch_i)
+        set cch_out = sico.text.concat(cch_out, cgs_local_get_hex(cch_from))
+        set cch_out = sico.text.concat(cch_out, cgs_local_set_hex(cch_to))
+        set cch_i = cg_next(cch_i)
+      end while
+      set cch_offset = cgs_add(cch_offset, cch_count)
+    end if
+    set cch_index = cg_next(cch_index)
+  end while
+  let cch_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
+  if U64.equal(cch_result_slots, cch_offset):
+    return cch_out
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of a `variant` instruction: the discriminant, the payload copied
+// into the active arm's slots and the inactive arm zeroed.
+function cgs_variant_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let cvh_name = cgj_ident_text(bytes, cgj_member(bytes, data, "name"))
+  let cvh_payload = cgj_member(bytes, data, "payload")
+  if U64.equal(sico.text.length(cvh_name), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cvh_payload, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cvh_known = U64.literal(0)
+  let cvh_tag = U64.literal(0)
+  if cg_is_word(cvh_name, "ok"):
+    set cvh_known = U64.literal(1)
+    set cvh_tag = U64.literal(0)
+  else:
+    if cg_is_word(cvh_name, "error"):
+      set cvh_known = U64.literal(1)
+      set cvh_tag = U64.literal(1)
+    end if
+  end if
+  if U64.equal(cvh_known, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cvh_result_ty = cgj_member(bytes, instr, "ty")
+  let cvh_result_data = cgj_member(bytes, cvh_result_ty, "data")
+  let cvh_ok_flat = cgs_flat_hex(bytes, cgj_member(bytes, cvh_result_data, "ok"))
+  let cvh_error_flat = cgs_flat_hex(bytes, cgj_member(bytes, cvh_result_data, "error"))
+  if U64.equal(sico.text.length(cvh_ok_flat), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(sico.text.length(cvh_error_flat), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cvh_ok_slots = U64.shr(sico.text.length(cvh_ok_flat), U64.literal(2))
+  let cvh_error_slots = U64.shr(sico.text.length(cvh_error_flat), U64.literal(2))
+  let cvh_dest_len = cgs_add(cvh_ok_slots, cvh_error_slots)
+  let cvh_result_slots = cgs_type_slots(bytes, cvh_result_ty)
+  let cvh_expected = cgs_add(cvh_dest_len, U64.literal(1))
+  let cvh_mismatch = U64.literal(1)
+  if U64.equal(cvh_result_slots, cvh_expected):
+    set cvh_mismatch = U64.literal(0)
+  end if
+  if U64.equal(cvh_mismatch, U64.literal(1)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cvh_payload_len = U64.literal(0)
+  let cvhl_index = U64.literal(0)
+  let cvhl_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cvhl_more):
+    let cvhl_item = cgj_array_item(bytes, cvh_payload, cvhl_index)
+    if U64.equal(cvhl_item, U64.literal(0)):
+      set cvhl_more = U64.literal(0)
+    else:
+      let cvhl_value = cgj_value_text(bytes, cvhl_item)
+      let cvhl_ty = cgs_value_ty(bytes, run, cvhl_value)
+      if U64.equal(cvhl_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cvhl_count = cgs_type_slots(bytes, cvhl_ty)
+      if U64.equal(cvhl_count, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      set cvh_payload_len = cgs_add(cvh_payload_len, cvhl_count)
+    end if
+    set cvhl_index = cg_next(cvhl_index)
+  end while
+  let cvh_dest = cgs_add(result0, U64.literal(1))
+  let cvh_start = U64.literal(0)
+  if cg_is_word(cvh_name, "error"):
+    if U64.less_than(cvh_payload_len, cvh_dest_len):
+      set cvh_start = cgs_sub(cvh_dest_len, cvh_payload_len)
+    end if
+  end if
+  let cvh_out = sico.text.concat(cgs_i32_const_hex(cvh_tag), cgs_local_set_hex(result0))
+  let cvh_zero = U64.literal(0)
+  while U64.less_than(cvh_zero, cvh_start):
+    let cvh_kind = cgs_flat_slot_kind(cvh_ok_flat, cvh_zero)
+    if cg_is_word(cvh_kind, ""):
+      set cvh_kind = cgs_flat_slot_kind(cvh_error_flat, cgs_sub(cvh_zero, cvh_ok_slots))
+    end if
+    let cvh_zero_hex = cgs_zero_hex(cgs_add(cvh_dest, cvh_zero), cvh_kind)
+    if U64.equal(sico.text.length(cvh_zero_hex), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    set cvh_out = sico.text.concat(cvh_out, cvh_zero_hex)
+    set cvh_zero = cg_next(cvh_zero)
+  end while
+  let cvh_offset = cvh_start
+  let cvh_pindex = U64.literal(0)
+  let cvh_pmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), cvh_pmore):
+    let cvh_item = cgj_array_item(bytes, cvh_payload, cvh_pindex)
+    if U64.equal(cvh_item, U64.literal(0)):
+      set cvh_pmore = U64.literal(0)
+    else:
+      let cvh_value = cgj_value_text(bytes, cvh_item)
+      let cvh_src = cgs_value_slot(bytes, run, cvh_value)
+      let cvh_ty = cgs_value_ty(bytes, run, cvh_value)
+      if U64.equal(cvh_src, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      if U64.equal(cvh_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cvh_count = cgs_type_slots(bytes, cvh_ty)
+      let cvh_src0 = cgs_sub(cvh_src, U64.literal(1))
+      let cvh_i = U64.literal(0)
+      while U64.less_than(cvh_i, cvh_count):
+        let cvh_from = cgs_add(cvh_src0, cvh_i)
+        let cvh_to_base = cgs_add(cvh_dest, cvh_offset)
+        let cvh_to = cgs_add(cvh_to_base, cvh_i)
+        set cvh_out = sico.text.concat(cvh_out, cgs_local_get_hex(cvh_from))
+        set cvh_out = sico.text.concat(cvh_out, cgs_local_set_hex(cvh_to))
+        set cvh_i = cg_next(cvh_i)
+      end while
+      set cvh_offset = cgs_add(cvh_offset, cvh_count)
+    end if
+    set cvh_pindex = cg_next(cvh_pindex)
+  end while
+  while U64.less_than(cvh_offset, cvh_dest_len):
+    let cvh_kind2 = cgs_flat_slot_kind(cvh_ok_flat, cvh_offset)
+    if cg_is_word(cvh_kind2, ""):
+      set cvh_kind2 = cgs_flat_slot_kind(cvh_error_flat, cgs_sub(cvh_offset, cvh_ok_slots))
+    end if
+    let cvh_tail_hex = cgs_zero_hex(cgs_add(cvh_dest, cvh_offset), cvh_kind2)
+    if U64.equal(sico.text.length(cvh_tail_hex), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    set cvh_out = sico.text.concat(cvh_out, cvh_tail_hex)
+    set cvh_offset = cg_next(cvh_offset)
+  end while
+  return cvh_out
+end function
+
+// The bytes of a `const_i64` or `const_u64` instruction.
+function cgs_const_hex(bytes: Bytes, data: U64, result0: U64) returns Text:
+  let cch_text = cgj_value_text(bytes, data)
+  if cgs_decimal_bad(cch_text):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cch_value = cgs_decimal_u64(cch_text)
+  return sico.text.concat(cgs_i64_const_hex(cch_value), cgs_local_set_hex(result0))
+end function
+
+// The instruction bytes of the IR instruction at `instr`; an `ERR:` identity
+// when the operation is outside the supported subset.
+function cgs_op_hex(bytes: Bytes, run: U64, instr: U64) returns Text:
+  let coph_operation = cgj_member(bytes, instr, "operation")
+  if U64.equal(coph_operation, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let coph_kind = cgj_member(bytes, coph_operation, "op")
+  let coph_data = cgj_member(bytes, coph_operation, "data")
+  if U64.equal(coph_kind, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(coph_data, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let coph_name = cgj_ident_text(bytes, coph_kind)
+  let coph_result = cgj_value_text(bytes, cgj_member(bytes, instr, "result"))
+  let coph_result_slot = cgs_value_slot(bytes, run, coph_result)
+  if U64.equal(coph_result_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let coph_result0 = cgs_sub(coph_result_slot, U64.literal(1))
+  if cg_is_word(coph_name, "project"):
+    return cgs_project_hex(bytes, run, instr, coph_data, coph_result0)
+  end if
+  if cg_is_word(coph_name, "construct"):
+    return cgs_construct_hex(bytes, run, instr, coph_data, coph_result0)
+  end if
+  if cg_is_word(coph_name, "variant"):
+    return cgs_variant_hex(bytes, run, instr, coph_data, coph_result0)
+  end if
+  if cg_is_word(coph_name, "const_i64"):
+    return cgs_const_hex(bytes, coph_data, coph_result0)
+  end if
+  if cg_is_word(coph_name, "const_u64"):
+    return cgs_const_hex(bytes, coph_data, coph_result0)
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The instruction segment of the Script-profile `run` body: the dispatcher
+// shell, the per-block dispatch heads and the block instructions, up to (but
+// not including) the Script result-area return.
+function cgs_run_instr_hex(bytes: Bytes) returns Text:
+  let crih_run = cgs_run_function(bytes)
+  if U64.equal(crih_run, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let crih_blocks = cgj_member(bytes, crih_run, "blocks")
+  if U64.equal(crih_blocks, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let crih_entry_text = cgj_value_text(bytes, cgj_member(bytes, crih_run, "entry"))
+  if cgs_decimal_bad(crih_entry_text):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let crih_entry = cgs_decimal_u64(crih_entry_text)
+  let crih_dispatcher = cgs_dispatcher_slot(bytes, crih_run)
+  if U64.equal(crih_dispatcher, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let crih_out = sico.text.concat(cgs_i32_const_hex(crih_entry), cgs_local_set_hex(crih_dispatcher))
+  set crih_out = sico.text.concat(crih_out, "02400340")
+  let crih_bindex = U64.literal(0)
+  let crih_bmore = U64.literal(1)
+  while U64.less_than(U64.literal(0), crih_bmore):
+    let crih_block = cgj_array_item(bytes, crih_blocks, crih_bindex)
+    if U64.equal(crih_block, U64.literal(0)):
+      set crih_bmore = U64.literal(0)
+    else:
+      let crih_block_text = cgj_value_text(bytes, cgj_member(bytes, crih_block, "id"))
+      if cgs_decimal_bad(crih_block_text):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let crih_block_id = cgs_decimal_u64(crih_block_text)
+      set crih_out = sico.text.concat(crih_out, cgs_local_get_hex(crih_dispatcher))
+      set crih_out = sico.text.concat(crih_out, cgs_i32_const_hex(crih_block_id))
+      set crih_out = sico.text.concat(crih_out, "460440")
+      let crih_instructions = cgj_member(bytes, crih_block, "instructions")
+      if U64.equal(crih_instructions, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let crih_iindex = U64.literal(0)
+      let crih_imore = U64.literal(1)
+      while U64.less_than(U64.literal(0), crih_imore):
+        let crih_instruction = cgj_array_item(bytes, crih_instructions, crih_iindex)
+        if U64.equal(crih_instruction, U64.literal(0)):
+          set crih_imore = U64.literal(0)
+        else:
+          let crih_op = cgs_op_hex(bytes, crih_run, crih_instruction)
+          if sico.text.starts_with(crih_op, "ERR:"):
+            return crih_op
+          end if
+          set crih_out = sico.text.concat(crih_out, crih_op)
+        end if
+        set crih_iindex = cg_next(crih_iindex)
+      end while
+    end if
+    set crih_bindex = cg_next(crih_bindex)
+  end while
+  return crih_out
+end function
