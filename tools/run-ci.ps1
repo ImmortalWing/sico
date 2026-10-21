@@ -46,6 +46,12 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
 }
 
 Invoke-Step 'fmt' { & $cargo fmt --all -- --check; $LASTEXITCODE }
+# The runner is a separate Cargo workspace and is not a member of the root
+# workspace, so the root "cargo fmt --all" above does not cover it. Without
+# this step a rustfmt violation under runner/ would pass the one-command CI
+# and the independent runner alike (STEP-0499; only
+# tools/validate-step-0245.ps1 checked it, and 0245 is not a CI step).
+Invoke-Step 'fmt (runner)' { & $cargo fmt --manifest-path .\runner\sico-runner\Cargo.toml --all -- --check; $LASTEXITCODE }
 if (-not $Fast) {
     Invoke-Step 'clippy (workspace)' { & $cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings; $LASTEXITCODE }
     Invoke-Step 'clippy (runner)' { & $cargo clippy --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --all-targets -- -D warnings; $LASTEXITCODE }

@@ -3390,6 +3390,84 @@ fn sico_compiler_extracts_the_run_emission_plan_byte_exactly() {
     }
 }
 
+/// The local declaration bytes the Rust backend actually emits for the
+/// Script-profile `run` function, in the same hexadecimal shape the guest
+/// emits: one `count`/`valtype` group per slot.
+fn oracle_run_locals_hex(source: &str) -> String {
+    let module = rust_module(source);
+    let bytes = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the oracle emits the Script-profile Component");
+    let mut run_index = None;
+    let mut bodies: Vec<Vec<(u32, u8)>> = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes).flatten() {
+        match payload {
+            wasmparser::Payload::ExportSection(reader) => {
+                for export in reader.into_iter().flatten() {
+                    if export.name == "run" && matches!(export.kind, wasmparser::ExternalKind::Func)
+                    {
+                        run_index = Some(export.index);
+                    }
+                }
+            }
+            wasmparser::Payload::CodeSectionEntry(body) => {
+                let mut groups = Vec::new();
+                let locals = body
+                    .get_locals_reader()
+                    .expect("the code body carries its local declarations");
+                for local in locals.into_iter() {
+                    let (count, ty) = local.expect("the local declaration group parses");
+                    let byte = match ty {
+                        wasmparser::ValType::I32 => 0x7f_u8,
+                        wasmparser::ValType::I64 => 0x7e_u8,
+                        other => {
+                            panic!("the Script profile declares only i32 and i64 locals: {other:?}")
+                        }
+                    };
+                    groups.push((count, byte));
+                }
+                bodies.push(groups);
+            }
+            _ => {}
+        }
+    }
+    let index = run_index.expect("the core module exports run");
+    bodies[index as usize]
+        .iter()
+        .map(|(count, byte)| format!("{count:02x}{byte:02x}"))
+        .collect()
+}
+
+#[test]
+fn sico_compiler_emits_the_run_local_declaration_plan_byte_exactly() {
+    // STEP-0499: the guest recomputes the local declaration plan of the
+    // Script-profile `run` function from the ingested IR — one group per
+    // instruction slot in IR order, then the dispatcher slot and the Script
+    // scratch pair — and the plan must be byte-identical to the local
+    // declaration section the Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot
+    // assignment matches the backend's own emission rather than a parallel
+    // model of it.
+    let expected = oracle_run_locals_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-locals-hex".to_owned()],
+    ) else {
+        panic!("the local declaration plan must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The Script-profile shape is pinned: four parameter slots are not local
+    // declarations, the nineteen instruction slots are, then the dispatcher
+    // and the scratch pair.
+    assert_eq!(expected.len(), 84, "21 local declaration groups");
+    assert!(
+        expected.ends_with("017f027f"),
+        "dispatcher then scratch pair"
+    );
+}
+
 #[test]
 fn sico_compiler_refuses_ir_shapes_outside_the_run_plan_subset() {
     // STEP-0496: the plan extraction is fail-closed (ADR-0016 decision 6).

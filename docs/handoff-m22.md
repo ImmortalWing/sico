@@ -7,7 +7,18 @@
 > - 权威裁决：[STATUS](./STATUS.md)、[M22 计划](./plans/M22-compiler-self-host.md)、[STEP-0292](./steps/STEP-0292-m22-w1-independent-ci.md)、[STEP-0293](./steps/STEP-0293-m22-w2-u64-to-text-while-rhs.md) 与 [STEP-0294](./steps/STEP-0294-m22-w2-map-get-match-subject.md)。本手稿只提供恢复路径。
 
 ## 0. 当前状态
-**STEP-0497（2026-10-21，implementation complete locally）**：**修复 M23 会话交接的 CI 红点 = 脚本组件 guest 内存"声明下界 > effective ceiling"**（[STEP-0497](./steps/STEP-0497-m22-w2-ci-arena-ceiling-repair.md)）。**本片不推进门 3**。
+**STEP-0499（2026-10-21，implementation complete locally）**：**发射侧第一刀 = guest 槽位/局部声明计划，与 Rust backend 实际发射的 local declaration section 逐字节相同**（[STEP-0499](./steps/STEP-0499-m22-w2-s5-slot-plan.md)）。**本片不推进门 3**。
+- **为什么把发射拆成两刀**：run 体的每条指令都写着**槽位索引**（`local.get <slot>` / `local.set <slot>`），槽位错一位字节就全错，且**错法与"指令顺序错了"无法区分** ⇒ 先钉中间层，而且**中间层本身就是可对拍的字节**（局部声明段），不是文字描述；下一片一旦对不上，能立刻区分"槽位算错了"还是"指令发射写错了"。
+- **guest 侧**：`selfhost/codegen.sico` 新增 `cgs_run_function` / `cgs_flat_hex` / `cgs_record_hex` / `cgs_local_hex`；`selfhost/compiler.sico` 新增 **`--emit-locals-hex`** 驱动模式。
+- **对照方式 = 读 oracle 的生产输出**：`runner/sico-runner/tests/selfhost_compiler.rs` 的 `oracle_run_locals_hex(source)` 让 `sico_codegen_wasm::compile_script_program` **真正产出**组件 → `wasmparser` 打开 → 找 core module 导出 `run` 的函数索引 → 取该函数体的局部声明分组 → 重新编码 ⇒ 比 STEP-0496 的"测试文件内复刻计划生成器"更强（对拍的是"guest 的槽位分配 == backend 真的发射出来的槽位分配"）。
+- **实测**：guest 输出 `017f017f017f017f017e017f017f017f017f017e017f017f017f017f017e017f017f017f017f017f027f`（84 hex = 21 组 = 19 个指令槽（16 × i32 + 3 × i64）+ dispatcher + scratch 对），与 oracle 实际发射**逐字节相同**（新固件钉 `sico_compiler_emits_the_run_local_declaration_plan_byte_exactly`；钉住 21 组 / 84 hex / 结尾 `017f027f`）。
+- **关键决策：计划直接承载为局部声明字节**（`017f`=i32 槽 / `017e`=i64 槽 / `027f`=scratch 对），不做"槽位类型列表 → 再编码"的二次转换 ⇒ 少一层可出错的转换。
+- **两个 typed 身份**（ADR-0016 决策 6，越界形状 fail-closed、禁止静默回退）：`ERR:E-SH-CG-IR-PLAN`（IR 里没有 `run` / 缺 `blocks`/`instructions`/`ty`）、`ERR:E-SH-CG-IR-FLAT`（值落在扁平子集之外，或 `run` 声明了局部 cell）。
+- **与 oracle 的精确分歧（guest 更窄的一侧）**：oracle 的 `flat_ir_types` 对 `named(N)` 还会把**未声明**的内建 record（`ScriptInput` / `ScriptOutput` / `ScriptError` / `HttpResponse` / `Http2Response`）按已注册布局扁平，guest 一律 typed 拒绝；`list[record]` 同理（backend 在 record 全为 i64 时接受 2 × i32）。即 guest 在这两处**更窄**，方向是 fail-closed，不构成静默近似。
+- **顺带修正一处规范与实现矛盾**：`docs/development/script-component-emission-v0.md` §3 原称 `ScriptError` 因 code 是 enum 故不可扁平、恒用 WIT 布局 —— **与实现不符**（`flat_ir_types` 把 `ScriptErrorCode` 映射成 1 个 i32 槽 ⇒ `ScriptError` **可**扁平，用**模块自己声明的布局** flat `[i32,i32,i32]`，字段字节偏移 0 与 8；WIT 布局（偏移 0 与 4）是 §6 **结果区**布局）。已按纪律在同一范围内改正。
+- **编号说明**：并行 M23 会话在 `36f0ee9` 提交并占用 **STEP-0498**（`STEP-0498-m23-item3-corpus-freeze-and-d3-record.md`），本片（未入库）**让位重编号为 STEP-0499** —— STEP 编号是跨并行 worktree 的**共享序列**，已提交的取号优先（见 §5 的「协作纪律」条）。
+- 回归：全源 census 字节等同（**自举形状前沿未破**）+ 固件 **96 + 2 + 9 + 1 = 108/108** + 前端前沿探针 **18/18** + 计划层前沿探针 **8/8** + **完整验证电池 BATTERY_GREEN**（0245 / 0262 / 两个前沿探针 / 一键 CI）+ 行尾审计（改动文件纯 LF、零 CRLF、零 BOM）。**一键 CI 自本片起是 12 步**（新增 `fmt (runner)`，见 §5 的「验证覆盖」纪律）。**已登记的环境敏感红点**：`prepared_program_reruns_are_isolated_and_survive_a_trap` 的 warm median 预算断言在**本机**偶发红（单独跑 5/5 过；整套件序列包含本片新测试 3 过 4 红、跳过则 3/3 过）——该用例的**产物与 HEAD 逐位相同**、该断言**本就登记为环境敏感**，权威裁决是独立 CI。**门 3 仍 NO-GO**：run 体字节发射、37 语料/formatter/全源 canary 阶梯、ADR-0015 `A == B == C` + `.sapp` 链全部未做。
+**STEP-0497（2026-10-21，complete，独立 CI GO）**：**修复 M23 会话交接的 CI 红点 = 脚本组件 guest 内存"声明下界 > effective ceiling"**（[STEP-0497](./steps/STEP-0497-m22-w2-ci-arena-ceiling-repair.md)）。**本片不推进门 3**。
 - **红点**：`sico-app-cli::run_executes_a_script_package_end_to_end` 在 CI（run 39454624507 / 39457030463）红，错误逐字 `forcing trap when growing memory to 2214592512 bytes`；本机在 `SICO_TEST_WASMTIME` 已设时**逐字复现**（修复前），修复后 **ok**。
 - **归因比 M23 归因报告更完整——真正绑定的是包 manifest 的 64 MiB，不是宿主 2 GiB**：`effective_limits = min(包 manifest 请求, 宿主)`，而 `sico-app-cli::script_limits()` 继承 `RuntimeLimits::default()` 的 64 MiB ⇒ **只抬宿主上限，用例实测仍红**；宿主 2 GiB 是第二个独立缺口（同样低于声明下界）。
 - **断点**：`b9f652b`（最后一次绿 CI）时 `MEMORY_PAGES = 1024` = 64 MiB，与包 manifest **恰好相等**；`c50b3fd`（STEP-0402/0421/0454/0484）把 `MEMORY_PAGES` 2048 → 33792、`ARENA_LIMIT` 128 MiB → 2 GiB、宿主授权 128 MiB → 2 GiB **一次改完、未同步包 manifest** ⇒ 配对断裂，断裂后第一个 CI 运行即红。
@@ -15,7 +26,7 @@
 - **四条不变量守卫**（codegen 字节级 memory section / package 层 / runtime 层 / runner 层）全部为常量或字节比较、**不依赖 wasmtime** ⇒ 修掉"本地绿灯是空跑"（`SICO_TEST_WASMTIME` 未设时启动缝用例直接 return）的假阴性。
 - **模块边界未破**：`runtime` 模块不允许依赖 `compiler` ⇒ `sico-runtime` 不新增 `sico-codegen-wasm` 生产依赖，改经 `sico-package`（`application` 模块，已登记例外）转出 `SCRIPT_MEMORY_BYTES`。
 - **RFC-0029 增补 STEP-0497 修正案**：写清 STEP-0454 的 2 GiB = **arena 上限**，声明线性内存 = 2,214,592,512 B（min == max），并**登记设计债**（min == max ⇒ "更严格的包/Host 限额"条款对脚本组件不可实现）。
-- 回归：红点转绿 **ok** + 守卫 8/15+4/4/1 全绿 + 一键 CI（`tools/run-ci.ps1`）。**未提交、未推送**（需 owner 授权后由独立 CI 取裁决）。
+- 回归：红点转绿 **ok** + 守卫 8/15+4/4/1 全绿 + 一键 CI（`tools/run-ci.ps1`）。**已提交并推送（owner 授权）**：提交 `7e5ad3c`，推送 `github/codex/m22-w1-ci`（fast-forward `6808569..7e5ad3c`）；**独立 CI run 39524849306 裁决 `conclusion: success`**（job `windows-gnu` 全 success，01:01:29Z → 01:28:08Z）⇒ 红点在**独立 runner** 上确认转绿，本片**闭合**。
 **STEP-0496（2026-10-21，implementation complete locally）**：**guest IR 摄取第一刀 = IR JSON 扫描器 + `run` 发射计划提取**（[STEP-0496](./steps/STEP-0496-m22-w2-s5-ir-ingestion-plan.md)）。
 - **guest 侧**：`selfhost/codegen.sico` 新增字节扫描器（`cgj_ws`/`cgj_string_end`/`cgj_container_end`/`cgj_value_end`/`cgj_span_text`/`cgj_value_text`/`cgj_ident_text`/`cgj_member`/`cgj_object_keys`/`cgj_array_item`）与计划提取（`cgp_type_text`/`cgp_op_text`/`cgp_id_list`/`cgp_field_list`/`cgp_run_plan`）；`selfhost/compiler.sico` 新增 **`--emit-ir-plan` 驱动模式**。
 - **计划文本**（五类行，逐行 LF）：`param <id> <name> <type>` / `inst <result> <type>` / `op <operation>` / `term return <value-id>` / `record <record> <field> <type>`；类型文本 `unit|bool|int|i64|u64|float64|string|bytes` / `list(T)` / `named(N)` / `result(ok,error)`；操作文本 `copy`/`const_int`/`const_i64`/`const_u64`/`const_bool`/`const_string`/`const_bytes`/`call`/`intrinsic`/`project`/`construct`/`variant`。
@@ -598,7 +609,7 @@ STEP-0261/0262 会重复执行较慢的 compiler/parser 差分；只在源码或
 
 > 资产价值：guest 前端的自举可降级性是**形状前沿**而非功能开关。`docs/development/script-component-emission-v0.md` 记录的是 **Rust 侧**发射算法，不代表 guest 侧能照抄同样的 Sico 写法；后续刀（record 构造 / 变体 / IR 摄取）必须先在本表里找已证形状再落笔。
 
-## 5. guest 前端的语法与语义纪律（STEP-0494 实测 / STEP-0495 补第 9 条 / STEP-0496 补第 10–11 条，2026-10-21）
+## 5. guest 前端的语法与语义纪律（STEP-0494 实测 / STEP-0495 补第 9 条 / STEP-0496 补第 10–11 条 / STEP-0499 补第 12 条，2026-10-21）
 
 下列**不是**形状问题，而是 Sico 前端的语法/语义硬约束；踩中时的症状具有欺骗性（第一条几乎无声）。
 
@@ -610,9 +621,14 @@ STEP-0261/0262 会重复执行较慢的 compiler/parser 差分；只在源码或
 | 9 | **match 分支的 `case ok(x)` / `case error(x)` 绑定与函数的 `let` 单元共用同一个命名空间**（第 7 条的另一半） | 编译报 `unsupported cell redeclared at bytes <offset>`——**即使两者分处不同语句**（STEP-0495 在 `selfhost/compiler.sico` 里 `case ok(split_tail): ...` 之后又 `let split_tail = ...` 即中招） | match 绑定用**专名**（`split_tail_len_value`），别和 `let` 单元同名 |
 | 10 | **形参 / 局部名不得取语言关键字** | 编译报 `cannot lower <文件>: unsupported atomic expression at bytes <offset>`——**报错只给入口文件名，不给真正出问题的那一行**（本例 range 实际落在被导入模块 `selfhost/codegen.sico` 里）。根因：`crates/sico-lexer/src/lib.rs` 的关键字表（`"from" => TokenKind::From` 等）+ `crates/sico-ir/src/lower.rs` 的 `_ => Err(unsupported_error("atomic expression", token.range))`——关键字 token 在 lowerer 里一律走"原子表达式"兜底分支 | 用**中性名**（`from` → `start` / `from_off`）。常见雷区：`from` / `to` / `type` / `use` / `module` / `task` / `try` / `new` |
 | 11 | **同函数内的 `let` 没有块作用域**（第 7 条的第三种形态） | 编译报 `unsupported cell redeclared at bytes <offset>`——**两个 `let` 分处不同 `if` 分支也会撞**（STEP-0496 在 `cgp_type_text` 的 `named` 分支与 `result` 分支各写了一个 `let cgpt_data` 即中招） | 分支内用**带分支前缀的名字**（`cgpt_data` → `cgpt_result_data`），或把声明提到分支之前 |
+| 12 | **扁平判定有固定次序：模块自己声明的 record 优先，其次内建名；且"不可扁平的自声明 record"等于"未声明"** | 次序写反时，一个字段不可扁平的自声明 record 会被误判成 1 × i32（落进 `ScriptErrorCode` 分支）。根因在 oracle 侧：`register_user_records` 对不可扁平的 record **不注册**（`flattenable = false` ⇒ 不入 `user_records`），因此它继续落到内建名分支。症状不是报错，而是"某个 fixture 的局部声明字节差一组"，且只在该 fixture 上出现 | 先查模块声明的 record，查不到再判内建名；不可扁平 ⇒ 返回空 ⇒ 一律 typed 拒绝（`ERR:E-SH-CG-IR-FLAT`），**不近似** |
 
 > 另一条**判定顺序**纪律（不属于语法，但在同一片里踩中并当场抓出）：`record_scalar_kind` 对**未知词返回的是 ERR 串**（`ERR:E-SH-IR-RECORD-TYPE`）而**不是空串**——所以"先看返回值长度、为 0 才当命名类型"的写法会把**命名类型判成错误**。正确顺序：先看是否以 `ERR:` 开头，是则转命名类型判定，否则才是标量。
 
 > 再一条**宿主/包限值契约**纪律（STEP-0497 实测，不属于语法但同属"违反时症状具有欺骗性"）：**任何执行路径的 effective guest 内存上限必须 ≥ 脚本组件声明的下界**（`SCRIPT_MEMORY_BYTES` = 33,792 页 = 2,214,592,512 B，声明时 min == max）。症状是**启动即 trap**（`forcing trap when growing memory to <声明下界> bytes`），既不是降低失败也不是宿主内存不足，且**每台机器都复现**。致命之处在于 effective = **min(包 manifest, 宿主)**：两处都可能低于下界，**只修一处仍红**（STEP-0497 实测：只把宿主 2 GiB 抬到 2.5 GiB，用例仍然红，因为真正绑定的是包 manifest 继承的 64 MiB）。因此该契约必须写成**可执行守卫**（codegen 字节级 / package / runtime / runner 四层，均不依赖 runtime 二进制），而不是口头约定——否则"本地绿灯是空跑"（`SICO_TEST_WASMTIME` 未设时启动缝用例直接 return）会再次掩盖红点。
 
-> 这四条加上 §4 的形状前沿，共同构成"新代码必须能被 guest 自己降低"的**全部已知约束**。STEP-0494 因为前三条各返工一轮（详见 [STEP-0494](./steps/STEP-0494-m22-w2-s5-record-construct.md) §5），STEP-0495 补齐第 9 条（详见 [STEP-0495](./steps/STEP-0495-m22-w2-s5-result-variant.md) §5），STEP-0496 补齐第 10–11 条（详见 [STEP-0496](./steps/STEP-0496-m22-w2-s5-ir-ingestion-plan.md) §6），所以本表的扩充应与每片实现同步。
+> 再一条**协作纪律**（STEP-0499 实测，不属于语法但同属"违反时症状具有欺骗性"）：**STEP 编号是跨并行 worktree 的共享序列**。本片在并行 M23 会话提交 `36f0ee9`（占用 STEP-0498）**之前**就把自己的片取号为 STEP-0498；当时核对 `docs/steps/` 无冲突，但 M23 的提交**先落地**。症状**不报错**，只表现为"同一个编号在 `docs/steps/` 下出现两份记录"（已入库的那份有提交，另一份还是未跟踪文件）。纪律：**取号之后到提交之前，只要同树有并行会话落地提交，就必须重新核对编号**；冲突时**已提交的一方保留，未入库的一方让位重编号**（本片让位为 STEP-0499），并在自己的 STEP 记录里写明让位原因与让位前的原编号。
+
+> 再一条**验证覆盖**纪律（STEP-0499 实测，不属于语法但同属"违反时症状具有欺骗性"）：**根工作区的 `cargo fmt --all -- --check` 不覆盖 `runner/sico-runner`**——后者是**独立 Cargo 工作区**，不在根 `Cargo.toml` 的 `members` 里（根只有 28 个 `crates/*` 与 `pilots/*`）。`tools/run-ci.ps1` 的 11 步**没有** `fmt (runner)` 步骤（只有 `clippy (runner)`，而 clippy 不查排版），唯一的 runner fmt 检查在 `tools/validate-step-0245.ps1` 里，**0245 不在 run-ci 的 11 步内**，CI 工作流 `.github/workflows/m22-w1-ci.yml` 又只调用 `run-ci.ps1` ⇒ **runner 工作区的 rustfmt 违规能同时通过本机一键 CI 与独立 CI**。症状具有欺骗性：同一棵树上 run-ci 的 `fmt` 报 PASS、0245 的 runner fmt 报 FAIL，看起来像"两个工具互相矛盾"。STEP-0499 实测到此缺口并已按 rustfmt 输出对齐修好本片代码；**owner 拍板后本片已修缺口本身**——`tools/run-ci.ps1` 增加第 12 步 `fmt (runner)`（与既有 `clippy (runner)` 同形），**自本片起独立 CI 的内层步数为 12**（此前两轮历史 run 的 11/11 是历史事实，裁决证据不变，见 [STEP-0500](./steps/STEP-0500-m23-exit-verdict-independent-ci-green.md) §2 的「步数口径说明」）。
+
+> 这四条加上 §4 的形状前沿，共同构成"新代码必须能被 guest 自己降低"的**全部已知约束**。STEP-0494 因为前三条各返工一轮（详见 [STEP-0494](./steps/STEP-0494-m22-w2-s5-record-construct.md) §5），STEP-0495 补齐第 9 条（详见 [STEP-0495](./steps/STEP-0495-m22-w2-s5-result-variant.md) §5），STEP-0496 补齐第 10–11 条（详见 [STEP-0496](./steps/STEP-0496-m22-w2-s5-ir-ingestion-plan.md) §6），STEP-0499 补齐第 12 条与上面那条协作纪律（详见 [STEP-0499](./steps/STEP-0499-m22-w2-s5-slot-plan.md) §8），所以本表的扩充应与每片实现同步。

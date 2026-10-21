@@ -1110,3 +1110,229 @@ function cgp_run_plan(ir: Text) returns Text:
   end while
   return cgpr_text
 end function
+
+// STEP-0499 S5 emission plan, first slice: the local declaration plan of the
+// Script-profile `run` function.
+//
+// The Rust backend assigns Wasm slots to every IR value (parameters first,
+// then instruction results in IR order), adds one dispatcher slot and the
+// Script scratch pair, and writes every non-parameter slot as its own local
+// declaration group. The guest recomputes the same plan from the ingested IR
+// so the local declaration section can be compared byte for byte against the
+// oracle's own emission.
+//
+// The plan is carried as the local declaration bytes themselves: one
+// `count`/`valtype` group per slot, `01 7f` for an i32 slot and `01 7e` for
+// an i64 slot.
+
+// The offset of the `run` function in the IR; 0 when the IR carries none.
+function cgs_run_function(bytes: Bytes) returns U64:
+  let cgsrf_functions = cgj_member(bytes, U64.literal(0), "functions")
+  if U64.equal(cgsrf_functions, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let cgsrf_index = U64.literal(0)
+  let cgsrf_run = U64.literal(0)
+  let cgsrf_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgsrf_more):
+    let cgsrf_item = cgj_array_item(bytes, cgsrf_functions, cgsrf_index)
+    if U64.equal(cgsrf_item, U64.literal(0)):
+      set cgsrf_more = U64.literal(0)
+      continue
+    end if
+    let cgsrf_name_off = cgj_member(bytes, cgsrf_item, "name")
+    if U64.equal(cgsrf_name_off, U64.literal(0)):
+      return U64.literal(0)
+    end if
+    if cg_is_word(cgj_ident_text(bytes, cgsrf_name_off), "run"):
+      set cgsrf_run = cgsrf_item
+      set cgsrf_more = U64.literal(0)
+      continue
+    end if
+    set cgsrf_index = cg_next(cgsrf_index)
+  end while
+  return cgsrf_run
+end function
+
+// The local declaration bytes of the IR type at `ty`; "" when the type is
+// outside the Script v0 flattening subset (fail closed, never approximate).
+function cgs_flat_hex(bytes: Bytes, ty: U64) returns Text:
+  let cgsfh_kind_off = cgj_member(bytes, ty, "kind")
+  if U64.equal(cgsfh_kind_off, U64.literal(0)):
+    return ""
+  end if
+  let cgsfh_kind = cgj_ident_text(bytes, cgsfh_kind_off)
+  if cg_is_word(cgsfh_kind, "bool"):
+    return "017f"
+  end if
+  if cg_is_word(cgsfh_kind, "i64"):
+    return "017e"
+  end if
+  if cg_is_word(cgsfh_kind, "u64"):
+    return "017e"
+  end if
+  if cg_is_word(cgsfh_kind, "string"):
+    return "017f017f"
+  end if
+  if cg_is_word(cgsfh_kind, "bytes"):
+    return "017f017f"
+  end if
+  if cg_is_word(cgsfh_kind, "list"):
+    let cgsfh_list_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgsfh_list_data, U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_list_kind_off = cgj_member(bytes, cgsfh_list_data, "kind")
+    if U64.equal(cgsfh_list_kind_off, U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_list_kind = cgj_ident_text(bytes, cgsfh_list_kind_off)
+    if cg_is_word(cgsfh_list_kind, "string"):
+      return "017f017f"
+    end if
+    if cg_is_word(cgsfh_list_kind, "i64"):
+      return "017f017f"
+    end if
+    if cg_is_word(cgsfh_list_kind, "u64"):
+      return "017f017f"
+    end if
+    return ""
+  end if
+  if cg_is_word(cgsfh_kind, "named"):
+    let cgsfh_named_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgsfh_named_data, U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_named_text = cgj_ident_text(bytes, cgsfh_named_data)
+    if U64.equal(sico.text.length(cgsfh_named_text), U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_record_hex = cgs_record_hex(bytes, cgsfh_named_text)
+    if U64.less_than(U64.literal(0), sico.text.length(cgsfh_record_hex)):
+      return cgsfh_record_hex
+    end if
+    if cg_is_word(cgsfh_named_text, "ScriptErrorCode"):
+      return "017f"
+    end if
+    return ""
+  end if
+  if cg_is_word(cgsfh_kind, "result"):
+    let cgsfh_result_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgsfh_result_data, U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_ok_off = cgj_member(bytes, cgsfh_result_data, "ok")
+    let cgsfh_error_off = cgj_member(bytes, cgsfh_result_data, "error")
+    if U64.equal(cgsfh_ok_off, U64.literal(0)):
+      return ""
+    end if
+    if U64.equal(cgsfh_error_off, U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_ok_hex = cgs_flat_hex(bytes, cgsfh_ok_off)
+    if U64.equal(sico.text.length(cgsfh_ok_hex), U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_error_hex = cgs_flat_hex(bytes, cgsfh_error_off)
+    if U64.equal(sico.text.length(cgsfh_error_hex), U64.literal(0)):
+      return ""
+    end if
+    let cgsfh_hex = "017f"
+    set cgsfh_hex = sico.text.concat(cgsfh_hex, cgsfh_ok_hex)
+    set cgsfh_hex = sico.text.concat(cgsfh_hex, cgsfh_error_hex)
+    return cgsfh_hex
+  end if
+  return ""
+end function
+
+// The local declaration bytes of the module's own record `name`; "" when the
+// record is absent or one of its fields does not flatten.
+function cgs_record_hex(bytes: Bytes, name: Text) returns Text:
+  let cgsrh_records = cgj_member(bytes, U64.literal(0), "records")
+  if U64.equal(cgsrh_records, U64.literal(0)):
+    return ""
+  end if
+  let cgsrh_fields = cgj_member(bytes, cgsrh_records, name)
+  if U64.equal(cgsrh_fields, U64.literal(0)):
+    return ""
+  end if
+  let cgsrh_hex = ""
+  let cgsrh_index = U64.literal(0)
+  let cgsrh_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgsrh_more):
+    let cgsrh_field = cgj_array_item(bytes, cgsrh_fields, cgsrh_index)
+    if U64.equal(cgsrh_field, U64.literal(0)):
+      set cgsrh_more = U64.literal(0)
+      continue
+    end if
+    let cgsrh_field_ty = cgj_member(bytes, cgsrh_field, "ty")
+    if U64.equal(cgsrh_field_ty, U64.literal(0)):
+      return ""
+    end if
+    let cgsrh_field_hex = cgs_flat_hex(bytes, cgsrh_field_ty)
+    if U64.equal(sico.text.length(cgsrh_field_hex), U64.literal(0)):
+      return ""
+    end if
+    set cgsrh_hex = sico.text.concat(cgsrh_hex, cgsrh_field_hex)
+    set cgsrh_index = cg_next(cgsrh_index)
+  end while
+  return cgsrh_hex
+end function
+
+// The local declaration bytes of the Script-profile `run` function: one group
+// per instruction slot in IR order, then the dispatcher slot and the Script
+// scratch pair.
+function cgs_local_hex(bytes: Bytes) returns Text:
+  let cgslh_run = cgs_run_function(bytes)
+  if U64.equal(cgslh_run, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgslh_cells = cgj_member(bytes, cgslh_run, "locals")
+  if U64.less_than(U64.literal(0), cgslh_cells):
+    let cgslh_first_cell = cgj_array_item(bytes, cgslh_cells, U64.literal(0))
+    if U64.less_than(U64.literal(0), cgslh_first_cell):
+      return "ERR:E-SH-CG-IR-FLAT"
+    end if
+  end if
+  let cgslh_blocks = cgj_member(bytes, cgslh_run, "blocks")
+  if U64.equal(cgslh_blocks, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgslh_hex = ""
+  let cgslh_block_index = U64.literal(0)
+  let cgslh_block_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgslh_block_more):
+    let cgslh_block = cgj_array_item(bytes, cgslh_blocks, cgslh_block_index)
+    if U64.equal(cgslh_block, U64.literal(0)):
+      set cgslh_block_more = U64.literal(0)
+      continue
+    end if
+    let cgslh_instructions = cgj_member(bytes, cgslh_block, "instructions")
+    if U64.equal(cgslh_instructions, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgslh_instruction_index = U64.literal(0)
+    let cgslh_instruction_more = U64.literal(1)
+    while U64.less_than(U64.literal(0), cgslh_instruction_more):
+      let cgslh_instruction = cgj_array_item(bytes, cgslh_instructions, cgslh_instruction_index)
+      if U64.equal(cgslh_instruction, U64.literal(0)):
+        set cgslh_instruction_more = U64.literal(0)
+        continue
+      end if
+      let cgslh_instruction_ty = cgj_member(bytes, cgslh_instruction, "ty")
+      if U64.equal(cgslh_instruction_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let cgslh_instruction_hex = cgs_flat_hex(bytes, cgslh_instruction_ty)
+      if U64.equal(sico.text.length(cgslh_instruction_hex), U64.literal(0)):
+        return "ERR:E-SH-CG-IR-FLAT"
+      end if
+      set cgslh_hex = sico.text.concat(cgslh_hex, cgslh_instruction_hex)
+      set cgslh_instruction_index = cg_next(cgslh_instruction_index)
+    end while
+    set cgslh_block_index = cg_next(cgslh_block_index)
+  end while
+  set cgslh_hex = sico.text.concat(cgslh_hex, "017f")
+  set cgslh_hex = sico.text.concat(cgslh_hex, "027f")
+  return cgslh_hex
+end function

@@ -1,6 +1,6 @@
 # STEP-0497 m22-w2 修复 M23 会话交接的 CI 红点：脚本组件 guest 内存上限与 effective ceiling 断裂
 
-> - status: implementation complete locally（待 owner 授权 commit/push 后由独立 CI 取裁决）
+> - status: **complete（独立 CI 已裁决：run 39524849306 = `success`）**
 > - date: 2026-10-21
 > - owners: autonomous-agent
 > - depends: [STEP-0496](./STEP-0496-m22-w2-s5-ir-ingestion-plan.md)（上一片）、[RFC-0029](../rfc/RFC-0029-script-profile-v0.md)（Script profile v0 + STEP-0454/0484 修正案）
@@ -125,10 +125,26 @@
 
 > 首轮 CI 记录为 **CI RED: fmt**（仅 fmt）：该轮 CI 在本片改动落地前启动，其 fmt 步骤比对了 rustfmt 尚未对齐的两处排版；已按 rustfmt 输出手工对齐后重跑全量，得到最终态 **CI GREEN**。
 
+## 7.1 独立 CI 裁决（已出）
+
+owner 授权后本片与 STEP-0496 一起提交为 `7e5ad3c`（35 files, +4868/−99），推送到 `github/codex/m22-w1-ci`（fast-forward `6808569..7e5ad3c`，远端 ref 已核对 = `7e5ad3c21197e40848beb403c53074e3458feaf8`），触发 **独立 runner** 上的 CI：
+
+| 项 | 值 |
+|---|---|
+| run id | `39524849306` |
+| workflow | `M22 W1 independent CI`（`.github/workflows/m22-w1-ci.yml`） |
+| head_sha | `7e5ad3c21197e40848beb403c53074e3458feaf8` |
+| runner | `windows-2025`（GitHub Actions，独立于本机） |
+| 开始 / 结束 | 2026-10-21T01:01:29Z → 2026-10-21T01:28:08Z |
+| **裁决** | **`status: completed` / `conclusion: success`** |
+| job | `windows-gnu`：`Set up job` / `checkout` / `Install GNU build tools` / **`Run repository CI on a fresh runner`** 全部 success |
+
+即：M23 会话交接的 CI 红点**在独立 runner 上确认转绿**，本片的修复不再是"仅本机绿"。**本片到此闭合。**
+
 ## 8. 诚实性
 
 - 本片**不推进门 3**：run 体发射、37 语料 / formatter / 全源 canary 阶梯、ADR-0015 `A == B == C` + `.sapp` 链全部未做，门 3 仍为 **NO-GO**。
-- 本片**未提交、未推送**：owner 未授权 commit/push；M23 会话已表示可代为推送并触发独立 CI 取裁决，**需 owner 明确授权**。
+- 本片**已提交并推送**（owner 授权）：提交 `7e5ad3c`，推送 `github HEAD:refs/heads/codex/m22-w1-ci`（fast-forward `6808569..7e5ad3c`），**独立 CI run 39524849306 裁决 `success`**（见 §7.1）。
 - 本片**没有**改动 `MEMORY_PAGES`，因此**没有**重生成任何快照；发射字节与 STEP-0496 交付时逐字节相同（除本片新增的守卫测试外，无 Rust 生产字节变化）。
 - **登记的设计债**：因为 memory 的 minimum == maximum，RFC-0029 原条款"除非有更严格的包/Host 限额"对脚本组件**不可实现**——低于声明下界的限额不是"更紧"，而是"不可满足"。彻底解决需要让声明内存按需增长（min < max）或改写该条款为"限额只能在声明之内约束执行"，属**未来 RFC** 议题，本片只登记不改写。
 - 工作区仍有**非本线遗留**的未跟踪文件 `crates/sico-codegen-wasm/tests/scratch_dump.rs`（含 `include_str!("../../../target/tmp/echo_fixture.sico")`），它在干净检出上会**破坏 `cargo test --workspace`**；本片未改动它（属他人工作区产物），提请 owner 在提交前处置。

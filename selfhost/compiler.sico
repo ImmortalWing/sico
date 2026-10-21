@@ -931,6 +931,18 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
       end if
       return ok(ScriptOutput(stdout: sico.text.encode(plan_text), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
     end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-locals-hex"):
+      let cglh_words = parser.lex_words(input.stdin)
+      let cglh_ir = parser.scalar_ir(cglh_words, input.stdin)
+      if sico.text.starts_with(cglh_ir, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: cglh_ir))
+      end if
+      let cglh_hex = codegen.cgs_local_hex(sico.text.encode(cglh_ir))
+      if sico.text.starts_with(cglh_hex, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: cglh_hex))
+      end if
+      return ok(ScriptOutput(stdout: sico.text.encode(cglh_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    end if
   end if
   let general_words = parser.lex_words(input.stdin)
   let general_ir = parser.scalar_ir(general_words, input.stdin)

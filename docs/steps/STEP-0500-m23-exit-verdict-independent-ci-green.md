@@ -34,6 +34,8 @@ PASS: cross-host matrix + UI corpus (00:00:00)
 PASS: whitespace (git diff --check) (00:00:01)
 ```
 
+> **步数口径说明（STEP-0499 追加，2026-10-21）**：上面两轮 run 的 **11/11** 是**历史事实**——那两轮执行时 `tools/run-ci.ps1` 就是 11 个内层步骤，本裁决所依据的证据不变。自 **STEP-0499** 起，`tools/run-ci.ps1` 增加了第 12 步 **`fmt (runner)`**（`runner/sico-runner` 是独立 Cargo 工作区，不在根 `Cargo.toml` 的 `members` 里，根 `cargo fmt --all` 不覆盖它；此前只有不在 CI 步骤内的 `tools/validate-step-0245.ps1` 检查它 ⇒ runner 工作区的 rustfmt 违规能同时通过本机一键 CI 与独立 CI）。因此**自本片起，独立 CI 的内层步数为 12**；引用本裁决时，历史 run 记 11/11、后续 run 记 12/12，两者都指各自当时的真实形状。
+
 runner 存在 `windows-2025` + MSYS2 MINGW64 的 GNU 工具链，180 分钟上限；
 `SICO_TEST_WASMTIME` 由 `tools/run-ci.ps1` 注入，故 `sico-app-cli` 的 guest
 启动缝**在本轮被真实执行**（此前红点所在处）。
