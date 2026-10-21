@@ -26,6 +26,7 @@ use compiler_parser.lossless_tokens
 use parser.lex_words
 use parser.scalar_ir
 use codegen.component_hex_for_minimal
+use codegen.cgp_run_plan
 
 function is_ident_byte(b: I64) returns Bool:
   if I64.equal(b, I64.literal(95)):
@@ -879,6 +880,56 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
         return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
       end if
       return ok(ScriptOutput(stdout: sico.text.encode(component_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-ir-split"):
+      let split_words = parser.lex_words(input.stdin)
+      let split_ir = parser.scalar_ir(split_words, input.stdin)
+      if sico.text.starts_with(split_ir, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: split_ir))
+      end if
+      let split_bytes = sico.text.encode(split_ir)
+      let split_len = sico.bytes.length(split_bytes)
+      let split_at = U64.literal(0)
+      match U64.checked_div(split_len, U64.literal(2)):
+        case ok(split_half):
+          set split_at = split_half
+        case error(_):
+          return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "IR length is not divisible"))
+      end match
+      let split_tail_len = U64.literal(0)
+      match U64.checked_sub(split_len, split_at):
+        case ok(split_tail_len_value):
+          set split_tail_len = split_tail_len_value
+        case error(_):
+          return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "IR length overflow"))
+      end match
+      let split_head = sico.text.encode("")
+      match sico.bytes.slice(split_bytes, U64.literal(0), split_at):
+        case ok(split_head_bytes):
+          set split_head = split_head_bytes
+        case error(_):
+          return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "IR head slice failed"))
+      end match
+      let split_tail = sico.text.encode("")
+      match sico.bytes.slice(split_bytes, split_at, split_tail_len):
+        case ok(split_tail_bytes):
+          set split_tail = split_tail_bytes
+        case error(_):
+          return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "IR tail slice failed"))
+      end match
+      return ok(ScriptOutput(stdout: split_head, stderr: split_tail, exit_code: I64.literal(0)))
+    end if
+    if same_text(word_at(input.arguments, U64.literal(0)), "--emit-ir-plan"):
+      let plan_words = parser.lex_words(input.stdin)
+      let plan_ir = parser.scalar_ir(plan_words, input.stdin)
+      if sico.text.starts_with(plan_ir, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: plan_ir))
+      end if
+      let plan_text = codegen.cgp_run_plan(plan_ir)
+      if sico.text.starts_with(plan_text, "ERR:"):
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: plan_text))
+      end if
+      return ok(ScriptOutput(stdout: sico.text.encode(plan_text), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
     end if
   end if
   let general_words = parser.lex_words(input.stdin)

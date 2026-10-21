@@ -29,7 +29,9 @@ pub mod package_builder;
 mod stdlib;
 
 use canonical::{Flat, ScriptAbi};
-pub use canonical::{FsUse, SCRIPT_WIT, StreamUse, script_types_instance, wrap_script_component};
+pub use canonical::{
+    FsUse, SCRIPT_MEMORY_BYTES, SCRIPT_WIT, StreamUse, script_types_instance, wrap_script_component,
+};
 pub use sico_ir;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

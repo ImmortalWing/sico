@@ -2,9 +2,73 @@
 
 > - 更新：2026-10-19（STEP-0469 implementation；当前状态见 §0，census 141/146、0 DIFF，红户 5）；工作目录 `E:\github\sico-w2`（git worktree），分支 `codex/m22-w2`（STEP-0352–0469 未提交，工作树 = e963872 + 百余片）。**探针基建在 `target/tmp/`（持久基座；禁放 C:\Users\...\Temp）**：extract_closure.py（file-order 版）/ closures.py / cmp_probe.sh（400B 燃料、POSIX stdin + cygpath DUMP_SRC、printf 字节对拍）/ run_dump.sh / dump_oracle.rs / run_census.sh / scratch_census_probe.rs（2560MiB）/ instr_cs_0436.py / surgery_0465_l/r.py / surgery_0469.py；parser.sico 备份链 `target/tmp/parser_backup_*.sico`（最新 0469）。
 > - `origin/dev` 已前进至 `550059a`，包含另一套 STEP-0279–0283 W1/W2 历史，与本分支源码及 STEP 编号冲突。不得覆盖或隐式合并。STEP-0330–0337 为 M24 并行轨（worktree `sico-m24`，提交 `095227b`）占用；M22 线自 STEP-0338 起编。
+> - **2026-10-20 23:48 更新**：本工作树出现**并行 M23 会话**产物（`tools/validate-step-0489.ps1`，M23 residual closure A）→ **STEP-0489 已被 M23 占用**；M22 线下一片从 **STEP-0490** 起取号。两会话同树并行，改动面必须互不重叠。
+> - **2026-10-21 更新**：并行 M23 会话**先占用了 STEP-0490**（`docs/steps/STEP-0490-m23-item3-bare-literal-preparation.md`）→ M22 线本片**顺延为 STEP-0491**。取号前必须先核对 `docs/steps/` 与本手稿；两会话改动面仍不重叠（M23 触 `docs/ROADMAP.md` / `docs/plans/M23-*` / M23 普查与 bare-literal 测量工具，未触 `selfhost/parser.sico` 与 M22 计划/手稿）。
 > - 权威裁决：[STATUS](./STATUS.md)、[M22 计划](./plans/M22-compiler-self-host.md)、[STEP-0292](./steps/STEP-0292-m22-w1-independent-ci.md)、[STEP-0293](./steps/STEP-0293-m22-w2-u64-to-text-while-rhs.md) 与 [STEP-0294](./steps/STEP-0294-m22-w2-map-get-match-subject.md)。本手稿只提供恢复路径。
 
 ## 0. 当前状态
+**STEP-0497（2026-10-21，implementation complete locally）**：**修复 M23 会话交接的 CI 红点 = 脚本组件 guest 内存"声明下界 > effective ceiling"**（[STEP-0497](./steps/STEP-0497-m22-w2-ci-arena-ceiling-repair.md)）。**本片不推进门 3**。
+- **红点**：`sico-app-cli::run_executes_a_script_package_end_to_end` 在 CI（run 39454624507 / 39457030463）红，错误逐字 `forcing trap when growing memory to 2214592512 bytes`；本机在 `SICO_TEST_WASMTIME` 已设时**逐字复现**（修复前），修复后 **ok**。
+- **归因比 M23 归因报告更完整——真正绑定的是包 manifest 的 64 MiB，不是宿主 2 GiB**：`effective_limits = min(包 manifest 请求, 宿主)`，而 `sico-app-cli::script_limits()` 继承 `RuntimeLimits::default()` 的 64 MiB ⇒ **只抬宿主上限，用例实测仍红**；宿主 2 GiB 是第二个独立缺口（同样低于声明下界）。
+- **断点**：`b9f652b`（最后一次绿 CI）时 `MEMORY_PAGES = 1024` = 64 MiB，与包 manifest **恰好相等**；`c50b3fd`（STEP-0402/0421/0454/0484）把 `MEMORY_PAGES` 2048 → 33792、`ARENA_LIMIT` 128 MiB → 2 GiB、宿主授权 128 MiB → 2 GiB **一次改完、未同步包 manifest** ⇒ 配对断裂，断裂后第一个 CI 运行即红。
+- **修法（取"不改变发射字节"的一侧）**：`MEMORY_PAGES` 不动（避免重生成 `tests/wasm/artifacts.hex` 快照、guest 冻结常量与全部发射字节）；包 manifest 限值抬到 `SCRIPT_MEMORY_BYTES` = 33,792 页 = **2,214,592,512 B**（声明线性内存，min == max）；宿主上限 2 GiB → **2.5 GiB**（与 runner 路径 `RunnerLimits::default()` 同值）；低于声明下界一律 **typed refusal**（`sico-package::build_script_v1` 拒绝 + `sico-runtime::PackageRuntimeError::MemoryCeilingBelowDeclared`）。
+- **四条不变量守卫**（codegen 字节级 memory section / package 层 / runtime 层 / runner 层）全部为常量或字节比较、**不依赖 wasmtime** ⇒ 修掉"本地绿灯是空跑"（`SICO_TEST_WASMTIME` 未设时启动缝用例直接 return）的假阴性。
+- **模块边界未破**：`runtime` 模块不允许依赖 `compiler` ⇒ `sico-runtime` 不新增 `sico-codegen-wasm` 生产依赖，改经 `sico-package`（`application` 模块，已登记例外）转出 `SCRIPT_MEMORY_BYTES`。
+- **RFC-0029 增补 STEP-0497 修正案**：写清 STEP-0454 的 2 GiB = **arena 上限**，声明线性内存 = 2,214,592,512 B（min == max），并**登记设计债**（min == max ⇒ "更严格的包/Host 限额"条款对脚本组件不可实现）。
+- 回归：红点转绿 **ok** + 守卫 8/15+4/4/1 全绿 + 一键 CI（`tools/run-ci.ps1`）。**未提交、未推送**（需 owner 授权后由独立 CI 取裁决）。
+**STEP-0496（2026-10-21，implementation complete locally）**：**guest IR 摄取第一刀 = IR JSON 扫描器 + `run` 发射计划提取**（[STEP-0496](./steps/STEP-0496-m22-w2-s5-ir-ingestion-plan.md)）。
+- **guest 侧**：`selfhost/codegen.sico` 新增字节扫描器（`cgj_ws`/`cgj_string_end`/`cgj_container_end`/`cgj_value_end`/`cgj_span_text`/`cgj_value_text`/`cgj_ident_text`/`cgj_member`/`cgj_object_keys`/`cgj_array_item`）与计划提取（`cgp_type_text`/`cgp_op_text`/`cgp_id_list`/`cgp_field_list`/`cgp_run_plan`）；`selfhost/compiler.sico` 新增 **`--emit-ir-plan` 驱动模式**。
+- **计划文本**（五类行，逐行 LF）：`param <id> <name> <type>` / `inst <result> <type>` / `op <operation>` / `term return <value-id>` / `record <record> <field> <type>`；类型文本 `unit|bool|int|i64|u64|float64|string|bytes` / `list(T)` / `named(N)` / `result(ok,error)`；操作文本 `copy`/`const_int`/`const_i64`/`const_u64`/`const_bool`/`const_string`/`const_bytes`/`call`/`intrinsic`/`project`/`construct`/`variant`。
+- **oracle 侧不改生产代码**：计划生成器写在测试文件里（`plan_type_text`/`plan_op_text`/`plan_id_list`/`plan_text`）；guest 从扫描到的 IR 推出的文本与 oracle 从 `sico_ir::Module` 推出的文本**逐字节相同**（新固件钉 `sico_compiler_extracts_the_run_emission_plan_byte_exactly`，4 个 fixture）。
+- **四类 typed 拒绝各有身份**（ADR-0016 决策 6）：`ERR:E-SH-CG-IR-PLAN`（无 `run`/结构缺失）、`ERR:E-SH-CG-IR-TYPE`（类型超子集）、`ERR:E-SH-CG-IR-OP`（操作超子集）、`ERR:E-SH-CG-IR-TERMINATOR`（终止符非 `return`）；新负钉 4 例。
+- **两条格式决策**：名字剥引号并校验"重新编码后字节相同"（必须是纯标识符，否则 fail-closed）；字面量载荷保留 canonical JSON 原样（guest 永不反转义；Rust 侧用 `serde_json::to_string` 重序列化 ⇒ 两侧必然同字节）。
+- **本片踩到的三条**（两条真缺陷 + 一条新纪律，已写入 §5 纪律表第 10–11 条）：① **`from` 是 Sico 保留关键字**（lexer `TokenKind::From` + lowerer 的 `unsupported atomic expression` 兜底）→ 形参/局部名不得取语言关键字；② **同函数内 `let` 无块作用域**（不同 `if` 分支里的 `let` 也共用命名空间 → `unsupported cell redeclared`）；③ 重写文件时手抄**冻结 hex 常量**出错（已按 `HEAD` 还原，diff 为纯新增零删除）。
+- **燃料成本显式化**：计划模式最小燃料门槛 **10M<cap≤20M**，**超出 runner CLI 默认 10M**（纯 IR 模式为 5M<cap≤10M）→ 新探针 `tools/probe-m22-ir-plan-frontier.ps1` 直接驱动 `sico-runner` 并写明 800B 预算，不把成本藏在 CLI 默认值后面。
+- **诚实收窄**：只提取名为 `run` 的函数；类型只支持 11 类；操作只支持 12 类；终止符只支持 `return`；多块（分支）函数被终止符检查拒绝。**本片只做摄取与计划，没有任何 run 体字节发射**——STEP-0487 的 `--emit-component-hex` 仍是冻结的最小 echo 骨架。
+- 回归：全源 census 字节等同 + 固件 **107/107** + 0245 exit 0 + 0262 `STEP_0262_OK` + 规划合同 0124 `STEP_0124_OK` + 前端前沿探针 **18/18** + **计划层前沿探针 8/8**。**门 3 仍 NO-GO**：run 体发射、37 语料/formatter/全源 canary 阶梯、ADR-0015 `A == B == C` + `.sapp` 链全部未做。
+**STEP-0495（2026-10-21，implementation complete locally）**：**变体 `ok(...)` / `error(...)` = 闭合 Script-profile 三类形状中的第 3 类**（[STEP-0495](./steps/STEP-0495-m22-w2-s5-result-variant.md)）。
+- `ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))` → 投影×2 + `const_i64` + `construct`（result 4）+ `variant ok`（result 5，payload `[4]`），terminator `{"kind":"return","data":5}`，**与 Rust oracle 逐字节相同**（新固件钉，4 个 fixture）。
+- **关键决策**：沿用 STEP-0494 的 helper 家族（顶层浅嵌套），新增 `type_word_json` / `declared_result_arm_type_json` / `construct_field_count` / `construct_lowering` / `payload_type_json` / `record_variant_function_ir`；`Result[T,E]` 的类型 JSON 走**旁路通道**（同 STEP-0493 教训：绝不让 `declared_return_kind` 返回 JSON）。
+- **payload 类型必须校验**（否则产出 `ty` 与 payload 不符的畸形 IR）：与声明分臂不一致 → `ERR:E-SH-IR-VARIANT-TYPE`；形状不支持 → `ERR:E-SH-IR-VARIANT-PAYLOAD`；函数未声明 `Result[...]` → `SKIP` → 落回 `call` 路径 `ERR:E-SH-IR-CALL-TARGET`（与 oracle 的 `E2031 unresolved call target ok` 同裁决）。
+- **oracle 真值修正**：`return_type` **恒按声明顺序** `ok` 在前 `error` 在后，**不随实际构造的分臂交换**（首版对调了，由字节对拍当场抓出）。
+- **本片暴露并修复一条容量边界（比变体本身更重要）**：全模块 canonical IR 从 HEAD 的 8,231,922 B 增长到 **8,608,383 B**，**越过 Script v0 单通道 8 MiB 冻结上限（8,388,608 B）** → 全源 census 取不回 IR，结局从 `Output` 变 `Trap("malformed result: stdout exceeds 8 MiB")`。根因是这条 census 通道从 STEP-0491 起只剩 ~1.9% 余量。修复 = `selfhost/compiler.sico` 新增 **`--emit-ir-split` 驱动模式**（IR 按字节中点切成两半走 stdout/stderr，拼接即完整 IR；拒绝仍按同一 typed identity 走 `ScriptError`，不隐藏）。**默认单通道路径在全模块规模上仍不可用**，这一限制已登记，未被掩盖。
+- **本片踩到的三条**（两条真缺陷 + 一条新语法纪律）：① `type_word_json` 判定顺序错（`record_scalar_kind` 对未知词返回 **ERR 串**而非空串，命名类型因此被判成错误）→ 所有 `Result[...]` 形状统一报 `ERR:E-SH-IR-RECORD-TYPE`；② `return_type` 两臂对调；③ **match 分支绑定与 `let` 单元共用命名空间**（`case ok(x)` 之后再 `let x` → `unsupported cell redeclared`）→ 已写入 §5 纪律表第 9 条。
+- **诚实收窄**：只支持 `Result` 的两个**内建**变体 `ok`/`error`（`some(...)` 在当前 Sico 语言里**不存在**，oracle 自己报 `E2031`）；payload 只支持投影 / `I64/U64.literal` / 字符串字面量 / record 构造；`Result` 分臂类型只支持标量或命名类型；只支持"函数体唯一一条 `return`"。
+- **Script-profile 前沿钉重钉**：STEP-0488 钉的 `ERR:E-SH-IR-CALL-TARGET` typed 拒绝 → 改为**逐字节等同**（`sico_compiler_lowers_the_script_profile_echo_fixture_byte_exactly`）。**STEP-0488 缺口表的前端三项（投影 / 构造 / 变体）至此全部闭合**。
+- 回归：全源 census 字节等同（`--emit-ir-split` 双通道，31.25s）+ 固件 **105/105** + 0245 exit 0 + 0262 `STEP_0262_OK` + 前沿探针 **18/18**。**门 3 仍 NO-GO**：guest IR 摄取、run 体发射、37 语料/formatter/全源 canary 阶梯、ADR-0015 `A == B == C` + `.sapp` 链全部未做。
+**STEP-0494（2026-10-21，implementation complete locally）**：**record 构造 `construct` op = 闭合 Script-profile 三类形状中的第 2 类**（[STEP-0494](./steps/STEP-0494-m22-w2-s5-record-construct.md)）。
+- `ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0))` → 每个字段值先各自降低成一条指令（result 1/2/3），construct 引用这些 id（result 4），terminator `{"kind":"return","data":4}`，**与 Rust oracle 逐字节相同**（新固件钉，344 B fixture）。
+- **关键决策：走 helper 家族，不改 `scalar_ir` 的深层 return 分析**（拆内联分析链会落在 guest 自举的形状前沿上）。新增三个**顶层浅嵌套**函数：`construct_field_comma` / `construct_field_value_ir` / `record_construct_function_ir`；结果 id 记账显式（`rcf_next_result`）。
+- 接入点在 helper 分派链**最前** → "确实是构造但字段不被支持"给出明确 typed 拒绝，而不是掉进 `call` 路径报 `ERR:E-SH-IR-CALL-TARGET`。`script-profile-run` 拒绝身份**不变**（外层 `ok(...)`）。
+- **本片踩到三条真约束**（已写入本手稿 §5 的"语法与语义纪律"表）：返回类型必须写 `returns X:`（`-> X:` **无语法诊断**但语义模型静默丢函数 → 调用点 `E2031`）；同函数内 `let` 不可重名；token 计数边界看最后一个 token 的后继索引。
+- **诚实收窄**：oracle 的构造用通用递归降低字段值（任意表达式）且 lower 阶段不校验字段名存在，guest 两者都更严。
+- **下一片（变体 `ok(...)` / `error(...)`）的 oracle 真值已测并写进 STEP-0494 §8**：`Result` 类型 JSON = `{"kind":"result","data":{"ok":T,"error":E}}`；`variant` op = `{"op":"variant","data":{"name":"ok"|"error","payload":[<ids>]}}`，**payload 是 id 列表**；`variant` 的 `ty` 是**整个 Result 类型**；嵌套顺序 = payload 先降（construct result 4）再降 variant（result 5）；**result id 起点 = `parameter_count`**（无形参 → 第一个指令 result 0）；variant range = 变体表达式跨度。
+- **一条重要的事实修正**：`some(...)` 连 **Rust oracle 都报 `E2031 unresolved call target some`** —— `Option` 的 `some` 变体在当前 Sico 语言里**不存在**，所以 STEP-0488 缺口表里那一行**不是缺口**；**缺口 2 的实际内容只有 `ok` / `error` 两个 `Result` 变体**。
+- 回归：全源 census 字节等同 + 固件 102/102 + 0245 exit 0 + 0262 `STEP_0262_OK` + 前沿探针 15/15。**门 3 仍 NO-GO**。
+**STEP-0493（2026-10-21，implementation complete locally）**：**命名返回类型管道 = 闭合 record 构造/变体的前置缺口 1**（[STEP-0493](./steps/STEP-0493-m22-w2-s5-named-record-return-type.md)）。
+- `returns <已声明 record>` 现在降低为 canonical `return_type` = `{"kind":"named","data":"<Name>"}`；直返同名形参时 instructions 空、terminator `{"kind":"return","data":0}`（返回形参 id），**与 Rust oracle 逐字节相同**（新固件钉）。
+- **关键决策：不动标量 kind 通道**。`declared_return_kind` 的 19 处调用点全部把返回值当**裸标量 kind** 用（`is_word(kind,"u64")` / `"ty":{"kind":"`+kind+`"}` / `length(kind)==0` 门闸）；让它对命名类型返回 JSON 会把 JSON 片段拼进 IR 字段 → 畸形 IR。故走**旁路**：新增 `record_declared` / `declared_return_named_type` / `binding_parameter_named_type` / `named_return_shape_gate`，19 处调用点零改动。
+- **修掉一个真实的 fail-closed 违规**：改动前"命名返回类型 + 语句体"（while 形态）输出**畸形 IR** `"return_type":{"kind":""}`（ADR-0016 决策 6）→ 形态闸门把它收敛成 typed 拒绝 `ERR:E-SH-IR-RETURN-TYPE`。helper 家族按标量 kind 拼 `return_type`，所以闸门必须落在**第一个 helper 调用之前**。
+- **诚实收窄**：只支持"命名返回类型 + 直返同名形参"；带 `let`/`set`/`match`/`if`/`while` 的命名返回类型函数一律拒绝（**Rust oracle 能降低其中一部分**，guest 缺多指令结果 id 记账）；未声明 record 的形参类型 oracle 也接受 → guest 更严，同为收窄。
+- **下一片（record 构造 `construct` op）的 oracle 真值与剩余两项缺口已写进 STEP-0493 §8**（构造实参的子表达式降低 / 多指令结果 id 记账）。
+- 回归：全源 census 字节等同 + 固件 100/100 + 0245 exit 0 + 0262 `STEP_0262_OK` + 前沿探针 12/12。**门 3 仍 NO-GO**。
+**STEP-0492（2026-10-21，implementation complete locally）**：**投影泛化到任意已声明 record（解除 `ScriptInput` 硬编码）**（[STEP-0492](./steps/STEP-0492-m22-w2-s5-generic-record-projection.md)）。
+- `parameters_ir` 的命名形参类型改报**实际声明的记录名**；投影分支的基名类型判定放宽为 `record_named_type`；字段存在性/标量判定仍由 `record_field_kind` 承担（fail-closed 不放松）。
+- Rust oracle 真值已测（159 B fixture）+ 新固件钉逐字节等同。**连带修正一个真实的测试耦合缺陷**：隔离函数组合测试的 Rust oracle 先报 `E2031 unresolved call target record_named_type` → 组合是**显式依赖清单**，新增依赖必须同步登记。
+- **下一片（record 构造）的 oracle 真值与三项前置缺口已写进 STEP-0492 §7**（命名返回类型 / 构造实参的子表达式降低 / 多指令结果 id 记账）。
+- 回归：全源 census 字节等同 + 固件 98/98 + 0245 exit 0 + 0262 `STEP_0262_OK` + 前沿探针 9/9。**门 3 仍 NO-GO**。
+**STEP-0491（2026-10-21，implementation complete locally）**：**S5 前端 record 字段投影闭合 = Script-profile 第 1 类形状打通**（[STEP-0491](./steps/STEP-0491-m22-w2-s5-frontend-record-field-projection.md)）。
+- `input.stdin`（`input: ScriptInput` + 已声明 record + 标量字段）→ canonical `project` op，**与 Rust oracle 逐字节相同**（新固件钉 `sico_compiler_lowers_script_input_field_projection_byte_exactly`）；range = "." + 字段名 token 对。
+- fail-closed：缺 record / 字段不存在 / 非 `ScriptInput` 形参 / 非标量字段 → typed 拒绝 `ERR:E-SH-IR-EXPRESSION`（新固件钉 3 例）。
+- **本片最硬的发现 = guest 自举降级机器有"形状前沿"**：深层块内 `match`、深层块内 `set` 的嵌套 intrinsic 右值、尾部 `match` 主语取循环体内赋值局部 → 全源对拍由 exit 0 变 `ERR:E-SH-IR-CALL-SHAPE`。后续刀必须沿用已证形状（详见 §4 的形状前沿表）。
+- 修掉两个真缺陷：跨块读取块作用域 `let` → 扫描游标归零死循环（fuel 耗尽）；Sico 源码**无 `#` 注释语法**（词法错误）。
+- 探针随推进重钉：8/8 判定一致（投影 → lowered + 2 例负钉）。全源 census 字节等同 + 固件 85/97 + 0262 `STEP_0262_OK`。
+- **下一刀 = record 构造**（`ScriptOutput(stdout: ..., ...)`）→ 变体（`ok`/`some`）→ guest IR 摄取 → run 体发射 → canary 阶梯。门 3 仍 NO-GO。
+**STEP-0488（2026-10-20，diagnosis/registration）**：**IR 驱动发射的前置缺口 = guest 前端不能降低 Script-profile 形态**（record 投影 / `ok(...)`·`some(...)` 变体 / record 构造）——**缺口 1 已由 STEP-0491 闭合**。
+- 证据：探针 `tools/probe-m22-frontend-frontier.ps1`（6/6，`FRONTIER_UNCHANGED` exit 0 = 前沿未移动）+ 固件前沿钉（typed 拒绝身份稳定）。record **声明**已支持且 IR 的 `"records"` 表已按 canonical 格式产出。
+- 发射算法规格已写死（局部槽位计划 / op 发射 / Script 返回 / Canonical ABI 冻结事实 / `user_records` 优先级）+ 目标字节 = 981 B（run 体 223 B 逐条反汇编）。
+- 下一刀顺序 = 前端 record 投影 → record 构造 → 变体 → guest IR 摄取 → run 体发射 → canary 阶梯。门 3 仍 NO-GO。
+- **证据链修复**：`tools/validate-step-0262.ps1` 的 stdin 在 Windows PowerShell 5.1 上被 .NET 注入 UTF-8 BOM（guest `source_len` 68→71 → range 全体右移 3 → 冻结 fixture 对拍失败）。改字节精确文件重定向后 `STEP_0262_OK` 恢复；guest lowering 与 fixture 均无误。同模式脚本（canary / budget / corpus / 0246..0261）待同样改造。
 **STEP-0487（2026-10-20，implementation complete locally）**：**S5 骨架 = guest 发射完整 Component 981B 字节等同 Rust（census 不回归；电池 82/82）**。
 - 布局 11 段文档化；载体 `--emit-component-hex` + 固件对拍；骨架诚实（LEB 实算 + run 体 = IR 槽位）；只覆盖最小冻结源形。
 - 剩余段有序：IR run 体 → 数据段 → 助手表 → 辅助函数 → transport → canary 阶梯。警示：e2e run 体现撞 typed 门，0488 IR 输入取自已证面。
@@ -519,3 +583,36 @@ git diff --check
 ```
 
 STEP-0261/0262 会重复执行较慢的 compiler/parser 差分；只在源码或当前前沿变化后重跑。S6 还必须实测 guest memory/stack 预算，不能将缺失的栈高水位写成已有证据。
+
+## 4. guest 自举降级的形状前沿（STEP-0491 实测，2026-10-21）
+
+`selfhost/parser.sico` 自身被 guest 逐函数降低并与 Rust oracle 逐字节对拍（`sico_guest_arena_accommodates_full_parser_selfhost_input`）。因此**新代码必须同时能被 guest 自己降低**——否则全源对拍从 exit 0 变成 typed 拒绝 `ERR:E-SH-IR-CALL-SHAPE`。下列形状**实测降不动**：
+
+| # | 形状 | 症状 | 已证可用的规避形状 |
+|---|---|---|---|
+| 1 | 深层嵌套块内的 `match`（while 体 → else → 5 层 if → match） | `ERR:E-SH-IR-CALL-SHAPE` | 把 checked 加法放进 `match` 主语：`match U64.checked_add(<偏移>, sico.bytes.length(sico.text.encode(<名字>))):`——与 `scalar_ir` 内既有的 `match U64.checked_add(range_start, sico.bytes.length(sico.text.encode(range_lexeme))):` 同形 |
+| 2 | 深层块内 `set` 的右值是嵌套 intrinsic 调用 | `ERR:E-SH-IR-CALL-SHAPE` | 嵌套 intrinsic 只出现在 `match` 主语里，不再单独作 `set` 右值 |
+| 3 | 函数尾部 `match` 主语取**只在循环体内赋值**的局部 | `ERR:E-SH-IR-CALL-SHAPE` | 不在尾部做该加法；在嵌套块内一次算完 |
+| 4 | 跨块读取块作用域 `let` | 静默取到 0 → 游标归零死循环（fuel 耗尽） | `let` 声明必须提到与使用处同层或更外层 |
+| 5 | 源码里写 `#` 注释 | 词法错误 `UnexpectedCharacter('#')`（整树编译失败） | Sico 源码**无注释语法**，一律不写 |
+
+> 资产价值：guest 前端的自举可降级性是**形状前沿**而非功能开关。`docs/development/script-component-emission-v0.md` 记录的是 **Rust 侧**发射算法，不代表 guest 侧能照抄同样的 Sico 写法；后续刀（record 构造 / 变体 / IR 摄取）必须先在本表里找已证形状再落笔。
+
+## 5. guest 前端的语法与语义纪律（STEP-0494 实测 / STEP-0495 补第 9 条 / STEP-0496 补第 10–11 条，2026-10-21）
+
+下列**不是**形状问题，而是 Sico 前端的语法/语义硬约束；踩中时的症状具有欺骗性（第一条几乎无声）。
+
+| # | 纪律 | 症状 | 正确写法 |
+|---|---|---|---|
+| 6 | 返回类型必须写 `returns X:` | 写成 `-> X:` **没有语法诊断**（lexer 把它当普通标点），但语义模型会**静默丢掉该函数**（`sico-semantics` 的 `parse_function` 用 `position(TokenKind::Returns)?` 定位返回类型，失败即 `None`），于是**每个调用点**报 `E2031 unresolved call target`。`sico outline` 仍会列出该函数（HIR 收得到），只有语义模型没有它 | `function f(...) returns Text:` |
+| 7 | 同一函数内 `let` 不可重名（**互斥分支也不行**） | 编译报 `unsupported cell redeclared` | 顶层声明一次，分支内只 `set` |
+| 8 | "表达式恰好 N 个 token"的边界 | 边界写成"倒数第二个 token"会让形态永远落空（表现为 `ERR:E-SH-IR-CONSTRUCT-VALUE` 之类的笼统拒绝） | 用**最后一个 token 的后继索引**与段尾比较 |
+| 9 | **match 分支的 `case ok(x)` / `case error(x)` 绑定与函数的 `let` 单元共用同一个命名空间**（第 7 条的另一半） | 编译报 `unsupported cell redeclared at bytes <offset>`——**即使两者分处不同语句**（STEP-0495 在 `selfhost/compiler.sico` 里 `case ok(split_tail): ...` 之后又 `let split_tail = ...` 即中招） | match 绑定用**专名**（`split_tail_len_value`），别和 `let` 单元同名 |
+| 10 | **形参 / 局部名不得取语言关键字** | 编译报 `cannot lower <文件>: unsupported atomic expression at bytes <offset>`——**报错只给入口文件名，不给真正出问题的那一行**（本例 range 实际落在被导入模块 `selfhost/codegen.sico` 里）。根因：`crates/sico-lexer/src/lib.rs` 的关键字表（`"from" => TokenKind::From` 等）+ `crates/sico-ir/src/lower.rs` 的 `_ => Err(unsupported_error("atomic expression", token.range))`——关键字 token 在 lowerer 里一律走"原子表达式"兜底分支 | 用**中性名**（`from` → `start` / `from_off`）。常见雷区：`from` / `to` / `type` / `use` / `module` / `task` / `try` / `new` |
+| 11 | **同函数内的 `let` 没有块作用域**（第 7 条的第三种形态） | 编译报 `unsupported cell redeclared at bytes <offset>`——**两个 `let` 分处不同 `if` 分支也会撞**（STEP-0496 在 `cgp_type_text` 的 `named` 分支与 `result` 分支各写了一个 `let cgpt_data` 即中招） | 分支内用**带分支前缀的名字**（`cgpt_data` → `cgpt_result_data`），或把声明提到分支之前 |
+
+> 另一条**判定顺序**纪律（不属于语法，但在同一片里踩中并当场抓出）：`record_scalar_kind` 对**未知词返回的是 ERR 串**（`ERR:E-SH-IR-RECORD-TYPE`）而**不是空串**——所以"先看返回值长度、为 0 才当命名类型"的写法会把**命名类型判成错误**。正确顺序：先看是否以 `ERR:` 开头，是则转命名类型判定，否则才是标量。
+
+> 再一条**宿主/包限值契约**纪律（STEP-0497 实测，不属于语法但同属"违反时症状具有欺骗性"）：**任何执行路径的 effective guest 内存上限必须 ≥ 脚本组件声明的下界**（`SCRIPT_MEMORY_BYTES` = 33,792 页 = 2,214,592,512 B，声明时 min == max）。症状是**启动即 trap**（`forcing trap when growing memory to <声明下界> bytes`），既不是降低失败也不是宿主内存不足，且**每台机器都复现**。致命之处在于 effective = **min(包 manifest, 宿主)**：两处都可能低于下界，**只修一处仍红**（STEP-0497 实测：只把宿主 2 GiB 抬到 2.5 GiB，用例仍然红，因为真正绑定的是包 manifest 继承的 64 MiB）。因此该契约必须写成**可执行守卫**（codegen 字节级 / package / runtime / runner 四层，均不依赖 runtime 二进制），而不是口头约定——否则"本地绿灯是空跑"（`SICO_TEST_WASMTIME` 未设时启动缝用例直接 return）会再次掩盖红点。
+
+> 这四条加上 §4 的形状前沿，共同构成"新代码必须能被 guest 自己降低"的**全部已知约束**。STEP-0494 因为前三条各返工一轮（详见 [STEP-0494](./steps/STEP-0494-m22-w2-s5-record-construct.md) §5），STEP-0495 补齐第 9 条（详见 [STEP-0495](./steps/STEP-0495-m22-w2-s5-result-variant.md) §5），STEP-0496 补齐第 10–11 条（详见 [STEP-0496](./steps/STEP-0496-m22-w2-s5-ir-ingestion-plan.md) §6），所以本表的扩充应与每片实现同步。

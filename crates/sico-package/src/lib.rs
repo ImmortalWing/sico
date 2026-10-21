@@ -21,6 +21,14 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 pub const MAX_COMPONENT_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RESOURCE_BYTES: usize = 8 * 1024 * 1024;
 
+/// The guest linear memory every Script component declares, in bytes.
+///
+/// STEP-0497: the compiler owns the declaration — the Script core modules
+/// emit the same page count as both the memory minimum and its maximum — so
+/// the package layer re-exports the number instead of restating it. Every
+/// execution path's effective memory ceiling must be at least this value.
+pub use sico_codegen_wasm::SCRIPT_MEMORY_BYTES;
+
 const MAGIC: &[u8; 8] = b"SAPP\r\n\x1a\n";
 const MANIFEST_PATH: &str = "manifest.json";
 const COMPONENT_PATH: &str = "app.component.wasm";
@@ -126,6 +134,24 @@ impl Default for RuntimeLimits {
             random_bytes: 64 * 1024,
             body_bytes: 1024 * 1024,
         }
+    }
+}
+
+/// The Script v0 profile's package-level runtime limits (RFC-0029).
+///
+/// STEP-0497: `memory_bytes` is the guest linear memory every Script
+/// component declares (`SCRIPT_MEMORY_BYTES`), not the generic 64 MiB
+/// default. The Script core modules declare their memory with the minimum
+/// equal to the maximum, so a smaller package limit puts the host's
+/// effective memory ceiling below the declared minimum: wasmtime cannot
+/// satisfy the minimum at instantiation and the launch dies with an opaque
+/// "forcing trap when growing memory to … bytes" instead of a typed refusal.
+#[must_use]
+pub fn script_profile_limits() -> RuntimeLimits {
+    RuntimeLimits {
+        body_bytes: 8 * 1024 * 1024,
+        memory_bytes: SCRIPT_MEMORY_BYTES,
+        ..RuntimeLimits::default()
     }
 }
 
@@ -368,6 +394,17 @@ pub fn build_script_v1(input: BuildScriptInput) -> Result<Vec<u8>, PackageError>
     validate_app_id(&input.app_id)?;
     validate_app_version(&input.app_version)?;
     validate_limits(&input.limits)?;
+    // STEP-0497: a Script package's memory limit must cover the guest linear
+    // memory its Component declares. The declaration is fixed (the minimum
+    // equals the maximum), so a smaller limit is not a tighter budget — it is
+    // an unsatisfiable one, and it fails as an opaque instantiation trap
+    // instead of a typed refusal. Reject it at build time.
+    if input.limits.memory_bytes < SCRIPT_MEMORY_BYTES {
+        return Err(PackageError::Manifest(format!(
+            "Script package memory limit {} is below the declared guest memory {}",
+            input.limits.memory_bytes, SCRIPT_MEMORY_BYTES
+        )));
+    }
     if input.component.len() > MAX_COMPONENT_BYTES {
         return Err(PackageError::TooLarge("Component"));
     }

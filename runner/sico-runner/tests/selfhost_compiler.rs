@@ -3,7 +3,7 @@
 //! reserializes them byte-exactly.
 
 use sico_codegen_wasm as codegen_oracle;
-use sico_ir::{Module, canonical_json, lower_core, verify};
+use sico_ir::{Module, Operation, Terminator, Type, ValueId, canonical_json, lower_core, verify};
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
@@ -59,6 +59,126 @@ fn rust_ir(text: &str) -> String {
         .expect("fixture source is bounded");
     let module = lower_core(&source).expect("Rust oracle lowers fixture");
     canonical_json(&module).expect("Rust oracle emits canonical IR")
+}
+
+/// STEP-0496: the same module the guest reads, kept as structure so the
+/// Rust-side plan can be derived from the IR itself and not from its text.
+fn rust_module(text: &str) -> Module {
+    let source = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", text)
+        .expect("fixture source is bounded");
+    lower_core(&source).expect("Rust oracle lowers fixture")
+}
+
+/// STEP-0496: the canonical text form of one IR type, spelled exactly as the
+/// guest spells it. The guest and this function must agree byte for byte.
+fn plan_type_text(ty: &Type) -> Result<String, &'static str> {
+    Ok(match ty {
+        Type::Unit => "unit".to_owned(),
+        Type::Bool => "bool".to_owned(),
+        Type::Int => "int".to_owned(),
+        Type::I64 => "i64".to_owned(),
+        Type::U64 => "u64".to_owned(),
+        Type::Float64 => "float64".to_owned(),
+        Type::String => "string".to_owned(),
+        Type::Bytes => "bytes".to_owned(),
+        Type::List(inner) => format!("list({})", plan_type_text(inner)?),
+        Type::Named(name) => format!("named({name})"),
+        Type::Result { ok, error } => {
+            format!("result({},{})", plan_type_text(ok)?, plan_type_text(error)?)
+        }
+        _ => return Err("ERR:E-SH-CG-IR-TYPE"),
+    })
+}
+
+/// STEP-0496: the comma-separated value ids of an operand list.
+fn plan_id_list(ids: &[ValueId]) -> String {
+    ids.iter()
+        .map(|id| id.0.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// STEP-0496: the canonical text form of one IR operation, spelled exactly as
+/// the guest spells it.
+fn plan_op_text(op: &Operation) -> Result<String, &'static str> {
+    Ok(match op {
+        Operation::Copy(value) => format!("copy {}", value.0),
+        Operation::ConstInt(text) => format!(
+            "const_int {}",
+            serde_json::to_string(text).expect("a string always serializes")
+        ),
+        Operation::ConstI64(value) => format!("const_i64 {value}"),
+        Operation::ConstU64(value) => format!("const_u64 {value}"),
+        Operation::ConstBool(value) => format!("const_bool {value}"),
+        Operation::ConstString(text) => format!(
+            "const_string {}",
+            serde_json::to_string(text).expect("a string always serializes")
+        ),
+        Operation::ConstBytes(bytes) => format!(
+            "const_bytes {}",
+            serde_json::to_string(bytes).expect("bytes always serialize")
+        ),
+        Operation::Call {
+            function,
+            arguments,
+        } => {
+            format!("call {} args=[{}]", function.0, plan_id_list(arguments))
+        }
+        Operation::Intrinsic { name, arguments } => {
+            format!("intrinsic {name} args=[{}]", plan_id_list(arguments))
+        }
+        Operation::Project { base, field } => format!("project base={} field={field}", base.0),
+        Operation::Construct { name, fields } => {
+            let rendered = fields
+                .iter()
+                .map(|field| format!("{}={}", field.name, field.value.0))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("construct name={name} fields=[{rendered}]")
+        }
+        Operation::Variant { name, payload } => {
+            format!("variant name={name} payload=[{}]", plan_id_list(payload))
+        }
+        _ => return Err("ERR:E-SH-CG-IR-OP"),
+    })
+}
+
+/// STEP-0496: the run emission plan, derived from the module structure. The
+/// guest derives the same text from the canonical IR JSON it scanned; the two
+/// must agree byte for byte.
+fn plan_text(module: &Module) -> Result<String, &'static str> {
+    let Some(run) = module.functions.iter().find(|f| f.name == "run") else {
+        return Err("ERR:E-SH-CG-IR-PLAN");
+    };
+    let mut out = String::new();
+    for parameter in &run.parameters {
+        let ty = plan_type_text(&parameter.ty)?;
+        out.push_str(&format!(
+            "param {} {} {}\n",
+            parameter.id.0, parameter.name, ty
+        ));
+    }
+    for block in &run.blocks {
+        for instruction in &block.instructions {
+            let ty = plan_type_text(&instruction.ty)?;
+            let op = plan_op_text(&instruction.operation)?;
+            out.push_str(&format!("inst {} {}\n", instruction.result.0, ty));
+            out.push_str(&format!("op {op}\n"));
+        }
+        match &block.terminator {
+            Terminator::Return(Some(value)) => {
+                out.push_str(&format!("term return {}\n", value.0));
+            }
+            _ => return Err("ERR:E-SH-CG-IR-TERMINATOR"),
+        }
+    }
+    for (name, fields) in &module.records {
+        for field in fields {
+            let ty = plan_type_text(&field.ty)?;
+            out.push_str(&format!("record {} {} {}\n", name, field.name, ty));
+        }
+    }
+    Ok(out)
 }
 
 fn compile_guest() -> &'static [u8] {
@@ -2470,7 +2590,14 @@ fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
     // module walks all 127 functions, so this guard runs with a raised fuel
     // and time budget instead of the shared run_guest defaults.
     let source = format!("{PARSER_SOURCE}\n");
-    let outcome = run_guest_with_args(&source, Vec::new());
+    // STEP-0495: the canonical IR of the whole module (~8.6 MB) no longer
+    // fits one Script v0 channel (RFC-0029 freezes a channel at 8 MiB), so
+    // the default single-channel path now ends in the deterministic transport
+    // refusal instead of a lowering failure. The byte-exact comparison
+    // therefore runs over the `--emit-ir-split` driver mode, which halves the
+    // IR across the two channels; concatenating stdout and stderr restores
+    // the exact module IR.
+    let outcome = run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()]);
     // STEP-0484 TREADMILL INVERSION: per-function arena reuse (RFC-0029
     // amendment) cleared the STEP-0365 memory wall. The self-host walk now
     // arms the scratch zone once, reclaims every function's garbage via
@@ -2486,7 +2613,9 @@ fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     let expected = rust_ir(&source);
-    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let mut assembled = output.stdout.clone();
+    assembled.extend_from_slice(&output.stderr);
+    assert_bytes_equal(&assembled, expected.as_bytes());
 }
 
 #[test]
@@ -2920,6 +3049,428 @@ fn sico_codegen_guest_emits_component_bytes_byte_exactly() {
 const ECHO_COMPONENT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n";
 
 #[test]
+fn sico_compiler_lowers_the_script_profile_echo_fixture_byte_exactly() {
+    // STEP-0488 → STEP-0495: the guest frontend could not lower the
+    // Script-profile shape yet (record projection, `ok(...)` variant, record
+    // construct); the pin was "typed refusal, stable". STEP-0491 (projection),
+    // STEP-0493 (named return type), STEP-0494 (record construct) and STEP-0495
+    // (`ok(...)` / `error(...)` variant) closed all three gaps, so the frontier
+    // pin is re-pinned from "typed refusal" to "byte-exact lowering against the
+    // Rust oracle" — the IR-driven component emitter consumes exactly this IR.
+    // The reproducible frontier probe is tools/probe-m22-frontend-frontier.ps1.
+    let expected = rust_ir(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(ECHO_COMPONENT_FIXTURE_SOURCE) else {
+        panic!("the script-profile shape must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_script_input_field_projection_byte_exactly() {
+    // STEP-0491: the guest frontend lowers a declared-record field
+    // projection of a named parameter (`input.stdin` where `input` is typed
+    // `ScriptInput`) into the canonical `project` operation. The Rust
+    // lowerer emits the field projection as `Operation::Project` with the
+    // range of the "." + field-name token pair; the guest must agree
+    // byte-for-byte, and the record declaration must still reach the
+    // `records` table.
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nfunction probe(input: ScriptInput) returns Bytes:\n  return input.stdin\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "the ScriptInput field projection must lower through the guest frontend: {outcome:?}"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_any_declared_record_field_projection_byte_exactly() {
+    // STEP-0492: STEP-0491 landed the projection with the base parameter
+    // typed `ScriptInput` only. The Script profile needs one instance of
+    // that, but the lowering must not carry a hardcoded record name: any
+    // declared record parameter projects its own declared field, with the
+    // parameter type reported as the declared record name.
+    let source = "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\nfunction probe(out: ScriptOutput) returns Bytes:\n  return out.stdout\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "a declared-record field projection must lower through the guest frontend: {outcome:?}"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_record_field_projections_with_a_typed_identity() {
+    // STEP-0491: the projection lowering is fail-closed. A projection whose
+    // record is not declared, or whose field does not exist in the declared
+    // record, must stay a typed refusal (no silent partial lowering and no
+    // invented field), because the Rust oracle refuses both as well.
+    let record =
+        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\n";
+    for (source, message) in [
+        (
+            "function probe(input: ScriptInput) returns Bytes:\n  return input.stdin\nend function\n",
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+        (
+            "function probe(input: ScriptInput) returns Bytes:\n  return input.missing\nend function\n",
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved record field projection must stay a typed refusal"
+        );
+    }
+    // The same unknown field stays refused when the record IS declared.
+    assert_eq!(
+        run_guest(&format!(
+            "{record}function probe(input: ScriptInput) returns Bytes:\n  return input.missing\nend function\n"
+        )),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-EXPRESSION".into(),
+        },
+        "an unknown field of a declared record must stay a typed refusal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_named_record_return_type_pass_through_byte_exactly() {
+    // STEP-0493: a declared record may be the declared return type. The Rust
+    // oracle reports it as a named type and lowers a pass-through of the named
+    // parameter into an empty instruction list whose terminator returns the
+    // parameter id. The guest frontend must agree byte-for-byte. The named
+    // return type travels through the type-JSON channel (`{"kind":"named",...}`)
+    // and never through the scalar kind channel, which stays reserved for
+    // scalar kinds — the scalar channel has 19 call sites that treat a kind as
+    // a bare scalar and would otherwise splice a JSON blob into an IR field.
+    let source = "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\nfunction probe(out: ScriptOutput) returns ScriptOutput:\n  return out\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("a named record return type must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_named_record_return_types_with_a_typed_identity() {
+    // STEP-0493: the named return type stays fail-closed. A record that is
+    // never declared must not be treated as a named type, a named return type
+    // whose body carries statements the guest cannot account for must stay a
+    // typed refusal (before STEP-0493 that shape emitted a malformed IR with
+    // an empty return kind), and a named return type must not weaken the
+    // return/parameter type checks.
+    let declared =
+        "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\n";
+    for (source, message) in [
+        (
+            "function probe(out: ScriptOutput) returns ScriptOutput:\n  return out\nend function\n"
+                .to_string(),
+            "ERR:E-SH-IR-PARAMETER-TYPE",
+        ),
+        (
+            "function probe(out: ScriptOutput) returns ScriptOutput:\n  return I64.literal(1)\nend function\n"
+                .to_string(),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  set x = x\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  while U64.less_than(x, U64.literal(1)):\n    set x = x\n  end while\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(&source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unsupported named record return type must stay a typed refusal: {}",
+            source
+        );
+    }
+    // The declared record keeps the pass-through lowerable, and the return
+    // type check still applies to a named return type.
+    assert_eq!(
+        run_guest(&format!(
+            "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  return I64.literal(1)\nend function\n"
+        )),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-TYPE-MISMATCH".into(),
+        },
+        "a named return type must not weaken the return type check"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_record_construct_byte_exactly() {
+    // STEP-0494: a declared record may be constructed. The Rust oracle lowers
+    // `ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code:
+    // I64.literal(0))` by lowering every field value into its own
+    // instruction first (results 1..3) and then emitting the `construct`
+    // operation that references those ids (result 4). The guest frontend must
+    // agree byte-for-byte, including the result-id ledger and the construct
+    // range (the constructor name through the closing parenthesis).
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nfunction probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0))\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("a record construct must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_record_constructs_with_a_typed_identity() {
+    // STEP-0494: the construct lowering is fail-closed. A field the declared
+    // record does not have must not be invented, a field value the guest
+    // cannot lower must stay a typed refusal (the Rust oracle lowers a wider
+    // value grammar, so this is a narrowing), and a construct whose record
+    // does not match the declared return type must stay refused.
+    let records = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\n";
+    for (source, message) in [
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(missing: input.stdin)\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-FIELD",
+        ),
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: sico.text.encode(\"x\"))\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-VALUE",
+        ),
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0), extra: input.stdin)\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-FIELD",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(&source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved record construct must stay a typed refusal: {}",
+            source
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_result_variant_byte_exactly() {
+    // STEP-0495: `ok(...)` and `error(...)` are the built-in Result variants.
+    // The Rust oracle lowers the payload into its own instruction(s) first and
+    // then emits the `variant` operation that references those ids; the guest
+    // frontend must agree byte-for-byte, including the result-id ledger, the
+    // variant range (the variant name through the closing parenthesis) and the
+    // declared `Result[ok, error]` return type.
+    let cases = [
+        // A scalar payload: one `const_i64` then the `ok` variant.
+        "function probe() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // The same shape behind an enum declaration: the error arm is a named
+        // type, so the enum cases must not leak into the arm type JSON.
+        "enum NumericError:\n  case Invalid\nend enum\n\nfunction probe() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // A record payload on the `error` arm: the fields lower first, the
+        // construct comes next, the variant references the construct result.
+        "record ScriptError:\n  field code: I64\n  field message: Text\nend record\n\nfunction probe() returns Result[I64, ScriptError]:\n  return error(ScriptError(code: I64.literal(2), message: \"bad\"))\nend function\n",
+        // The Script profile shape: a projected field, a literal, a construct
+        // and the `ok` variant.
+        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n",
+    ];
+    for source in cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("a result variant must lower through the guest frontend: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_result_variants_with_a_typed_identity() {
+    // STEP-0495: the variant lowering is fail-closed. A payload whose type does
+    // not match the declared arm must not be lowered, a payload shape the guest
+    // cannot lower must stay a typed refusal, and `ok(...)` without a declared
+    // `Result` return type must stay an unresolved call target.
+    for (source, message) in [
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return ok(\"text\")\nend function\n",
+            "ERR:E-SH-IR-VARIANT-TYPE",
+        ),
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return error(I64.literal(1))\nend function\n",
+            "ERR:E-SH-IR-VARIANT-TYPE",
+        ),
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return ok(sico.text.encode(\"x\"))\nend function\n",
+            "ERR:E-SH-IR-VARIANT-PAYLOAD",
+        ),
+        (
+            "function probe() returns I64:\n  return ok(I64.literal(1))\nend function\n",
+            "ERR:E-SH-IR-CALL-TARGET",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved result variant must stay a typed refusal: {}",
+            source
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_extracts_the_run_emission_plan_byte_exactly() {
+    // STEP-0496: the guest ingests the canonical IR JSON and derives the `run`
+    // emission plan from it; the Rust oracle derives the same plan from the
+    // same module. The two texts must agree byte for byte — otherwise the
+    // guest is reading a different IR than the oracle emits, and every later
+    // emission slice would be built on a wrong premise.
+    //
+    // The fixtures cover the supported subset end to end: a projected field, a
+    // literal, a record construct, a result variant (scalar and record
+    // payload), a string literal payload, and a call.
+    let cases = [
+        // The Script profile shape: project, const_i64, construct, variant.
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        // A scalar variant payload.
+        "enum NumericError:\n  case Invalid\nend enum\n\nfunction run() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // A record variant payload: const_i64, const_string, construct, variant.
+        "record ScriptError:\n  field code: I64\n  field message: Text\nend record\n\nfunction run() returns Result[I64, ScriptError]:\n  return error(ScriptError(code: I64.literal(2), message: \"bad\"))\nend function\n",
+        // A call to a sibling function.
+        "function helper() returns I64:\n  return I64.literal(1)\nend function\n\nfunction run() returns I64:\n  return helper()\nend function\n",
+    ];
+    for source in cases {
+        let expected =
+            plan_text(&rust_module(source)).expect("the Rust oracle plans the run function");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-ir-plan".to_owned()])
+        else {
+            panic!("the run plan must be extracted from the canonical IR: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_refuses_ir_shapes_outside_the_run_plan_subset() {
+    // STEP-0496: the plan extraction is fail-closed (ADR-0016 decision 6).
+    // A module without a `run` function, an operation outside the supported
+    // subset, a type outside the supported subset and a terminator other than
+    // `return` must each surface as their own typed identity — never as an
+    // approximation of the plan.
+    for (source, message) in [
+        // No `run` function in the module.
+        (
+            "function probe() returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-PLAN",
+        ),
+        // A local cell lowers to `write_local`/`read_local`, which the plan
+        // subset does not cover.
+        (
+            "function run() returns I64:\n  let value = I64.literal(1)\n  set value = I64.literal(2)\n  return value\nend function\n",
+            "ERR:E-SH-CG-IR-OP",
+        ),
+        // A map parameter type is outside the plan type subset.
+        (
+            "function run(input: Map[Text, Text]) returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-TYPE",
+        ),
+        // A branching body ends in a branch terminator, not `return`.
+        (
+            "function run(flag: Bool) returns I64:\n  if flag:\n    return I64.literal(1)\n  end if\n  return I64.literal(2)\nend function\n",
+            "ERR:E-SH-CG-IR-TERMINATOR",
+        ),
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-ir-plan".to_owned()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "a shape outside the plan subset must stay a typed refusal: {source}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_emits_the_module_ir_split_across_both_channels_byte_exactly() {
+    // STEP-0495: the canonical IR of the whole `selfhost/parser.sico` module
+    // grew past the frozen Script v0 channel budget (RFC-0029 caps one
+    // channel at 8 MiB), so the single-channel default path can no longer
+    // carry it. The `--emit-ir-split` driver mode halves the IR across the
+    // two channels; concatenating stdout and stderr must restore the exact
+    // module IR, and the split point must sit at the byte midpoint.
+    let source = format!("{PARSER_SOURCE}\n");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()])
+    else {
+        panic!("the split driver mode must return the module IR across both channels")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let mut assembled = output.stdout.clone();
+    assembled.extend_from_slice(&output.stderr);
+    assert_bytes_equal(&assembled, expected.as_bytes());
+    assert_eq!(
+        output.stdout.len(),
+        expected.len() / 2,
+        "the split must sit at the byte midpoint"
+    );
+    // The split mode stays fail-closed: a lowering refusal must surface as
+    // the same typed identity the default path reports.
+    assert_eq!(
+        run_guest_with_args(
+            "function probe() returns I64:\n  return missing_call()\nend function\n",
+            vec!["--emit-ir-split".to_owned()],
+        ),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into(),
+        },
+        "the split driver mode must not hide a typed lowering refusal"
+    );
+}
+
+#[test]
 fn sico_compiler_lowers_gw_tail_match_both_arms_return_byte_exactly() {
     // STEP-0354: the general-while machine lowers a match whose both arms
     // return when it sits at the function tail: the oracle keeps the join
@@ -3189,6 +3740,8 @@ fn sico_compiler_lowers_gw_find_code_text_byte_exactly() {
         "decimal_at_most",
         "parameter_name_start",
         "scalar_type_kind",
+        "is_ident_byte",
+        "record_named_type",
         "parameters_ir",
         "binding_parameter_index",
         "binding_parameter_kind",
@@ -3812,6 +4365,8 @@ fn sico_compiler_lowers_checked_arithmetic_match_ir_closure_byte_exactly() {
         "next_index",
         "parameter_kind_by_id",
         "parameter_name_start",
+        "is_ident_byte",
+        "record_named_type",
         "parameters_ir",
         "scalar_type_kind",
         "word_at",

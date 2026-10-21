@@ -164,3 +164,78 @@ Set-Content target\tmp\min33792.wat "(module (memory 33792 33792) (func (export 
   independent-CI gate is therefore still open, with its red point now
   attributed to an M22-owned constant mismatch.
 - It does not claim a production or external-adoption result.
+
+## 8. M22-track resolution (STEP-0497, 2026-10-21)
+
+This section is appended by the M22 track; §1–§7 above are the M23
+attribution as committed and are left unchanged.
+
+### 8.1 One correction to the attribution
+
+§2 identifies the enforced host ceiling (2 GiB) as the counterpart that
+disagrees with the declared minimum. That is a real disagreement, but it is
+**not the binding constraint**: the effective ceiling is
+`min(package manifest limit, host limit)`
+(`crates/sico-runtime/src/lib.rs`, `effective_limits`), and the package
+manifest limit for Script packages was **64 MiB** —
+`sico-app-cli::script_limits()` inherited
+`sico_package::RuntimeLimits::default()` (`memory_bytes = 64 * 1024 * 1024`).
+The effective ceiling was therefore `min(64 MiB, 2 GiB)` = **64 MiB**, i.e.
+1/32 of the declared minimum.
+
+This was measured, not inferred: with only the host grant raised to
+2,560 MiB (option B of §5), the test **still failed** with the identical
+message. Both ends of the `min` were below the declared minimum, so both
+had to be repaired.
+
+§2's "Why only this one test is red" reasoning is unaffected and remains
+correct: the in-process runner path enforces 2,560 MiB and so instantiates
+fine.
+
+### 8.2 What was changed
+
+| Layer | Before | After |
+|---|---|---|
+| declared guest memory | 33,792 pages, min == max (2,214,592,512 B) | **unchanged** (no snapshot, no emitted byte changed) |
+| Script package manifest limit | 64 MiB | **`SCRIPT_MEMORY_BYTES`** = 2,214,592,512 B (`sico_package::script_profile_limits()`) |
+| runtime `HostLimits::default().memory_bytes` | 2,048 MiB | **2,560 MiB** (same value as `RunnerLimits::default()`) |
+| ceiling below the declared minimum | opaque wasmtime instantiation trap | **typed refusal**: `build_script_v1` rejects the package; `run_authorized_package` returns `PackageRuntimeError::MemoryCeilingBelowDeclared` |
+
+Option (B) of §5 was taken, with the added requirement that the *package*
+limit is aligned as well, and with (A) and (C) deliberately not taken:
+(A) would change every emitted component byte, and (C) would turn the
+2 GiB arena ceiling into a wasmtime growth trap instead of the registered
+arena-exhaustion trap.
+
+### 8.3 Result and guards
+
+- The red point is green: `cargo test -p sico-app-cli --test cli
+  run_executes_a_script_package_end_to_end` with `SICO_TEST_WASMTIME` set
+  → **ok** (reproduced red with the identical message before the change).
+- Four invariant guards now make the pairing executable instead of
+  conventional, and **none of them needs a runtime binary** (so they cannot
+  be skipped the way the launch-seam test is skipped without
+  `SICO_TEST_WASMTIME`): the emitted memory section is checked at byte
+  level (`min == max == 33,792` pages), and the package, runtime and runner
+  layers each assert that their own ceiling covers the declared bound.
+- RFC-0029 carries the matching STEP-0497 amendment: the "2 GiB" of the
+  STEP-0454 amendment is the **arena** ceiling (`ARENA_LIMIT`), the
+  **declared linear memory** is 33,792 pages = 2,214,592,512 B with
+  `min == max`, and every execution path's effective ceiling must be at
+  least that declared bound. The same amendment registers the resulting
+  design debt: with `min == max`, the original "unless a stricter
+  package/Host limit applies" clause is **unimplementable** for Script
+  components, because any limit below the declaration is unsatisfiable
+  rather than tighter.
+
+Record: [STEP-0497](../steps/STEP-0497-m22-w2-ci-arena-ceiling-repair.md).
+
+### 8.4 What this section does *not* claim
+
+- It does not claim the CI runs are green: both runs 39454624507 and
+  39457030463 remain red. A post-fix run needs the change to be committed
+  and pushed, which requires the owner's authorization.
+- It does not claim M22 gate 3 progress: run-body emission, the
+  37-corpus / formatter / full-source canary ladder and the ADR-0015
+  `A == B == C` + `.sapp` chain are untouched.
+- It does not claim a production or external-adoption result.

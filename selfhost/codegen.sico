@@ -229,3 +229,884 @@ function component_hex_for_minimal(source: Bytes) returns Text:
   end if
   return ""
 end function
+
+// ---------------------------------------------------------------------------
+// STEP-0496: IR JSON scanner + `run` emission-plan extraction (IR ingestion,
+// first slice of the STEP-0488 §4 item 5 contract).
+//
+// The canonical IR (`sico.ir.v0`) is single-line JSON. The scanner is
+// byte-oriented on purpose: the guest has no text slice, but `sico.bytes.slice`
+// exists, so every span is read through bytes.
+//
+// Primitives: skip one JSON value, depth-1 key lookup inside an object,
+// indexed access into an array, the member keys of an object in document
+// order, and the raw canonical text of any value. Anything outside the
+// supported shape returns "" or an `ERR:` identity so the caller fails
+// closed instead of approximating (ADR-0016 decision 6).
+//
+// The plan text is the verifiable intermediate: the guest derives it from the
+// scanned IR, and the Rust oracle derives the same text from `sico_ir::Module`.
+// Both sides must agree byte for byte.
+//
+//   param <id> <name> <type>
+//   inst <result> <type>
+//   op <operation>
+//   term return <value-id>
+//   record <record> <field> <type>
+//
+// Type text: `unit`/`bool`/`int`/`i64`/`u64`/`float64`/`string`/`bytes`,
+// `list(<T>)`, `named(<Name>)`, `result(<ok>,<error>)`. Operation text:
+// `copy <id>`, `const_int <json>`, `const_i64 <n>`, `const_u64 <n>`,
+// `const_bool <b>`, `const_string <json>`, `const_bytes <json>`,
+// `call <fn> args=[...]`, `intrinsic <name> args=[...]`,
+// `project base=<id> field=<name>`, `construct name=<name> fields=[...]`,
+// `variant name=<name> payload=[...]`.
+//
+// Names (record, field, parameter, variant, intrinsic) are Sico identifiers, so
+// they are carried unquoted; a name that is not a plain identifier fails
+// closed. Literal payloads keep their canonical JSON spelling so the guest
+// never has to unescape.
+// ---------------------------------------------------------------------------
+
+function cg_is_word(a: Text, b: Text) returns Bool:
+  return sico.bytes.equal(sico.text.encode(a), sico.text.encode(b))
+end function
+
+function cg_byte_eq(b: I64, code: I64) returns Bool:
+  return I64.equal(b, code)
+end function
+
+function cg_next(i: U64) returns U64:
+  match U64.checked_add(i, U64.literal(1)):
+    case ok(cgn_next):
+      return cgn_next
+    case error(_):
+      return i
+  end match
+end function
+
+function cg_list_at(items: List[Text], index: U64) returns Text:
+  match sico.list.get(items, index):
+    case ok(cgl_item):
+      return cgl_item
+    case error(_):
+      return ""
+  end match
+end function
+
+function cg_byte_is_space(b: I64) returns Bool:
+  let cbis_space = false
+  if cg_byte_eq(b, I64.literal(32)):
+    set cbis_space = true
+  end if
+  if cg_byte_eq(b, I64.literal(9)):
+    set cbis_space = true
+  end if
+  if cg_byte_eq(b, I64.literal(10)):
+    set cbis_space = true
+  end if
+  if cg_byte_eq(b, I64.literal(13)):
+    set cbis_space = true
+  end if
+  return cbis_space
+end function
+
+function cg_byte_is_stop(b: I64) returns Bool:
+  let cbstop_stop = false
+  if cg_byte_eq(b, I64.literal(44)):
+    set cbstop_stop = true
+  end if
+  if cg_byte_eq(b, I64.literal(125)):
+    set cbstop_stop = true
+  end if
+  if cg_byte_eq(b, I64.literal(93)):
+    set cbstop_stop = true
+  end if
+  if cg_byte_is_space(b):
+    set cbstop_stop = true
+  end if
+  return cbstop_stop
+end function
+
+// Offset of the next significant byte (whitespace is skipped).
+function cgj_ws(bytes: Bytes, start: U64) returns U64:
+  let cgjw_len = sico.bytes.length(bytes)
+  let cgjw_i = start
+  while U64.less_than(cgjw_i, cgjw_len):
+    let cgjw_b = sico.bytes.at(bytes, cgjw_i, I64.literal(0))
+    if cg_byte_is_space(cgjw_b):
+      set cgjw_i = cg_next(cgjw_i)
+      continue
+    end if
+    return cgjw_i
+  end while
+  return cgjw_i
+end function
+
+// Offset after the closing quote of the JSON string starting at `start`;
+// 0 when the string is unterminated.
+function cgj_string_end(bytes: Bytes, start: U64) returns U64:
+  let cgjse_len = sico.bytes.length(bytes)
+  let cgjse_i = cg_next(start)
+  let cgjse_escaped = false
+  while U64.less_than(cgjse_i, cgjse_len):
+    let cgjse_b = sico.bytes.at(bytes, cgjse_i, I64.literal(0))
+    if cgjse_escaped:
+      set cgjse_escaped = false
+    else:
+      if cg_byte_eq(cgjse_b, I64.literal(92)):
+        set cgjse_escaped = true
+      else:
+        if cg_byte_eq(cgjse_b, I64.literal(34)):
+          return cg_next(cgjse_i)
+        end if
+      end if
+    end if
+    set cgjse_i = cg_next(cgjse_i)
+  end while
+  return U64.literal(0)
+end function
+
+// Offset after the matching close of the object/array starting at `start`;
+// 0 when the container is unterminated.
+function cgj_container_end(bytes: Bytes, start: U64) returns U64:
+  let cgce_len = sico.bytes.length(bytes)
+  let cgce_i = cg_next(start)
+  let cgce_depth = U64.literal(1)
+  while U64.less_than(cgce_i, cgce_len):
+    let cgce_b = sico.bytes.at(bytes, cgce_i, I64.literal(0))
+    if cg_byte_eq(cgce_b, I64.literal(34)):
+      let cgce_str_end = cgj_string_end(bytes, cgce_i)
+      if U64.equal(cgce_str_end, U64.literal(0)):
+        return U64.literal(0)
+      end if
+      set cgce_i = cgce_str_end
+      continue
+    end if
+    if cg_byte_eq(cgce_b, I64.literal(123)):
+      set cgce_depth = cg_next(cgce_depth)
+    end if
+    if cg_byte_eq(cgce_b, I64.literal(91)):
+      set cgce_depth = cg_next(cgce_depth)
+    end if
+    if cg_byte_eq(cgce_b, I64.literal(125)):
+      match U64.checked_sub(cgce_depth, U64.literal(1)):
+        case ok(cgce_shallower):
+          set cgce_depth = cgce_shallower
+        case error(_):
+          return U64.literal(0)
+      end match
+      if U64.equal(cgce_depth, U64.literal(0)):
+        return cg_next(cgce_i)
+      end if
+    end if
+    if cg_byte_eq(cgce_b, I64.literal(93)):
+      match U64.checked_sub(cgce_depth, U64.literal(1)):
+        case ok(cgce_bracket_shallower):
+          set cgce_depth = cgce_bracket_shallower
+        case error(_):
+          return U64.literal(0)
+      end match
+      if U64.equal(cgce_depth, U64.literal(0)):
+        return cg_next(cgce_i)
+      end if
+    end if
+    set cgce_i = cg_next(cgce_i)
+  end while
+  return U64.literal(0)
+end function
+
+// Offset after the JSON value starting at `start`; 0 when the value is
+// malformed or unterminated.
+function cgj_value_end(bytes: Bytes, start: U64) returns U64:
+  let cgve_len = sico.bytes.length(bytes)
+  let cgve_i = cgj_ws(bytes, start)
+  if U64.less_than(cgve_len, cgve_i):
+    return U64.literal(0)
+  end if
+  let cgve_b = sico.bytes.at(bytes, cgve_i, I64.literal(0))
+  if cg_byte_eq(cgve_b, I64.literal(34)):
+    return cgj_string_end(bytes, cgve_i)
+  end if
+  if cg_byte_eq(cgve_b, I64.literal(123)):
+    return cgj_container_end(bytes, cgve_i)
+  end if
+  if cg_byte_eq(cgve_b, I64.literal(91)):
+    return cgj_container_end(bytes, cgve_i)
+  end if
+  let cgve_end = cgve_i
+  while U64.less_than(cgve_end, cgve_len):
+    let cgve_c = sico.bytes.at(bytes, cgve_end, I64.literal(0))
+    if cg_byte_is_stop(cgve_c):
+      return cgve_end
+    end if
+    set cgve_end = cg_next(cgve_end)
+  end while
+  return U64.literal(0)
+end function
+
+// Raw text of the byte span [start, to).
+function cgj_span_text(bytes: Bytes, start: U64, to: U64) returns Text:
+  let cgjst_len = U64.literal(0)
+  match U64.checked_sub(to, start):
+    case ok(cgjst_l):
+      set cgjst_len = cgjst_l
+    case error(_):
+      return ""
+  end match
+  match sico.bytes.slice(bytes, start, cgjst_len):
+    case ok(cgjst_slice):
+      return sico.bytes.utf8_decode(cgjst_slice)
+    case error(_):
+      return ""
+  end match
+end function
+
+// Canonical JSON text of the value at `off`; "" when the value is malformed.
+function cgj_value_text(bytes: Bytes, off: U64) returns Text:
+  let cgvt_end = cgj_value_end(bytes, off)
+  if U64.equal(cgvt_end, U64.literal(0)):
+    return ""
+  end if
+  return cgj_span_text(bytes, off, cgvt_end)
+end function
+
+// The unquoted content of the JSON string at `off` when it is a plain
+// identifier (no escape sequence); "" otherwise, so a name that would need
+// unescaping fails closed instead of being approximated.
+function cgj_ident_text(bytes: Bytes, off: U64) returns Text:
+  let cgjit_open = sico.bytes.at(bytes, off, I64.literal(0))
+  if cg_byte_eq(cgjit_open, I64.literal(34)):
+    let cgjit_end = cgj_string_end(bytes, off)
+    if U64.equal(cgjit_end, U64.literal(0)):
+      return ""
+    end if
+    let cgjit_content_len = U64.literal(0)
+    match U64.checked_sub(cgjit_end, cg_next(cg_next(off))):
+      case ok(cgjit_cl):
+        set cgjit_content_len = cgjit_cl
+      case error(_):
+        return ""
+    end match
+    let cgjit_content = sico.text.encode("")
+    match sico.bytes.slice(bytes, cg_next(off), cgjit_content_len):
+      case ok(cgjit_slice):
+        set cgjit_content = cgjit_slice
+      case error(_):
+        return ""
+    end match
+    let cgjit_text = sico.bytes.utf8_decode(cgjit_content)
+    if sico.bytes.equal(sico.text.encode(cgjit_text), cgjit_content):
+      return cgjit_text
+    end if
+  end if
+  return ""
+end function
+
+// Depth-1 key lookup: the offset of the member's value inside the object at
+// `obj`; 0 when the key is absent or the object is malformed.
+function cgj_member(bytes: Bytes, obj: U64, key: Text) returns U64:
+  let cgjm_len = sico.bytes.length(bytes)
+  let cgjm_key_bytes = sico.text.encode(key)
+  let cgjm_i = cgj_ws(bytes, cg_next(obj))
+  while U64.less_than(cgjm_i, cgjm_len):
+    let cgjm_b = sico.bytes.at(bytes, cgjm_i, I64.literal(0))
+    if cg_byte_eq(cgjm_b, I64.literal(125)):
+      return U64.literal(0)
+    end if
+    if cg_byte_eq(cgjm_b, I64.literal(34)):
+      let cgjm_key_end = cgj_string_end(bytes, cgjm_i)
+      if U64.equal(cgjm_key_end, U64.literal(0)):
+        return U64.literal(0)
+      end if
+      let cgjm_key_len = U64.literal(0)
+      match U64.checked_sub(cgjm_key_end, cg_next(cg_next(cgjm_i))):
+        case ok(cgjm_kl):
+          set cgjm_key_len = cgjm_kl
+        case error(_):
+          return U64.literal(0)
+      end match
+      let cgjm_same = false
+      match sico.bytes.slice(bytes, cg_next(cgjm_i), cgjm_key_len):
+        case ok(cgjm_slice):
+          if sico.bytes.equal(cgjm_slice, cgjm_key_bytes):
+            set cgjm_same = true
+          end if
+        case error(_):
+          return U64.literal(0)
+      end match
+      let cgjm_colon = cgj_ws(bytes, cgjm_key_end)
+      if cg_byte_eq(sico.bytes.at(bytes, cgjm_colon, I64.literal(0)), I64.literal(58)):
+        let cgjm_value = cgj_ws(bytes, cg_next(cgjm_colon))
+        if cgjm_same:
+          return cgjm_value
+        end if
+        let cgjm_value_end = cgj_value_end(bytes, cgjm_value)
+        if U64.equal(cgjm_value_end, U64.literal(0)):
+          return U64.literal(0)
+        end if
+        set cgjm_i = cgj_ws(bytes, cgjm_value_end)
+        let cgjm_comma = sico.bytes.at(bytes, cgjm_i, I64.literal(0))
+        if cg_byte_eq(cgjm_comma, I64.literal(44)):
+          set cgjm_i = cgj_ws(bytes, cg_next(cgjm_i))
+          continue
+        end if
+        return U64.literal(0)
+      end if
+      return U64.literal(0)
+    end if
+    return U64.literal(0)
+  end while
+  return U64.literal(0)
+end function
+
+// The member keys of the object at `obj`, in document order.
+function cgj_object_keys(bytes: Bytes, obj: U64) returns List[Text]:
+  let cgjok_keys = sico.text.split_lines("")
+  let cgjok_len = sico.bytes.length(bytes)
+  let cgjok_i = cgj_ws(bytes, cg_next(obj))
+  while U64.less_than(cgjok_i, cgjok_len):
+    let cgjok_b = sico.bytes.at(bytes, cgjok_i, I64.literal(0))
+    if cg_byte_eq(cgjok_b, I64.literal(125)):
+      return cgjok_keys
+    end if
+    if cg_byte_eq(cgjok_b, I64.literal(34)):
+      let cgjok_key_end = cgj_string_end(bytes, cgjok_i)
+      if U64.equal(cgjok_key_end, U64.literal(0)):
+        return cgjok_keys
+      end if
+      set cgjok_keys = sico.list.append(cgjok_keys, cgj_ident_text(bytes, cgjok_i))
+      let cgjok_colon = cgj_ws(bytes, cgjok_key_end)
+      if cg_byte_eq(sico.bytes.at(bytes, cgjok_colon, I64.literal(0)), I64.literal(58)):
+        let cgjok_value = cgj_ws(bytes, cg_next(cgjok_colon))
+        let cgjok_value_end = cgj_value_end(bytes, cgjok_value)
+        if U64.equal(cgjok_value_end, U64.literal(0)):
+          return cgjok_keys
+        end if
+        set cgjok_i = cgj_ws(bytes, cgjok_value_end)
+        let cgjok_comma = sico.bytes.at(bytes, cgjok_i, I64.literal(0))
+        if cg_byte_eq(cgjok_comma, I64.literal(44)):
+          set cgjok_i = cgj_ws(bytes, cg_next(cgjok_i))
+          continue
+        end if
+        return cgjok_keys
+      end if
+      return cgjok_keys
+    end if
+    return cgjok_keys
+  end while
+  return cgjok_keys
+end function
+
+// The offset of the index-th element of the array at `arr`; 0 when absent.
+function cgj_array_item(bytes: Bytes, arr: U64, index: U64) returns U64:
+  let cgai_len = sico.bytes.length(bytes)
+  let cgai_i = cgj_ws(bytes, cg_next(arr))
+  let cgai_pos = U64.literal(0)
+  while U64.less_than(cgai_i, cgai_len):
+    let cgai_b = sico.bytes.at(bytes, cgai_i, I64.literal(0))
+    if cg_byte_eq(cgai_b, I64.literal(93)):
+      return U64.literal(0)
+    end if
+    if U64.equal(cgai_pos, index):
+      return cgai_i
+    end if
+    let cgai_value_end = cgj_value_end(bytes, cgai_i)
+    if U64.equal(cgai_value_end, U64.literal(0)):
+      return U64.literal(0)
+    end if
+    set cgai_i = cgj_ws(bytes, cgai_value_end)
+    let cgai_c = sico.bytes.at(bytes, cgai_i, I64.literal(0))
+    if cg_byte_eq(cgai_c, I64.literal(44)):
+      set cgai_i = cgj_ws(bytes, cg_next(cgai_i))
+      set cgai_pos = cg_next(cgai_pos)
+      continue
+    end if
+    return U64.literal(0)
+  end while
+  return U64.literal(0)
+end function
+
+// Canonical text form of the IR type at `ty`; an `ERR:` identity when the type
+// is outside the supported subset.
+function cgp_type_text(bytes: Bytes, ty: U64) returns Text:
+  let cgpt_kind_off = cgj_member(bytes, ty, "kind")
+  if U64.equal(cgpt_kind_off, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-TYPE"
+  end if
+  let cgpt_kind = cgj_ident_text(bytes, cgpt_kind_off)
+  if cg_is_word(cgpt_kind, "unit"):
+    return "unit"
+  end if
+  if cg_is_word(cgpt_kind, "bool"):
+    return "bool"
+  end if
+  if cg_is_word(cgpt_kind, "int"):
+    return "int"
+  end if
+  if cg_is_word(cgpt_kind, "i64"):
+    return "i64"
+  end if
+  if cg_is_word(cgpt_kind, "u64"):
+    return "u64"
+  end if
+  if cg_is_word(cgpt_kind, "float64"):
+    return "float64"
+  end if
+  if cg_is_word(cgpt_kind, "string"):
+    return "string"
+  end if
+  if cg_is_word(cgpt_kind, "bytes"):
+    return "bytes"
+  end if
+  if cg_is_word(cgpt_kind, "list"):
+    let cgpt_list_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgpt_list_data, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    let cgpt_list_inner = cgp_type_text(bytes, cgpt_list_data)
+    if sico.text.starts_with(cgpt_list_inner, "ERR:"):
+      return cgpt_list_inner
+    end if
+    let cgpt_list_text = "list("
+    set cgpt_list_text = sico.text.concat(cgpt_list_text, cgpt_list_inner)
+    set cgpt_list_text = sico.text.concat(cgpt_list_text, ")")
+    return cgpt_list_text
+  end if
+  if cg_is_word(cgpt_kind, "named"):
+    let cgpt_named_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgpt_named_data, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    let cgpt_named_text = cgj_ident_text(bytes, cgpt_named_data)
+    if U64.equal(sico.text.length(cgpt_named_text), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    let cgpt_named_full = "named("
+    set cgpt_named_full = sico.text.concat(cgpt_named_full, cgpt_named_text)
+    set cgpt_named_full = sico.text.concat(cgpt_named_full, ")")
+    return cgpt_named_full
+  end if
+  if cg_is_word(cgpt_kind, "result"):
+    let cgpt_result_data = cgj_member(bytes, ty, "data")
+    if U64.equal(cgpt_result_data, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    let cgpt_ok = cgj_member(bytes, cgpt_result_data, "ok")
+    let cgpt_error = cgj_member(bytes, cgpt_result_data, "error")
+    if U64.equal(cgpt_ok, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    if U64.equal(cgpt_error, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-TYPE"
+    end if
+    let cgpt_ok_text = cgp_type_text(bytes, cgpt_ok)
+    if sico.text.starts_with(cgpt_ok_text, "ERR:"):
+      return cgpt_ok_text
+    end if
+    let cgpt_error_text = cgp_type_text(bytes, cgpt_error)
+    if sico.text.starts_with(cgpt_error_text, "ERR:"):
+      return cgpt_error_text
+    end if
+    let cgpt_result_text = "result("
+    set cgpt_result_text = sico.text.concat(cgpt_result_text, cgpt_ok_text)
+    set cgpt_result_text = sico.text.concat(cgpt_result_text, ",")
+    set cgpt_result_text = sico.text.concat(cgpt_result_text, cgpt_error_text)
+    set cgpt_result_text = sico.text.concat(cgpt_result_text, ")")
+    return cgpt_result_text
+  end if
+  return "ERR:E-SH-CG-IR-TYPE"
+end function
+
+// The comma-separated value ids of the array at `arr`, as text.
+function cgp_id_list(bytes: Bytes, arr: U64) returns Text:
+  let cgpil_text = ""
+  let cgpil_index = U64.literal(0)
+  let cgpil_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgpil_more):
+    let cgpil_item = cgj_array_item(bytes, arr, cgpil_index)
+    if U64.equal(cgpil_item, U64.literal(0)):
+      set cgpil_more = U64.literal(0)
+      continue
+    end if
+    if U64.less_than(U64.literal(0), cgpil_index):
+      set cgpil_text = sico.text.concat(cgpil_text, ",")
+    end if
+    set cgpil_text = sico.text.concat(cgpil_text, cgj_value_text(bytes, cgpil_item))
+    set cgpil_index = cg_next(cgpil_index)
+  end while
+  return cgpil_text
+end function
+
+// The comma-separated `<field>=<value-id>` pairs of the construct field array
+// at `arr`; an `ERR:` identity when a field is malformed.
+function cgp_field_list(bytes: Bytes, arr: U64) returns Text:
+  let cgpfl_text = ""
+  let cgpfl_index = U64.literal(0)
+  let cgpfl_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgpfl_more):
+    let cgpfl_item = cgj_array_item(bytes, arr, cgpfl_index)
+    if U64.equal(cgpfl_item, U64.literal(0)):
+      set cgpfl_more = U64.literal(0)
+      continue
+    end if
+    let cgpfl_name = cgj_member(bytes, cgpfl_item, "name")
+    let cgpfl_value = cgj_member(bytes, cgpfl_item, "value")
+    if U64.equal(cgpfl_name, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpfl_value, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpfl_name_text = cgj_ident_text(bytes, cgpfl_name)
+    if U64.equal(sico.text.length(cgpfl_name_text), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.less_than(U64.literal(0), cgpfl_index):
+      set cgpfl_text = sico.text.concat(cgpfl_text, ",")
+    end if
+    set cgpfl_text = sico.text.concat(cgpfl_text, cgpfl_name_text)
+    set cgpfl_text = sico.text.concat(cgpfl_text, "=")
+    set cgpfl_text = sico.text.concat(cgpfl_text, cgj_value_text(bytes, cgpfl_value))
+    set cgpfl_index = cg_next(cgpfl_index)
+  end while
+  return cgpfl_text
+end function
+
+// Canonical text form of the IR operation at `op`; an `ERR:` identity when
+// the operation is outside the supported subset.
+function cgp_op_text(bytes: Bytes, op: U64) returns Text:
+  let cgpo_op_off = cgj_member(bytes, op, "op")
+  let cgpo_data_off = cgj_member(bytes, op, "data")
+  if U64.equal(cgpo_op_off, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-OP"
+  end if
+  if U64.equal(cgpo_data_off, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-OP"
+  end if
+  let cgpo_name = cgj_ident_text(bytes, cgpo_op_off)
+  if cg_is_word(cgpo_name, "copy"):
+    return sico.text.concat("copy ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_int"):
+    return sico.text.concat("const_int ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_i64"):
+    return sico.text.concat("const_i64 ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_u64"):
+    return sico.text.concat("const_u64 ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_bool"):
+    return sico.text.concat("const_bool ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_string"):
+    return sico.text.concat("const_string ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "const_bytes"):
+    return sico.text.concat("const_bytes ", cgj_value_text(bytes, cgpo_data_off))
+  end if
+  if cg_is_word(cgpo_name, "call"):
+    let cgpo_call_fn = cgj_member(bytes, cgpo_data_off, "function")
+    let cgpo_call_args = cgj_member(bytes, cgpo_data_off, "arguments")
+    if U64.equal(cgpo_call_fn, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpo_call_args, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_call_text = "call "
+    set cgpo_call_text = sico.text.concat(cgpo_call_text, cgj_value_text(bytes, cgpo_call_fn))
+    set cgpo_call_text = sico.text.concat(cgpo_call_text, " args=[")
+    set cgpo_call_text = sico.text.concat(cgpo_call_text, cgp_id_list(bytes, cgpo_call_args))
+    set cgpo_call_text = sico.text.concat(cgpo_call_text, "]")
+    return cgpo_call_text
+  end if
+  if cg_is_word(cgpo_name, "intrinsic"):
+    let cgpo_intrinsic_name = cgj_ident_text(bytes, cgj_member(bytes, cgpo_data_off, "name"))
+    let cgpo_intrinsic_args = cgj_member(bytes, cgpo_data_off, "arguments")
+    if U64.equal(sico.text.length(cgpo_intrinsic_name), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpo_intrinsic_args, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_intrinsic_text = "intrinsic "
+    set cgpo_intrinsic_text = sico.text.concat(cgpo_intrinsic_text, cgpo_intrinsic_name)
+    set cgpo_intrinsic_text = sico.text.concat(cgpo_intrinsic_text, " args=[")
+    set cgpo_intrinsic_text = sico.text.concat(cgpo_intrinsic_text, cgp_id_list(bytes, cgpo_intrinsic_args))
+    set cgpo_intrinsic_text = sico.text.concat(cgpo_intrinsic_text, "]")
+    return cgpo_intrinsic_text
+  end if
+  if cg_is_word(cgpo_name, "project"):
+    let cgpo_project_base = cgj_member(bytes, cgpo_data_off, "base")
+    let cgpo_project_field = cgj_member(bytes, cgpo_data_off, "field")
+    if U64.equal(cgpo_project_base, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpo_project_field, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_project_field_text = cgj_ident_text(bytes, cgpo_project_field)
+    if U64.equal(sico.text.length(cgpo_project_field_text), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_project_text = "project base="
+    set cgpo_project_text = sico.text.concat(cgpo_project_text, cgj_value_text(bytes, cgpo_project_base))
+    set cgpo_project_text = sico.text.concat(cgpo_project_text, " field=")
+    set cgpo_project_text = sico.text.concat(cgpo_project_text, cgpo_project_field_text)
+    return cgpo_project_text
+  end if
+  if cg_is_word(cgpo_name, "construct"):
+    let cgpo_construct_name = cgj_ident_text(bytes, cgj_member(bytes, cgpo_data_off, "name"))
+    let cgpo_construct_fields = cgj_member(bytes, cgpo_data_off, "fields")
+    if U64.equal(sico.text.length(cgpo_construct_name), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpo_construct_fields, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_construct_fields_text = cgp_field_list(bytes, cgpo_construct_fields)
+    if sico.text.starts_with(cgpo_construct_fields_text, "ERR:"):
+      return cgpo_construct_fields_text
+    end if
+    let cgpo_construct_text = "construct name="
+    set cgpo_construct_text = sico.text.concat(cgpo_construct_text, cgpo_construct_name)
+    set cgpo_construct_text = sico.text.concat(cgpo_construct_text, " fields=[")
+    set cgpo_construct_text = sico.text.concat(cgpo_construct_text, cgpo_construct_fields_text)
+    set cgpo_construct_text = sico.text.concat(cgpo_construct_text, "]")
+    return cgpo_construct_text
+  end if
+  if cg_is_word(cgpo_name, "variant"):
+    let cgpo_variant_name = cgj_ident_text(bytes, cgj_member(bytes, cgpo_data_off, "name"))
+    let cgpo_variant_payload = cgj_member(bytes, cgpo_data_off, "payload")
+    if U64.equal(sico.text.length(cgpo_variant_name), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    if U64.equal(cgpo_variant_payload, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-OP"
+    end if
+    let cgpo_variant_text = "variant name="
+    set cgpo_variant_text = sico.text.concat(cgpo_variant_text, cgpo_variant_name)
+    set cgpo_variant_text = sico.text.concat(cgpo_variant_text, " payload=[")
+    set cgpo_variant_text = sico.text.concat(cgpo_variant_text, cgp_id_list(bytes, cgpo_variant_payload))
+    set cgpo_variant_text = sico.text.concat(cgpo_variant_text, "]")
+    return cgpo_variant_text
+  end if
+  return "ERR:E-SH-CG-IR-OP"
+end function
+
+// The canonical emission plan of the `run` function, extracted from the
+// canonical IR JSON. One record per line:
+//
+//   param <id> <name> <type>
+//   inst <result> <type>
+//   op <operation>
+//   term return <value-id>
+//   record <record> <field> <type>
+//
+// Returns an `ERR:` identity when the IR carries no `run` function or a shape
+// outside the supported subset (fail closed, never approximate).
+function cgp_run_plan(ir: Text) returns Text:
+  let cgpr_bytes = sico.text.encode(ir)
+  let cgpr_functions = cgj_member(cgpr_bytes, U64.literal(0), "functions")
+  if U64.equal(cgpr_functions, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgpr_index = U64.literal(0)
+  let cgpr_run = U64.literal(0)
+  let cgpr_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgpr_more):
+    let cgpr_item = cgj_array_item(cgpr_bytes, cgpr_functions, cgpr_index)
+    if U64.equal(cgpr_item, U64.literal(0)):
+      set cgpr_more = U64.literal(0)
+      continue
+    end if
+    let cgpr_name_off = cgj_member(cgpr_bytes, cgpr_item, "name")
+    if U64.equal(cgpr_name_off, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if cg_is_word(cgj_ident_text(cgpr_bytes, cgpr_name_off), "run"):
+      set cgpr_run = cgpr_item
+      set cgpr_more = U64.literal(0)
+      continue
+    end if
+    set cgpr_index = cg_next(cgpr_index)
+  end while
+  if U64.equal(cgpr_run, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgpr_text = ""
+  let cgpr_parameters = cgj_member(cgpr_bytes, cgpr_run, "parameters")
+  if U64.equal(cgpr_parameters, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgpr_parameter_index = U64.literal(0)
+  let cgpr_parameter_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgpr_parameter_more):
+    let cgpr_parameter = cgj_array_item(cgpr_bytes, cgpr_parameters, cgpr_parameter_index)
+    if U64.equal(cgpr_parameter, U64.literal(0)):
+      set cgpr_parameter_more = U64.literal(0)
+      continue
+    end if
+    let cgpr_parameter_id = cgj_member(cgpr_bytes, cgpr_parameter, "id")
+    let cgpr_parameter_name = cgj_member(cgpr_bytes, cgpr_parameter, "name")
+    let cgpr_parameter_ty = cgj_member(cgpr_bytes, cgpr_parameter, "ty")
+    if U64.equal(cgpr_parameter_id, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if U64.equal(cgpr_parameter_name, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if U64.equal(cgpr_parameter_ty, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgpr_parameter_type = cgp_type_text(cgpr_bytes, cgpr_parameter_ty)
+    if sico.text.starts_with(cgpr_parameter_type, "ERR:"):
+      return cgpr_parameter_type
+    end if
+    let cgpr_parameter_name_text = cgj_ident_text(cgpr_bytes, cgpr_parameter_name)
+    if U64.equal(sico.text.length(cgpr_parameter_name_text), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    set cgpr_text = sico.text.concat(cgpr_text, "param ")
+    set cgpr_text = sico.text.concat(cgpr_text, cgj_value_text(cgpr_bytes, cgpr_parameter_id))
+    set cgpr_text = sico.text.concat(cgpr_text, " ")
+    set cgpr_text = sico.text.concat(cgpr_text, cgpr_parameter_name_text)
+    set cgpr_text = sico.text.concat(cgpr_text, " ")
+    set cgpr_text = sico.text.concat(cgpr_text, cgpr_parameter_type)
+    set cgpr_text = sico.text.concat(cgpr_text, "\n")
+    set cgpr_parameter_index = cg_next(cgpr_parameter_index)
+  end while
+  let cgpr_blocks = cgj_member(cgpr_bytes, cgpr_run, "blocks")
+  if U64.equal(cgpr_blocks, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgpr_block_index = U64.literal(0)
+  let cgpr_block_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgpr_block_more):
+    let cgpr_block = cgj_array_item(cgpr_bytes, cgpr_blocks, cgpr_block_index)
+    if U64.equal(cgpr_block, U64.literal(0)):
+      set cgpr_block_more = U64.literal(0)
+      continue
+    end if
+    let cgpr_instructions = cgj_member(cgpr_bytes, cgpr_block, "instructions")
+    if U64.equal(cgpr_instructions, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgpr_instruction_index = U64.literal(0)
+    let cgpr_instruction_more = U64.literal(1)
+    while U64.less_than(U64.literal(0), cgpr_instruction_more):
+      let cgpr_instruction = cgj_array_item(cgpr_bytes, cgpr_instructions, cgpr_instruction_index)
+      if U64.equal(cgpr_instruction, U64.literal(0)):
+        set cgpr_instruction_more = U64.literal(0)
+        continue
+      end if
+      let cgpr_instruction_result = cgj_member(cgpr_bytes, cgpr_instruction, "result")
+      let cgpr_instruction_ty = cgj_member(cgpr_bytes, cgpr_instruction, "ty")
+      let cgpr_instruction_operation = cgj_member(cgpr_bytes, cgpr_instruction, "operation")
+      if U64.equal(cgpr_instruction_result, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      if U64.equal(cgpr_instruction_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      if U64.equal(cgpr_instruction_operation, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let cgpr_instruction_type = cgp_type_text(cgpr_bytes, cgpr_instruction_ty)
+      if sico.text.starts_with(cgpr_instruction_type, "ERR:"):
+        return cgpr_instruction_type
+      end if
+      let cgpr_instruction_op = cgp_op_text(cgpr_bytes, cgpr_instruction_operation)
+      if sico.text.starts_with(cgpr_instruction_op, "ERR:"):
+        return cgpr_instruction_op
+      end if
+      set cgpr_text = sico.text.concat(cgpr_text, "inst ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgj_value_text(cgpr_bytes, cgpr_instruction_result))
+      set cgpr_text = sico.text.concat(cgpr_text, " ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_instruction_type)
+      set cgpr_text = sico.text.concat(cgpr_text, "\n")
+      set cgpr_text = sico.text.concat(cgpr_text, "op ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_instruction_op)
+      set cgpr_text = sico.text.concat(cgpr_text, "\n")
+      set cgpr_instruction_index = cg_next(cgpr_instruction_index)
+    end while
+    let cgpr_terminator = cgj_member(cgpr_bytes, cgpr_block, "terminator")
+    if U64.equal(cgpr_terminator, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgpr_terminator_kind = cgj_member(cgpr_bytes, cgpr_terminator, "kind")
+    let cgpr_terminator_data = cgj_member(cgpr_bytes, cgpr_terminator, "data")
+    if U64.equal(cgpr_terminator_kind, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if U64.equal(cgpr_terminator_data, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if cg_is_word(cgj_ident_text(cgpr_bytes, cgpr_terminator_kind), "return"):
+      let cgpr_terminator_value = cgj_value_text(cgpr_bytes, cgpr_terminator_data)
+      if cg_is_word(cgpr_terminator_value, "null"):
+        return "ERR:E-SH-CG-IR-TERMINATOR"
+      end if
+      set cgpr_text = sico.text.concat(cgpr_text, "term return ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_terminator_value)
+      set cgpr_text = sico.text.concat(cgpr_text, "\n")
+    else:
+      return "ERR:E-SH-CG-IR-TERMINATOR"
+    end if
+    set cgpr_block_index = cg_next(cgpr_block_index)
+  end while
+  let cgpr_records = cgj_member(cgpr_bytes, U64.literal(0), "records")
+  if U64.equal(cgpr_records, U64.literal(0)):
+    return cgpr_text
+  end if
+  let cgpr_record_names = cgj_object_keys(cgpr_bytes, cgpr_records)
+  let cgpr_record_index = U64.literal(0)
+  let cgpr_record_count = sico.list.length(cgpr_record_names)
+  while U64.less_than(cgpr_record_index, cgpr_record_count):
+    let cgpr_record_name = cg_list_at(cgpr_record_names, cgpr_record_index)
+    if U64.equal(sico.text.length(cgpr_record_name), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgpr_record_fields = cgj_member(cgpr_bytes, cgpr_records, cgpr_record_name)
+    if U64.equal(cgpr_record_fields, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cgpr_field_index = U64.literal(0)
+    let cgpr_field_more = U64.literal(1)
+    while U64.less_than(U64.literal(0), cgpr_field_more):
+      let cgpr_field = cgj_array_item(cgpr_bytes, cgpr_record_fields, cgpr_field_index)
+      if U64.equal(cgpr_field, U64.literal(0)):
+        set cgpr_field_more = U64.literal(0)
+        continue
+      end if
+      let cgpr_field_name = cgj_member(cgpr_bytes, cgpr_field, "name")
+      let cgpr_field_ty = cgj_member(cgpr_bytes, cgpr_field, "ty")
+      if U64.equal(cgpr_field_name, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      if U64.equal(cgpr_field_ty, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let cgpr_field_type = cgp_type_text(cgpr_bytes, cgpr_field_ty)
+      if sico.text.starts_with(cgpr_field_type, "ERR:"):
+        return cgpr_field_type
+      end if
+      let cgpr_field_name_text = cgj_ident_text(cgpr_bytes, cgpr_field_name)
+      if U64.equal(sico.text.length(cgpr_field_name_text), U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      set cgpr_text = sico.text.concat(cgpr_text, "record ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_record_name)
+      set cgpr_text = sico.text.concat(cgpr_text, " ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_field_name_text)
+      set cgpr_text = sico.text.concat(cgpr_text, " ")
+      set cgpr_text = sico.text.concat(cgpr_text, cgpr_field_type)
+      set cgpr_text = sico.text.concat(cgpr_text, "\n")
+      set cgpr_field_index = cg_next(cgpr_field_index)
+    end while
+    set cgpr_record_index = cg_next(cgpr_record_index)
+  end while
+  return cgpr_text
+end function

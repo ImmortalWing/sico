@@ -14,7 +14,8 @@ use std::{
 };
 
 use sico_package::{
-    AuthorizedPackage, SCRIPT_ARGS_CAPABILITY, SCRIPT_STDIO_CAPABILITY, TrustStatus, sha256_hex,
+    AuthorizedPackage, SCRIPT_ARGS_CAPABILITY, SCRIPT_MEMORY_BYTES, SCRIPT_STDIO_CAPABILITY,
+    TrustStatus, sha256_hex,
 };
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -46,7 +47,18 @@ impl Default for HostLimits {
         Self {
             fuel: 10_000_000,
             timeout_ms: 10_000,
-            memory_bytes: 2048 * 1024 * 1024,
+            // STEP-0497: this ceiling is applied as wasmtime's
+            // `-W max-memory-size`, so it must be >= the guest linear memory
+            // every script component declares (33,792 Wasm pages =
+            // 2,214,592,512 B). The previous 2 GiB value sat 64 MiB *below*
+            // that declared minimum, so wasmtime could not satisfy the
+            // minimum at instantiation and every script launch on this path
+            // failed with "forcing trap when growing memory to 2214592512
+            // bytes". The value is now the same 2.5 GiB the in-process
+            // runner path has always enforced (`RunnerLimits::default()`),
+            // so the two execution paths cannot disagree about the ceiling
+            // again; the guest's own budget stays the compiled-in maximum.
+            memory_bytes: 2560 * 1024 * 1024,
             table_elements: 100_000,
             instances: 32,
             tables: 32,
@@ -101,6 +113,16 @@ pub enum PackageRuntimeError {
     TemporaryArtifact(std::io::Error),
     Launch(std::io::Error),
     Storage(StorageError),
+    /// The effective memory ceiling is below the guest linear memory the
+    /// package's Component declares.
+    ///
+    /// STEP-0497: the declaration is fixed (minimum equals maximum), so the
+    /// launch could never satisfy it. Refusing here keeps the failure typed
+    /// instead of surfacing it as an opaque wasmtime instantiation trap.
+    MemoryCeilingBelowDeclared {
+        effective_bytes: u64,
+        declared_bytes: u64,
+    },
 }
 
 impl std::fmt::Display for PackageRuntimeError {
@@ -111,6 +133,13 @@ impl std::fmt::Display for PackageRuntimeError {
             }
             Self::Launch(error) => write!(formatter, "Runtime launch failed: {error}"),
             Self::Storage(error) => write!(formatter, "Runtime storage failed: {error}"),
+            Self::MemoryCeilingBelowDeclared {
+                effective_bytes,
+                declared_bytes,
+            } => write!(
+                formatter,
+                "Runtime memory ceiling {effective_bytes} is below the declared guest memory {declared_bytes}"
+            ),
         }
     }
 }
@@ -348,6 +377,37 @@ pub fn effective_limits(package: &AuthorizedPackage, host: &HostLimits) -> Effec
     }
 }
 
+/// The effective runtime ceilings for a package, refused when the effective
+/// guest memory ceiling cannot host the guest linear memory the package
+/// declares.
+///
+/// STEP-0497: a Script Component declares its guest linear memory with the
+/// minimum equal to the maximum, so a ceiling below that declaration can
+/// never be satisfied — wasmtime fails to allocate the initial memory and the
+/// launch dies with an opaque "forcing trap when growing memory to … bytes"
+/// trap. Refusing here keeps the failure typed and reproducible on every
+/// machine, without a runtime binary.
+///
+/// # Errors
+///
+/// Returns [`PackageRuntimeError::MemoryCeilingBelowDeclared`] when the
+/// effective memory ceiling is below the declared guest memory.
+pub fn effective_memory_limits(
+    package: &AuthorizedPackage,
+    host: &HostLimits,
+) -> Result<EffectiveLimits, PackageRuntimeError> {
+    let limits = effective_limits(package, host);
+    if package.trusted.package.manifest.script.is_some()
+        && limits.memory_bytes < SCRIPT_MEMORY_BYTES
+    {
+        return Err(PackageRuntimeError::MemoryCeilingBelowDeclared {
+            effective_bytes: limits.memory_bytes,
+            declared_bytes: SCRIPT_MEMORY_BYTES,
+        });
+    }
+    Ok(limits)
+}
+
 /// Executes an authorized package under explicit Wasmtime/WASI ceilings.
 ///
 /// # Errors
@@ -360,7 +420,7 @@ pub fn run_authorized_package(
     storage: Option<&AppStorage>,
     host_limits: &HostLimits,
 ) -> Result<PackageRuntimeOutput, PackageRuntimeError> {
-    let limits = effective_limits(package, host_limits);
+    let limits = effective_memory_limits(package, host_limits)?;
     if let Some(storage) = storage {
         storage.audit().map_err(PackageRuntimeError::Storage)?;
     }

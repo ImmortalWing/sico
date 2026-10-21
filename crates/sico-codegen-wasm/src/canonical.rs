@@ -16,9 +16,27 @@ use wit_parser::{PackageId, Resolve, SizeAlign, Type, TypeDefKind, TypeId, World
 
 pub const SCRIPT_WIT: &str = include_str!("../../../wit/script-profile-v0/world.wit");
 pub(crate) const TYPES_INSTANCE: &str = "sico:script/types@0.1.0";
-/// RFC-0029 guest linear memory ceiling: 64 MiB = 1,024 Wasm pages.
+/// RFC-0029 guest **arena** ceiling — the bump arena the guest owns inside
+/// its linear memory, *not* the linear-memory ceiling. STEP-0454 raised it to
+/// 2 GiB (32,768 Wasm pages) so the self-host whole-module walk clears the
+/// arena.
 pub(crate) const ARENA_LIMIT: u32 = 2048 * 1024 * 1024;
+/// RFC-0029 guest **linear memory** declaration: the arena ceiling plus
+/// 1,024 Wasm pages (64 MiB) of linear memory the arena does not own. It is
+/// declared as both the minimum and the maximum of every script component's
+/// memory, so the guest memory never grows.
 pub(crate) const MEMORY_PAGES: u32 = 33792;
+/// The guest linear memory every script component declares, in bytes
+/// (`MEMORY_PAGES` Wasm pages of 64 KiB).
+///
+/// STEP-0497: a host that enforces a guest memory ceiling (the
+/// `sico-runtime` app path applies `-W max-memory-size`) must cover this
+/// value. A ceiling *below* the declared minimum makes wasmtime unable to
+/// satisfy the minimum at instantiation, which surfaces as a trap
+/// ("forcing trap when growing memory to … bytes") rather than as a
+/// lowering failure. The constant is public so the host crates can assert
+/// the invariant instead of restating the number.
+pub const SCRIPT_MEMORY_BYTES: u64 = MEMORY_PAGES as u64 * 65536;
 
 /// Component import name of the scoped read-side file channel.
 pub(crate) const FS_READ_INTERFACE: &str = "sico:script/fs-read@0.1.0";

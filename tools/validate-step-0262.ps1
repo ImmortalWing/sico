@@ -65,15 +65,36 @@ try {
         & $sico build --profile script-v0 --output $component (Join-Path $root 'selfhost\compiler.sico')
         if ($LASTEXITCODE -ne 0) { throw 'self-host compiler bootstrap build failed' }
 
-        $startInfo = [Diagnostics.ProcessStartInfo]::new()
-        $startInfo.FileName = $runner
-        $startInfo.Arguments = "--fuel 5000000000 `"$component`""
-        $startInfo.WorkingDirectory = $temp
-        $startInfo.RedirectStandardInput = $true
-        $startInfo.RedirectStandardOutput = $true
-        $startInfo.RedirectStandardError = $true
-        $startInfo.UseShellExecute = $false
-        $process = [Diagnostics.Process]::Start($startInfo)
+        # Byte-exact stdin delivery (STEP-0488): Windows PowerShell 5.1 writes
+        # a UTF-8 BOM preamble into Process.StandardInput, so the guest reads
+        # three extra bytes and every source range shifts by three. A file
+        # redirection keeps the payload byte-exact on every supported host
+        # shell and keeps the frozen fixture comparison meaningful.
+        function Invoke-GuestWithStdin([byte[]]$payload) {
+            $tag = [Guid]::NewGuid().ToString('N')
+            $stdinPath = Join-Path $temp ("stdin-$tag.sico")
+            $stdoutPath = Join-Path $temp ("stdout-$tag.json")
+            $stderrPath = Join-Path $temp ("stderr-$tag.txt")
+            [IO.File]::WriteAllBytes($stdinPath, $payload)
+            $command = '"' + $runner + '" --fuel 5000000000 "' + $component + '" < "' + $stdinPath + '" > "' + $stdoutPath + '" 2> "' + $stderrPath + '"'
+            $shell = [Diagnostics.ProcessStartInfo]::new()
+            $shell.FileName = $env:ComSpec
+            $shell.Arguments = '/d /s /c "' + $command + '"'
+            $shell.WorkingDirectory = $temp
+            $shell.UseShellExecute = $false
+            $shell.CreateNoWindow = $true
+            $process = [Diagnostics.Process]::Start($shell)
+            $process.WaitForExit()
+            $stdout = ''
+            $stderr = ''
+            if (Test-Path -LiteralPath $stdoutPath) { $stdout = [IO.File]::ReadAllText($stdoutPath) }
+            if (Test-Path -LiteralPath $stderrPath) { $stderr = [IO.File]::ReadAllText($stderrPath) }
+            return [pscustomobject]@{
+                ExitCode = $process.ExitCode
+                Stdout = $stdout
+                Stderr = $stderr
+            }
+        }
 
         # Twenty-two-function formatter prefix (through repeat_indent:
         # call_left, format_code and repeat_indent land in this step) must be
@@ -84,13 +105,10 @@ try {
         $prefix = Join-Path $temp 'formatter-prefix.sico'
         [IO.File]::WriteAllText($prefix, $full.Substring(0, $boundary))
         $stdinBytes = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary))
-        $process.StandardInput.BaseStream.Write($stdinBytes, 0, $stdinBytes.Length)
-        $process.StandardInput.BaseStream.Flush()
-        $process.StandardInput.BaseStream.Close()
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
-        $process.WaitForExit()
-        if ($process.ExitCode -ne 0) { throw "formatter prefix did not compile: exit=$($process.ExitCode) stderr=$stderr" }
+        $run = Invoke-GuestWithStdin $stdinBytes
+        $stdout = $run.Stdout
+        $stderr = $run.Stderr
+        if ($run.ExitCode -ne 0) { throw "formatter prefix did not compile: exit=$($run.ExitCode) stderr=$stderr" }
         $expectedPath = Join-Path $PSScriptRoot 'fixtures\step-0262\fc_expected.json'
         if (Test-Path $expectedPath) {
             $got = $stdout | ConvertFrom-Json
@@ -106,78 +124,53 @@ try {
         if ($boundary2 -lt 0) { throw 'nearest_match boundary marker missing' }
         $probe = Join-Path $temp 'nearest-match-probe.sico'
         [IO.File]::WriteAllText($probe, $full.Substring(0, $boundary2))
-        $process1 = [Diagnostics.Process]::Start($startInfo)
-        $probeBytes = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary2))
-        $process1.StandardInput.BaseStream.Write($probeBytes, 0, $probeBytes.Length)
-        $process1.StandardInput.BaseStream.Flush()
-        $process1.StandardInput.BaseStream.Close()
-        $stdout1 = $process1.StandardOutput.ReadToEnd()
-        $stderr1 = $process1.StandardError.ReadToEnd()
-        $process1.WaitForExit()
-        if ($process1.ExitCode -ne 0 -or -not $stdout1.Contains('"name":"nearest_match"')) {
-            throw "nearest_match prefix did not compile: exit=$($process1.ExitCode) stderr=$stderr1"
+        $run1 = Invoke-GuestWithStdin ([Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary2)))
+        $stdout1 = $run1.Stdout
+        $stderr1 = $run1.Stderr
+        if ($run1.ExitCode -ne 0 -or -not $stdout1.Contains('"name":"nearest_match"')) {
+            throw "nearest_match prefix did not compile: exit=$($run1.ExitCode) stderr=$stderr1"
         }
 
         # STEP-0298 lowers map.put and both returning match arms. The prefix
         # through set_nearest_match is now byte-exact.
         $boundary3 = $full.IndexOf('function match_arm_levels')
         if ($boundary3 -lt 0) { throw 'set_nearest_match boundary marker missing' }
-        $process2 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes2 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary3))
-        $process2.StandardInput.BaseStream.Write($stdinBytes2, 0, $stdinBytes2.Length)
-        $process2.StandardInput.BaseStream.Flush()
-        $process2.StandardInput.BaseStream.Close()
-        $stdout2 = $process2.StandardOutput.ReadToEnd()
-        $stderr2 = $process2.StandardError.ReadToEnd()
-        $process2.WaitForExit()
-        if ($process2.ExitCode -ne 0 -or -not $stdout2.Contains('"name":"set_nearest_match"')) {
-            throw "set_nearest_match prefix did not compile: exit=$($process2.ExitCode) stderr=$stderr2"
+        $run2 = Invoke-GuestWithStdin ([Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary3)))
+        $stdout2 = $run2.Stdout
+        $stderr2 = $run2.Stderr
+        if ($run2.ExitCode -ne 0 -or -not $stdout2.Contains('"name":"set_nearest_match"')) {
+            throw "set_nearest_match prefix did not compile: exit=$($run2.ExitCode) stderr=$stderr2"
         }
 
         # STEP-0299 lowers the nested u64.to_text key in map.get. The prefix
         # through direct_close is byte-exact in the runner differential.
         $boundary4 = $full.IndexOf('function opener_close')
         if ($boundary4 -lt 0) { throw 'direct_close boundary marker missing' }
-        $process3 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes3 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary4))
-        $process3.StandardInput.BaseStream.Write($stdinBytes3, 0, $stdinBytes3.Length)
-        $process3.StandardInput.BaseStream.Flush()
-        $process3.StandardInput.BaseStream.Close()
-        $stdout3 = $process3.StandardOutput.ReadToEnd()
-        $stderr3 = $process3.StandardError.ReadToEnd()
-        $process3.WaitForExit()
-        if ($process3.ExitCode -ne 0 -or -not $stdout3.Contains('"name":"direct_close"')) {
-            throw "direct_close prefix did not compile: exit=$($process3.ExitCode) stderr=$stderr3"
+        $run3 = Invoke-GuestWithStdin ([Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary4)))
+        $stdout3 = $run3.Stdout
+        $stderr3 = $run3.Stderr
+        if ($run3.ExitCode -ne 0 -or -not $stdout3.Contains('"name":"direct_close"')) {
+            throw "direct_close prefix did not compile: exit=$($run3.ExitCode) stderr=$stderr3"
         }
 
         # STEP-0300 preserves the enclosing if region across a nested while.
         # The prefix through opener_close is byte-exact in the runner test.
         $boundary5 = $full.IndexOf('function normalize_source')
         if ($boundary5 -lt 0) { throw 'opener_close boundary marker missing' }
-        $process4 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes4 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary5))
-        $process4.StandardInput.BaseStream.Write($stdinBytes4, 0, $stdinBytes4.Length)
-        $process4.StandardInput.BaseStream.Flush()
-        $process4.StandardInput.BaseStream.Close()
-        $stdout4 = $process4.StandardOutput.ReadToEnd()
-        $stderr4 = $process4.StandardError.ReadToEnd()
-        $process4.WaitForExit()
-        if ($process4.ExitCode -ne 0 -or -not $stdout4.Contains('"name":"opener_close"')) {
-            throw "opener_close prefix did not compile: exit=$($process4.ExitCode) stderr=$stderr4"
+        $run4 = Invoke-GuestWithStdin ([Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary5)))
+        $stdout4 = $run4.Stdout
+        $stderr4 = $run4.Stderr
+        if ($run4.ExitCode -ne 0 -or -not $stdout4.Contains('"name":"opener_close"')) {
+            throw "opener_close prefix did not compile: exit=$($run4.ExitCode) stderr=$stderr4"
         }
 
         $boundary6 = $full.IndexOf('function main')
         if ($boundary6 -lt 0) { throw 'normalize_source boundary marker missing' }
-        $process5 = [Diagnostics.Process]::Start($startInfo)
-        $stdinBytes5 = [Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary6))
-        $process5.StandardInput.BaseStream.Write($stdinBytes5, 0, $stdinBytes5.Length)
-        $process5.StandardInput.BaseStream.Flush()
-        $process5.StandardInput.BaseStream.Close()
-        $stdout5 = $process5.StandardOutput.ReadToEnd()
-        $stderr5 = $process5.StandardError.ReadToEnd()
-        $process5.WaitForExit()
-        if ($process5.ExitCode -ne 0 -or -not $stdout5.Contains('"name":"normalize_source"')) {
-            throw "normalize_source prefix did not compile: exit=$($process5.ExitCode) stderr=$stderr5"
+        $run5 = Invoke-GuestWithStdin ([Text.UTF8Encoding]::new($false).GetBytes($full.Substring(0, $boundary6)))
+        $stdout5 = $run5.Stdout
+        $stderr5 = $run5.Stderr
+        if ($run5.ExitCode -ne 0 -or -not $stdout5.Contains('"name":"normalize_source"')) {
+            throw "normalize_source prefix did not compile: exit=$($run5.ExitCode) stderr=$stderr5"
         }
         if ($stderr5.Contains('"class":"trap"')) { throw 'formatter frontier regressed to a guest trap' }
     }
