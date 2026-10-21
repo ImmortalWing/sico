@@ -87,4 +87,4 @@
 | [`m22-exit-audit-2026-09-28`](./m22-exit-audit-2026-09-28.md) | reviewed / NO-GO | STEP-0310 | exact-SHA CI 裁决与 M22 计划 §4 七门复审；S3/S4/S5 partial、S6 未进入；0306–0309 独立 CI 待执行 |
 | [`ci-arena-ceiling-attribution-2026-10-21`](./ci-arena-ceiling-attribution-2026-10-21.md) | measured / attributed to M22 | STEP-0489, STEP-0490 | 两次独立 CI 同点红的确定性归因（`MEMORY_PAGES` 33792 页 vs 宿主上限 32768 页）、仓库固定 wasmtime 本机逐字节复现与 5 组反证、三条候选修法 |
 | [`ai-eval-item3-live-model-2026-10-21`](./ai-eval-item3-live-model-2026-10-21.md) | measured (live model) / pending owner review | STEP-0490 | M23 item 3 AI 语料腿：100 次计费调用（USD 0.0272）、14 份不同程序、0 仪式调用及其表面语法成因、`Int`/`I64` 类型事实；D3 未决 |
-| [`m23-exit-audit-2026-10-21`](./m23-exit-audit-2026-10-21.md) | issued / verdict pending the independent-CI gate | STEP-0498 | M23 出口审计复审：四项逐项状态 + 计划 §3 七门逐门复核 + 三项残余闭合状态（#1 STEP-0498、#3 STEP-0489、#2 待 CI 裁决） |
+| [`m23-exit-audit-2026-10-21`](./m23-exit-audit-2026-10-21.md) | complete-audit / **GO** | STEP-0500 | M23 出口审计复审：四项逐项状态 + 计划 §3 七门逐门复核 + 三项残余闭合状态（#1 STEP-0498、#3 STEP-0489、#2 待 CI 裁决） |
