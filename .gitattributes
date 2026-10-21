@@ -1,3 +1,8 @@
 * text=auto eol=lf
 
 *.wasm binary
+
+# Frozen AI-evaluation evidence is stored byte-exact: the recorded SHA-256
+# values must match the committed blobs, so no line-ending normalization is
+# applied to them.
+ai-eval/runs/item3-2026-10-21/** binary
