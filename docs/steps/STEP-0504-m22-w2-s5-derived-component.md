@@ -184,9 +184,22 @@ parser.lex_words(input.stdin)  →  parser.scalar_ir(...)  →  codegen.componen
 
 > **本轮是「修掉 CRLF + 修掉退出码管道」之后重跑的**。第一遍电池的**每个步骤都打印 PASS**，但行尾审计**实测检出**了 `selfhost/codegen.sico` 的 CRLF，而失败被退出码管道吞掉 ⇒ 第一遍那个 `BATTERY_GREEN` **不成立**。修复后整轮重跑，本机证据与**提交树（LF 形式）**一致。
 
-## 7.2 独立 CI 裁决
+## 7.2 独立 CI 裁决：**GO**（run 39585258425 = `success`）
 
-**待补**（owner 已授权一次提交推送 ⇒ 提交后触发独立 CI；裁决按既有模式随下一片一并回填）。
+本片已**提交并推送**（owner 授权）：提交 `579645b`，推送 `github/codex/m22-w1-ci`（fast-forward `7cf2ece..579645b`），远端 head 确认 = `579645b6d2096a1d31b0514d441aff380054da62`。
+
+| 证据 | 值 |
+|---|---|
+| 独立 CI run | **39585258425**（run #26，`event: push`，head_branch `codex/m22-w1-ci`） |
+| head_sha | `579645b6d2096a1d31b0514d441aff380054da62`（= 本片提交） |
+| 结论 | `status: completed` / **`conclusion: success`** |
+| 时间 | 10:31:54Z → 10:59:49Z（job `windows-gnu`） |
+| job 内步骤 | `Set up job` / `checkout` / `Install GNU build tools` / **`Run repository CI on a fresh runner`** / `Post Run checkout` / `Complete job` —— **6/6 全部 success** |
+| 内层步数 | **12/12** 全 PASS（`fmt` / `fmt (runner)` / `clippy (workspace)` / `clippy (runner)` / `build (runner debug)` / `test (workspace)` / `test (runner)` / `module boundaries` / `planning contract (M14-M25)` / `application-profile matrix` / `cross-host matrix + UI corpus` / `whitespace (git diff --check)`） |
+
+**本片最终状态**：**complete（独立 CI GO）**。
+
+**门 3 仍为 NO-GO**：独立 CI 证明的是**本片**在独立 runner 上成立，不是门 3 成立。ADR-0015 的三段 runner 执行、37 语料阶梯、formatter 与全源 canary、`.sapp` 链都还没做。
 
 ## 8. 诚实性
 

@@ -3052,6 +3052,101 @@ fn sico_codegen_guest_emits_component_bytes_byte_exactly() {
 /// the wrong bytes.
 const ECHO_COMPONENT_FIXTURE_SOURCE_EXIT7: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
 
+/// The Script-profile reference form whose `run` returns the `error` arm:
+/// same entry signature as the reference form, but the payload is a
+/// `ScriptError` instead of a `ScriptOutput`. The Rust backend really emits
+/// a Component for it, so the `ScriptError` result-area offsets have a
+/// measured truth instead of a frozen derivation.
+const SCRIPT_ERROR_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"boom\"))\nend function\n";
+
+#[test]
+fn oracle_error_arm_result_area_truth_is_pinned() {
+    // STEP-0505: the `error` arm's measured truth, read out of the Rust
+    // backend's production output (the Component `compile_script_program`
+    // really emits for a `run` that returns `error(...)`, opened with
+    // wasmparser). Until this slice the `ScriptError` result-area offsets
+    // were only a frozen derivation; here they are measured.
+    //
+    // The result-area return splits at the same unambiguous marker as the
+    // `ok` arm: `i32.const 32` (the 32-byte result area) followed by
+    // `call 1` (the allocator). The marker occurs exactly once.
+    const ERR_LOCALS: &str = "017f017f017f017f017f017f017f017f017f017f017f017e017f017f017f017f027f";
+    const ERR_FULL_BODY: &str = "4100211302400340201341004604404100210441002105410421062004210720052108200621094101210a4100210b4100210c4100210d4100210e4200210f2007211020082111200921124120100121142014200a3a0000201420103a0008201210012115201520112012fc0a00002014201536020c2014201236021020140f0b000b0b000b";
+    const ERR_RESULT_SEGMENT: &str = "4120100121142014200a3a0000201420103a0008201210012115201520112012fc0a00002014201536020c2014201236021020140f0b000b0b000b";
+
+    // The fixture really emits: the backend does not refuse the `error` arm,
+    // so the offsets below are a measurement and not a derivation.
+    let module = rust_module(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let component = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the backend emits the Script-profile Component for the error arm");
+    wasmparser::Validator::new()
+        .validate_all(&component)
+        .expect("the error-arm Component passes the real Wasm validator");
+
+    // The local declaration differs from the `ok` arm: the error payload
+    // needs fewer slots (16 groups / 17 slots, one i64) than the output
+    // payload (20 groups / 21 slots, three i64).
+    assert_eq!(
+        oracle_run_locals_hex(SCRIPT_ERROR_FIXTURE_SOURCE),
+        ERR_LOCALS,
+        "the error arm's local declaration section"
+    );
+
+    let hex = oracle_run_body_code_hex(SCRIPT_ERROR_FIXTURE_SOURCE);
+    assert_eq!(hex, ERR_FULL_BODY, "the error arm's run body");
+    assert_eq!(
+        hex.matches("41201001").count(),
+        1,
+        "the result-area marker is unique in the error arm"
+    );
+    let cut = hex
+        .find("41201001")
+        .expect("the result-area marker is present");
+    assert_eq!(
+        &hex[cut..],
+        ERR_RESULT_SEGMENT,
+        "the ScriptError result-area return and the dispatcher epilogue"
+    );
+
+    // The measured `ScriptError` result-area offsets, in the order the
+    // backend emits them: the discriminant byte at 0, `code` at 8 as a
+    // single byte, `message` as a list at 12 (pointer) and 16 (length).
+    // The `i32.store8` at offset 8 and the two `i32.store` at 12 and 16 are
+    // the bytes the guest has to reproduce.
+    for (offset, store) in [
+        ("3a0008", "i32.store8 at offset 8 (ScriptError.code)"),
+        (
+            "36020c",
+            "i32.store at offset 12 (ScriptError.message pointer)",
+        ),
+        (
+            "360210",
+            "i32.store at offset 16 (ScriptError.message length)",
+        ),
+    ] {
+        assert!(
+            ERR_RESULT_SEGMENT.contains(offset),
+            "the measured error arm must contain {store}"
+        );
+    }
+    // The error arm stores no i64 field, so it carries no `i64.store`; the
+    // `ok` arm's `exit_code` is what produced the `37 03 18` there.
+    assert!(
+        !ERR_RESULT_SEGMENT.contains("3703"),
+        "the error arm stores no 64-bit result field"
+    );
+    // The tail is the same six-byte dispatcher epilogue as the `ok` arm.
+    assert!(
+        ERR_RESULT_SEGMENT.ends_with("0b000b0b000b"),
+        "the six-byte dispatcher epilogue"
+    );
+    assert_eq!(
+        ERR_RESULT_SEGMENT.len() / 2,
+        59,
+        "the measured error-arm result segment is 59 bytes"
+    );
+}
+
 #[test]
 fn sico_codegen_guest_emits_the_derived_component_bytes_byte_exactly() {
     // STEP-0504: the guest's component emission is no longer a replay of a
