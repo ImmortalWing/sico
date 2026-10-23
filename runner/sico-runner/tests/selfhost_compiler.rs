@@ -5407,43 +5407,14 @@ fn sico_compiler_lowers_straight_text_concat_packed_closure_byte_exactly() {
     // `next_index(matching_close(..))` set and a `to_text(gw_decimal_value(..))`
     // concat argument hoisted to cells. wcr RETURN-COUNT hunting paused
     // (truncation bisection confounded by routing changes).
-    let base = [
-        "binding_parameter_index",
-        "binding_parameter_kind",
-        "call_instruction_json",
-        "declared_return_kind",
-        "find_text_from",
-        "function_declaration_index",
-        "function_declaration_ordinal",
-        "gw_decimal_value",
-        "intrinsic_instruction_json",
-        "is_canonical_magnitude",
-        "is_declaration_start",
-        "is_intrinsic_path",
-        "is_string_token",
-        "is_word",
-        "json_string_token",
-        "line_end",
-        "local_binding_index",
-        "matching_close",
-        "next_index",
-        "read_local_instruction_json",
-        "scalar_const_instruction_json",
-        "scalar_type_kind",
-        "type_json",
-        "u64_list_at",
-        "word_at",
-        "word_span_offset",
-    ]
-    .iter()
-    .map(|name| parser_function_text(name))
-    .collect::<Vec<_>>()
-    .join("\n");
-    let source = format!(
-        "{}\n{}",
-        base,
-        parser_function_text("straight_text_concat_packed")
-    );
+    //
+    // STEP-0524 changed the shape of this closure: the shared operand lowerer
+    // now calls `stc_call_operand_packed` for a call operand with several
+    // arguments.  The hand-maintained list could not survive that change (the
+    // Rust oracle reported `unresolved call target stc_call_operand_packed`),
+    // so the closure is computed from the file now -- the same fix the
+    // STEP-0523 slice applied to the sibling list.
+    let source = parser_closure_source("straight_text_concat_packed");
     let expected = rust_ir(&source);
     let RunOutcome::Output(output) = run_guest(&source) else {
         panic!("straight_text_concat_packed closure must compile")
@@ -6061,12 +6032,18 @@ fn sico_compiler_keeps_the_unclosed_text_concat_shapes_typed_refused() {
     // position, and a mixed operand pair -- are now **claimed** (they are
     // pinned byte for byte by the T1 family truth table and by
     // `sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly`).
+    // STEP-0524 widened the call operand again: a call operand may now carry
+    // **several** arguments, and an argument may be a parameter, a local, a
+    // string literal or a `U64.literal(n)` constant.  The shape this pin used
+    // to refuse -- a user call with two arguments -- is now **claimed** (it is
+    // pinned byte for byte by the T1 family truth table and by
+    // `sico_codegen_guest_lowers_the_gf_multi_argument_call_operand_byte_exactly`).
     // The shapes that are still unclaimed are the ones below, and they keep
     // the same fail-closed identity.
     for (label, body) in [
         (
-            "user-call-with-two-arguments",
-            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
+            "user-call-with-an-i64-literal-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(a, I64.literal(-1)), \"20\")\nend function\nfunction helper(x: Text, y: I64) returns Text:\n  return \"z\"\nend function",
         ),
         (
             "wrong-operand-kind",
@@ -6524,7 +6501,7 @@ fn sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly() {
 // Every slice so far pinned one shape of the `sico.text.concat` family. The
 // family itself was never measured as a table, so "what does the guest
 // support" was an accumulation of per-slice claims. The table below measures
-// twenty shapes on four axes -- the Rust frontend's canonical IR, the Rust
+// twenty-nine shapes on four axes -- the Rust frontend's canonical IR, the Rust
 // backend's production component, the guest frontend's verdict and the guest
 // emitter's verdict -- and pins the result.
 //
@@ -6557,7 +6534,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
     // The rows that are refused are the point of the table: they are the
     // shapes the support-surface registration has to carry (D15), and they
     // are the shapes that keep the family from closing.
-    let rows: [(&str, &str, usize, usize, GuestVerdict); 24] = [
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 29] = [
         (
             "let-binding-parameters",
             "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
@@ -6717,6 +6694,46 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
             3036,
             1185,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-arguments-with-a-u64-literal",
+            "function join(items: List[Text]) returns Text:\n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(\".\", at(items, U64.literal(2))))\nend function\nfunction at(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            3513,
+            1229,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-three-arguments",
+            "function join(a: Text, b: U64, c: Text) returns Text:\n  return sico.text.concat(helper3(a, b, c), \"20\")\nend function\nfunction helper3(x: Text, y: U64, z: Text) returns Text:\n  return \"z\"\nend function",
+            3189,
+            1193,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-literal-arguments",
+            "function join() returns Text:\n  return sico.text.concat(helper2(\"a\", \"b\"), \"20\")\nend function\nfunction helper2(x: Text, y: Text) returns Text:\n  return \"z\"\nend function",
+            3120,
+            1211,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-an-i64-literal-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(a, I64.literal(-1)), \"20\")\nend function\nfunction helper(x: Text, y: I64) returns Text:\n  return \"z\"\nend function",
+            3070,
+            1190,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            // STEP-0524: the call operand takes two arguments and one of them
+            // is itself a call.  `stc_call_operand_packed` claims a parameter,
+            // a local, a string literal or a `U64.literal(n)` -- a nested call
+            // is none of them, so the guest refuses the shape while the Rust
+            // oracle lowers it.  This is the G-f2 shape gap.
+            "user-call-operand-nested-call-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner(a), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner(v: Text) returns Text:\n  return \"w\"\nend function",
+            3635,
+            1267,
             GuestVerdict::FrontendRefused,
         ),
         (
@@ -7440,6 +7457,110 @@ fn sico_compiler_lowers_the_step0523_parser_functions_byte_exactly() {
         "direct_text_concat_return_ir",
         "straight_text_concat_packed",
     ] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_codegen_guest_lowers_the_gf_multi_argument_call_operand_byte_exactly() {
+    // STEP-0524, G-f: a `sico.text.concat` operand may be a call to another
+    // function with **several** arguments.  The shared operand lowerer used to
+    // accept exactly one argument, so the S call site
+    // `sico.text.concat(at(items, U64.literal(1)), ...)` was refused with
+    // `ERR:E-SH-IR-EXPRESSION` even though the Rust backend lowers it.
+    //
+    // The shapes below are the ones the support-surface register names:
+    //   * the **S shape** -- two arguments, the second one a `U64.literal(1)`
+    //     constant, beside a nested concat,
+    //   * two plain parameters,
+    //   * three arguments,
+    //   * two string literals.
+    //
+    // Every one of them lowers byte for byte, and the emitted component is
+    // byte for byte equal to the Rust backend's production output.
+    let rows: [(&str, &str, usize, usize); 4] = [
+        (
+            "s-real-two-argument-call",
+            "function join(items: List[Text]) returns Text:\n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(\".\", at(items, U64.literal(2))))\nend function\nfunction at(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            3513,
+            1229,
+        ),
+        (
+            "two-parameters",
+            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
+            3036,
+            1185,
+        ),
+        (
+            "three-arguments",
+            "function join(a: Text, b: U64, c: Text) returns Text:\n  return sico.text.concat(helper3(a, b, c), \"20\")\nend function\nfunction helper3(x: Text, y: U64, z: Text) returns Text:\n  return \"z\"\nend function",
+            3189,
+            1193,
+        ),
+        (
+            "two-literal-arguments",
+            "function join() returns Text:\n  return sico.text.concat(helper2(\"a\", \"b\"), \"20\")\nend function\nfunction helper2(x: Text, y: Text) returns Text:\n  return \"z\"\nend function",
+            3120,
+            1211,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes) in rows {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-f fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0524_parser_functions_byte_exactly() {
+    // STEP-0524, G-f: the shared operand lowerer gained a second path for a
+    // call operand with several arguments.  The guest frontend has to keep
+    // lowering that function -- otherwise the bootstrap could never consume
+    // its own frontend code.  This is the same self-hosting shape frontier the
+    // STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 / STEP-0520 / STEP-0521 /
+    // STEP-0522 / STEP-0523 slices established for the functions they added or
+    // reshaped.
+    //
+    // The frontier did not move: the new function lowers, and so does the
+    // shared lowerer that calls it.
+    for name in ["stc_call_operand_packed", "straight_text_concat_packed"] {
         let source = parser_function_source(name);
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {

@@ -1,6 +1,6 @@
 # STEP-0523 m22-w2 S5 **W2 族 T1 的 G-d 刀（第一刀）**：单语句 `return` 的通用操作数
 
-> - status: **implementation complete locally**（本机验证电池 **17/17 `BATTERY_GREEN`**；随本片提交并推送；独立 CI 裁决待下一批回填）
+> - status: **closed**（本机验证电池 **17/17 `BATTERY_GREEN`**；已提交 `957887c` 并推送到 `codex/m22-w1-ci`；**独立 CI run #30 = success ✅**）
 > - date: 2026-10-23
 > - owners: autonomous-agent
 > - depends: [STEP-0522](./STEP-0522-m22-w2-s5-w2-t1-escaped-literal-decoder.md)（G-b / G-e 两刀）、[STEP-0521](./STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表 + D15 登记）
@@ -142,8 +142,8 @@ STEP-0521/0522 把 G-d 登记成「前端 typed 拒绝」。本片把剩下那 4
 | 未闭合项 | 状态 |
 |---|---|
 | **G-d2**（`if` 块里的 concat） | ⏳ **在发射端**（S 内 4 个调用点）⇒ 按 D10 **不得降级** |
-| **两实参调用**作为 concat 操作数 | ⏳ **在前端**（S 内 1 个调用点：#10）⇒ 同上 |
-| **独立 CI** | 本片推送后触发（上一批 `8bdd58d` 的 **run #29** 待回填） |
+| **两实参调用**作为 concat 操作数 | ⏳ **在前端**（S 内 1 个调用点：#10）⇒ 同上 —— **⚠️ 口径订正（STEP-0524）**：这「1 个」是**上面那张 10 行表**（落在**没有 `let`/`set` 的函数体**里的 concat 调用点）的**子集**计数；**全 S** 的这种形状（G-f 面）实测是 **117** 个调用点（见 [STEP-0524](./STEP-0524-m22-w2-s5-w2-t1-gf-multi-argument-call-operand.md) §5）⇒ 同上 |
+| **独立 CI** | ✅ **run #30 = success**（提交 `957887c` ⇒ `codex/m22-w1-ci`，run id `39915083272`，job `windows-gnu` 4/4 步绿） |
 | 语料覆盖 | **0 条** |
 | 整文件自举 | **仍开**（`List[Text]` ⇒ `ERR:E-SH-IR-RECORD-TYPE`） |
 

@@ -196,12 +196,19 @@ $cases = @(
         Source = "function join(slot: U64) returns Text:`n  return sico.text.concat(""20"", sico.text.concat(helper(slot), ""x""))`nend function`n`nfunction helper(x: U64) returns Text:`n  return ""z""`nend function`n"
         Expected = 'lowered'
     }
-    # A user call with **two** arguments is still outside the operand rules the
-    # route borrows: the operand helper lowers one argument per call.
+    # A user call with **two** arguments is now covered: the operand helper
+    # lowers a call operand with several arguments.
     @{
         Name = 'text-concat-with-a-two-argument-user-call-operand'
         Source = "function join(a: Text, b: U64) returns Text:`n  return sico.text.concat(helper(a, b), ""20"")`nend function`n`nfunction helper(x: Text, y: U64) returns Text:`n  return ""z""`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
+    }
+    # STEP-0524: the shape that is really in S -- a call operand whose second
+    # argument is a `U64.literal(n)` constant, beside a nested concat.
+    @{
+        Name = 'text-concat-with-a-u64-literal-argument-call-operand'
+        Source = "function join(items: List[Text]) returns Text:`n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(""."", at(items, U64.literal(2))))`nend function`n`nfunction at(items: List[Text], index: U64) returns Text:`n  return ""z""`nend function`n"
+        Expected = 'lowered'
     }
     # The frontend lowers a concat inside an `if` block; the **component
     # emission** refuses it, because the guest's emitter only knows a single
