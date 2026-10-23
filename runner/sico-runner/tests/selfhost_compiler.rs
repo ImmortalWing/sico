@@ -7993,6 +7993,127 @@ fn the_text_length_argument_type_is_refused_by_the_rust_frontend_itself() {
 }
 
 #[test]
+fn the_t2_g2_nested_call_shapes_stay_typed_refused() {
+    // STEP-0531, T2-g2 truth: the remaining family shapes -- the argument of
+    // `sico.text.length` is itself a call -- are still typed refusals, and the
+    // refusal identity is unchanged: `ERR:E-SH-IR-EXPRESSION`.
+    //
+    // The oracle lowers **every one** of them (the two S call sites among
+    // them), so these refusals are the T2-g2 gap and not a semantic refusal:
+    // the shape is supported, the guest frontend does not reach it yet.
+    for (label, body) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+        ),
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+        ),
+        (
+            "s-site-let-binding",
+            "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} nested-call shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        let module = rust_module(&source);
+        assert!(
+            !module.functions.is_empty(),
+            "the oracle lowers the {label} nested-call shape"
+        );
+    }
+}
+
+#[test]
+fn the_t2_g2_target_ir_is_the_nested_call_shape() {
+    // STEP-0531: the target the T2-g2 knife has to produce, measured from the
+    // Rust frontend's own canonical IR -- never designed.
+    //
+    // The rule, in one line: the nested call is **one** instruction, its
+    // result id comes **before** the outer call's result id (post-order
+    // allocation), and the outer `sico.text.length` takes that id as its only
+    // argument.
+    for (label, body, expected) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            vec![
+                (1, "const_string \"x\""),
+                (2, "intrinsic sico.text.concat args=[0,1]"),
+                (3, "intrinsic sico.text.length args=[2]"),
+            ],
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            vec![
+                (1, "call 2 args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            vec![
+                (1, "intrinsic sico.bytes.utf8_decode args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            vec![
+                (1, "call 2 args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let function = &module.functions[0];
+        let instructions: Vec<(u32, String)> = function.blocks[0]
+            .instructions
+            .iter()
+            .map(|instruction| {
+                (
+                    instruction.result.0,
+                    plan_op_text(&instruction.operation)
+                        .expect("the measured operation is inside the plan subset"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            instructions.len(),
+            expected.len(),
+            "{label} instruction count"
+        );
+        for (index, (result, text)) in expected.iter().enumerate() {
+            assert_eq!(
+                instructions[index].0, *result,
+                "{label} instruction {index} result id"
+            );
+            assert_eq!(
+                instructions[index].1, *text,
+                "{label} instruction {index} operation"
+            );
+        }
+    }
+}
+
+#[test]
 fn sico_codegen_guest_emits_the_text_length_component_byte_exactly() {
     // STEP-0530, T2 codegen knife: the guest **emitter** knows the
     // `sico.text.length` operator now, and the component it emits is byte for

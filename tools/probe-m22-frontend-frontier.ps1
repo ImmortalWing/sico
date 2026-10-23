@@ -331,6 +331,21 @@ $cases = @(
         Source = "function size(t: Text) returns U64:`n  return sico.text.length(sico.text.concat(t, `"x`"))`nend function`n"
         Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
     }
+    # STEP-0531: the T2-g2 truth measurement pinned the two **S call sites**
+    # of the family -- the nested host call in a `let` binding and the nested
+    # user call in a return position.  The oracle lowers both; the guest
+    # frontend still refuses them with the same typed identity, so the family
+    # stays open on this gap.
+    @{
+        Name = 'text-length-over-a-nested-user-call-argument'
+        Source = "function size(t: Text) returns U64:`n  return sico.text.length(helper(t))`nend function`nfunction helper(v: Text) returns Text:`n  return v`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    @{
+        Name = 'text-length-over-a-nested-host-call-argument-in-a-let-binding'
+        Source = "function size(src: Bytes) returns U64:`n  let n = sico.text.length(sico.bytes.utf8_decode(src))`n  return n`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
     @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"

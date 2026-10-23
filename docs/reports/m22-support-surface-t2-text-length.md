@@ -1,10 +1,10 @@
 # M22 支持面登记表 · T2 族（`sico.text.length`）
 
-> - status: **STEP-0530 落地（codegen 刀 C 已完成；族未闭合）** —— **前端**已逐字节降（STEP-0529），**组件层**已逐字节发射（STEP-0530，**10 个形状**），**嵌套调用实参**仍 typed 拒绝；语料覆盖 **0 条**
+> - status: **STEP-0531 落地（T2-g2 真值测量片 = 目标形状已量、边界已钉；族未闭合）** —— **前端**已逐字节降（STEP-0529），**组件层**已逐字节发射（STEP-0530，**10 个形状**），**嵌套调用实参**（T2-g2）仍 typed 拒绝但**目标 IR 已实测钉住**；语料覆盖 **0 条**
 > - date: 2026-10-24
 > - owner: autonomous-agent
 > - scope: 计划 §3.3.5 的 **D15 支持面登记**：族 ×（名字 / 实参个数 / 实参类型 / 结果槽数 / 语料覆盖 / 未覆盖形状）
-> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（T1 拍 1 的方法学先例）、[STEP-0527](../steps/STEP-0527-m22-w2-s5-w2-t1-family-closure.md)（上一族 T1 收口）、[STEP-0528](../steps/STEP-0528-m22-w2-s5-w2-t2-text-length-truth.md)（本族的拍 1 真值测量片）、[STEP-0529](../steps/STEP-0529-m22-w2-s5-w2-t2-frontend-knife.md)（本族的拍 2 前端刀）、[STEP-0530](../steps/STEP-0530-m22-w2-s5-w2-t2-codegen-knife.md)（**本族的拍 3 codegen 刀**）
+> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（T1 拍 1 的方法学先例）、[STEP-0527](../steps/STEP-0527-m22-w2-s5-w2-t1-family-closure.md)（上一族 T1 收口）、[STEP-0528](../steps/STEP-0528-m22-w2-s5-w2-t2-text-length-truth.md)（本族的拍 1 真值测量片）、[STEP-0529](../steps/STEP-0529-m22-w2-s5-w2-t2-frontend-knife.md)（本族的拍 2 前端刀）、[STEP-0530](../steps/STEP-0530-m22-w2-s5-w2-t2-codegen-knife.md)（**本族的拍 3 codegen 刀**）、[STEP-0531](../steps/STEP-0531-m22-w2-s5-w2-t2-g2-truth.md)（**T2-g2 的真值测量片**）
 > - 口径: **所有数字来自 oracle 的生产输出**（Rust 前端 `lower_core` + `canonical_json`，Rust 后端 `compile_script_program`），**不是设计值**
 
 ## 1. 子集边界（D15 要求登记的六项）
@@ -72,6 +72,31 @@ STEP-0530 闭合的是 **T2-c1**（**一个缺口**）。S 内 T2 族的 **322**
 
 > **STEP-0530 的诚实性做法**：发射端认领算子之后仍有拒绝，本片**没有**把它们一律记成 T2 缺口，而是**逐条用不含该算子的对照形状证伪**：`while` 循环形状（对照形状 1142 B，同样被拒）与 `U64.bit_or` / `U64.shr`（对照形状各 1039 B，同样被前端拒）**都与 T2 无关**，不进本族的账。
 
+### 3.2 T2-g2 的实测真值（STEP-0531，**实现未做**）
+
+T2-g2 是族内**最后**一条缺口：**实参本身是嵌套调用**。本片把它的**目标形状**全部量了出来（Rust 前端自己的 canonical IR，**不是设计值**），固件用 `the_t2_g2_target_ir_is_the_nested_call_shape` 钉住。
+
+**规则（一句话）**：**嵌套调用是 1 条指令**；它的**结果 id 先于**外层调用的结果 id（**后序分配**）；外层 `sico.text.length` 把那个 id 当作**唯一实参**。
+
+| 形状 | oracle canonical IR（指令序列） | guest 前端 | 归属 |
+|---|---|---|---|
+| 嵌套**内建**调用（`sico.text.concat`） | `1 const_string "x"` → `2 intrinsic sico.text.concat args=[0,1]` → `3 intrinsic sico.text.length args=[2]` | ❌ `ERR:E-SH-IR-EXPRESSION` | **T2-g2** |
+| 嵌套**用户**调用（`helper(t)`） | `1 call 2 args=[0]` → `2 intrinsic sico.text.length args=[1]` | ❌ `ERR:E-SH-IR-EXPRESSION` | **T2-g2** |
+| **S 站点** ①：`sico.bytes.utf8_decode(src)` | `1 intrinsic sico.bytes.utf8_decode args=[0]` → `2 intrinsic sico.text.length args=[1]` | ❌ `ERR:E-SH-IR-EXPRESSION` | **T2-g2** |
+| **S 站点** ②：`positive_sleb_hex(initial)` | `1 call 2 args=[0]` → `2 intrinsic sico.text.length args=[1]` | ❌ `ERR:E-SH-IR-EXPRESSION` | **T2-g2** |
+| S 站点 ① 的 `let` 绑定形 | 同上 | ❌ `ERR:E-SH-IR-EXPRESSION` | **T2-g2** |
+
+**这 5 个形状的拒绝身份全部是 `ERR:E-SH-IR-EXPRESSION`**，而 oracle **全部能降下来** ⇒ 这些是**前端层**的缺口，**不是**语义拒绝 ⇒ **T2-g2 仍未闭合**。
+
+**下一刀要动的两处路由**（实测定位，非猜测）：
+
+| S 站点 | 形状 | 落点 |
+|---|---|---|
+| `compiler.sico:57`（`let byte_len = sico.text.length(sico.bytes.utf8_decode(src))`） | 嵌套**内建**调用 | **通用宿主调用路由** `gw_intrinsic_call_packed`（`selfhost/parser.sico:940`）的实参分支（现为「形参 / 局部 cell / 否则 `ERR:E-SH-IR-CALL-ARGUMENT`」三路） |
+| `compiler.sico:361`（`match U64.checked_div(sico.text.length(positive_sleb_hex(initial)), U64.literal(2))`） | 嵌套**用户**调用 | **固定算子实参路径**（`U64.checked_div` 的实参），**不在**宿主调用路由里 |
+
+> **为什么 T1 家族的既有做法不能直接照搬**：T1 族在 `straight_text_concat_packed` 里已经实现了「嵌套内建调用」（递归自身，`:9200-9230`）与「嵌套用户调用」（`stc_call_operand_packed`，`:9642`）——但那两条路径**只服务 `sico.text.concat` 的直线路由**；T2 的两个 S 站点落在**通用路由 / 固定算子实参路径**上 ⇒ **不能**只改 `straight_text_length_packed`。
+
 ## 4. S 内 T2 调用点普查（口径：文本出现次数）
 
 | 口径 | 数值 |
@@ -95,8 +120,8 @@ STEP-0530 闭合的是 **T2-c1**（**一个缺口**）。S 内 T2 族的 **322**
 | `canonical IR` 逐字节等同 | ✅ **8** 个形状（条件位 3 + 语句位 5）—— **嵌套调用实参 2 行仍未覆盖** |
 | `整组件` 逐字节等同 | ✅ **10** 个形状（STEP-0530）—— **嵌套调用实参 2 行仍未覆盖**（前端层就拒了，到不了发射端） |
 | `wasmparser::Validator` 通过 | ✅ **两侧都过**（STEP-0530：oracle 的生产组件与 guest 发出的组件都过真实 validator） |
-| 前沿探针期望值已翻转 | ✅ STEP-0530：**50 → 51** 条用例（**0 条翻转 + 1 条新增**：`text-length-over-a-nested-call-argument-in-a-return-position` = `refused:ERR:E-SH-IR-EXPRESSION`）⇒ 实测 **`FRONTIER_UNCHANGED`**（本片只动发射端，不动前端） |
-| 固件电池绿 | ✅ 本机 **BATTERY_GREEN 19/19**（固件 **161 / 161**） |
+| 前沿探针期望值已翻转 | ✅ STEP-0530：**50 → 51** 条用例（**0 条翻转 + 1 条新增**：`text-length-over-a-nested-call-argument-in-a-return-position` = `refused:ERR:E-SH-IR-EXPRESSION`）⇒ 实测 **`FRONTIER_UNCHANGED`**（本片只动发射端，不动前端）；**STEP-0531**：**51 → 53** 条（**再 +2 条**，把 **T2-g2 的两个 S 站点**钉进探针：`text-length-over-a-nested-user-call-argument` / `text-length-over-a-nested-host-call-argument-in-a-let-binding`，均 `refused:ERR:E-SH-IR-EXPRESSION`） |
+| 固件电池绿 | ✅ 本机 **BATTERY_GREEN 19/19**（固件 **161 / 161**）；**STEP-0531**：固件 **163 / 163**（**+2 条** T2-g2 钉：边界拒绝钉 + **目标 IR 钉**） |
 | **独立 CI 绿** | ✅ run #36（STEP-0529 `e5f657a`）= **success**（run id `40016972272`，**本片回填**）；**本片**推送后触发新一轮，裁决由**下一片**回填 |
 
 ⇒ **T2 族未闭合**：剩余**一项**缺口（**T2-g2 嵌套调用实参**，前端层）待落地；**组件层（`T2-c1`）已闭合**。
