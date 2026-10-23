@@ -3148,6 +3148,685 @@ fn oracle_error_arm_result_area_truth_is_pinned() {
 }
 
 #[test]
+fn sico_compiler_lowers_the_enum_case_operand_as_a_variant_byte_exactly() {
+    // STEP-0506, frontend knife: an enum case is an operand in its own
+    // right. The Rust frontend lowers `Enum.Case` into an empty-payload
+    // `variant` op whose type is the enum -- it looks at the variant before
+    // it looks at field projections -- and the guest frontend must agree byte
+    // for byte: the operation, the type, the result id and the source range.
+    //
+    // The `error`-arm fixture is the shape that needs it: `ScriptError.code`
+    // is an enum case, so without this lowering the whole construct was
+    // refused with `ERR:E-SH-IR-CONSTRUCT-VALUE` and the guest could not
+    // reach the codegen at all.
+    let expected = rust_ir(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let outcome = run_guest(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("the error-arm fixture must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_error_arm_component_byte_exactly() {
+    // STEP-0506, codegen knife: the `error` arm is a second Script-profile
+    // shape, and the guest's component emission has to follow the IR into
+    // the second arm instead of stopping at the `ok` one.
+    //
+    // Three rules are new here, and all three are measured from the Rust
+    // backend's production output (STEP-0505):
+    //   * the one-of member is an empty-payload `variant` op whose
+    //     discriminant is the frozen `script-error-code` tag;
+    //   * the `error` payload is right-aligned: the inactive `ok` region is
+    //     zero-filled and the error payload sits after it;
+    //   * the `ScriptError.code` field is a one-byte discriminant in the
+    //     result area (`i32.store8` at 8), while `message` is a list at 12
+    //     and 16.
+    //
+    // The exit criterion of this slice is the whole component, byte for
+    // byte against the backend -- the local declaration section (17 groups
+    // / 18 slots), the run body and the result-area return.
+    let module = rust_module(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the error arm");
+    let RunOutcome::Output(output) = run_guest_with_args(
+        SCRIPT_ERROR_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the error-arm component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted error-arm component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted error-arm component must pass the real Wasm validator");
+}
+
+const MULTI_FUNCTION_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+/// The same shape with a **multi-slot** helper parameter: a `Text` flattens
+/// to two Wasm slots, so the derived core type carries two valtypes and the
+/// flat group hex carries two groups.
+const MULTI_SLOT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(text: Text) returns Text:\n  return text\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_codegen_guest_emits_the_multi_function_component_byte_exactly() {
+    // STEP-0507, codegen knife: a module with more than one function. The
+    // backend emits every module function into the core module, in the
+    // module's function order, and then the three frozen arena helpers, so the
+    // type section, the function table, the export indices and the code bodies
+    // all follow the module's function count.
+    //
+    // The rules are measured from the Rust backend's production output
+    // (STEP-0507 §1):
+    //   * the type section lists the module functions first and the three
+    //     frozen helper types last; `run` keeps the frozen Script ABI type
+    //     while every other function's type is derived from the flat parameter
+    //     and result types;
+    //   * the function table carries one entry per module function plus the
+    //     three helpers, and a core function's type index is its own index;
+    //   * the four exports keep their names while their function indices
+    //     follow the module function count;
+    //   * a module function other than `run` returns its flat value directly
+    //     (one `local.get` per slot, then `return`) instead of through the
+    //     Script result area;
+    //   * the local declaration rule is the backend's own: the parameters are
+    //     not declared, every instruction result slot is its own group, and
+    //     the dispatcher and the Script scratch pair follow.
+    //
+    // The exit criterion of this slice is the whole component, byte for byte
+    // against the backend.
+    //
+    // Two fixtures: one helper with a single-slot parameter and one with a
+    // multi-slot parameter, so the derived core type covers one and two flat
+    // groups.
+    for (label, source) in [
+        ("single-slot helper", MULTI_FUNCTION_FIXTURE_SOURCE),
+        ("multi-slot helper", MULTI_SLOT_FIXTURE_SOURCE),
+    ] {
+        let module = rust_module(source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the multi-function module",
+        );
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the multi-function component must be emitted through the guest")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted multi-function component ({label}) must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted multi-function component must pass the real Wasm validator");
+    }
+}
+
+const CALL_IN_FIELD_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: helper(I64.literal(7))))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_call_in_a_construct_field_byte_exactly() {
+    // STEP-0508: a call in a construct field value position. The call's
+    // arguments are lowered into their own instructions first -- each one
+    // takes a result id -- and the call itself takes the next id; the field
+    // references the call's id.
+    //
+    // The rules are measured from the Rust backend's production output
+    // (STEP-0508 §1):
+    //   * the call's `function` is the callee's declaration id (1-based);
+    //   * the call's `arguments` are the argument value ids;
+    //   * the call's `ty` is the callee's declared return type;
+    //   * the call's `range` runs from the callee's name to the closing
+    //     parenthesis.
+    let expected = rust_ir(CALL_IN_FIELD_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(CALL_IN_FIELD_FIXTURE_SOURCE) else {
+        panic!("the call-in-a-field fixture must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+fn codegen_function_text(name: &str) -> String {
+    let start = CODEGEN_SOURCE
+        .find(&format!("function {name}("))
+        .expect("codegen keeps the function");
+    let end = CODEGEN_SOURCE[start..]
+        .find("\nend function\n")
+        .expect("function ends")
+        + start
+        + "\nend function\n".len();
+    CODEGEN_SOURCE[start..end].to_owned()
+}
+
+/// Every function name `codegen.sico` declares.
+fn codegen_function_names() -> Vec<&'static str> {
+    CODEGEN_SOURCE
+        .lines()
+        .filter_map(|line| line.strip_prefix("function "))
+        .filter_map(|rest| rest.split('(').next())
+        .map(|name| name.trim())
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect()
+}
+
+/// The parameter list and the return type of a `codegen.sico` function.
+fn codegen_signature(name: &str) -> (String, String) {
+    let head = codegen_function_text(name)
+        .lines()
+        .next()
+        .expect("the function has a signature line")
+        .to_owned();
+    let open = head.find('(').expect("the signature has parameters");
+    let close = head
+        .rfind(')')
+        .expect("the signature closes its parameters");
+    let params = head[open + 1..close].trim().to_owned();
+    let returns = head[close + 1..]
+        .trim()
+        .trim_start_matches("returns ")
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_owned();
+    (params, returns)
+}
+
+/// A stub for one `codegen.sico` function: the real signature, a trivial body.
+/// The signature is what the call lowering reads, so a call to a stub lowers
+/// exactly like a call to the real function.
+fn codegen_stub(name: &str) -> String {
+    let (params, returns) = codegen_signature(name);
+    let body = match returns.as_str() {
+        "U64" => "U64.literal(0)",
+        "I64" => "I64.literal(0)",
+        "Bool" => "false",
+        "Text" => "\"\"",
+        "Bytes" => "sico.text.encode(\"\")",
+        other => panic!("codegen function {name} has an unexpected return type {other}"),
+    };
+    format!("function {name}({params}) returns {returns}:\n  return {body}\nend function\n")
+}
+
+/// The `codegen.sico` functions the text calls, in first-call order.
+fn codegen_callees(text: &str, own: &str) -> Vec<String> {
+    let names = codegen_function_names();
+    let chars: Vec<char> = text.chars().collect();
+    let mut callees: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if !chars[index].is_ascii_alphabetic() && chars[index] != '_' {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < chars.len() && (chars[index].is_ascii_alphanumeric() || chars[index] == '_') {
+            index += 1;
+        }
+        let word: String = chars[start..index].iter().collect();
+        let member = start > 0 && chars[start - 1] == '.';
+        let mut after = index;
+        while after < chars.len() && chars[after] == ' ' {
+            after += 1;
+        }
+        let called = after < chars.len() && chars[after] == '(';
+        if called
+            && !member
+            && word != own
+            && names.contains(&word.as_str())
+            && !callees.contains(&word)
+        {
+            callees.push(word);
+        }
+    }
+    callees
+}
+
+/// The source that lowers one `codegen.sico` function in isolation: a stub for
+/// every callee it declares, then the function itself.
+fn codegen_function_source(name: &str) -> String {
+    let text = codegen_function_text(name);
+    let mut source = String::new();
+    for callee in codegen_callees(&text, name) {
+        source.push_str(&codegen_stub(&callee));
+    }
+    source.push_str(&text);
+    source
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0507_codegen_functions_byte_exactly() {
+    // STEP-0507: the guest's own new codegen code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Every function this slice added or reshaped is lowered through the guest
+    // and compared against the Rust frontend's canonical IR, byte for byte.
+    //
+    // The shape rules this slice had to respect (measured, not guessed): a
+    // user call may not sit directly in a return expression, a call argument
+    // may not be another call, and a host call may not take a host call as its
+    // argument -- every one of them goes through a cell first.
+    for name in [
+        "cgs_alloc_index",
+        "cgs_alloc_call_hex",
+        "cgs_function_at_index",
+        "cgs_function_count",
+        "cgs_run_index",
+        "cgs_flat_valtypes",
+        "cgs_core_type_hex",
+        "cgs_core_types_hex",
+        "cgs_core_funcs_hex",
+        "cgs_core_exports_hex",
+        "cgs_function_return_hex",
+        "cgs_function_body_hex",
+        "cgs_core_code_hex",
+        "cgs_result_list_hex",
+        "cgs_result_field_hex",
+        "cgs_result_error_field_hex",
+        "cgs_result_return_hex",
+        "cg_core_globals_hex",
+        "cg_run_body_hex_from_ir",
+        "cgs_local_hex",
+        "cgs_run_instr_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0509_codegen_functions_byte_exactly() {
+    // STEP-0509, codegen knife: the guest's own new emission code has to stay
+    // inside the self-hosting shape frontier, exactly like the STEP-0507
+    // slice established for its own functions: the guest frontend must lower
+    // the guest's own emitter, otherwise the bootstrap could never consume its
+    // own code.
+    //
+    // The shape rules are the measured ones from STEP-0507: a user call may not
+    // sit directly in a return expression, a call argument may not be another
+    // call, and a host call may not take a host call as its argument -- every
+    // one of them goes through a cell first.
+    for name in ["cgs_function_position", "cgs_call_hex", "cgs_op_hex"] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_call_in_a_field_component_byte_exactly() {
+    // STEP-0509, codegen knife: a call in a construct field value position
+    // reaches the component emitter. The whole component must equal the Rust
+    // backend's own production output byte for byte.
+    //
+    // The rules are measured from the backend's production output
+    // (STEP-0509 §1):
+    //   * the call's target is the Wasm function index the module's own
+    //     function list gives for the call's declaration id (the callee is
+    //     the first declared function, so the index is 0);
+    //   * the arguments' flat slots are pushed first, the call follows, and
+    //     the result's slots are stored afterwards;
+    //   * the local declaration section follows the backend's own rule, so
+    //     the two new instruction results add one i64 group each.
+    let module = rust_module(CALL_IN_FIELD_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the call fixture");
+    let RunOutcome::Output(output) = run_guest_with_args(
+        CALL_IN_FIELD_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the call-in-a-field component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted call-in-a-field component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted call-in-a-field component must pass the real Wasm validator");
+}
+
+/// STEP-0510: the same call shape, but in a **return expression** position --
+/// `helper2` returns the result of `helper(...)`, and `run` calls `helper2` in
+/// a construct field. The guest lowers this shape byte-exactly; it was never
+/// covered by a pin, and the STEP-0508 / STEP-0509 records described it as
+/// refused (they were wrong -- see the STEP-0510 record).
+const CALL_IN_RETURN_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction helper2(value: I64) returns I64:\n  return helper(I64.literal(3))\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: helper2(I64.literal(7))))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_call_in_a_return_position_byte_exactly() {
+    // STEP-0510: a user call in a return expression position. The measured
+    // rules (STEP-0510 §1) are the ones the STEP-0508 record established for
+    // the construct field position, and they hold here unchanged:
+    //   * the call's `function` is the callee's declaration id (1-based);
+    //   * the call's `arguments` are the argument value ids;
+    //   * the call's `ty` is the callee's declared return type;
+    //   * the call's `range` runs from the callee's name to the closing
+    //     parenthesis;
+    //   * the enclosing function's terminator returns the **call's** value id.
+    let expected = rust_ir(CALL_IN_RETURN_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(CALL_IN_RETURN_FIXTURE_SOURCE) else {
+        panic!("the call-in-a-return fixture must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_call_in_a_return_component_byte_exactly() {
+    // STEP-0510: the same shape reaches the component emitter. The call in
+    // the return position lands in the **callee's** own core function body
+    // (`helper2`), while the `run` body only carries the call to `helper2`.
+    // The whole component must equal the Rust backend's production output
+    // byte for byte.
+    let module = rust_module(CALL_IN_RETURN_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module).expect(
+        "the Rust backend emits the Script-profile Component for the call-in-a-return fixture",
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        CALL_IN_RETURN_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the call-in-a-return component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted call-in-a-return component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted call-in-a-return component must pass the real Wasm validator");
+}
+
+/// STEP-0511: the measured truth for a **host call (`sico.*`) in a straight-line
+/// function body** -- the shape STEP-0510 §4.6 located as the open gap after
+/// the frontend frontier was mapped shape by shape.
+///
+/// The `size` helper is a straight-line body (no `let`, no `set`, no `if`, no
+/// `while`) whose return expression *is* a host call; `run` is the reference
+/// Script-profile form.
+const HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction size(data: Bytes) returns U64:\n  return sico.bytes.length(data)\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn oracle_host_call_in_a_straight_line_body_truth_is_pinned() {
+    // STEP-0511, truth slice. Everything here is read from the **production
+    // output**, not from a design document:
+    //
+    //   * the Rust backend really emits a Component for this fixture, and the
+    //     component is 1025 B;
+    //   * the canonical IR shape of the host call is one `intrinsic`
+    //     operation whose `arguments` are the argument **value ids** and
+    //     whose `ty` is the intrinsic's result kind;
+    //   * the guest frontend refused the shape at the STEP-0511 measurement
+    //     time, with a **typed** identity (fail-closed, no silent fallback);
+    //     STEP-0512 landed the frontend knife, so the guest half below is now
+    //     the byte-exact comparison this pin promised -- the original refusal
+    //     identity stays in the STEP-0511 record for traceability.
+    //
+    // This pin is the oracle for the implementation slice: when the guest
+    // learns the shape, this pin's guest half flips to a byte-exact
+    // comparison and the component size stays 1025 B.
+    let module = rust_module(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let component = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        component.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&component)
+        .expect("the measured host-call component must pass the real Wasm validator");
+
+    let ir = canonical_json(&module).expect("canonical IR");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "a host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+
+    // STEP-0512: the promised flip -- the guest half is now the byte-exact
+    // comparison against the Rust frontend's canonical IR.
+    let expected = rust_ir(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a straight-line body after STEP-0512")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+/// STEP-0512: the two shapes next to the supported one, kept as **typed
+/// refusals**. The knife claims exactly one shape -- a one-argument
+/// `sico.bytes.length` over a `Bytes` parameter, in a body whose only
+/// statement is the return -- so neither of these may be silently widened
+/// into something the guest lowers.
+const HOST_CALL_SHAPE_PRELUDE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\n";
+const HOST_CALL_SHAPE_RUN: &str = "function run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_host_call_in_a_straight_line_body_byte_exactly() {
+    // STEP-0512, frontend knife: a host call (`sico.bytes.length`) as the whole
+    // return expression of a straight-line function body now lowers to the
+    // canonical intrinsic operation -- **byte for byte equal** to the Rust
+    // frontend's own canonical IR, not merely shape-equal.
+    //
+    // The landing point is the dedicated `direct_host_call_return_ir` route
+    // in the guest frontend, wired into the route ladder ahead of the
+    // general return analysis. The route claims one shape and returns SKIP
+    // for everything else, so no existing refusal identity changes.
+    let expected = rust_ir(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    assert_eq!(
+        expected.len(),
+        2215,
+        "the measured canonical IR size of the host-call fixture is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a straight-line body after STEP-0512")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+}
+
+#[test]
+fn sico_compiler_keeps_the_neighbouring_host_call_shapes_typed_refused() {
+    // STEP-0512 / STEP-0515: the knife is one shape, not a widening of the
+    // host-call surface. The shapes the STEP-0511 truth slice measured next to
+    // the supported one stay typed refusals:
+    //
+    //   * the three-argument `sico.bytes.at` -- a different intrinsic, a
+    //     different arity, a literal argument;
+    //   * a `let` binding whose `return` names something else -- the binding
+    //     the Rust frontend propagates is the one the `return` names;
+    //   * a `let` binding followed by a second statement -- the propagated
+    //     straight-line binding is one statement, not two;
+    //   * a `let` binding of a different intrinsic (`sico.text.length`);
+    //   * a `let` binding of the three-argument `sico.bytes.at`.
+    //
+    // STEP-0515 claimed the one-argument `sico.bytes.length` in a `let`
+    // binding -- the shape this pin refused at STEP-0512 -- so that case
+    // moved to the STEP-0515 pins below. Every shape the knife does *not*
+    // claim keeps the identity the STEP-0511 measurement recorded
+    // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    let three_argument = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  return sico.bytes.at(data, index, I64.literal(0))\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_other_name = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return other\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_two_statements = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  let m = n\n  return m\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_other_intrinsic = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.text.length(data)\n  return n\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_three_argument = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  let n = sico.bytes.at(data, index, I64.literal(0))\n  return n\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    for (label, source) in [
+        ("three-argument", three_argument),
+        ("let-other-name", let_other_name),
+        ("let-two-statements", let_two_statements),
+        ("let-other-intrinsic", let_other_intrinsic),
+        ("let-three-argument", let_three_argument),
+    ] {
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} host-call shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0512_parser_function_byte_exactly() {
+    // STEP-0512: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 slices established
+    // for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_host_call_return_ir`
+    // in parser.sico, emitted in file order (the guest frontend refuses
+    // forward-referenced user-function calls).
+    let base = [
+        "next_index",
+        "word_at",
+        "is_word",
+        "is_ident_byte",
+        "record_named_type",
+        "type_json",
+        "line_end",
+        "intrinsic_instruction_json",
+        "find_text_from",
+        "binding_parameter_index",
+        "matching_close",
+        "is_intrinsic_path",
+        "scalar_type_kind",
+        "binding_parameter_kind",
+        "gw_find_code_text",
+        "return_expression_end",
+        "parameter_name_start",
+        "parameters_ir",
+        "has_return_at",
+        "return_expression_start",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("direct_host_call_return_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_host_call_return_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_host_call_component_byte_exactly() {
+    // STEP-0513, codegen knife: the `intrinsic` operand reaches the component
+    // emitter. The **whole** component must equal the Rust backend's own
+    // production output byte for byte.
+    //
+    // The rules are measured from the backend's production output (the oracle
+    // component's code section, parsed):
+    //   * `sico.bytes.length` over a `Bytes` argument is
+    //     `local.get <length>` / `i64.extend_i32_u` / `local.set <result>`;
+    //   * the length slot is the **second** slot of the argument's
+    //     (pointer, length) pair -- the first flat slot of the `Bytes`
+    //     parameter is the pointer;
+    //   * the result slot is the instruction's own flat slot, which the
+    //     guest's existing slot derivation already places (the parameter
+    //     pair first, then the instruction results in IR order).
+    let module = rust_module(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the host-call component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted host-call component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted host-call component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0513_codegen_function_byte_exactly() {
+    // STEP-0513: the guest's own new emission code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its
+    // own code. Exactly like the STEP-0507 / STEP-0509 slices established
+    // for the functions they added.
+    let source = codegen_function_source("cgs_intrinsic_hex");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("codegen function cgs_intrinsic_hex must compile through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
 fn sico_codegen_guest_emits_the_derived_component_bytes_byte_exactly() {
     // STEP-0504: the guest's component emission is no longer a replay of a
     // frozen run body. The run body is derived from the ingested IR -- the
@@ -3195,14 +3874,15 @@ fn sico_codegen_guest_emits_the_derived_component_bytes_byte_exactly() {
 #[test]
 fn sico_codegen_guest_refuses_the_component_emission_outside_the_subset() {
     // STEP-0504: the component emission is fail-closed (ADR-0016 decision 6).
-    // The frozen component sections describe a module with exactly one
-    // function -- the Script-profile `run` -- and no data section, so a
-    // module with an extra function (which the backend would emit as an extra
-    // core function) must be refused instead of silently dropping it.
-    let two_functions = format!(
-        "{ECHO_COMPONENT_FIXTURE_SOURCE}\nfunction helper() returns I64:\n  return I64.literal(0)\nend function\n"
+    // STEP-0507 widened the supported subset from "exactly one function" to
+    // "every module function the derivation covers", so the remaining refusals
+    // are the shapes the derivation does not cover: a source outside the
+    // Script profile, and a module function that returns a checked result
+    // (the packed checked-result return is not implemented yet).
+    let checked_result_helper = format!(
+        "{ECHO_COMPONENT_FIXTURE_SOURCE}\nfunction helper(value: I64) returns Result[I64, ScriptError]:\n  return ok(value)\nend function\n"
     );
-    for source in [IDENTITY_SOURCE, two_functions.as_str()] {
+    for source in [IDENTITY_SOURCE, checked_result_helper.as_str()] {
         assert_eq!(
             run_guest_with_args(source, vec!["--emit-component-hex".into()]),
             RunOutcome::Domain {
@@ -3920,10 +4600,9 @@ fn sico_compiler_emits_the_module_ir_split_across_both_channels_byte_exactly() {
     // module IR, and the split point must sit at the byte midpoint.
     let source = format!("{PARSER_SOURCE}\n");
     let expected = rust_ir(&source);
-    let RunOutcome::Output(output) =
-        run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()])
-    else {
-        panic!("the split driver mode must return the module IR across both channels")
+    let outcome = run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()]);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("the split driver mode must return the module IR across both channels: {outcome:?}")
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     let mut assembled = output.stdout.clone();
@@ -4636,6 +5315,7 @@ fn sico_compiler_lowers_argument_instructions_closure_byte_exactly() {
     let base = [
         "argument_instruction_count",
         "argument_values",
+        "argument_values_at",
         "binding_parameter_index",
         "binding_parameter_kind",
         "constant_argument_kind",
@@ -4822,6 +5502,7 @@ fn sico_compiler_lowers_checked_arithmetic_match_ir_closure_byte_exactly() {
         "argument_region_instruction_count",
         "argument_segment_kind",
         "argument_values",
+        "argument_values_at",
         "binding_parameter_index",
         "binding_parameter_kind",
         "constant_argument_kind",
@@ -4963,4 +5644,1225 @@ fn sico_compiler_lowers_while_call_rhs_packed_closure_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+/// STEP-0515: the same Script-profile fixture, but the host call sits in a
+/// `let` binding instead of the return position. The canonical IR is the
+/// **same shape** as the return-position fixture -- one `intrinsic`, result 1,
+/// the terminator returning 1 -- with only the source range shifted, because
+/// the Rust frontend propagates a straight-line `let` binding into the SSA
+/// value instead of creating a local.
+const HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return n\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_host_call_in_a_let_binding_byte_exactly() {
+    // STEP-0515, frontend knife: a host call (`sico.bytes.length`) in a `let`
+    // binding of a straight-line body now lowers to the canonical intrinsic
+    // operation -- **byte for byte equal** to the Rust frontend's own canonical
+    // IR, not merely shape-equal.
+    //
+    // The truth is the Rust frontend's production output (STEP-0511, the
+    // `host-c` artifact): the `let` binding is propagated into the SSA value,
+    // so the canonical IR is the *same shape* as the return-position fixture --
+    // one `intrinsic`, result 1, the terminator returning 1, **no local** --
+    // with only the source range shifted (369..392 instead of 361..384).
+    //
+    // The landing point is the dedicated `direct_host_call_let_ir` route in the
+    // guest frontend, wired into the route ladder ahead of the general
+    // statement analysis. The route claims one shape and returns SKIP for
+    // everything else, so no existing refusal identity changes.
+    let expected = rust_ir(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE);
+    assert_eq!(
+        expected.len(),
+        2215,
+        "the measured canonical IR size of the let-binding fixture is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a let binding after STEP-0515")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"range\":{\"start\":369,\"end\":392}"),
+        "the intrinsic range is the call expression span: {ir}"
+    );
+    assert!(
+        !ir.contains("\"op\":\"write_local\"") && !ir.contains("\"locals\""),
+        "the let binding is propagated into the SSA value, not lowered into a local: {ir}"
+    );
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_host_call_let_binding_component_byte_exactly() {
+    // STEP-0515, codegen side: the let-binding fixture lowers to the same
+    // intrinsic shape, so the whole component must equal the Rust backend's
+    // own production output byte for byte -- 1025 B, measured in STEP-0511.
+    let module = rust_module(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the let-binding fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured let-binding component size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the let-binding component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted let-binding component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted let-binding component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0515_parser_function_byte_exactly() {
+    // STEP-0515: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 / STEP-0512 slices
+    // established for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_host_call_let_ir`
+    // in parser.sico, emitted in file order (the guest frontend refuses
+    // forward-referenced user-function calls).
+    let base = [
+        "next_index",
+        "word_at",
+        "is_word",
+        "is_ident_byte",
+        "record_named_type",
+        "type_json",
+        "line_end",
+        "intrinsic_instruction_json",
+        "find_text_from",
+        "word_span_offset",
+        "binding_parameter_index",
+        "matching_close",
+        "is_intrinsic_path",
+        "scalar_type_kind",
+        "binding_parameter_kind",
+        "gw_find_code_text",
+        "return_expression_end",
+        "parameter_name_start",
+        "parameters_ir",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("direct_host_call_let_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_host_call_let_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0517: the T1 family truth -- `sico.text.concat` over two `Text`
+// arguments.
+//
+// STEP-0516 closed the *scale* question for the W2 wave. STEP-0517 measures
+// the first *family* the W2 wave has to close: `sico.text.concat`, the call
+// the M22 plan ranks first by call-site count in S.
+//
+// Every number below is measured from the Rust frontend's canonical IR and
+// the Rust backend's own production component -- never designed.
+// ---------------------------------------------------------------------------
+
+/// The Script-profile prelude and the `run` entry, shared with the host-call
+/// fixtures above so the two families stay comparable.
+fn text_concat_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_in_a_let_binding_byte_exactly() {
+    // STEP-0517, T1 truth (frontend side): the `sico.text.concat` call in a
+    // `let` binding is **already** lowered by the guest frontend -- byte for
+    // byte equal to the Rust frontend's canonical IR, not merely shape-equal.
+    //
+    // The canonical shape is one `intrinsic` operation named
+    // `sico.text.concat` whose two arguments are the two argument value ids:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    //
+    // The `let` binding is propagated into the SSA value (no `write_local`,
+    // no `locals`), exactly like the STEP-0515 host-call fixture. Both
+    // already-lowered shapes are pinned here: the arguments as parameters and
+    // the arguments as local cells.
+    for (label, body) in [
+        (
+            "parameters",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+        ),
+        (
+            "cells",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  let y = b\n  let c = sico.text.concat(x, y)\n  return c\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            2295,
+            "the measured T1 canonical IR size is pinned ({label})"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest must lower a text concat in a let binding ({label})")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"op\":\"intrinsic\""),
+            "the text concat lowers to one intrinsic operation ({label}): {ir}"
+        );
+        assert!(
+            ir.contains("\"name\":\"sico.text.concat\""),
+            "the intrinsic keeps its dotted name ({label}): {ir}"
+        );
+        assert!(
+            ir.contains("\"arguments\":[0,1]"),
+            "the intrinsic arguments are the two argument value ids ({label}): {ir}"
+        );
+        assert!(
+            !ir.contains("\"op\":\"write_local\"") && !ir.contains("\"locals\""),
+            "the let binding is propagated into the SSA value, not lowered into a local ({label}): {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_in_a_return_position_byte_exactly() {
+    // STEP-0517, T1 truth: the return-expression position is **not** a
+    // missing capability -- it is a *gated* one.
+    //
+    // The same `return sico.text.concat(a, b)` lowers **byte for byte** as soon
+    // as the function body carries one more statement (a `let` or a `set`).
+    // The Rust frontend drops the dead binding and keeps the intrinsic in the
+    // return position:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    //   ... "terminator":{"kind":"return","data":2}
+    //
+    // The gate lives in the guest's route ladder: the `straight_cell_*` family
+    // is only entered when the body has a statement besides the return
+    // (`body_statement_count = max(let_count, set_count) > 0`). A body whose
+    // only statement is the return never reaches the route that already
+    // implements this shape, and falls through to the scalar-return analysis,
+    // which refuses it with `ERR:E-SH-IR-EXPRESSION`.
+    //
+    // This is the measured cut point for the W2 frontend knife: the shape
+    // works, the *reachability* is what is missing.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, b)\nend function",
+    );
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2295,
+        "the measured T1 return-position canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!(
+            "the guest must lower a text concat in a return position when the body has a statement"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the text concat lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.text.concat\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0,1]"),
+        "the intrinsic arguments are the two argument value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"terminator\":{\"kind\":\"return\",\"data\":2}"),
+        "the intrinsic result is the returned value: {ir}"
+    );
+}
+
+#[test]
+fn oracle_text_concat_component_truth_is_pinned() {
+    // STEP-0517, T1 truth (codegen side): the frontend lowers the shape, but
+    // at the STEP-0517 measurement time the **component** emitter did not. The
+    // Rust backend's own production output for the same source is 1094 bytes;
+    // the guest emitter refused with the typed "unsupported codegen source
+    // shape".
+    //
+    // That refusal was the fail-closed behaviour ADR-0016 decision 6 demands:
+    // the emitter supported `sico.bytes.length` only (STEP-0513), so
+    // `sico.text.concat` was outside the subset and was never approximated.
+    //
+    // STEP-0519 landed the W2 codegen knife, so the guest half below is now
+    // the byte-exact comparison this pin promised -- the original refusal
+    // identity stays in the STEP-0517 record for traceability.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the T1 fixture");
+    assert_eq!(
+        expected.len(),
+        1094,
+        "the measured T1 component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured T1 component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the text-concat component must be emitted through the guest after STEP-0519")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted text-concat component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted text-concat component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0518_parser_function_byte_exactly() {
+    // STEP-0518: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 / STEP-0512 / STEP-0515
+    // slices established for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_text_concat_return_ir`
+    // in parser.sico, emitted in file order (the guest frontend refuses
+    // forward-referenced user-function calls). It is the STEP-0512 closure of
+    // the sibling route (`direct_host_call_return_ir`) -- the new route calls
+    // the same helpers -- plus the route itself, which sits after them.
+    let base = [
+        "next_index",
+        "word_at",
+        "is_word",
+        "is_ident_byte",
+        "record_named_type",
+        "type_json",
+        "line_end",
+        "intrinsic_instruction_json",
+        "find_text_from",
+        "binding_parameter_index",
+        "matching_close",
+        "is_intrinsic_path",
+        "scalar_type_kind",
+        "binding_parameter_kind",
+        "gw_find_code_text",
+        "return_expression_end",
+        "parameter_name_start",
+        "parameters_ir",
+        "has_return_at",
+        "return_expression_start",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("direct_text_concat_return_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_text_concat_return_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_as_the_whole_expression_byte_exactly() {
+    // STEP-0518, T1 frontend knife: the `sico.text.concat` call as the **whole
+    // expression** of a straight-line body -- the shape the STEP-0517 truth
+    // slice measured as still refused -- now lowers to the canonical
+    // intrinsic operation, **byte for byte equal** to the Rust frontend's own
+    // canonical IR.
+    //
+    // The STEP-0517 slice measured the real cause: the guest already had a
+    // working, byte-exact return-position route (`straight_cell_function_ir`
+    // and `straight_environment_function_ir`), but the route ladder only
+    // entered that family when the body carried a statement besides the
+    // return (`body_statement_count = max(let_count, set_count) > 0`). A body
+    // whose only statement is the return never reached it.
+    //
+    // The landing point is the dedicated `direct_text_concat_return_ir` route
+    // in the guest frontend, wired into the route ladder ahead of the general
+    // statement analysis. The route claims one shape and returns SKIP for
+    // everything else, so no existing refusal identity changes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, b)\nend function",
+    );
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2295,
+        "the measured T1 whole-expression canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest must lower a text concat as the whole expression after STEP-0518")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the text concat lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.text.concat\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0,1]"),
+        "the intrinsic arguments are the two parameter value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"terminator\":{\"kind\":\"return\",\"data\":2}"),
+        "the intrinsic result is the returned value: {ir}"
+    );
+    assert!(
+        ir.contains("\"range\":{\"start\":374,\"end\":396}"),
+        "the intrinsic range is the call expression span: {ir}"
+    );
+}
+
+#[test]
+fn sico_compiler_keeps_the_unclosed_text_concat_shapes_typed_refused() {
+    // STEP-0517 / STEP-0518: the knife is one shape, not a widening of the
+    // `sico.text.concat` surface. The shapes the STEP-0517 truth slice
+    // measured next to the supported one stay typed refusals:
+    //
+    //   * two literal operands -- the route claims parameter operands only;
+    //   * a nested host call in operand position -- host call eating a host
+    //     call;
+    //   * a mixed operand pair (parameter plus literal).
+    //
+    // STEP-0518 claimed the two-parameter shape whose whole expression is the
+    // call -- the shape this pin refused at STEP-0517 -- so that case moved
+    // to the STEP-0518 pin above. Every shape the knife does *not* claim
+    // keeps the identity the STEP-0517 measurement recorded
+    // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    for (label, body) in [
+        (
+            "return-position-literals",
+            "function join() returns Text:\n  return sico.text.concat(\"a\", \"b\")\nend function",
+        ),
+        (
+            "return-position-mixed",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
+        ),
+        (
+            "nested-call",
+            "function join(kind: Text, name: Text) returns Text:\n  return sico.text.concat(kind, sico.text.concat(\":\", name))\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} text-concat shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+    }
+}
+
+#[test]
+fn the_text_concat_arity_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0517, T1 truth: the arity boundary of `sico.text.concat` is
+    // enforced by the **semantic layer**, not by the IR layer -- the Rust
+    // frontend itself refuses one argument and three arguments with
+    // `stdlib intrinsic arity`.
+    //
+    // That matters for the W2 wave: the guest frontend must not invent its
+    // own arity check, and the guest's refusal on these shapes is not a
+    // guest-specific gap.
+    for (label, body) in [
+        (
+            "one-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a)\nend function",
+        ),
+        (
+            "three-arguments",
+            "function join(a: Text, b: Text, c: Text) returns Text:\n  return sico.text.concat(a, b, c)\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let source_file = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source)
+            .expect("the fixture source is bounded");
+        let error = match lower_core(&source_file) {
+            Ok(_) => panic!("the Rust frontend must refuse the {label} arity"),
+            Err(error) => format!("{error:?}"),
+        };
+        assert!(
+            error.contains("stdlib intrinsic arity"),
+            "the {label} arity must be refused by the semantic layer: {error}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0519: the W2 family's T1 codegen knife -- the `sico.text.concat`
+// intrinsic reaches the component emitter.
+//
+// The rules are measured from the backend's production output (the oracle
+// component's type, function, export and code sections, parsed in STEP-0519):
+//   * the call site pushes the two operands' four flat slots (pointer and
+//     length each), calls the helper, then stores the result length and the
+//     result pointer;
+//   * the helper is a core function of its own: its core function index is
+//     the module function count plus the three arena helpers, its type is
+//     the four-parameter / two-result function type, and its body is the
+//     backend's own `emit_concat` shape (the total length, the arena
+//     allocation, the two linear copies);
+//   * the type, function and code sections carry one extra entry for the
+//     helper -- and only when the module really uses the intrinsic, so a
+//     module without it keeps the three-entry shape.
+// ---------------------------------------------------------------------------
+
+/// The T1 fixture with a third module function, so the helper's core function
+/// index is not the two-function value.
+fn text_concat_three_function_fixture() -> String {
+    format!(
+        "{HOST_CALL_SHAPE_PRELUDE}{}\n{}\n{HOST_CALL_SHAPE_RUN}",
+        "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+        "function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return n\nend function"
+    )
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_text_concat_helper_index_from_the_module_function_count() {
+    // STEP-0519: the concat helper's core function index is **derived**, not
+    // hard-coded: it is the module function count plus the three arena
+    // helpers. A module with a third function must move the helper -- and
+    // the type, function and code section entries with it -- and the whole
+    // component must still equal the Rust backend's own production output
+    // byte for byte.
+    let source = text_concat_three_function_fixture();
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the T1 fixture");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the three-function text-concat component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted three-function component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted three-function component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_keeps_the_modules_without_the_concat_helper_unchanged() {
+    // STEP-0519: the helper's section entries are **conditional**. A module
+    // that does not use `sico.text.concat` must keep the three-entry shape
+    // (three arena helper types, three arena helper functions, three arena
+    // helper bodies) -- the extra type, function and code entry belong to the
+    // concat helper alone.
+    //
+    // The host-call fixture is the reference: it uses `sico.bytes.length`,
+    // which the backend emits inline and which therefore registers no helper.
+    let source = HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE;
+    let module = rust_module(source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    let RunOutcome::Output(output) =
+        run_guest_with_args(source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the host-call component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "a module without the concat helper must keep the three-entry shape"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
+    // STEP-0519: the guest's own new emission code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its
+    // own code. Exactly like the STEP-0507 / STEP-0509 / STEP-0513 slices
+    // established for the functions they added.
+    //
+    // The four scan functions and the `sico.text.concat` branch are new; the
+    // three section functions and the intrinsic emitter were reshaped.
+    for name in [
+        "cgs_function_count",
+        "cgs_instruction_is_text_concat",
+        "cgs_block_has_text_concat",
+        "cgs_function_has_text_concat",
+        "cgs_module_has_text_concat",
+        "cg_concat_helper_body_hex",
+        "cgs_intrinsic_hex",
+        "cgs_core_types_hex",
+        "cgs_core_funcs_hex",
+        "cgs_core_code_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0520: the W2 family's **local cell** support in the guest codegen.
+//
+// The gap STEP-0519 left open is measured, not guessed: a `let` binding that
+// is later **assigned** is lowered by the Rust frontend into a *cell* -- the
+// function carries `locals`, and the binding becomes two `write_local`
+// operations whose result type is `unit`. The backend's own layout then puts
+// the cells after the instruction results and before the dispatcher slot, and
+// emits a cell write as a slot-by-slot copy.
+//
+// The reference shape (the first one that needs a cell at all):
+//
+//   function join(a: Text, b: Text) returns Text:
+//     let x = a
+//     set x = b
+//     return sico.text.concat(a, b)
+//   end function
+//
+// Its canonical IR is 2630 bytes and its production Component is 1114 bytes;
+// both numbers are measured from the Rust frontend and the Rust backend.
+// ---------------------------------------------------------------------------
+
+/// The first shape that needs the guest codegen's local cell support: a
+/// `let` binding that is later assigned, so the frontend materialises it as a
+/// cell with two unit-typed `write_local` operations.
+fn text_concat_cell_fixture() -> String {
+    text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(a, b)\nend function",
+    )
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_with_an_assigned_cell_byte_exactly() {
+    // STEP-0520, frontend half: the assigned-binding shape lowers to the
+    // canonical IR **byte for byte** -- the cell is materialised exactly the
+    // way the Rust frontend materialises it.
+    //
+    // The canonical shape is a function with a `locals` array, two
+    // `write_local` operations whose result type is `unit`, and the intrinsic
+    // that reads the two parameters:
+    //
+    //   {"op":"write_local","data":{"local":0,"value":0}}   ty: unit
+    //   {"op":"write_local","data":{"local":0,"value":1}}   ty: unit
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    let source = text_concat_cell_fixture();
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2630,
+        "the measured local-cell canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest must lower the assigned-binding text concat shape")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"write_local\""),
+        "the assigned binding lowers into a cell write: {ir}"
+    );
+    assert!(
+        ir.contains("\"locals\":["),
+        "the function carries the cell declaration: {ir}"
+    );
+    assert!(
+        ir.contains("\"ty\":{\"kind\":\"unit\"}"),
+        "a cell write carries no value, so its result type is unit: {ir}"
+    );
+    assert_eq!(
+        ir.matches("\"op\":\"write_local\"").count(),
+        2,
+        "the assigned binding is written twice, once per assignment: {ir}"
+    );
+    assert!(
+        ir.contains("\"locals\":[{\"name\":\"x\",\"ty\":{\"kind\":\"string\"}"),
+        "the cell keeps the declared binding and its type: {ir}"
+    );
+}
+
+#[test]
+fn oracle_local_cell_component_truth_is_pinned() {
+    // STEP-0520, codegen half: the guest's Component emitter now covers the
+    // local-cell shape, and the Component is **byte for byte** the Rust
+    // backend's own production output.
+    //
+    // The measured truth (the oracle's production Component for the same
+    // source) is 1114 bytes; the guest must emit exactly those bytes, and
+    // both sides must pass the real Wasm validator.
+    let source = text_concat_cell_fixture();
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the cell fixture");
+    assert_eq!(
+        expected.len(),
+        1114,
+        "the measured local-cell component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured local-cell component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the local-cell component must be emitted through the guest after STEP-0520")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted local-cell component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted local-cell component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_local_cell_reads_byte_exactly() {
+    // STEP-0520, cell **read** half: the guest codegen emits the cell read as
+    // well as the cell write. The measured shape writes the cell twice and
+    // then reads it back twice:
+    //
+    //   let x = a
+    //   set x = b
+    //   return sico.text.concat(x, x)
+    //
+    // Its canonical IR carries two `write_local` and two `read_local`
+    // operations (2868 bytes) and its production Component is 1138 bytes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(x, x)\nend function",
+    );
+    let ir = rust_ir(&source);
+    assert_eq!(
+        ir.matches("\"op\":\"read_local\"").count(),
+        2,
+        "the cell is read twice: {ir}"
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the cell-read fixture");
+    assert_eq!(
+        expected.len(),
+        1138,
+        "the measured local-cell-read component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured local-cell-read component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the local-cell-read component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted local-cell-read component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted local-cell-read component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_i64_local_cell_byte_exactly() {
+    // STEP-0520, cell **type** half: the cell support is not Text-only. A cell
+    // whose declared type is a 64-bit integer is one flat slot, and the
+    // backend's own layout gives it the same width the guest derives.
+    //
+    // The measured truth: canonical IR 2837 bytes, production Component 1116
+    // bytes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let n = I64.literal(7)\n  set n = I64.literal(8)\n  return sico.text.concat(a, b)\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the i64-cell fixture");
+    assert_eq!(
+        expected.len(),
+        1116,
+        "the measured i64-cell component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured i64-cell component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the i64-cell component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted i64-cell component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted i64-cell component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_local_cell_types_outside_the_reached_subset() {
+    // STEP-0520, fail-closed half (ADR-0016 decision 6): a cell whose type is
+    // outside the reached subset stays a **typed refusal** -- the guest never
+    // emits approximate bytes for it.
+    //
+    // The measured boundary: the guest frontend lowers a `Bytes` cell and a
+    // `List[Text]` cell neither (the frontend refuses them with
+    // `ERR:E-SH-IR-EXPRESSION`), and the component emission refuses them with
+    // the typed "unsupported codegen source shape".
+    //
+    // The codegen's own cell subset is wider than that (bool, i64, u64, string
+    // and bytes cells all have a declared flat layout); the narrower boundary
+    // here is the **frontend's**, and this pin holds that boundary where it is
+    // measured -- at the refusal, not at an approximation.
+    for (label, body) in [
+        (
+            "bytes-cell",
+            "function join(input: ScriptInput, b: Text) returns Text:\n  let x = input.stdin\n  set x = input.stdin\n  return b\nend function",
+        ),
+        (
+            "list-cell",
+            "function join(input: ScriptInput, b: Text) returns Text:\n  let x = input.arguments\n  set x = input.arguments\n  return b\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        assert_eq!(
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "the {label} shape must not emit approximate component bytes"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly() {
+    // STEP-0520: the guest's own new cell support has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 slices
+    // established for the functions they added.
+    //
+    // Eight functions are new (the unit-type test, the cell flat layout, the
+    // cell type/width/slot helpers and the two cell operation emitters) and
+    // four are reshaped (the local declaration, the value slot, the dispatcher
+    // slot and the operation router).
+    for name in [
+        "cgs_is_unit_ty",
+        "cgs_cell_flat_hex",
+        "cgs_cell_ty",
+        "cgs_cell_width",
+        "cgs_cell_slots",
+        "cgs_cell_slot",
+        "cgs_write_local_hex",
+        "cgs_read_local_hex",
+        "cgs_function_local_hex",
+        "cgs_value_slot",
+        "cgs_dispatcher_slot",
+        "cgs_op_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0521: the T1 family truth table and the support-surface registration.
+//
+// Every slice so far pinned one shape of the `sico.text.concat` family. The
+// family itself was never measured as a table, so "what does the guest
+// support" was an accumulation of per-slice claims. The table below measures
+// twenty shapes on four axes -- the Rust frontend's canonical IR, the Rust
+// backend's production component, the guest frontend's verdict and the guest
+// emitter's verdict -- and pins the result.
+//
+// The pins keep the refusals honest: a shape the guest does not support must
+// stay a typed refusal on both sides, never an approximate component.
+// ---------------------------------------------------------------------------
+
+/// The guest's measured verdict on one family shape.
+#[derive(Debug, Eq, PartialEq)]
+enum GuestVerdict {
+    /// The guest lowers the shape byte for byte and emits the component byte
+    /// for byte.
+    Exact,
+    /// The guest frontend refuses the shape with the typed identity.
+    FrontendRefused,
+    /// The guest frontend lowers the shape byte for byte, but the component
+    /// emission refuses it with the typed identity.
+    CodegenRefused,
+}
+
+#[test]
+fn sico_codegen_guest_pins_the_t1_family_truth_table() {
+    // STEP-0521: the family truth table of `sico.text.concat`.
+    //
+    // Each row is measured from the Rust frontend and the Rust backend (never
+    // designed); the guest side is asserted against the same truth -- byte
+    // for byte where the guest supports the shape, and by its typed refusal
+    // identity where it does not.
+    //
+    // The rows that are refused are the point of the table: they are the
+    // shapes the support-surface registration has to carry (D15), and they
+    // are the shapes that keep the family from closing.
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 18] = [
+        (
+            "let-binding-parameters",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "let-binding-cells",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  let y = b\n  let c = sico.text.concat(x, y)\n  return c\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "return-position-with-a-statement",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, b)\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "return-position-only",
+            "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, b)\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "assigned-cell-write",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(a, b)\nend function",
+            2630,
+            1114,
+            GuestVerdict::Exact,
+        ),
+        (
+            "assigned-cell-read",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(x, x)\nend function",
+            2868,
+            1138,
+            GuestVerdict::Exact,
+        ),
+        (
+            "i64-cell",
+            "function join(a: Text, b: Text) returns Text:\n  let n = I64.literal(7)\n  set n = I64.literal(8)\n  return sico.text.concat(a, b)\nend function",
+            2837,
+            1116,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-operands",
+            "function join() returns Text:\n  return sico.text.concat(\"a\", \"b\")\nend function",
+            2372,
+            1124,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            "mixed-operand-pair",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            "nested-host-call",
+            "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, sico.text.concat(b, a))\nend function",
+            2447,
+            1112,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            "literal-operands-with-a-statement",
+            "function join() returns Text:\n  let x = \"x\"\n  return sico.text.concat(\"a\", \"b\")\nend function",
+            2485,
+            1137,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-pair-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::CodegenRefused,
+        ),
+        (
+            "nested-host-call-with-a-statement",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, sico.text.concat(b, a))\nend function",
+            2447,
+            1112,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-plain-literal-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"x\")\nend function",
+            2333,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-pair-with-a-tab",
+            "function join() returns Text:\n  let x = \"x\"\n  return sico.text.concat(\"a\", \"\\t\")\nend function",
+            2486,
+            1137,
+            GuestVerdict::CodegenRefused,
+        ),
+        (
+            "mixed-operand-newline-literal-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\n\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::CodegenRefused,
+        ),
+        (
+            "mixed-operand-tab-literal-without-a-statement",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            "literal-in-a-later-function-only",
+            "function first(a: Text) returns Text:\n  return a\nend function\nfunction second(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"B\")\n  return c\nend function",
+            2721,
+            1155,
+            GuestVerdict::Exact,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes, verdict) in rows {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the family fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        match verdict {
+            GuestVerdict::FrontendRefused => {
+                let RunOutcome::Domain { code, message } = run_guest(&source) else {
+                    panic!("the guest must refuse the {label} shape with a typed identity")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+                let RunOutcome::Domain { code, message } =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must not emit a component for the {label} shape")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "unsupported codegen source shape", "{label}");
+            }
+            GuestVerdict::CodegenRefused => {
+                let RunOutcome::Output(output) = run_guest(&source) else {
+                    panic!("the guest must lower the {label} shape")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+                let RunOutcome::Domain { code, message } =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must refuse the {label} component with a typed identity")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "unsupported codegen source shape", "{label}");
+            }
+            GuestVerdict::Exact => {
+                let RunOutcome::Output(output) = run_guest(&source) else {
+                    panic!("the guest must lower the {label} shape")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+                let RunOutcome::Output(output) =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must emit the {label} component")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                let actual = decode_hex(&output.stdout);
+                assert_eq!(
+                    actual, expected_component,
+                    "the guest-emitted {label} component must equal the Rust backend exactly"
+                );
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .expect("the guest-emitted component must pass the real Wasm validator");
+            }
+        }
+    }
+}
+
+#[test]
+fn sico_codegen_guest_derives_the_module_wide_data_offsets() {
+    // STEP-0521: the static data segment is a **module-wide** property -- the
+    // backend collects every string literal of the program, in function order,
+    // into one segment, and a literal that repeats an earlier one shares that
+    // earlier offset.
+    //
+    // The guest used to derive the offset from the *current* function's
+    // instructions only. A module whose earlier function also holds a literal
+    // therefore got a too-small offset, and the guest emitted a component of
+    // the **same length as the oracle but with a different byte** -- the data
+    // pointer. That is a silent divergence, the one outcome the fail-closed
+    // discipline forbids, so it is pinned here on the corrected behaviour.
+    //
+    // The repeated-literal shape is the second half of the same correction:
+    // the backend keeps the first occurrence's bytes, so the repeated literal
+    // resolves to that first offset instead of refusing the program.
+    for (label, body, component_bytes) in [
+        (
+            "two-functions-one-literal-each",
+            "function first(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"A\")\n  return c\nend function\nfunction second(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"B\")\n  return c\nend function",
+            1188,
+        ),
+        (
+            "repeated-literal-in-one-function",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"A\")\n  let d = sico.text.concat(b, \"A\")\n  return d\nend function",
+            1145,
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the data fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0521_codegen_functions_byte_exactly() {
+    // STEP-0521: the guest's own reshaped data-segment code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its own
+    // code. Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 /
+    // STEP-0520 slices established for the functions they added or reshaped.
+    //
+    // Both functions were reshaped in this slice: `cgs_data_offset` walks the
+    // whole module instead of one function, and `cgs_const_string_hex` lost
+    // its nested host call. The nested host call is what kept them outside
+    // the frontier before (`ERR:E-SH-IR-CALL-SHAPE`): splitting it into two
+    // statements -- the shape STEP-0515 already used for the same reason --
+    // brought both of them back in.
+    for name in ["cgs_data_offset", "cgs_const_string_hex"] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
 }

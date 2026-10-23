@@ -133,6 +133,74 @@ $cases = @(
         Expected = 'refused:ERR:E-SH-IR-CALL-TARGET'
     }
     @{
+        Name = 'user-call-in-return-position'
+        Source = "function helper(value: I64) returns I64:`n  return value`nend function`n`nfunction probe() returns I64:`n  return helper(I64.literal(3))`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'user-call-in-let-binding'
+        Source = "function helper(value: I64) returns I64:`n  return value`nend function`n`nfunction probe() returns I64:`n  let x = helper(I64.literal(3))`n  return x`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'host-call-in-return-position'
+        Source = "function probe() returns U64:`n  return sico.text.length(""abc"")`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    @{
+        Name = 'host-call-in-straight-line-body'
+        Source = "function size(data: Bytes) returns U64:`n  return sico.bytes.length(data)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'host-call-in-let-binding'
+        Source = "function size(data: Bytes) returns U64:`n  let n = sico.bytes.length(data)`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-in-let-binding'
+        Source = "function join(a: Text, b: Text) returns Text:`n  let c = sico.text.concat(a, b)`n  return c`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-in-return-position'
+        Source = "function join(a: Text, b: Text) returns Text:`n  return sico.text.concat(a, b)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-literal-operands'
+        Source = "function join() returns Text:`n  return sico.text.concat(""a"", ""b"")`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    @{
+        Name = 'text-concat-with-a-mixed-operand-pair'
+        Source = "function join(a: Text) returns Text:`n  return sico.text.concat(a, ""\t"")`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    # STEP-0521: the same operand kinds lower byte for byte once the body
+    # carries one more statement, so the refusal above is a route gate, not a
+    # missing capability. These three cases pin that measured frontier.
+    @{
+        Name = 'text-concat-with-a-mixed-operand-pair-and-a-statement'
+        Source = "function join(a: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, ""x"")`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-a-nested-host-call-and-a-statement'
+        Source = "function join(a: Text, b: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, sico.text.concat(b, a))`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-an-escaped-literal-operand'
+        Source = "function join(a: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, ""\t"")`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-in-return-position-with-a-statement'
+        Source = "function join(a: Text, b: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, b)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"
         Expected = 'lowered'

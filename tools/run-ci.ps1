@@ -65,6 +65,13 @@ Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --
 # serially; the budget constants themselves are unchanged.
 Invoke-Step 'test (runner)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1; $LASTEXITCODE }
 Invoke-Step 'module boundaries' { & powershell -ExecutionPolicy Bypass -File tools\validate-module-boundaries.ps1; $LASTEXITCODE }
+# The guest frontend's lexer does not skip `//` comments, so a comment inside
+# a function body is read as source by the guest's statement scanner and a
+# comment word is counted by its structural scans. STEP-0508 hit exactly that
+# and regressed the full parser.sico self-host; this step keeps the
+# discipline mechanical instead of prose (tools/validate-selfhost-comment-
+# discipline.py is read-only).
+Invoke-Step 'selfhost comment discipline' { & $env:SICO_PYTHON tools\validate-selfhost-comment-discipline.py; $LASTEXITCODE }
 Invoke-Step 'planning contract (M14-M25)' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0124.ps1; $LASTEXITCODE }
 Invoke-Step 'application-profile matrix' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0131.ps1; $LASTEXITCODE }
 Invoke-Step 'cross-host matrix + UI corpus' { & powershell -ExecutionPolicy Bypass -File tools\validate-step-0156.ps1; $LASTEXITCODE }

@@ -18,6 +18,9 @@ STEP-0484 后 M22 的证据面：census 149/149 全绿（parser.sico 全函数�
 2. **byte oracle**：`crates/sico-codegen-wasm` 的 Rust 输出是唯一直接 oracle；比较面 = 冻结语料（ADR-0016 第六项 37 条 accepted Script 语料 + formatter.sico + 全源 bundle）上 guest 发射字节 vs Rust 发射字节，逐字节全等；任何 out-of-subset 形状 typed 拒绝，禁止静默回退（ADR-0016 决策 6 顺序纪律）。
 3. **无 Rust compile hostcall**（ADR-0016 决策 5）：发射全程 guest 内完成；Rust 只当 oracle，不提供服务。
 4. **证据等级**：internal-fixture；全部经真实 runner 执行。Step 序遵守 canary 顺序：先 37 语料单函数级 codegen 差分，再 formatter，再全源 bundle，最后 ADR-0015 harness（A==B==C + `.sapp`）。
+
+   > - **2026-10-22 对齐注记（[ADR-0016 A1](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md)）**：上条原表述**保留以便追溯**，但组件级 canary 次序现由 **ADR-0016 A1** 冻结为「`formatter.sico` 组件级 → 37 条 accepted Script 语料的组件级差分 → 完整 self-host source bundle 组件级 → ADR-0015 闭合 harness」= **先广度、后尺度**。原句「先 37 语料…再 formatter…」**不再作为执行依据**；其"广度先于尺度"的意图保留，差别只在 `formatter.sico` 与 37 语料的先后（`formatter.sico` 的 IR 面已字节全等 ⇒ 其组件级失配可单独归因于 codegen，是最干净的单点测试，故前置于 37 语料）。
+   > - 同日对齐：本条第 2 项的比较面表述（"37 条 + formatter + 全源 bundle"）与第 4 项的次序表述**已由 A1 统一**，不再构成两处互相冲突的次序定义。
 5. **budget**：门 4 已记录的全源降低预算（25.93s / 800B fuel / 2GiB+treadmill / 8GiB hostcall / 120s）为参照面；codegen 波次的预算记录在各实现 STEP 末尾追加，不做 SLA 主张。
 
 ## 3. 顺序与出口
