@@ -145,7 +145,13 @@ $cases = @(
     @{
         Name = 'host-call-in-return-position'
         Source = "function probe() returns U64:`n  return sico.text.length(""abc"")`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        # STEP-0529: the T2 frontend knife claims the `sico.text.length` statement
+        # positions, so this shape (a call with a string literal in a return
+        # position) now lowers.  Byte-exactness against the Rust oracle is proven
+        # by the firmware pin
+        # `sico_compiler_lowers_the_text_length_in_a_statement_position_byte_exactly`
+        # (the equivalent `return sico.text.length("ab")` fixture, 2252 B).
+        Expected = 'lowered'
     }
     @{
         Name = 'host-call-in-straight-line-body'
@@ -288,11 +294,31 @@ $cases = @(
     @{
         Name = 'text-length-in-a-let-binding'
         Source = "function size(t: Text) returns U64:`n  let n = sico.text.length(t)`n  return n`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
     }
     @{
         Name = 'text-length-in-a-set-position'
         Source = "function size(t: Text) returns U64:`n  let n = U64.literal(0)`n  set n = sico.text.length(t)`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-in-a-return-position'
+        Source = "function size(t: Text) returns U64:`n  return sico.text.length(t)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-with-a-literal-argument'
+        Source = "function size() returns U64:`n  return sico.text.length(`"ab`")`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-local-binding'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = sico.text.length(x)`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-nested-call-argument'
+        Source = "function size(src: Bytes) returns U64:`n  let n = sico.text.length(sico.bytes.utf8_decode(src))`n  return n`nend function`n"
         Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
     }
     @{

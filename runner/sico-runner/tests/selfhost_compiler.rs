@@ -3728,6 +3728,15 @@ fn sico_compiler_keeps_the_neighbouring_host_call_shapes_typed_refused() {
     // moved to the STEP-0515 pins below. Every shape the knife does *not*
     // claim keeps the identity the STEP-0511 measurement recorded
     // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    //
+    // STEP-0529 moved ONE identity, and only one: `let-other-intrinsic` is
+    // the `sico.text.length` family, which the T2 frontend knife now claims.
+    // The knife type-checks the argument, so this shape -- a `Bytes` argument
+    // to a `Text` intrinsic -- is refused with the **argument-type** identity
+    // `ERR:E-SH-IR-CALL-TYPE` instead of the generic `ERR:E-SH-IR-EXPRESSION`.
+    // It is still a refusal: nothing was widened, the diagnosis only became
+    // the one the oracle gives (see
+    // `the_text_length_argument_type_is_refused_by_the_rust_frontend_itself`).
     let three_argument = format!(
         "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  return sico.bytes.at(data, index, I64.literal(0))\nend function\n\n{HOST_CALL_SHAPE_RUN}"
     );
@@ -3743,18 +3752,30 @@ fn sico_compiler_keeps_the_neighbouring_host_call_shapes_typed_refused() {
     let let_three_argument = format!(
         "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  let n = sico.bytes.at(data, index, I64.literal(0))\n  return n\nend function\n\n{HOST_CALL_SHAPE_RUN}"
     );
-    for (label, source) in [
-        ("three-argument", three_argument),
-        ("let-other-name", let_other_name),
-        ("let-two-statements", let_two_statements),
-        ("let-other-intrinsic", let_other_intrinsic),
-        ("let-three-argument", let_three_argument),
+    for (label, source, expected) in [
+        ("three-argument", three_argument, "ERR:E-SH-IR-EXPRESSION"),
+        ("let-other-name", let_other_name, "ERR:E-SH-IR-EXPRESSION"),
+        (
+            "let-two-statements",
+            let_two_statements,
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+        (
+            "let-other-intrinsic",
+            let_other_intrinsic,
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            "let-three-argument",
+            let_three_argument,
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
     ] {
         let RunOutcome::Domain { code, message } = run_guest(&source) else {
             panic!("the {label} host-call shape must stay a typed refusal")
         };
         assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        assert_eq!(message, expected, "{label}");
     }
 }
 
@@ -7798,34 +7819,83 @@ fn sico_compiler_lowers_the_text_length_in_a_condition_position_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_keeps_the_unclosed_text_length_positions_typed_refused() {
-    // STEP-0528, T2 truth: the measurement split the family in two.  The
-    // condition positions lower (see the pin above); the **statement**
-    // positions -- a `let` binding, a `set`, a single-`return` body, a literal
-    // argument and a nested call argument -- do not, and they keep the
-    // fail-closed identity the measurement recorded
-    // (`ERR:E-SH-IR-EXPRESSION`).
+fn sico_compiler_lowers_the_text_length_in_a_statement_position_byte_exactly() {
+    // STEP-0529, T2 frontend knife: the statement positions now lower byte for
+    // byte against the Rust frontend's canonical IR.
     //
-    // 320 of the 322 S call sites pass a local or a parameter as the
-    // argument, so these are the shapes the family knife has to claim; the
-    // two nested-call sites are a separate shape of their own.
-    for (label, body) in [
+    // STEP-0528 measured the split and located its cause: the condition
+    // positions already lowered, the statement positions did not, and the
+    // reason was a **route split** -- the generic host-call route already knew
+    // `sico.text.length`, while the two straight-line route families knew
+    // `sico.text.concat` only.  The knife teaches both families the shape; it
+    // invents no new machine.
+    //
+    // The two route families differ in how a binding is represented, and the
+    // oracle's straight-line lowering is what decides the bytes:
+    //
+    //   * `straight_environment_function_ir` mirrors the oracle's
+    //     `lower_straight_line`: a `let` binding is a plain value, so no local
+    //     is created and the call result is forwarded to the return;
+    //   * `straight_cell_function_ir` mirrors `lower_general`: every `let`
+    //     becomes a cell, so a `set` writes and reads local 0.
+    for (label, body, ir_bytes) in [
         (
             "return-position",
             "function size(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            2212,
         ),
         (
             "let-binding",
             "function size(t: Text) returns U64:\n  let n = sico.text.length(t)\n  return n\nend function",
+            2212,
         ),
         (
             "return-position-with-a-literal",
             "function size() returns U64:\n  return sico.text.length(\"ab\")\nend function",
+            2252,
         ),
         (
             "let-binding-with-a-local",
             "function size(t: Text) returns U64:\n  let x = t\n  let n = sico.text.length(x)\n  return n\nend function",
+            2212,
         ),
+        (
+            "set-position",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
+            2765,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"name\":\"sico.text.length\""),
+            "the intrinsic keeps its dotted name: {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_keeps_the_nested_text_length_arguments_typed_refused() {
+    // STEP-0529: the two remaining shapes of the family -- the argument is
+    // itself a call -- stay typed refusals.  They are the S shapes
+    // `sico.text.length(sico.bytes.utf8_decode(src))` and
+    // `sico.text.length(positive_sleb_hex(initial))`, and they are a shape of
+    // their own (the T2-g2 gap), not part of this knife.
+    //
+    // The refusal identity is unchanged: these shapes were refused with
+    // `ERR:E-SH-IR-EXPRESSION` before the knife and stay refused with it.
+    for (label, body) in [
         (
             "let-binding-with-a-user-call",
             "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
@@ -7833,10 +7903,6 @@ fn sico_compiler_keeps_the_unclosed_text_length_positions_typed_refused() {
         (
             "let-binding-with-a-host-call",
             "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
-        ),
-        (
-            "set-position",
-            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
         ),
     ] {
         let source = text_length_fixture(body);
@@ -7879,6 +7945,51 @@ fn the_text_length_arity_is_refused_by_the_rust_frontend_itself() {
             "the {label} arity must be refused by the semantic layer: {error}"
         );
     }
+}
+
+#[test]
+fn the_text_length_argument_type_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0529, T2 frontend knife: the **argument-type** boundary of
+    // `sico.text.length` is enforced by the semantic layer -- the Rust
+    // frontend lowers the call and then reports `E2001 TYPE_MISMATCH`
+    // ("expected Text, found Bytes").
+    //
+    // The guest frontend refuses the same shape one layer earlier, with the
+    // typed identity `ERR:E-SH-IR-CALL-TYPE`: its route type-checks the
+    // argument before it emits an intrinsic.  The two refusals live in
+    // different layers and are recorded separately -- the guest's is a
+    // frontend refusal, the oracle's is a semantic refusal -- but they name
+    // the same defect, so the guest must not silently widen the shape.
+    let body = "function size(data: Bytes) returns U64:\n  let n = sico.text.length(data)\n  return n\nend function";
+    let source = text_length_fixture(body);
+    let source_file =
+        SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source.clone())
+            .expect("the fixture source is bounded");
+    let error = match lower_core(&source_file) {
+        Ok(_) => panic!("the Rust frontend must refuse the Bytes argument"),
+        Err(error) => format!("{error:?}"),
+    };
+    assert!(
+        error.contains("E2001"),
+        "the argument type is refused by the semantic layer: {error}"
+    );
+    assert!(
+        error.contains("TYPE_MISMATCH"),
+        "the refusal is a type mismatch: {error}"
+    );
+    assert!(
+        error.contains("expected Text"),
+        "the refusal names the expected type: {error}"
+    );
+    assert!(
+        error.contains("found Bytes"),
+        "the refusal names the found type: {error}"
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the Bytes argument")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-CALL-TYPE");
 }
 
 #[test]
