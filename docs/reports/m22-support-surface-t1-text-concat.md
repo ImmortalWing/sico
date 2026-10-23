@@ -1,10 +1,10 @@
 # M22 支持面登记表 · T1 族（`sico.text.concat`）
 
-> - status: **STEP-0524 更新**（G-f **已闭合**（调用型操作数带多个实参 ⇒ 前端逐字节等同）；**新登记 G-f2**（实参本身是嵌套调用 ⇒ S 内 22 个调用点）；G-d2 发射端分支缺口仍 ⏳；T1 族仍未闭合）
+> - status: **STEP-0525 更新**（G-f **已闭合**（调用型操作数带多个实参 ⇒ 前端逐字节等同）；**G-f2 也已闭合**（实参本身是嵌套调用 ⇒ 前端逐字节等同，S 内 22 个调用点全部覆盖）；G-d2 发射端分支缺口仍 ⏳；T1 族仍未闭合）
 > - date: 2026-10-23
 > - owner: autonomous-agent
 > - scope: 计划 §3.3.5 的 **D15 支持面登记**：族 ×（名字 / 实参个数 / 实参类型 / 结果槽数 / 语料覆盖 / 未覆盖形状）
-> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（真值测量）、[STEP-0518](../steps/STEP-0518-m22-w2-s5-w2-t1-frontend-knife.md)（前端刀）、[STEP-0519](../steps/STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）、[STEP-0520](../steps/STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0521](../steps/STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表）、[STEP-0522](../steps/STEP-0522-m22-w2-s5-w2-t1-escaped-literal-decoder.md)（G-b / G-e 两刀）、[STEP-0523](../steps/STEP-0523-m22-w2-s5-w2-t1-gd-single-return-route.md)（G-d1）、[STEP-0524](../steps/STEP-0524-m22-w2-s5-w2-t1-gf-multi-argument-call-operand.md)（G-f）
+> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（真值测量）、[STEP-0518](../steps/STEP-0518-m22-w2-s5-w2-t1-frontend-knife.md)（前端刀）、[STEP-0519](../steps/STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）、[STEP-0520](../steps/STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0521](../steps/STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表）、[STEP-0522](../steps/STEP-0522-m22-w2-s5-w2-t1-escaped-literal-decoder.md)（G-b / G-e 两刀）、[STEP-0523](../steps/STEP-0523-m22-w2-s5-w2-t1-gd-single-return-route.md)（G-d1）、[STEP-0524](../steps/STEP-0524-m22-w2-s5-w2-t1-gf-multi-argument-call-operand.md)（G-f）、[STEP-0525](../steps/STEP-0525-m22-w2-s5-w2-t1-gf2-nested-call-argument.md)（G-f2）
 > - 口径: **所有数字来自 oracle 的生产输出**（Rust 前端 `lower_core` + `canonical_json`，Rust 后端 `compile_script_program`），**不是设计值**
 
 ## 1. 子集边界（D15 要求登记的六项）
@@ -16,11 +16,11 @@
 | 实参类型 | **两个 `Text`**（canonical `string`） | STEP-0519：类型闸门 `cgs_value_ty` == `string`；**调用型操作数**的被调函数也必须返回 `Text` |
 | 结果槽数 | **2**（pointer, length） | STEP-0519：结果槽闸门 `cgs_type_slots` == 2 |
 | 语料覆盖 | **0 条** | S 内 2,943 个文本调用点**一个都没进语料** |
-| 未覆盖形状 | **2 类缺口**（§3：G-d2 + **G-f2**） | STEP-0524 普查 |
+| 未覆盖形状 | **1 类缺口**（§3：**G-d2**） | STEP-0525 普查与闭合 |
 
-## 2. 族级真值表（31 行，实测）
+## 2. 族级真值表（35 行，实测）
 
-`IR` = Rust 前端 canonical IR 字节数；`组件` = Rust 后端生产组件字节数；`guest` = guest 侧的判定。**每一行都由固件钉住**（`sico_codegen_guest_pins_the_t1_family_truth_table` 29 行 + `sico_codegen_guest_derives_the_module_wide_data_offsets` 2 行）。
+`IR` = Rust 前端 canonical IR 字节数；`组件` = Rust 后端生产组件字节数；`guest` = guest 侧的判定。**每一行都由固件钉住**（`sico_codegen_guest_pins_the_t1_family_truth_table` **33 行** + `sico_codegen_guest_derives_the_module_wide_data_offsets` 2 行）。
 
 | # | 形状 | IR | 组件 | guest 前端 | guest 组件 |
 |---|---|---|---|---|---|
@@ -54,13 +54,19 @@
 | **BC** | **调用另一个函数（三个实参）** | 3189 | 1193 | **逐字节等同（STEP-0524 新增）** | 逐字节等同 |
 | **BD** | **调用另一个函数（两个字面量实参）** | 3120 | 1211 | **逐字节等同（STEP-0524 新增）** | 逐字节等同 |
 | **BE** | **调用另一个函数（实参是 `I64.literal(-n)`）** | 3070 | 1190 | **typed 拒绝** `ERR:E-SH-IR-EXPRESSION` | typed 拒绝 |
-| **BF** | **调用另一个函数（实参本身是嵌套调用）** | 3635 | 1267 | **typed 拒绝** `ERR:E-SH-IR-EXPRESSION` | typed 拒绝 |
+| **BF** | **调用另一个函数（实参本身是嵌套调用）** | 3635 | 1267 | **逐字节等同（STEP-0525 修正后）** | 逐字节等同 |
+| **BG** | **调用另一个函数（内层调用没有实参）** | 3559 | 1261 | **逐字节等同（STEP-0525 新增）** | 逐字节等同 |
+| **BH** | **调用另一个函数（内层调用有三个实参）** | 4005 | 1296 | **逐字节等同（STEP-0525 新增）** | 逐字节等同 |
+| **BI** | **调用另一个函数（内层调用返回 `U64`）** | 3618 | 1250 | **逐字节等同（STEP-0525 新增）** | 逐字节等同 |
+| **BJ** | **调用另一个函数（两层嵌套）** | 3767 | 1281 | **逐字节等同（STEP-0525 新增）** | 逐字节等同 |
 
 ⇒ **“某形状被拒绝”≠“该形状没实现”**：H / I / J / R 之所以曾被拒，是**路由门**（函数体只有一条 `return`）而不是能力缺失 —— STEP-0523 把路由改成**复用 `let` 绑定路由一直在用的操作数降低器**之后，这四行与它们的「体内另有语句」版本（K / N / M）**走同一份规则**，于是逐字节降下来了。
 
-⇒ **逐字节等同 28 行**、**前端 typed 拒绝 2 行**（BE / BF）、**组件层 typed 拒绝 1 行**（AA）。
+⇒ **逐字节等同 32 行**、**前端 typed 拒绝 1 行**（BE）、**组件层 typed 拒绝 1 行**（AA）。
 
 > **BF 是 STEP-0524 的普查产物**：BE 钉的是「实参是 `I64.literal(-n)`」（S 内**不存在**该形状），BF 钉的是「实参**本身是嵌套调用**」（S 内**存在 22 个调用点**）—— 两者都是**真缺口**（Rust 两个 oracle 都能降，guest 不能），不是一个意思。
+>
+> **BF 已由 STEP-0525 闭合**：BG / BH / BI / BJ 是它的四个邻接形状（内层 0 个实参 / 3 个实参 / 内层返回 `U64` / 两层嵌套），**四行都是逐字节等同** ⇒ G-f2 不再是缺口。
 
 ## 3. 未覆盖形状与缺口登记（D10 判定用）
 
@@ -71,7 +77,7 @@
 | **G-d1** 单语句 `return` 的非形参操作数 | 前端 typed 拒绝 `ERR:E-SH-IR-EXPRESSION` | 路由梯把 `straight_cell_*` 家族门控在 `body_statement_count > 0`；专用路由只认两个 `Text` 形参 | **是**（S 内 **10** 个调用点，其中 **6** 个是这种形状） | STEP-0523 **已闭合**（路由复用 `straight_text_concat_packed`） |
 | **G-d2** `if` 块里的 concat | **组件层** typed 拒绝（前端已逐字节降下来） | **guest 的发射器只支持单块直线代码**（`selfhost/codegen.sico` 只认 `return` 终结符）⇒ **任何** `if` 都撞上它 | **是**（S 内 **4** 个调用点：2 个在 `cgs_zero_hex`、2 个在 `declaration_name`） | ⏳ **待修**（**发射端**，且**不是** T1 专属缺口） |
 | **G-f** 调用型操作数带**多个实参** | 前端 typed 拒绝 `ERR:E-SH-IR-EXPRESSION` | 借用来的降低器 `straight_text_concat_packed` 的调用分支只支持**一个**实参 | **是**（S 内 **117** 个调用点 —— 口径见 §3.1；**订正**：STEP-0523 记的「1 个」是 **G-d 子集**口径） | ✅ **已闭合**（STEP-0524：**新增 `stc_call_operand_packed`**，实参可为**形参 / 局部 / 字符串字面量 / `U64.literal(n)`**；**单实参路径原样保留** ⇒ `let` 路由的 6 行真值表逐字节不变。S 内 117 个调用点里 **95 个**的实参全部落在认领集合内） |
-| **G-f2** 调用型操作数的**实参本身是嵌套调用**（`f(g(x), y)`） | 前端 typed 拒绝 `ERR:E-SH-IR-EXPRESSION` | `stc_call_operand_packed` 的实参分类只认**形参 / 局部 / 字符串字面量 / `U64.literal(n)`**；实参是调用 ⇒ `ERR:E-SH-IR-CALL-ARGUMENT` ⇒ 路由转 `SKIP` | **是**（S 内 **22** 个调用点：`codegen.sico` 10 + `parser.sico` 12） | ⏳ **待修**（**前端**；真值表 **BF** 行钉住：Rust canonical IR **3635** / 组件 **1267**，guest 拒） |
+| **G-f2** 调用型操作数的**实参本身是嵌套调用**（`f(g(x), y)`） | 前端 typed 拒绝 `ERR:E-SH-IR-EXPRESSION` | `stc_call_operand_packed` 的实参分类只认**形参 / 局部 / 字符串字面量 / `U64.literal(n)`**；实参是调用 ⇒ `ERR:E-SH-IR-CALL-ARGUMENT` ⇒ 路由转 `SKIP` | **是**（S 内 **22** 个调用点：`codegen.sico` 10 + `parser.sico` 12） | ✅ **已闭合**（STEP-0525：嵌套调用的逻辑**内联进** `stc_call_operand_packed`（**不新增函数**）—— 见 STEP-0525 §3.1：单独写一个 helper 时 **guest 前端降不下它**（通用调用路由的内建白名单里没有 `sico.text.concat`，且函数体尾部是 `if/else` ⇒ 合并块不终结）⇒ 改为内联进**已被证明可降**的共用降低器，它**递归调用自己**；真值表 **BF** 行翻成逐字节等同，另加 **BG / BH / BI / BJ** 四行邻接形状，全部逐字节等同） |
 | **G-a** 模块级 data 段偏移 | **同长但字节不同**（数据指针差 1）⇒ **静默错字节**，不是 typed 拒绝 | `cgs_data_offset` 只扫**当前函数**的指令，而后端的静态 data 段收**整个模块**（函数 → 块 → 指令） | **是**（S 的多个文件都有多函数字面量） | STEP-0521 **已修正** |
 | **G-c** 重复字面量 | 组件层 typed 拒绝 | `cgs_data_offset` 把重复字面量当作不可推导 | **是**（S 内 `"\t"` 等重复出现） | STEP-0521 **已修正** |
 
@@ -85,7 +91,7 @@
 | 其中**操作数含字面量** | 1,576（⇒ **G-b** 是固定点的硬阻塞） |
 | 落在**没有 `let` / `set`** 的函数体里 | **10**（⇒ **G-d** 是固定点的硬阻塞） |
 | 操作数形态（**按操作数**计，共 5,888 个） | 名字 3,308 / 调用或成员 1,004 / **带转义的字面量 952** / 普通字面量 619 / **空字面量 5** |
-| **G-f 面**（操作数是**用户函数调用**、被调函数返回 `Text`、实参 ≥ 2 个） | **117** 个调用点（其中 **95** 个实参全部落在新路径认领集合内 / **22** 个带嵌套调用实参 ⇒ **G-f2**）；另有 **787** 个操作数是**宿主调用**（`sico.*`，属另一个闸门，不在 G-f 面内） |
+| **G-f 面**（操作数是**用户函数调用**、被调函数返回 `Text`、实参 ≥ 2 个） | **117** 个调用点（其中 **95** 个实参全部落在认领集合内 / **22** 个带嵌套调用实参 ⇒ **G-f2**，STEP-0525 已闭合）；**G-f + G-f2 之后，G-f 面在 S 内不再有未认领的形状**；另有 **787** 个操作数是**宿主调用**（`sico.*`，属另一个闸门，不在 G-f 面内） |
 
 > **口径说明**：STEP-0520 记的 **2,857** 是 **IR 级**（Rust 前端实际降出来的调用点）计数；本表的 **2,943** 是**文本**计数（含 `if` / `while` 体内的调用点）。两个数字口径不同，**不互相矛盾**。本表的「操作数形态」一栏按**操作数**计（STEP-0521 的同栏按**调用点**计），两表口径不同、**不互相矛盾**。
 >
@@ -113,6 +119,8 @@
 
 **STEP-0524 也未推进前沿**：新增的 `stc_call_operand_packed` 与它所属的 `straight_text_concat_packed` 改前改后**都**在前沿内（新钉 `sico_compiler_lowers_the_step0524_parser_functions_byte_exactly`）。**顺带修掉一条既有隐患**：`sico_compiler_lowers_straight_text_concat_packed_closure_byte_exactly` 那份**手工维护**的闭包清单在本次改动后失效（Rust oracle 报 `unresolved call target stc_call_operand_packed`）⇒ 改成**从文件自动计算**（`parser_closure_source`）。
 
+**STEP-0525 仍未推进前沿**：改动后的 `stc_call_operand_packed` 与它所属的 `straight_text_concat_packed` 改前改后**都**在前沿内（新钉 `sico_compiler_lowers_the_step0525_parser_functions_byte_exactly`）。**本片撞到一条形状边界并绕开了它**：单独写一个 helper 承载嵌套调用时，**guest 前端降不下它**（通用调用路由的内建白名单里没有 `sico.text.concat` ⇒ 「内建调用的实参本身是调用」撞 `ERR:E-SH-IR-CALL-TARGET`；函数体尾部是 `if/else` ⇒ 通用 CFG 路由判 `ERR:E-SH-IR-RETURN-COUNT`）⇒ 逻辑**内联进既有可降形状**。**这条边界没有登记成族级缺口**（它限制的是「新增函数的形状」，不是某个族的操作数能力），但它**约束后续切片**：新形状要落在既有可降形状的延长线上。
+
 > **附带事实**：`U64.checked_div` 这条路由**不在** guest 前端的路由梯里（实测 `ERR:E-SH-IR-CALL-TARGET`）⇒ 字节数按 2 步长计数得到，**不引入除法**。
 
 > **另一条附带事实**（STEP-0523 测得）：STEP-0518 的固件里写着「guest 前端拒前向引用的用户函数调用」——**这条现在不成立**（实测：前向调用与后向调用都逐字节降下来）。该注释已在本片订正，并顺带把那份**手工维护**的闭包清单改成**从文件自动计算**（`parser_closure_source`），免得路由再变时清单又漂移。
@@ -121,11 +129,11 @@
 
 | 判据 | 状态 |
 |---|---|
-| `canonical IR` 逐字节等同 | ✅ 已达成的 28 个形状（真值表钉住） |
+| `canonical IR` 逐字节等同 | ✅ 已达成的 **32** 个形状（真值表钉住） |
 | `整组件` 逐字节等同 | ✅ 同上（组件层 typed 拒绝只剩 AA 一行，且它拒的不是 T1，而是 IR 里的分支） |
 | `wasmparser::Validator` 通过 | ✅ oracle 与 guest 两侧都过（真值表逐行验证） |
-| 前沿探针期望值已翻转 | ✅ STEP-0521 新增 3 条用例（28 → **31**），STEP-0522 再加 3 条（31 → **34**），STEP-0523 再加 4 条并翻 2 条（34 → **38**），STEP-0524 再加 1 条并翻 1 条（38 → **39**），全部判 `lowered` |
+| 前沿探针期望值已翻转 | ✅ STEP-0521 新增 3 条用例（28 → **31**），STEP-0522 再加 3 条（31 → **34**），STEP-0523 再加 4 条并翻 2 条（34 → **38**），STEP-0524 再加 1 条并翻 1 条（38 → **39**），STEP-0525 再加 2 条（39 → **41**），全部判 `lowered` |
 | 固件电池绿 | ✅ 本机电池全绿（**17 步**，BATTERY_GREEN 17/17） |
-| **独立 CI 绿** | ✅ 上一批 `957887c` 的 **run #30 = success**；本片（STEP-0524）的推送会触发下一轮，回填在收口片 X |
+| **独立 CI 绿** | ✅ 上一批 `a383dfe`（STEP-0524）的 **run #31 = success**（run id `39961144112`）；本片（STEP-0525）的推送会触发下一轮，回填在收口片 X |
 
-⇒ **T1 族仍未闭合**，而且**不得按 D10 降级**：**G-d2**（S 内 **4** 个调用点，发射端）与 **G-f2**（S 内 **22** 个调用点，前端）在 S 内**真实存在** ⇒ 降级会让固定点（guest 能编译 S）无法达成。
+⇒ **T1 族仍未闭合**，而且**不得按 D10 降级**：**G-d2**（S 内 **4** 个调用点，发射端）在 S 内**真实存在** ⇒ 降级会让固定点（guest 能编译 S）无法达成。（**G-f2 已由 STEP-0525 闭合** ⇒ 前端侧只剩 `I64.literal(-n)` 与**宿主调用**实参两种未认领形状，二者在 S 内**都不存在**。）

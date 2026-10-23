@@ -210,6 +210,20 @@ $cases = @(
         Source = "function join(items: List[Text]) returns Text:`n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(""."", at(items, U64.literal(2))))`nend function`n`nfunction at(items: List[Text], index: U64) returns Text:`n  return ""z""`nend function`n"
         Expected = 'lowered'
     }
+    # STEP-0525: the shape the G-f2 census found in S -- a call operand whose
+    # argument is itself a call.  The operand lowerer recurses into the nested
+    # call, so the value ids compose.
+    @{
+        Name = 'text-concat-with-a-nested-call-argument-operand'
+        Source = "function join(a: Text) returns Text:`n  return sico.text.concat(helper(inner(a), ""b""), ""20"")`nend function`n`nfunction helper(x: Text, y: Text) returns Text:`n  return ""z""`nend function`n`nfunction inner(v: Text) returns Text:`n  return ""w""`nend function`n"
+        Expected = 'lowered'
+    }
+    # The nested call without any argument of its own -- 9 of the 22 S sites.
+    @{
+        Name = 'text-concat-with-a-zero-argument-nested-call-operand'
+        Source = "function join(a: Text) returns Text:`n  return sico.text.concat(helper(zero(), ""b""), ""20"")`nend function`n`nfunction helper(x: Text, y: Text) returns Text:`n  return ""z""`nend function`n`nfunction zero() returns Text:`n  return ""w""`nend function`n"
+        Expected = 'lowered'
+    }
     # The frontend lowers a concat inside an `if` block; the **component
     # emission** refuses it, because the guest's emitter only knows a single
     # straight-line block. This probe measures the frontend, so the verdict is

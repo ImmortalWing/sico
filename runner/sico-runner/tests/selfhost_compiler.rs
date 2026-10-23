@@ -6501,7 +6501,7 @@ fn sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly() {
 // Every slice so far pinned one shape of the `sico.text.concat` family. The
 // family itself was never measured as a table, so "what does the guest
 // support" was an accumulation of per-slice claims. The table below measures
-// twenty-nine shapes on four axes -- the Rust frontend's canonical IR, the Rust
+// thirty-three shapes on four axes -- the Rust frontend's canonical IR, the Rust
 // backend's production component, the guest frontend's verdict and the guest
 // emitter's verdict -- and pins the result.
 //
@@ -6534,7 +6534,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
     // The rows that are refused are the point of the table: they are the
     // shapes the support-surface registration has to carry (D15), and they
     // are the shapes that keep the family from closing.
-    let rows: [(&str, &str, usize, usize, GuestVerdict); 29] = [
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 33] = [
         (
             "let-binding-parameters",
             "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
@@ -6725,16 +6725,47 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             GuestVerdict::FrontendRefused,
         ),
         (
-            // STEP-0524: the call operand takes two arguments and one of them
-            // is itself a call.  `stc_call_operand_packed` claims a parameter,
-            // a local, a string literal or a `U64.literal(n)` -- a nested call
-            // is none of them, so the guest refuses the shape while the Rust
-            // oracle lowers it.  This is the G-f2 shape gap.
+            // STEP-0524 measured this shape as a refusal and STEP-0525 closed
+            // it: the nested call is lowered by `stc_call_operand_packed`
+            // itself, so the value ids compose (the nested call takes the ids
+            // of its own arguments first and then its own result id).
             "user-call-operand-nested-call-argument",
             "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner(a), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner(v: Text) returns Text:\n  return \"w\"\nend function",
             3635,
             1267,
-            GuestVerdict::FrontendRefused,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call takes no arguments at all (9 of the 22 S sites)
+            "user-call-operand-zero-argument-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(zero(), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction zero() returns Text:\n  return \"w\"\nend function",
+            3559,
+            1261,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call takes three arguments, one of them a literal
+            "user-call-operand-three-argument-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner3(a, \"b\", U64.literal(2)), \"c\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner3(v: Text, w: Text, n: U64) returns Text:\n  return \"w\"\nend function",
+            4005,
+            1296,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call returns a U64 (7 of the 22 S sites)
+            "user-call-operand-nested-call-returns-u64",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(count(a), \"b\"), \"20\")\nend function\nfunction helper(n: U64, y: Text) returns Text:\n  return \"z\"\nend function\nfunction count(v: Text) returns U64:\n  return U64.literal(1)\nend function",
+            3618,
+            1250,
+            GuestVerdict::Exact,
+        ),
+        (
+            // two levels: the nested call's own argument is a call as well
+            "user-call-operand-two-level-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner(inner(a)), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner(v: Text) returns Text:\n  return \"w\"\nend function",
+            3767,
+            1281,
+            GuestVerdict::Exact,
         ),
         (
             "concat-inside-an-if-block",
@@ -7545,6 +7576,29 @@ fn sico_codegen_guest_lowers_the_gf_multi_argument_call_operand_byte_exactly() {
             expected_component,
             "the guest-emitted {label} component must equal the Rust backend exactly"
         );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0525_parser_functions_byte_exactly() {
+    // STEP-0525, G-f2: a call operand whose argument is itself a call.  The
+    // nested call is lowered by `stc_call_operand_packed` itself -- the branch
+    // lives inside the shared operand lowerer, not in a function of its own,
+    // because the guest frontend refuses to lower a function whose body
+    // carries the nested-call shape on its own.  The guest frontend has to
+    // keep lowering the reshaped lowerer -- otherwise the bootstrap could
+    // never consume its own frontend code.
+    //
+    // The frontier did not move: the lowerer lowers, and so does the route
+    // that calls it.
+    for name in ["stc_call_operand_packed", "straight_text_concat_packed"] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
 }
 

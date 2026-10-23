@@ -9519,7 +9519,56 @@ function stc_call_operand_packed(words: List[Text], src: Bytes, name_idx: U64, e
               return "ERR:E-SH-IR-CALL-ARGUMENT"
             end if
           else:
-            return "ERR:E-SH-IR-CALL-ARGUMENT"
+            let scco_next_token = next_index(scco_arg, scco_words_len)
+            if is_word(word_at(words, scco_next_token), "("):
+              let scco_inner_open = scco_next_token
+              let scco_inner_close = matching_close(words, scco_inner_open, scco_end)
+              if is_word(word_at(words, scco_inner_close), ")"):
+                let scco_inner_shape_ok = I64.literal(1)
+              else:
+                return "ERR:E-SH-IR-CALL-SHAPE"
+              end if
+              let scco_inner_atom = word_at(words, scco_arg)
+              let scco_inner_idx = function_declaration_index(words, scco_inner_atom)
+              if U64.less_than(scco_inner_idx, scco_words_len):
+                let scco_inner_ret = declared_return_kind(words, next_index(scco_inner_idx, scco_words_len))
+                if U64.less_than(U64.literal(0), sico.text.length(scco_inner_ret)):
+                  let scco_inner_ret_ok = I64.literal(1)
+                else:
+                  return "ERR:E-SH-IR-CALL-TYPE"
+                end if
+                let scco_inner_start = word_span_offset(words, src, expr_start, receiver_idx, scco_arg)
+                let scco_inner_close_off = word_span_offset(words, src, expr_start, receiver_idx, scco_inner_close)
+                let scco_inner_end = scco_inner_close_off
+                match U64.checked_add(scco_inner_close_off, U64.literal(1)):
+                  case ok(scco_inner_after):
+                    set scco_inner_end = scco_inner_after
+                  case error(_):
+                    return "ERR:E-SH-IR-RANGE"
+                end match
+                let scco_inner_first = next_index(scco_inner_open, scco_words_len)
+                if U64.equal(scco_inner_first, scco_inner_close):
+                  let scco_inner_result = scco_value
+                  let scco_inner_call = call_instruction_json(scco_inner_result, scco_inner_ret, function_declaration_ordinal(words, scco_inner_idx), "[]", scco_inner_start, scco_inner_end)
+                  set scco_arg_value = scco_inner_result
+                  set scco_arg_advance = U64.literal(1)
+                  set scco_arg_instr = scco_inner_call
+                else:
+                  let scco_inner_pack = stc_call_operand_packed(words, src, name_idx, expr_start, receiver_idx, scco_inner_open, scco_inner_close, scco_inner_start, scco_inner_end, mode, local_names, local_kinds, local_values, parameter_count, scco_value, scco_inner_ret, function_declaration_ordinal(words, scco_inner_idx))
+                  if sico.text.starts_with(scco_inner_pack, "ERR:"):
+                    return scco_inner_pack
+                  end if
+                  let scco_inner_parts = sico.text.split_lines(scco_inner_pack)
+                  set scco_arg_value = gw_decimal_value(word_at(scco_inner_parts, U64.literal(1)))
+                  set scco_arg_advance = gw_decimal_value(word_at(scco_inner_parts, U64.literal(0)))
+                  set scco_arg_instr = word_at(scco_inner_parts, U64.literal(2))
+                end if
+              else:
+                return "ERR:E-SH-IR-CALL-ARGUMENT"
+              end if
+            else:
+              return "ERR:E-SH-IR-CALL-ARGUMENT"
+            end if
           end if
         end if
       end if
@@ -9543,9 +9592,12 @@ function stc_call_operand_packed(words: List[Text], src: Bytes, name_idx: U64, e
       case error(_):
         return "ERR:E-SH-IR-RANGE"
     end match
-    if U64.less_than(U64.literal(0), scco_arg_advance):
-      set scco_consumed = next_index(scco_consumed, scco_consumed)
-    end if
+    match U64.checked_add(scco_consumed, scco_arg_advance):
+      case ok(scco_counted):
+        set scco_consumed = scco_counted
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
     if U64.equal(scco_end, call_close):
       set scco_arg = call_close
     else:
