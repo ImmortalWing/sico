@@ -6566,9 +6566,6 @@ enum GuestVerdict {
     Exact,
     /// The guest frontend refuses the shape with the typed identity.
     FrontendRefused,
-    /// The guest frontend lowers the shape byte for byte, but the component
-    /// emission refuses it with the typed identity.
-    CodegenRefused,
 }
 
 #[test]
@@ -6666,7 +6663,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\t\")\nend function",
             2334,
             1113,
-            GuestVerdict::CodegenRefused,
+            GuestVerdict::Exact,
         ),
         (
             "nested-host-call-with-a-statement",
@@ -6687,14 +6684,14 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             "function join() returns Text:\n  let x = \"x\"\n  return sico.text.concat(\"a\", \"\\t\")\nend function",
             2486,
             1137,
-            GuestVerdict::CodegenRefused,
+            GuestVerdict::Exact,
         ),
         (
             "mixed-operand-newline-literal-with-a-statement",
             "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\n\")\nend function",
             2334,
             1113,
-            GuestVerdict::CodegenRefused,
+            GuestVerdict::Exact,
         ),
         (
             "mixed-operand-tab-literal-without-a-statement",
@@ -6741,20 +6738,6 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
                     run_guest_with_args(&source, vec!["--emit-component-hex".into()])
                 else {
                     panic!("the guest must not emit a component for the {label} shape")
-                };
-                assert_eq!(code, "invalid-input", "{label}");
-                assert_eq!(message, "unsupported codegen source shape", "{label}");
-            }
-            GuestVerdict::CodegenRefused => {
-                let RunOutcome::Output(output) = run_guest(&source) else {
-                    panic!("the guest must lower the {label} shape")
-                };
-                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
-                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
-                let RunOutcome::Domain { code, message } =
-                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
-                else {
-                    panic!("the guest must refuse the {label} component with a typed identity")
                 };
                 assert_eq!(code, "invalid-input", "{label}");
                 assert_eq!(message, "unsupported codegen source shape", "{label}");
@@ -6857,6 +6840,284 @@ fn sico_compiler_lowers_the_step0521_codegen_functions_byte_exactly() {
     // statements -- the shape STEP-0515 already used for the same reason --
     // brought both of them back in.
     for name in ["cgs_data_offset", "cgs_const_string_hex"] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+/// STEP-0522: the core module a Script-profile Component wraps.
+fn component_core_module(component: &[u8]) -> Vec<u8> {
+    for payload in wasmparser::Parser::new(0).parse_all(component) {
+        if let wasmparser::Payload::ModuleSection {
+            unchecked_range, ..
+        } = payload.expect("the component parses")
+        {
+            return component[unchecked_range.start..unchecked_range.end].to_vec();
+        }
+    }
+    panic!("the Component must wrap one core module");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_escaped_literal_component_byte_exactly() {
+    // STEP-0522, G-b: a string literal that carries a JSON escape.
+    //
+    // The backend's static data segment holds the literal's **decoded** bytes:
+    // the source escape `\t` is one TAB byte, not the two characters `\t`. The
+    // guest used to refuse every literal with a backslash
+    // (`ERR:E-SH-CG-IR-EMIT`), because it decoded no escapes at all -- so a
+    // program with an escaped literal could not be compiled by the guest at
+    // all, and the 952 escaped-literal call sites of the frozen source set S
+    // were a hard block (G-b).
+    //
+    // The guest resolves the escapes now: its IR keeps the literal in the JSON
+    // form, the backend's segment keeps the decoded bytes, so the whole
+    // component matches the Rust backend byte for byte.
+    //
+    // The empty literal (G-e) is the second half of the same correction: it
+    // carries no bytes, so it points at the offset the next literal starts at
+    // and its length is zero -- the backend's `script_data` gives it the same
+    // treatment, so the segment and the pointer agree.
+    for (label, body, component_bytes) in [
+        (
+            "tab-and-newline",
+            r#"function first(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "tab\there")
+  return c
+end function
+function second(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "nl\nhere")
+  return c
+end function"#,
+            1201,
+        ),
+        (
+            "quote-backslash-carriage-return",
+            r#"function quoted(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "say \"hi\"")
+  return c
+end function
+function slashed(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "c:\\dir")
+  return c
+end function
+function carriage(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "one\rtwo")
+  return c
+end function"#,
+            1279,
+        ),
+        (
+            "nul-escape",
+            r#"function nul(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "nul\0byte")
+  return c
+end function"#,
+            1122,
+        ),
+        (
+            "empty-literal",
+            r#"function empty(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "")
+  return c
+end function
+function tail(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "tail")
+  return c
+end function"#,
+            1190,
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_codegen_guest_derives_the_decoded_literal_bytes() {
+    // STEP-0522: the static data segment carries the literal's **decoded**
+    // bytes. This is the truth the guest has to reproduce, and it is measured
+    // from the Rust backend's production output: the backend's `script_data`
+    // collects `value.as_bytes()` -- the decoded string -- and keys the data
+    // offsets by those bytes.
+    //
+    // The bytes are not designed: `\t` is one TAB byte (09), `\n` one LF byte
+    // (0a), `\r` one CR byte (0d), `\0` one NUL byte (00), `\"` one quote byte
+    // (22) and `\\` one backslash byte (5c). The guest used to spell the
+    // literal out in the IR's JSON form and refused to decode it, so the
+    // segment it derived would have carried the two characters `\t` instead of
+    // the one byte the backend puts there.
+    for (label, body, decoded) in [
+        (
+            "tab",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\tb")
+  return c
+end function"#,
+            &b"a\x09b"[..],
+        ),
+        (
+            "newline",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\nb")
+  return c
+end function"#,
+            &b"a\x0ab"[..],
+        ),
+        (
+            "carriage-return",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\rb")
+  return c
+end function"#,
+            &b"a\x0db"[..],
+        ),
+        (
+            "nul",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\0b")
+  return c
+end function"#,
+            &b"a\x00b"[..],
+        ),
+        (
+            "quote",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\"b")
+  return c
+end function"#,
+            &b"a\"b"[..],
+        ),
+        (
+            "backslash",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\\b")
+  return c
+end function"#,
+            &b"a\\b"[..],
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        let core = component_core_module(&expected);
+        assert!(
+            core.windows(decoded.len()).any(|window| window == decoded),
+            "the backend's static data segment carries the decoded literal bytes ({label})"
+        );
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        let guest_core = component_core_module(&actual);
+        assert!(
+            guest_core
+                .windows(decoded.len())
+                .any(|window| window == decoded),
+            "the guest's static data segment carries the decoded literal bytes ({label})"
+        );
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_unknown_escape_with_a_typed_identity() {
+    // STEP-0522: the decoder accepts exactly the escapes the IR producer can
+    // write -- `\"`, `\\`, `\n`, `\r`, `\t` and `\u0000` (the JSON escape the
+    // producer writes for the source `\0`). An escape it does not accept is
+    // never an approximate byte: the fail-closed discipline.
+    //
+    // Measured: **both** frontends refuse the unknown escape -- the Rust lexer
+    // reports `UnknownStringEscape`, and the guest's own lexer reports
+    // `ERR:E-SH-IR-STRING-ESCAPE`. The guest decoder's own refusal
+    // (`ERR:E-SH-CG-IR-EMIT`) is therefore a second line of defence that the
+    // frontend never lets through; the shape never reaches the Rust backend.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"a\\qb\")\nend function",
+    );
+    let fixture = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", &source)
+        .expect("fixture source is bounded");
+    assert!(
+        lower_core(&fixture).is_err(),
+        "the Rust frontend refuses the unknown escape at the lexer level"
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the unknown escape with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-STRING-ESCAPE");
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest must refuse the unknown escape with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    // The component path wraps the frontend's refusal in the compiler's own
+    // identity, exactly like every other refused shape.
+    assert_eq!(message, "unsupported codegen source shape");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0522_codegen_functions_byte_exactly() {
+    // STEP-0522, G-b: the guest's own literal code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 /
+    // STEP-0520 / STEP-0521 slices established for the functions they added or
+    // reshaped.
+    //
+    // The literal code is where the frontier was tightest: `cgs_literal_text`
+    // -- the function that refused every escaped literal -- reported
+    // `ERR:E-SH-IR-CALL-ARITY` and stayed **outside** the frontier. The
+    // replacement works in the byte domain (the literal's identity is its
+    // decoded bytes, spelled as hex byte pairs), so it needs no text-shaped
+    // host call at all, and all eight functions of this slice lower.
+    for name in [
+        "cgs_is_const_string",
+        "cgs_literal_hex",
+        "cgj_string_hex",
+        "cgj_escape_hex",
+        "cgs_hex_bytes",
+        "cgs_data_offset",
+        "cgs_const_string_hex",
+        "cgs_data_hex",
+    ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {

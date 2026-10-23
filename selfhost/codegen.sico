@@ -2348,39 +2348,130 @@ function cgs_list_holds(items: List[Text], text: Text) returns Bool:
   return clh_found
 end function
 
-// The literal text of a `const_string` instruction; "" when the
-// instruction is not a string literal or the literal carries an escape
-// sequence.
+// Whether the instruction is a `const_string` instruction.
+function cgs_is_const_string(bytes: Bytes, instr: U64) returns Bool:
+  let cics_name = cgs_op_name(bytes, instr)
+  return cg_is_word(cics_name, "const_string")
+end function
+
+// The hex of the decoded bytes of a `const_string` instruction's literal;
+// "" when the instruction is not a string literal, and the typed refusal
+// `ERR:E-SH-CG-IR-EMIT` when the literal carries an escape the decoder does
+// not accept.
 //
-// An escaped literal is refused on purpose: its byte length is not its
-// character count, and the guest does not unescape JSON strings.
-function cgs_literal_text(bytes: Bytes, instr: U64) returns Text:
-  let clt_name = cgs_op_name(bytes, instr)
-  if cg_is_word(clt_name, "const_string"):
-    let clt_data = cgs_op_data(bytes, instr)
-    if U64.less_than(U64.literal(0), clt_data):
-      let clt_text = cgj_ident_text(bytes, clt_data)
-      if U64.less_than(U64.literal(0), sico.text.length(clt_text)):
-        let clt_bytes = sico.text.encode(clt_text)
-        let clt_index = U64.literal(0)
-        let clt_len = sico.bytes.length(clt_bytes)
-        let clt_clean = true
-        while U64.less_than(clt_index, clt_len):
-          if cg_byte_eq(sico.bytes.at(clt_bytes, clt_index, I64.literal(0)), I64.literal(92)):
-            set clt_clean = false
-          end if
-          set clt_index = cg_next(clt_index)
-        end while
-        if clt_clean:
-          return clt_text
-        end if
+// The backend's static data segment holds the literal's *decoded* bytes: the
+// source escape `\t` is one TAB byte, not the two characters `\t`. The
+// guest's IR keeps the literal in its JSON form, so the guest resolves the
+// escapes here -- the same bytes the backend puts in the data segment.
+//
+// The hex is the literal's identity in the data segment: the backend keys
+// its offsets by the literal's bytes, so the guest keys them the same way.
+// An empty literal has no bytes and therefore no hex of its own; it is
+// still a string literal, and `cgs_is_const_string` tells the two apart.
+function cgs_literal_hex(bytes: Bytes, instr: U64) returns Text:
+  let clh_name = cgs_op_name(bytes, instr)
+  if cg_is_word(clh_name, "const_string"):
+    let clh_data = cgs_op_data(bytes, instr)
+    if U64.less_than(U64.literal(0), clh_data):
+      let clh_end = cgj_string_end(bytes, clh_data)
+      if U64.equal(clh_end, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
       end if
+      return cgj_string_hex(bytes, clh_data, clh_end)
     end if
   end if
   return ""
 end function
 
-// The data-segment offset of the static literal `text` in the module's
+// The hex of the decoded bytes of the JSON string that opens at `start` and
+// closes before `close`; the typed refusal `ERR:E-SH-CG-IR-EMIT` when the
+// string carries an escape the decoder does not accept.
+//
+// The literal's bytes are the JSON string's own bytes with its escape
+// sequences resolved: `\"` is one quote byte, `\t` one TAB byte, and
+// `\u0000` -- the JSON escape the IR producer writes for the source `\0` --
+// one NUL byte. Every other byte is carried over as it is, so a literal
+// outside ASCII keeps its UTF-8 bytes.
+//
+// An empty string has no bytes and therefore no hex of its own: the empty
+// hex is a literal, not a refusal.
+function cgj_string_hex(bytes: Bytes, start: U64, close: U64) returns Text:
+  let cjsh_out = ""
+  let cjsh_at = cg_next(start)
+  let cjsh_stop = cgs_sub(close, U64.literal(1))
+  while U64.less_than(cjsh_at, cjsh_stop):
+    let cjsh_byte = sico.bytes.at(bytes, cjsh_at, I64.literal(0))
+    if cg_byte_eq(cjsh_byte, I64.literal(92)):
+      let cjsh_code = cg_next(cjsh_at)
+      if U64.less_than(cjsh_stop, cjsh_code):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cjsh_escaped = sico.bytes.at(bytes, cjsh_code, I64.literal(0))
+      if I64.equal(cjsh_escaped, I64.literal(117)):
+        let cjsh_d0 = cg_next(cjsh_code)
+        let cjsh_d1 = cg_next(cjsh_d0)
+        let cjsh_d2 = cg_next(cjsh_d1)
+        let cjsh_d3 = cg_next(cjsh_d2)
+        let cjsh_zero = false
+        if U64.less_than(cjsh_stop, cjsh_d3):
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+        if I64.equal(sico.bytes.at(bytes, cjsh_d0, I64.literal(0)), I64.literal(48)):
+          if I64.equal(sico.bytes.at(bytes, cjsh_d1, I64.literal(0)), I64.literal(48)):
+            if I64.equal(sico.bytes.at(bytes, cjsh_d2, I64.literal(0)), I64.literal(48)):
+              if I64.equal(sico.bytes.at(bytes, cjsh_d3, I64.literal(0)), I64.literal(48)):
+                set cjsh_zero = true
+              end if
+            end if
+          end if
+        end if
+        if cjsh_zero:
+          set cjsh_out = sico.text.concat(cjsh_out, cg_hex_byte_i64(I64.literal(0)))
+          set cjsh_at = cg_next(cjsh_d3)
+        else:
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+      else:
+        let cjsh_hex = cgj_escape_hex(cjsh_escaped)
+        if U64.equal(sico.text.length(cjsh_hex), U64.literal(0)):
+          return "ERR:E-SH-CG-IR-EMIT"
+        end if
+        set cjsh_out = sico.text.concat(cjsh_out, cjsh_hex)
+        set cjsh_at = cg_next(cjsh_code)
+      end if
+    else:
+      set cjsh_out = sico.text.concat(cjsh_out, cg_hex_byte_i64(cjsh_byte))
+      set cjsh_at = cg_next(cjsh_at)
+    end if
+  end while
+  return cjsh_out
+end function
+
+// The hex of the byte the escape sequence decodes to; "" when the escape is
+// not one the decoder accepts.
+//
+// `escaped` is the escape's first character (the byte after the backslash).
+// The `\u0000` escape is handled by the caller, because it spans six bytes.
+function cgj_escape_hex(escaped: I64) returns Text:
+  if I64.equal(escaped, I64.literal(34)):
+    return cg_hex_byte_i64(I64.literal(34))
+  end if
+  if I64.equal(escaped, I64.literal(92)):
+    return cg_hex_byte_i64(I64.literal(92))
+  end if
+  if I64.equal(escaped, I64.literal(110)):
+    return cg_hex_byte_i64(I64.literal(10))
+  end if
+  if I64.equal(escaped, I64.literal(114)):
+    return cg_hex_byte_i64(I64.literal(13))
+  end if
+  if I64.equal(escaped, I64.literal(116)):
+    return cg_hex_byte_i64(I64.literal(9))
+  end if
+  return ""
+end function
+
+// The data-segment offset of the static literal `hex` in the module's
 // instruction order, plus one; 0 when the offset is not derivable.
 //
 // The backend's static data segment holds every string literal of the
@@ -2394,7 +2485,11 @@ end function
 // the oracle but with a different byte -- the data pointer. The walk is
 // module-wide now and mirrors `cgs_data_hex`, and a repeated literal
 // resolves to its first occurrence instead of refusing the whole program.
-function cgs_data_offset(bytes: Bytes, text: Text) returns U64:
+//
+// STEP-0522: the offset is counted in hex byte pairs while the walk runs
+// and folded into bytes once, at the end; the literal's identity is its
+// decoded bytes, which is how the backend keys its own offsets.
+function cgs_data_offset(bytes: Bytes, hex: Text) returns U64:
   let cdo_seen = sico.text.split_lines("")
   let cdo_offset = U64.literal(0)
   let cdo_result = U64.literal(0)
@@ -2432,8 +2527,11 @@ function cgs_data_offset(bytes: Bytes, text: Text) returns U64:
             if U64.equal(cdo_instruction, U64.literal(0)):
               set cdo_imore = U64.literal(0)
             else:
-              let cdo_literal = cgs_literal_text(bytes, cdo_instruction)
-              if U64.less_than(U64.literal(0), sico.text.length(cdo_literal)):
+              let cdo_literal = cgs_literal_hex(bytes, cdo_instruction)
+              if sico.text.starts_with(cdo_literal, "ERR:"):
+                return U64.literal(0)
+              end if
+              if cgs_is_const_string(bytes, cdo_instruction):
                 let cdo_duplicate = U64.literal(0)
                 if cgs_list_holds(cdo_seen, cdo_literal):
                   set cdo_duplicate = U64.literal(1)
@@ -2441,11 +2539,10 @@ function cgs_data_offset(bytes: Bytes, text: Text) returns U64:
                   set cdo_duplicate = U64.literal(0)
                 end if
                 if U64.equal(cdo_duplicate, U64.literal(0)):
-                  let cdo_literal_bytes = sico.text.encode(cdo_literal)
-                  let cdo_literal_len = sico.bytes.length(cdo_literal_bytes)
+                  let cdo_literal_len = cgs_hex_bytes(cdo_literal)
                   set cdo_seen = sico.list.append(cdo_seen, cdo_literal)
                   if U64.equal(cdo_found, U64.literal(0)):
-                    if cg_is_word(cdo_literal, text):
+                    if cg_is_word(cdo_literal, hex):
                       set cdo_result = cgs_add(cdo_offset, U64.literal(1))
                       set cdo_found = U64.literal(1)
                     end if
@@ -2468,28 +2565,49 @@ function cgs_data_offset(bytes: Bytes, text: Text) returns U64:
   return cdo_result
 end function
 
+// The number of bytes a hex byte-pair string carries.
+function cgs_hex_bytes(hex: Text) returns U64:
+  let chb_len = sico.text.length(hex)
+  let chb_count = U64.literal(0)
+  let chb_at = U64.literal(0)
+  while U64.less_than(chb_at, chb_len):
+    let chb_step = cg_next(chb_at)
+    set chb_step = cg_next(chb_step)
+    set chb_at = chb_step
+    set chb_count = cgs_add(chb_count, U64.literal(1))
+  end while
+  return chb_count
+end function
+
 // The bytes of a `const_string` instruction: the literal's data-segment
 // offset and its byte length, stored into the result's pointer and length
 // slots.
 //
 // The literal's bytes live in the module's static data segment; the
 // instruction only carries the pointer to them and their length.
+//
+// STEP-0522: the length is the *decoded* byte length -- the source escape
+// `\t` is one byte -- so it is counted from the literal's decoded bytes, not
+// from the characters the IR spells. An empty literal has no bytes: it
+// points at the offset the next literal starts at, and its length is zero.
 function cgs_const_string_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
-  let ccsh_text = cgs_literal_text(bytes, instr)
-  if U64.equal(sico.text.length(ccsh_text), U64.literal(0)):
+  let ccsh_hex = cgs_literal_hex(bytes, instr)
+  if sico.text.starts_with(ccsh_hex, "ERR:"):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let ccsh_offset = cgs_data_offset(bytes, ccsh_text)
-  if U64.equal(ccsh_offset, U64.literal(0)):
-    return "ERR:E-SH-CG-IR-EMIT"
+  if cgs_is_const_string(bytes, instr):
+    let ccsh_offset = cgs_data_offset(bytes, ccsh_hex)
+    if U64.equal(ccsh_offset, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let ccsh_length = cgs_hex_bytes(ccsh_hex)
+    let ccsh_out = cgs_i32_const_hex(cgs_sub(ccsh_offset, U64.literal(1)))
+    set ccsh_out = sico.text.concat(ccsh_out, cgs_local_set_hex(result0))
+    set ccsh_out = sico.text.concat(ccsh_out, cgs_i32_const_hex(ccsh_length))
+    set ccsh_out = sico.text.concat(ccsh_out, cgs_local_set_hex(cgs_add(result0, U64.literal(1))))
+    return ccsh_out
   end if
-  let ccsh_bytes = sico.text.encode(ccsh_text)
-  let ccsh_length = sico.bytes.length(ccsh_bytes)
-  let ccsh_out = cgs_i32_const_hex(cgs_sub(ccsh_offset, U64.literal(1)))
-  set ccsh_out = sico.text.concat(ccsh_out, cgs_local_set_hex(result0))
-  set ccsh_out = sico.text.concat(ccsh_out, cgs_i32_const_hex(ccsh_length))
-  set ccsh_out = sico.text.concat(ccsh_out, cgs_local_set_hex(cgs_add(result0, U64.literal(1))))
-  return ccsh_out
+  return "ERR:E-SH-CG-IR-EMIT"
 end function
 
 // The bytes of a `const_i64` or `const_u64` instruction.
@@ -3805,20 +3923,6 @@ function cg_hex_byte_i64(value: I64) returns Text:
   return sico.text.concat(cg_hex_digit_i64(chbi_high), cg_hex_digit_i64(chbi_low))
 end function
 
-// The bytes of the UTF-8 encoding of `text`, as hex byte pairs.
-function cgs_text_bytes_hex(text: Text) returns Text:
-  let ctbh_bytes = sico.text.encode(text)
-  let ctbh_len = sico.bytes.length(ctbh_bytes)
-  let ctbh_out = ""
-  let ctbh_index = U64.literal(0)
-  while U64.less_than(ctbh_index, ctbh_len):
-    let ctbh_byte = sico.bytes.at(ctbh_bytes, ctbh_index, I64.literal(0))
-    set ctbh_out = sico.text.concat(ctbh_out, cg_hex_byte_i64(ctbh_byte))
-    set ctbh_index = cg_next(ctbh_index)
-  end while
-  return ctbh_out
-end function
-
 // The static data segment of the program: the bytes of every distinct
 // string literal in instruction order, as hex byte pairs.
 //
@@ -3826,6 +3930,9 @@ end function
 // occurrence of a literal, so the segment bytes agree. The guest skips a
 // literal it has already seen for the same reason, and `cgs_data_offset`
 // resolves such a literal to that first occurrence (STEP-0521).
+//
+// STEP-0522: the literal's bytes are its *decoded* bytes, so the segment
+// carries the byte the source escape stands for.
 function cgs_data_hex(bytes: Bytes) returns Text:
   let cdh_seen = sico.text.split_lines("")
   let cdh_out = ""
@@ -3862,13 +3969,16 @@ function cgs_data_hex(bytes: Bytes) returns Text:
             if U64.equal(cdh_instruction, U64.literal(0)):
               set cdh_imore = U64.literal(0)
             else:
-              let cdh_text = cgs_literal_text(bytes, cdh_instruction)
-              if U64.less_than(U64.literal(0), sico.text.length(cdh_text)):
-                let cdh_chunk = cgs_text_bytes_hex(cdh_text)
-                if cgs_list_holds(cdh_seen, cdh_text):
+              let cdh_hex = cgs_literal_hex(bytes, cdh_instruction)
+              if sico.text.starts_with(cdh_hex, "ERR:"):
+                return "ERR:E-SH-CG-IR-EMIT"
+              end if
+              if U64.less_than(U64.literal(0), sico.text.length(cdh_hex)):
+                let cdh_chunk = cdh_hex
+                if cgs_list_holds(cdh_seen, cdh_hex):
                   set cdh_chunk = ""
                 else:
-                  set cdh_seen = sico.list.append(cdh_seen, cdh_text)
+                  set cdh_seen = sico.list.append(cdh_seen, cdh_hex)
                 end if
                 set cdh_out = sico.text.concat(cdh_out, cdh_chunk)
               end if

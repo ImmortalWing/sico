@@ -196,6 +196,16 @@ $cases = @(
         Expected = 'lowered'
     }
     @{
+        Name = 'text-concat-with-a-nul-escaped-literal-operand'
+        Source = "function join(a: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, ""\0"")`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-an-empty-literal-operand'
+        Source = "function join(a: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, """")`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
         Name = 'text-concat-in-return-position-with-a-statement'
         Source = "function join(a: Text, b: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, b)`nend function`n"
         Expected = 'lowered'

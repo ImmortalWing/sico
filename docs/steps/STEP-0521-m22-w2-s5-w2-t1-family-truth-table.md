@@ -1,6 +1,6 @@
 # STEP-0521 m22-w2 S5 **W2 族 T1 族级真值表与支持面登记（D15）**：20 行真值表 + 模块级静态 data 段偏移修正
 
-> - status: **implementation complete locally（本机全绿，未提交未推送）**
+> - status: **implementation complete locally（本机全绿；已随 STEP-0506…0521 批次提交 `a5e0b65` 并推送到 `codex/m22-w1-ci`；独立 CI run #28 已触发、尚未出结论）**
 > - date: 2026-10-23
 > - owners: autonomous-agent
 > - depends: [STEP-0520](./STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0519](./STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）、[STEP-0518](./STEP-0518-m22-w2-s5-w2-t1-frontend-knife.md)（前端刀）、[STEP-0517](./STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（真值测量）
@@ -171,7 +171,7 @@ failed:sico.exe : sico: source cache failure: Io("C:\Users\64473\AppData\Local\s
 
 ### 6.1 T1 族**仍未闭合**
 
-- 族级出口判据五项：`canonical IR` ✅ / `整组件` ✅（部分形状 typed 拒绝）/ `Validator` ✅ / `前沿探针` ✅ / `固件电池` ✅ / **独立 CI ❌（未提交未推送）**。
+- 族级出口判据五项：`canonical IR` ✅ / `整组件` ✅（部分形状 typed 拒绝）/ `Validator` ✅ / `前沿探针` ✅ / `固件电池` ✅ / **独立 CI ⏳（已随批次提交 `a5e0b65` 推送触发 **run #28**，head_sha `a5e0b65`，**尚未出结论**）**。
 - **G-b**（转义字面量）与 **G-d**（单语句 return 的非形参操作数）在 S 内**真实存在** ⇒ 按 D10 **不得降级** ⇒ 收口片 X 必须等这两刀做完。
 
 ### 6.2 本片**没有**做的事
@@ -232,7 +232,7 @@ failed:sico.exe : sico: source cache failure: Io("C:\Users\64473\AppData\Local\s
 ### 7.3 未做的事
 
 - **未认领**前端未闭合的形状；**未认领** `Bytes` / `List[Text]` / 记录型 cell；**未认领**其它内建；
-- **未提交、未推送**；**独立 CI 尚未运行**；
+- **已提交并推送**（批次提交 `a5e0b65` ⇒ `codex/m22-w1-ci`）；**独立 CI run #28 已触发、尚未出结论**；
 - **不推进任何出口门**，M22 仍为 NO-GO。
 
 ## 8. 下一刀
