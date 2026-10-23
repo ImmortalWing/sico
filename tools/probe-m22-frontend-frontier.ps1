@@ -274,8 +274,9 @@ $cases = @(
     }
     # STEP-0528: the T2 family (`sico.text.length`).  The measurement split the
     # family in two: the condition positions lower byte for byte, the
-    # statement positions stay typed refusals.  These five cases pin that
-    # measured frontier; the family knife flips them deliberately.
+    # statement positions stayed typed refusals.  STEP-0529 flipped the
+    # statement positions and STEP-0532 flipped the nested-call-argument
+    # shape, so every case below lowers now.
     @{
         Name = 'text-length-in-an-if-condition'
         Source = "function size(t: Text) returns U64:`n  if U64.equal(sico.text.length(t), U64.literal(2)):`n    return U64.literal(1)`n  end if`n  return U64.literal(0)`nend function`n"
@@ -316,35 +317,39 @@ $cases = @(
         Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = sico.text.length(x)`n  return n`nend function`n"
         Expected = 'lowered'
     }
+    # STEP-0532: the T2-g2 implementation knife moved the **frontend** on the
+    # nested-call-argument shape -- the argument of `sico.text.length` may now
+    # be a call itself.  All four cases below lower; the **component** layer
+    # of two of them is still refused by the emitter, because the inner
+    # operator is `sico.bytes.utf8_decode` (family T11), not because of this
+    # family.
     @{
         Name = 'text-length-over-a-nested-call-argument'
         Source = "function size(src: Bytes) returns U64:`n  let n = sico.text.length(sico.bytes.utf8_decode(src))`n  return n`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
     }
-    # STEP-0530: the T2 codegen knife moved the **component** layer, not the
-    # frontend, so the nested-call-argument boundary is unchanged -- and this
-    # case pins the *return* position of that boundary, which is the shape the
-    # T2-g2 knife has to move next.  The oracle lowers and emits it (1183 B);
-    # the guest frontend still refuses it with the same typed identity.
     @{
         Name = 'text-length-over-a-nested-call-argument-in-a-return-position'
         Source = "function size(t: Text) returns U64:`n  return sico.text.length(sico.text.concat(t, `"x`"))`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
     }
-    # STEP-0531: the T2-g2 truth measurement pinned the two **S call sites**
-    # of the family -- the nested host call in a `let` binding and the nested
-    # user call in a return position.  The oracle lowers both; the guest
-    # frontend still refuses them with the same typed identity, so the family
-    # stays open on this gap.
     @{
         Name = 'text-length-over-a-nested-user-call-argument'
         Source = "function size(t: Text) returns U64:`n  return sico.text.length(helper(t))`nend function`nfunction helper(v: Text) returns Text:`n  return v`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
     }
     @{
         Name = 'text-length-over-a-nested-host-call-argument-in-a-let-binding'
         Source = "function size(src: Bytes) returns U64:`n  let n = sico.text.length(sico.bytes.utf8_decode(src))`n  return n`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
+    }
+    # STEP-0532: the shape the knife added -- the nested call in a `set`
+    # position -- is pinned here too, so the frontier keeps the shape the
+    # family declares.
+    @{
+        Name = 'text-length-over-a-nested-call-argument-in-a-set-position'
+        Source = "function size(t: Text) returns U64:`n  let n = U64.literal(0)`n  set n = sico.text.length(sico.text.concat(t, `"x`"))`n  return n`nend function`n"
+        Expected = 'lowered'
     }
     @{
         Name = 'script-profile-run'

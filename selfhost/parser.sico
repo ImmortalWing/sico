@@ -6999,6 +6999,46 @@ function gw_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, receiver_id
     return gw_list_sort_rhs_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, base)
   end if
   if is_intrinsic_path(words, receiver_idx, "text", "length"):
+    let gwr_len_open = next_index(next_index(next_index(next_index(next_index(receiver_idx, line_end), line_end), line_end), line_end), line_end)
+    let gwr_len_close = matching_close(words, gwr_len_open, line_end)
+    let gwr_len_arg = next_index(gwr_len_open, line_end)
+    let gwr_len_nested = nested_text_call_packed(words, src, name_idx, expr_start, receiver_idx, gwr_len_arg, gwr_len_close, parameter_count, base, "string")
+    let gwr_len_nested_len = sico.text.length(gwr_len_nested)
+    if U64.less_than(U64.literal(0), gwr_len_nested_len):
+      if sico.text.starts_with(gwr_len_nested, "ERR:"):
+        return gwr_len_nested
+      end if
+      let gwr_len_parts = sico.text.split_lines(gwr_len_nested)
+      let gwr_len_count = gw_decimal_value(word_at(gwr_len_parts, U64.literal(0)))
+      let gwr_len_value = gw_decimal_value(word_at(gwr_len_parts, U64.literal(1)))
+      let gwr_len_pieces = word_at(gwr_len_parts, U64.literal(3))
+      match U64.checked_add(base, gwr_len_count):
+        case ok(gwr_len_result):
+          let gwr_len_args = sico.text.concat("[", sico.u64.to_text(gwr_len_value))
+          set gwr_len_args = sico.text.concat(gwr_len_args, "]")
+          let gwr_len_intrinsic = intrinsic_instruction_json(gwr_len_result, "u64", "sico.text.length", gwr_len_args, expr_start, line_end_offset)
+          let gwr_len_all = gwr_len_pieces
+          let __hg1 = sico.text.length(gwr_len_all)
+          if U64.less_than(U64.literal(0), __hg1):
+            set gwr_len_all = sico.text.concat(gwr_len_all, ",")
+          end if
+          set gwr_len_all = sico.text.concat(gwr_len_all, gwr_len_intrinsic)
+          match U64.checked_add(gwr_len_count, U64.literal(1)):
+            case ok(gwr_len_total):
+              let __flat28 = sico.text.concat(sico.u64.to_text(gwr_len_total), "\n")
+              set __flat28 = sico.text.concat(__flat28, sico.u64.to_text(gwr_len_result))
+              set __flat28 = sico.text.concat(__flat28, "\n")
+              set __flat28 = sico.text.concat(__flat28, "u64")
+              set __flat28 = sico.text.concat(__flat28, "\n")
+              set __flat28 = sico.text.concat(__flat28, gwr_len_all)
+              return __flat28
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+    end if
     return gw_intrinsic_call_packed(words, src, name_idx, receiver_idx, line_end, expr_start, line_end_offset, cell_names, cell_kinds, cell_locals, parameter_count, base, "u64", "sico.text.length")
   end if
   if is_intrinsic_path(words, receiver_idx, "bytes", "length"):
@@ -9035,6 +9075,125 @@ function direct_text_concat_return_ir(words: List[Text], src: Bytes, name_idx: U
   return sico.text.concat(dtcr_json, "}}")
 end function
 
+// The T2-g2 knife: a call in the argument slot of `sico.text.length`.
+//
+// The nested call is lowered first and keeps its own result id; the
+// enclosing length call then takes that id as its single argument.  The
+// nested kinds are bounded: the `sico.text.concat` and
+// `sico.bytes.utf8_decode` host calls, plus a user call whose arguments
+// are parameters or literals.  Anything else declines, and the caller
+// keeps its own refusal identity.
+function nested_text_call_packed(words: List[Text], src: Bytes, name_idx: U64, expr_start: U64, receiver_idx: U64, arg_from: U64, arg_to: U64, parameter_count: U64, base: U64, expected_kind: Text) returns Text:
+  let ntc_words_len = sico.list.length(words)
+  let ntc_open = U64.literal(0)
+  let ntc_kind = ""
+  if is_intrinsic_path(words, arg_from, "text", "concat"):
+    set ntc_open = next_index(next_index(next_index(next_index(next_index(arg_from, ntc_words_len), ntc_words_len), ntc_words_len), ntc_words_len), ntc_words_len)
+    set ntc_kind = "string"
+  else:
+    if is_intrinsic_path(words, arg_from, "bytes", "utf8_decode"):
+      set ntc_open = next_index(next_index(next_index(next_index(next_index(arg_from, ntc_words_len), ntc_words_len), ntc_words_len), ntc_words_len), ntc_words_len)
+      set ntc_kind = "string"
+    else:
+      let ntc_callee = function_declaration_index(words, word_at(words, arg_from))
+      if U64.equal(ntc_callee, ntc_words_len):
+        return ""
+      end if
+      set ntc_open = next_index(arg_from, ntc_words_len)
+      set ntc_kind = declared_return_kind(words, next_index(ntc_callee, ntc_words_len))
+    end if
+  end if
+  if is_word(word_at(words, ntc_open), "("):
+    let ntc_open_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  let ntc_close = matching_close(words, ntc_open, arg_to)
+  if U64.equal(next_index(ntc_close, ntc_words_len), arg_to):
+    let ntc_close_ok = I64.literal(1)
+  else:
+    return ""
+  end if
+  let ntc_start = word_span_offset(words, src, expr_start, receiver_idx, arg_from)
+  let ntc_close_off = word_span_offset(words, src, ntc_start, arg_from, ntc_close)
+  let ntc_end = ntc_close_off
+  match U64.checked_add(ntc_close_off, U64.literal(1)):
+    case ok(ntc_after_close):
+      set ntc_end = ntc_after_close
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let ntc_count = U64.literal(0)
+  let ntc_value = base
+  let ntc_pieces = ""
+  let ntc_empty_names = sico.text.split_lines("")
+  let ntc_empty_kinds = sico.text.split_lines("")
+  let ntc_empty_values = sico.list.empty[U64]()
+  if is_intrinsic_path(words, arg_from, "text", "concat"):
+    let ntc_concat_pack = straight_text_concat_packed(words, src, name_idx, arg_from, arg_to, ntc_start, ntc_end, "cell", ntc_empty_names, ntc_empty_kinds, ntc_empty_values, parameter_count, base)
+    if sico.text.starts_with(ntc_concat_pack, "ERR:"):
+      return ntc_concat_pack
+    end if
+    let ntc_concat_parts = sico.text.split_lines(ntc_concat_pack)
+    set ntc_count = gw_decimal_value(word_at(ntc_concat_parts, U64.literal(0)))
+    set ntc_value = gw_decimal_value(word_at(ntc_concat_parts, U64.literal(1)))
+    let ntc_concat_inner = word_at(ntc_concat_parts, U64.literal(3))
+    let ntc_concat_call = word_at(ntc_concat_parts, U64.literal(4))
+    if is_word(ntc_concat_inner, "-"):
+      set ntc_pieces = ntc_concat_call
+    else:
+      set ntc_pieces = sico.text.concat(ntc_concat_inner, ",")
+      set ntc_pieces = sico.text.concat(ntc_pieces, ntc_concat_call)
+    end if
+  else:
+    if is_intrinsic_path(words, arg_from, "bytes", "utf8_decode"):
+      let ntc_decode_pack = gw_intrinsic_call_packed(words, src, name_idx, arg_from, arg_to, ntc_start, ntc_end, ntc_empty_names, ntc_empty_kinds, ntc_empty_values, parameter_count, base, "string", "sico.bytes.utf8_decode")
+      if sico.text.starts_with(ntc_decode_pack, "ERR:"):
+        return ntc_decode_pack
+      end if
+      let ntc_decode_parts = sico.text.split_lines(ntc_decode_pack)
+      set ntc_count = gw_decimal_value(word_at(ntc_decode_parts, U64.literal(0)))
+      set ntc_value = gw_decimal_value(word_at(ntc_decode_parts, U64.literal(1)))
+      set ntc_pieces = word_at(ntc_decode_parts, U64.literal(3))
+    else:
+      let ntc_args_start = next_index(ntc_open, ntc_words_len)
+      let ntc_arg_count = argument_region_instruction_count(words, ntc_args_start, ntc_close, name_idx)
+      match U64.checked_add(base, ntc_arg_count):
+        case ok(ntc_arg_summed):
+          set ntc_value = ntc_arg_summed
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      match U64.checked_add(ntc_arg_count, U64.literal(1)):
+        case ok(ntc_total):
+          set ntc_count = ntc_total
+        case error(_):
+          return "ERR:E-SH-IR-RANGE"
+      end match
+      let ntc_user_json = user_call_expression_json(words, src, arg_from, arg_to, name_idx, ntc_start, base, expected_kind)
+      if sico.text.starts_with(ntc_user_json, "ERR:"):
+        return ntc_user_json
+      end if
+      if sico.text.starts_with(ntc_user_json, "SKIP:"):
+        return ""
+      end if
+      set ntc_pieces = ntc_user_json
+    end if
+  end if
+  if is_word(ntc_kind, expected_kind):
+    let ntc_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-TYPE"
+  end if
+  let ntc_out = sico.text.concat(sico.u64.to_text(ntc_count), "\n")
+  set ntc_out = sico.text.concat(ntc_out, sico.u64.to_text(ntc_value))
+  set ntc_out = sico.text.concat(ntc_out, "\n")
+  set ntc_out = sico.text.concat(ntc_out, ntc_kind)
+  set ntc_out = sico.text.concat(ntc_out, "\n")
+  set ntc_out = sico.text.concat(ntc_out, ntc_pieces)
+  return ntc_out
+end function
+
 // The `sico.text.length` call in the whole-expression position: the body
 // holds one statement only; the operand follows `straight_text_length_packed`.
 function direct_text_length_return_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
@@ -9553,6 +9712,44 @@ function straight_text_length_packed(words: List[Text], src: Bytes, name_idx: U6
   let stl_arg = next_index(stl_open, line_end)
   if U64.equal(stl_arg, stl_close):
     return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let stl_nested_pack = nested_text_call_packed(words, src, name_idx, expr_start, receiver_idx, stl_arg, stl_close, parameter_count, base, "string")
+  let stl_nested_len = sico.text.length(stl_nested_pack)
+  if U64.less_than(U64.literal(0), stl_nested_len):
+    if sico.text.starts_with(stl_nested_pack, "ERR:"):
+      return stl_nested_pack
+    end if
+    let stl_nested_parts = sico.text.split_lines(stl_nested_pack)
+    let stl_nested_count = gw_decimal_value(word_at(stl_nested_parts, U64.literal(0)))
+    let stl_nested_value = gw_decimal_value(word_at(stl_nested_parts, U64.literal(1)))
+    let stl_nested_pieces = word_at(stl_nested_parts, U64.literal(3))
+    match U64.checked_add(base, stl_nested_count):
+      case ok(stl_nested_result):
+        let stl_nested_args = sico.text.concat("[", sico.u64.to_text(stl_nested_value))
+        set stl_nested_args = sico.text.concat(stl_nested_args, "]")
+        let stl_nested_intrinsic = intrinsic_instruction_json(stl_nested_result, "u64", "sico.text.length", stl_nested_args, expr_start, line_end_offset)
+        let stl_nested_inner = stl_nested_pieces
+        let __htl3 = sico.text.length(stl_nested_inner)
+        if U64.equal(__htl3, U64.literal(0)):
+          set stl_nested_inner = "-"
+        end if
+        match U64.checked_add(stl_nested_count, U64.literal(1)):
+          case ok(stl_nested_total):
+            let __flat27 = sico.text.concat(sico.u64.to_text(stl_nested_total), "\n")
+            set __flat27 = sico.text.concat(__flat27, sico.u64.to_text(stl_nested_result))
+            set __flat27 = sico.text.concat(__flat27, "\n")
+            set __flat27 = sico.text.concat(__flat27, "u64")
+            set __flat27 = sico.text.concat(__flat27, "\n")
+            set __flat27 = sico.text.concat(__flat27, stl_nested_inner)
+            set __flat27 = sico.text.concat(__flat27, "\n")
+            set __flat27 = sico.text.concat(__flat27, stl_nested_intrinsic)
+            return __flat27
+          case error(_):
+            return "ERR:E-SH-IR-RANGE"
+        end match
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
   end if
   if U64.equal(next_index(stl_arg, line_end), stl_close):
     let stl_single_ok = I64.literal(1)

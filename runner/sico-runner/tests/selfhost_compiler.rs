@@ -5230,6 +5230,14 @@ end function
     assert_bytes_equal(&len_out.stdout, expected_len.as_bytes());
 
     // Guard: a call argument (not hoisted) stays typed-refused, then recovery.
+    //
+    // STEP-0532 changed the **identity** of this refusal, not its kind: the
+    // guest now recognises the shape ("the argument is a nested call") and
+    // then refuses the nested call's own argument -- the local cell `i` --
+    // with `ERR:E-SH-IR-CALL-ARGUMENT`, where before it refused the whole
+    // shape with `ERR:E-SH-IR-CALL-SHAPE`.  It is still a typed refusal and
+    // never a silent widening; the nested call's argument forms (a parameter
+    // or a literal) do lower, and that is what the T2-g2 knife added.
     let malformed = len_src.replace(
         "set m = sico.text.length(acc)",
         "set m = sico.text.length(word_at(words, i))",
@@ -5238,7 +5246,7 @@ end function
         run_guest(&malformed),
         RunOutcome::Domain {
             code: "invalid-input".into(),
-            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+            message: "ERR:E-SH-IR-CALL-ARGUMENT".into()
         }
     );
     let RunOutcome::Output(recovered) = run_guest(&len_src) else {
@@ -5659,6 +5667,15 @@ fn sico_compiler_lowers_while_call_rhs_packed_closure_byte_exactly() {
         "script_result_return_json",
         "while_bytes_at_local_src_packed",
         "while_bytes_at_rhs_packed",
+        "argument_instruction_count",
+        "argument_instructions",
+        "argument_region_instruction_count",
+        "argument_values_at",
+        "environment_call_arguments",
+        "nested_text_call_packed",
+        "stc_call_operand_packed",
+        "straight_text_concat_packed",
+        "user_call_expression_json",
     ]
     .iter()
     .map(|name| parser_function_text(name))
@@ -7886,31 +7903,38 @@ fn sico_compiler_lowers_the_text_length_in_a_statement_position_byte_exactly() {
 }
 
 #[test]
-fn sico_compiler_keeps_the_nested_text_length_arguments_typed_refused() {
-    // STEP-0529: the two remaining shapes of the family -- the argument is
-    // itself a call -- stay typed refusals.  They are the S shapes
-    // `sico.text.length(sico.bytes.utf8_decode(src))` and
-    // `sico.text.length(positive_sleb_hex(initial))`, and they are a shape of
-    // their own (the T2-g2 gap), not part of this knife.
+fn sico_compiler_lowers_the_nested_text_length_arguments_byte_exactly() {
+    // STEP-0529 recorded the two remaining shapes of the family -- the
+    // argument is itself a call -- as typed refusals; STEP-0532 closed that
+    // gap (T2-g2), so both shapes lower now, byte for byte equal to the
+    // Rust frontend's canonical IR.
     //
-    // The refusal identity is unchanged: these shapes were refused with
-    // `ERR:E-SH-IR-EXPRESSION` before the knife and stay refused with it.
-    for (label, body) in [
+    // They are the S shapes `sico.text.length(sico.bytes.utf8_decode(src))`
+    // and `sico.text.length(positive_sleb_hex(initial))` in a `let` binding.
+    for (label, body, ir_bytes) in [
         (
             "let-binding-with-a-user-call",
             "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
+            2656,
         ),
         (
             "let-binding-with-a-host-call",
             "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+            2369,
         ),
     ] {
         let source = text_length_fixture(body);
-        let RunOutcome::Domain { code, message } = run_guest(&source) else {
-            panic!("the {label} text-length shape must stay a typed refusal")
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
 }
 
@@ -7993,48 +8017,240 @@ fn the_text_length_argument_type_is_refused_by_the_rust_frontend_itself() {
 }
 
 #[test]
-fn the_t2_g2_nested_call_shapes_stay_typed_refused() {
-    // STEP-0531, T2-g2 truth: the remaining family shapes -- the argument of
-    // `sico.text.length` is itself a call -- are still typed refusals, and the
-    // refusal identity is unchanged: `ERR:E-SH-IR-EXPRESSION`.
+fn the_t2_g2_nested_call_shapes_lower_byte_exactly() {
+    // STEP-0532, T2-g2 implementation knife: the argument of
+    // `sico.text.length` may now be a call itself.  The guest frontend
+    // lowers every one of the shapes byte for byte equal to the Rust
+    // frontend's canonical IR -- the identity STEP-0531 measured and
+    // pinned (`the_t2_g2_target_ir_is_the_nested_call_shape`) is now the
+    // identity the guest produces.
     //
-    // The oracle lowers **every one** of them (the two S call sites among
-    // them), so these refusals are the T2-g2 gap and not a semantic refusal:
-    // the shape is supported, the guest frontend does not reach it yet.
-    for (label, body) in [
+    // The rule the shapes share (measured, not designed): the nested call is
+    // one instruction whose result id comes **before** the outer call's
+    // result id (post-order allocation), and the outer `sico.text.length`
+    // takes that id as its only argument.
+    for (label, body, ir_bytes) in [
         (
             "nested-host-call",
             "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            2477,
         ),
         (
             "nested-user-call",
             "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            2656,
         ),
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            2369,
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            2783,
+        ),
+        (
+            "s-site-let-binding",
+            "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
+            2374,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} nested-call shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} nested-call shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn the_t2_g2_component_layer_covers_the_nested_shapes_the_emitter_knows() {
+    // STEP-0532: the component layer of the nested-call shapes follows the
+    // frontend.  Where the guest **emitter** knows the inner operator the
+    // whole component is byte for byte the Rust backend's production
+    // component; where it does not, the emitter refuses with its own typed
+    // identity -- and that refusal belongs to the **inner operator's** family
+    // (`sico.bytes.utf8_decode` is T11), not to this one.
+    //
+    // The two layers are recorded separately on purpose: a frontend that
+    // lowers a shape the emitter cannot encode is not a frontend gap.
+    //
+    // The `let`-binding positions are covered as well: the nested user call
+    // in a `let` binding is byte for byte the same component (1145 B) as the
+    // return position, and the nested `sico.bytes.utf8_decode` in a `let`
+    // binding is refused by the emitter for the same reason as the return
+    // position.
+    for (label, body, component_bytes) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            1183,
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            1145,
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            1162,
+        ),
+        (
+            "let-binding-nested-user-call",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
+            1145,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the nested fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} nested-call component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+    for (label, body) in [
         (
             "s-site-utf8-decode",
             "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
         ),
         (
-            "s-site-user-call",
-            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
-        ),
-        (
             "s-site-let-binding",
             "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
         ),
+        (
+            "let-binding-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+        ),
     ] {
         let source = text_length_fixture(body);
-        let RunOutcome::Domain { code, message } = run_guest(&source) else {
-            panic!("the {label} nested-call shape must stay a typed refusal")
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} utf8_decode shape")
         };
         assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
-        let module = rust_module(&source);
-        assert!(
-            !module.functions.is_empty(),
-            "the oracle lowers the {label} nested-call shape"
-        );
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
     }
+}
+
+#[test]
+fn the_t2_g2_s_site_refusals_belong_to_other_families() {
+    // STEP-0532: the two **real** S call sites of the family live in
+    // functions that stay refused -- but not because of the nested-call
+    // argument this slice closed.  The pin records the measured identities
+    // and the control shapes that attribute them.
+    //
+    // S site 2 (`compiler.sico`: `positive_sleb_length`) is refused by the
+    // match route's **parameter-count gate** (`checked_arithmetic_match_ir`
+    // wants exactly two parameters; the function has one) and, behind it, by
+    // the fixed-operator operand path, which does not accept a `sico.*`
+    // operand **at all** -- the control shape below carries a plain
+    // (non-nested) length operand and is refused the same way.
+    //
+    // S site 1 (`compiler.sico`: `lex_words`) is refused by the
+    // `sico.list.append` shape it carries (`sico.list.append(<local>,
+    // <nested call>)`, which is T7), not by the length call.
+    //
+    // Both refusals are therefore **outside** this family: they must not be
+    // counted as `sico.text.length` gaps, and they must not be read as
+    // "the family is closed" either.
+    let match_probe = |parameters: &str, length_operand: &str| {
+        format!(
+            "function probe({parameters}) returns U64:\n  match U64.checked_div(sico.text.length({length_operand}), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function\n"
+        )
+    };
+    for (label, body, identity) in [
+        (
+            "one-parameter-nested-match",
+            match_probe("initial: U64", "positive_sleb_hex(initial)"),
+            "ERR:E-SH-IR-MATCH-SHAPE",
+        ),
+        (
+            "two-parameter-plain-match",
+            match_probe("initial: U64, text: Text", "text"),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            "two-parameter-nested-match",
+            match_probe("initial: U64, other: U64", "positive_sleb_hex(initial)"),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+    ] {
+        let source = text_length_fixture(&body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // The same shape without the match route lowers -- so the nested-call
+    // argument itself is not what the match route refuses.
+    let source = text_length_fixture(
+        "function probe(initial: U64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function\n",
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest frontend must lower the nested-call argument shape")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, rust_ir(&source).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0532_parser_functions_byte_exactly() {
+    // STEP-0532, T2-g2: the guest frontend has to keep lowering the
+    // functions this slice added or reshaped -- otherwise the bootstrap
+    // could never consume its own frontend code.  This is the same
+    // self-hosting shape frontier the STEP-0507 / 0509 / 0513 / 0519 / 0520
+    // / 0521 / 0522 / 0523 / 0524 / 0525 slices established.
+    //
+    // The new lowerer `nested_text_call_packed` lowers on its own (with its
+    // callees stubbed) and with its real callee closure, and so do the two
+    // routes it is wired into.
+    for name in [
+        "nested_text_call_packed",
+        "straight_text_length_packed",
+        "gw_rhs_packed",
+    ] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{name}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let source = parser_closure_source("nested_text_call_packed");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the nested-call lowerer closure must compile through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
 }
 
 #[test]
