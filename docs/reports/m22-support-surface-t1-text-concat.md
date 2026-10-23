@@ -1,10 +1,10 @@
 # M22 支持面登记表 · T1 族（`sico.text.concat`）
 
-> - status: **STEP-0526 更新**（G-f **已闭合**；**G-f2 已闭合**；**G-d2 也已闭合**（发射端分支支持 ⇒ S 内 4 个 `if` 块里的调用点逐字节等同）；**G-d3 同片闭合**（发射端缺 `equal_fixed` 算子）；**T1 族仍未闭合** —— 收口片 X 尚未开始，语料覆盖仍 0 条）
+> - status: **STEP-0527 定稿（T1 族收口片 X）**：**T1 族闭合** —— 计划 §3.3.5 的**族级出口判据六项全过**（`canonical IR` 逐字节等同 / 整组件逐字节等同 / `wasmparser::Validator` 通过 / 前沿探针期望值已翻转 / 固件电池绿 / 独立 CI 绿）；G-b / G-e / G-d1 / G-f / G-f2 / **G-d2 / G-d3** **全部闭合**；**语料覆盖仍 0 条**（本登记册上仍为 0 的那一项）⇒ **族闭合 ≠ M22 闭合**（见 §5）
 > - date: 2026-10-24
 > - owner: autonomous-agent
 > - scope: 计划 §3.3.5 的 **D15 支持面登记**：族 ×（名字 / 实参个数 / 实参类型 / 结果槽数 / 语料覆盖 / 未覆盖形状）
-> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（真值测量）、[STEP-0518](../steps/STEP-0518-m22-w2-s5-w2-t1-frontend-knife.md)（前端刀）、[STEP-0519](../steps/STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）、[STEP-0520](../steps/STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0521](../steps/STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表）、[STEP-0522](../steps/STEP-0522-m22-w2-s5-w2-t1-escaped-literal-decoder.md)（G-b / G-e 两刀）、[STEP-0523](../steps/STEP-0523-m22-w2-s5-w2-t1-gd-single-return-route.md)（G-d1）、[STEP-0524](../steps/STEP-0524-m22-w2-s5-w2-t1-gf-multi-argument-call-operand.md)（G-f）、[STEP-0525](../steps/STEP-0525-m22-w2-s5-w2-t1-gf2-nested-call-argument.md)（G-f2）、[STEP-0526](../steps/STEP-0526-m22-w2-s5-gd2-emitter-branch-support.md)（G-d2 / G-d3）
+> - depends: [STEP-0517](../steps/STEP-0517-m22-w2-s5-w2-t1-text-concat-truth.md)（真值测量）、[STEP-0518](../steps/STEP-0518-m22-w2-s5-w2-t1-frontend-knife.md)（前端刀）、[STEP-0519](../steps/STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）、[STEP-0520](../steps/STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0521](../steps/STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表）、[STEP-0522](../steps/STEP-0522-m22-w2-s5-w2-t1-escaped-literal-decoder.md)（G-b / G-e 两刀）、[STEP-0523](../steps/STEP-0523-m22-w2-s5-w2-t1-gd-single-return-route.md)（G-d1）、[STEP-0524](../steps/STEP-0524-m22-w2-s5-w2-t1-gf-multi-argument-call-operand.md)（G-f）、[STEP-0525](../steps/STEP-0525-m22-w2-s5-w2-t1-gf2-nested-call-argument.md)（G-f2）、[STEP-0526](../steps/STEP-0526-m22-w2-s5-gd2-emitter-branch-support.md)（G-d2 / G-d3）、[STEP-0527](../steps/STEP-0527-m22-w2-s5-w2-t1-family-closure.md)（收口片 X / D15 定稿）
 > - 口径: **所有数字来自 oracle 的生产输出**（Rust 前端 `lower_core` + `canonical_json`，Rust 后端 `compile_script_program`），**不是设计值**
 
 ## 1. 子集边界（D15 要求登记的六项）
@@ -16,7 +16,7 @@
 | 实参类型 | **两个 `Text`**（canonical `string`） | STEP-0519：类型闸门 `cgs_value_ty` == `string`；**调用型操作数**的被调函数也必须返回 `Text` |
 | 结果槽数 | **2**（pointer, length） | STEP-0519：结果槽闸门 `cgs_type_slots` == 2 |
 | 语料覆盖 | **0 条** | S 内 2,943 个文本调用点**一个都没进语料** |
-| 未覆盖形状 | **0 类缺口**（§3：G-d2 与 G-d3 已闭合；**族外**的缺口另计，见 §6） | STEP-0526 闭合 |
+| 未覆盖形状 | **0 类缺口**（§3：G-d2 与 G-d3 已闭合；**族外**的缺口另计，见 §5） | STEP-0526 闭合，STEP-0527 收口复核 |
 
 ## 2. 族级真值表（38 行，实测）
 
@@ -87,7 +87,7 @@
 | **G-a** 模块级 data 段偏移 | **同长但字节不同**（数据指针差 1）⇒ **静默错字节**，不是 typed 拒绝 | `cgs_data_offset` 只扫**当前函数**的指令，而后端的静态 data 段收**整个模块**（函数 → 块 → 指令） | **是**（S 的多个文件都有多函数字面量） | STEP-0521 **已修正** |
 | **G-c** 重复字面量 | 组件层 typed 拒绝 | `cgs_data_offset` 把重复字面量当作不可推导 | **是**（S 内 `"\t"` 等重复出现） | STEP-0521 **已修正** |
 
-> **G-d2 是本表最重要的一次订正**：STEP-0521 / STEP-0522 把 G-d 登记成「前端缺口」。STEP-0523 逐个探过剩下那 4 个调用点之后发现，它们的拒绝**不在前端** —— 前端**已经**把它们逐字节降下来了，拒的是**组件发射**。原因与 T1 无关：guest 的发射器只支持**单块直线代码**，所以**任何** `if` 块都撞上它（实测：`if` 块里只返回一个字面量、连 concat 都没有，照样被拒）。把它继续挂在 T1 族名下会让族级出口判据失真 ⇒ 拆成 **G-d1（前端，T1 专属，✅ 已闭合）** 与 **G-d2（发射端分支缺口，⏳ 未闭合）**。
+> **G-d2 是本表最重要的一次订正**：STEP-0521 / STEP-0522 把 G-d 登记成「前端缺口」。STEP-0523 逐个探过剩下那 4 个调用点之后发现，它们的拒绝**不在前端** —— 前端**已经**把它们逐字节降下来了，拒的是**组件发射**。原因与 T1 无关：guest 的发射器只支持**单块直线代码**，所以**任何** `if` 块都撞上它（实测：`if` 块里只返回一个字面量、连 concat 都没有，照样被拒）。把它继续挂在 T1 族名下会让族级出口判据失真 ⇒ 拆成 **G-d1（前端，T1 专属，✅ 已闭合）** 与 **G-d2（发射端分支缺口，✅ 已闭合 —— STEP-0526）**。
 
 ### 3.1 S 内 T1 调用点普查（口径：文本出现次数）
 
@@ -131,15 +131,30 @@
 
 > **另一条附带事实**（STEP-0523 测得）：STEP-0518 的固件里写着「guest 前端拒前向引用的用户函数调用」——**这条现在不成立**（实测：前向调用与后向调用都逐字节降下来）。该注释已在本片订正，并顺带把那份**手工维护**的闭包清单改成**从文件自动计算**（`parser_closure_source`），免得路由再变时清单又漂移。
 
-## 4. 族级出口判据（五项缺一不算闭合）
+## 4. 族级出口判据（六项缺一不算闭合）—— STEP-0527 收口核对
 
-| 判据 | 状态 |
+| 判据 | 状态 | 证据 |
+|---|---|---|
+| `canonical IR` 逐字节等同 | ✅ 已达成的 **35** 个形状（真值表钉住） | `sico_codegen_guest_pins_the_t1_family_truth_table` **36 行** + `sico_codegen_guest_derives_the_module_wide_data_offsets` **2 行**（BE 行是两侧**一致**的前端 typed 拒绝，不是差异行） |
+| `整组件` 逐字节等同 | ✅ 同上（**组件层 typed 拒绝 0 行** —— AA 一行已由 STEP-0526 翻转） | STEP-0526：S 内两个真实形状的 Rust 生产组件 **1266 B / 1316 B** 与 guest **整组件逐字节相同** |
+| `wasmparser::Validator` 通过 | ✅ oracle 与 guest 两侧都过（真值表逐行验证） | 真值表逐行验证 |
+| 前沿探针期望值已翻转 | ✅ STEP-0521 新增 3 条用例（28 → **31**），STEP-0522 再加 3 条（31 → **34**），STEP-0523 再加 4 条并翻 2 条（34 → **38**），STEP-0524 再加 1 条并翻 1 条（38 → **39**），STEP-0525 再加 2 条（39 → **41**），**全部与期望一致**（**30** 条期望 `lowered` —— 含 T1 族 18 条形状；**11** 条期望 typed 拒绝 `ERR:E-SH-IR-*`，**故意钉住的拒绝身份**，不是未翻转） | `tools/probe-m22-frontend-frontier.ps1`（电池步骤 `probe-frontend-frontier`） |
+| 固件电池绿 | ✅ 本机电池全绿（**18 步**，BATTERY_GREEN 18/18 —— STEP-0526 的 17 步原样复用 + 本片新增 1 步文档自洽检查）+ 固件 **153 / 153** | `target/tmp/step0527/battery.ps1`（源码树与 STEP-0526 逐字节相同 ⇒ 该轮电池对本片同样成立） |
+| **独立 CI 绿** | ✅ run #31（STEP-0524 `a383dfe`）= **success**；run #32（STEP-0525 `1956158`）= **success**（run id `39969358043`）；run #33（STEP-0526 `b4364ef`）= **success**（run id `39990810669`） | GitHub Actions（`codex/m22-w1-ci`）；按仓库既有做法，**每轮裁决由下一片的提交回填** |
+
+⇒ **六项全过 ⇒ T1 族的支持面闭合**（登记口径：**族闭合**，不是 M22 闭合 —— 见 §5）。
+
+## 5. 诚实收窄：T1 族闭合 **≠** M22 闭合（STEP-0527）
+
+| 项 | 状态 |
 |---|---|
-| `canonical IR` 逐字节等同 | ✅ 已达成的 **35** 个形状（真值表钉住） |
-| `整组件` 逐字节等同 | ✅ 同上（**组件层 typed 拒绝 0 行** —— AA 一行已由 STEP-0526 翻转） |
-| `wasmparser::Validator` 通过 | ✅ oracle 与 guest 两侧都过（真值表逐行验证） |
-| 前沿探针期望值已翻转 | ✅ STEP-0521 新增 3 条用例（28 → **31**），STEP-0522 再加 3 条（31 → **34**），STEP-0523 再加 4 条并翻 2 条（34 → **38**），STEP-0524 再加 1 条并翻 1 条（38 → **39**），STEP-0525 再加 2 条（39 → **41**），全部判 `lowered` |
-| 固件电池绿 | ✅ 本机电池全绿（**17 步**，BATTERY_GREEN 17/17） |
-| **独立 CI 绿** | ✅ 上一批 `1956158`（STEP-0525）的 **run #32 = success**（run id `39969358043`）；本片（STEP-0526）的推送会触发下一轮，回填在收口片 X |
+| **T1 族（`sico.text.concat`）** | ✅ **闭合**（六项族级出口判据全过） |
+| **M22 门 1 / 4 / 5 / 7** | ✅ GO（不变） |
+| **M22 门 2** | PARTIAL（不变） |
+| **M22 门 3 / 6** | ❌ NO-GO（不变） |
+| **M22 整体** | ❌ **仍为 NO-GO** |
+| **整文件自举** | ⏔ **仍未闭合**：`List[Text]` 形参 ⇒ `ERR:E-SH-IR-RECORD-TYPE`；宿主调用内建只认两个（`sico.text.concat` / `sico.bytes.length`）；嵌套 `if` 的**前端**缺口 `ERR:E-SH-IR-STATEMENT`；`match` 终结符未实现（发射端只发 `return` / `branch` / `jump` / `unreachable` 四种；guest 前端对该形状 typed 拒绝 `ERR:E-SH-IR-MATCH-SHAPE` ⇒ 当前不可达，见 STEP-0526）；`run` 多块仍 fail closed（结果区返回是单块形状） |
+| **差分语料覆盖** | ⏔ **仍 0 条** —— T1 族的形状**一个都没进** `selfhost/corpus-v0.json` / `corpus-w1` ⇒ **族的行为只由族级真值表钉住，不由差分语料钉住**（这是本登记册上**仍然为 0 的那一项**） |
+| **下一个族** | T2 族（`sico.text.length`，S 内 318 处） |
 
-⇒ **T1 族仍未闭合**，但**不是因为 G-d2**：G-d2 与 G-d3 已由 STEP-0526 闭合 ⇒ **S 内 10 个调用点全部逐字节发射**。剩下的未闭合项是**族外**的：**整文件自举**（`List[Text]` 形参 ⇒ `ERR:E-SH-IR-RECORD-TYPE`、宿主调用内建只认两个、嵌套 `if` 前端缺口 `ERR:E-SH-IR-STATEMENT`）与**语料覆盖 0 条** ⇒ 固定点（guest 能编译整个 S）仍未达成 ⇒ **收口片 X 必须先把这些说清楚，再决定 T1 是否收口。**
+⇒ **「族闭合」与「固定点达成」是两个判断**：前者问「这个族声明的支持面，guest 是不是逐字节做到了」；后者问「guest 能不能编译整个冻结源集 S」。STEP-0517…0526 走完的正是这条区分：**每个族都用自己的真值表判定，而 S 的固定点由所有族合起来判定** —— T1 闭合之后，S 的固定点仍差着**别的族**（宿主调用内建、`List[Text]` 形参、嵌套 `if` 前端形状、record 泛型、cell 的记录类型 …）。
