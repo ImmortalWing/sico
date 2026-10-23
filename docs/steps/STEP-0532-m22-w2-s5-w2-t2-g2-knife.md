@@ -176,10 +176,34 @@ STEP-0529 把两个 `let` 绑定形（嵌套用户调用 / 嵌套宿主调用）
 
 > **电池跑了两轮，这是有意的**：第 1 轮在把 STEP-0529 的两个 `let` 绑定形**补测**并**补进固件钉**之前就已 19/19 绿；补测之后改了 `runner/sico-runner/tests/selfhost_compiler.rs` ⇒ 按纪律「改了 `runner/` 必须整轮重跑电池」⇒ **第 2 轮 19/19 绿**（上表即第 2 轮）。第 1 轮耗时：workspace-integrity 52s / fmt-runner 1s / ci-one-key 417s / validate-0245 126s / validate-0262 144s / probe-frontend-frontier 361s / probe-ir-plan-frontier 26s / validate-0124 1s / validate-0131 2s / validate-0156 1s / git-diff-check 0s / line-ending-audit 0s / selfhost-comment-discipline 0s / step0526-footprint-audit 0s / step0526-census-branches 0s / step0526-differential 85s / step0528-census-t2 0s / step0532-doc-check 0s / workspace-integrity-final 52s ⇒ **BATTERY_GREEN 19/19**。
 
-### 6.3 独立 CI 回填（run #38）
+### 6.3 独立 CI 回填（run #39 = **failure** ❌）
 
-- **STEP-0531** 推送（`9729778`）触发的 **run #38**（run id `40029230629`，head_sha `972977820ca54d609428bcfccccabe6dc43ab584`）= ✅ **success**（2026-10-24 本机经 GitHub API 复核，**由本片回填**）。
-- **本片**推送后触发新一轮，裁决由**下一片**回填。
+**本片的独立 CI 是红的。族级出口判据的「独立 CI 绿」一项因此尚未达成 ⇒ 本片不得被读成「族已闭合」。**
+
+| 项 | 值 |
+|---|---|
+| run | **#39**，run id `40038444653`，head_sha `504c849df8712042b094752609fdd00979c346ad` |
+| 触发 / 结束 | 2026-10-23T23:13:39Z 推送触发；job `windows-gnu`（id `120703551371`）耗时 **25m 26s** |
+| 裁决 | **failure**（`status: completed` / `conclusion: failure`） |
+| 失败的 workflow step | 第 4 步「Run repository CI on a fresh runner」（即 `tools/run-ci.ps1` 整体）—— workflow 把 13 个子步骤包在**同一个** step 里 ⇒ GitHub 只给出**这一层**的粒度 |
+| 公开注解 | **1 error**（`Process completed with exit code 1`，指向 step 4 第 279 行）+ **2 warning**，两个 warning 都是**基础设施**的（`actions/checkout@v4` 的 Node.js 20 弃用、MSYS2 `MINGW64` 弃用）⇒ **没有任何 rustc / clippy / 测试诊断类注解** |
+| 日志可得性 | **不可得**：公开 job 页显示「Sign in to view logs」；REST 日志端点匿名访问 **403**；本机**未装 `gh`**、环境内**无 token**；AGENTS.md §9 禁止未经明示使用外部凭据 ⇒ **失败的具体子步骤未能取到** |
+
+**已做的复现尝试与结果**（全部为本机实测）：
+
+| 尝试 | 结果 |
+|---|---|
+| 同一 worktree 跑 `tools/run-ci.ps1`（`SICO_SELFHOST_COMPONENT_CACHE=0`） | ✅ **绿**（417 s / 443 s，两轮电池的 `ci-one-key` 步） |
+| **按 CI 的缓存配置**跑 runner 全量（`SICO_SELFHOST_COMPONENT_CACHE=1` + 全新 `TEMP` ⇒ 冷缓存） | ✅ **exit 0**；固件 **166 passed / 0 failed**（117.91 s） |
+| **全新克隆** pushed SHA 后跑 `tools/run-ci.ps1` | ❌ **CI RED**，但红的是**五个 cargo 步**，根因 = **本机没有 C 编译器**（`cc-rs: failed to find tool "gcc.exe"`；仓库本地 `target/tooling/msys2-binutils` 在本机缺失）⇒ **CI runner 上 MSYS2 步是成功的**，所以**这次复现不能作为 CI 红灯的证据**，它只证明本机做不了 from-scratch 的 GNU 构建 |
+| 给全新克隆预置第三方依赖产物（只重建仓库自身 crates） | ⛔ 被本机安全策略拦住（递归写），**未完成** |
+
+**归因结论（诚实边界）**：本片**零改动 `crates/`** ⇒ from-scratch 重建的**第三方与仓库自身 crates** 与上一轮绿 run 完全同构；本片真正改动的输入只有 `selfhost/parser.sico`、固件、探针脚本与文档，而**这四者在本机所有可复现口径下全绿**（电池 19/19 ×2、固件 166/166 ×2、runner 全量 exit 0、探针 54/54、doc-check 绿、integrity 绿、clippy/fmt 绿）。⇒ **从现有证据无法把 run #39 的红归因到本片的内容**；与「runner 侧环境抖动（`cargo fetch` 约 200 个 crate 的下载、wasmtime 下载、MSYS2 安装）」这一解释**更相容**，但**无法证实** ⇒ 登记为**未归因的独立 CI 红灯**，不得写成「已查明是抖动」。
+
+**处置**：本片的**代码与文档已经落地并本地全绿**，但**独立 CI 一项未达成** ⇒
+1. **T2 族收口片 X 不得宣告族闭合**（族级出口判据「独立 CI 绿」缺一不算闭合）；
+2. 本片附一次**纯文档的回填提交**，把本节写进权威文档并**触发新一轮 CI**（run #40）作为裁决；run #40 的裁决由**下一片**回填；
+3. 若下一片仍拿不到 run #39 的日志，**唯一剩下的取证路径**是：owner 提供已登录的 GitHub 会话（右侧浏览器）或安装 `gh`/提供 token。
 
 ## 6'. 固件条数
 
