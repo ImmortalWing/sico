@@ -3426,7 +3426,7 @@ fn sico_compiler_lowers_the_step0507_codegen_functions_byte_exactly() {
         "cgs_core_types_hex",
         "cgs_core_funcs_hex",
         "cgs_core_exports_hex",
-        "cgs_function_return_hex",
+        "cgs_flat_return_hex",
         "cgs_function_body_hex",
         "cgs_core_code_hex",
         "cgs_result_list_hex",
@@ -3437,6 +3437,45 @@ fn sico_compiler_lowers_the_step0507_codegen_functions_byte_exactly() {
         "cg_run_body_hex_from_ir",
         "cgs_local_hex",
         "cgs_run_instr_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0526_codegen_functions_byte_exactly() {
+    // STEP-0526, G-d2: the guest's own branch emission code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its own
+    // code.
+    //
+    // This slice reshaped `cgs_function_instr_hex` (the per-block terminator
+    // and the per-block `end`), reshaped `cgs_function_body_hex` and
+    // `cgs_run_body_hex` (the dispatcher tail), replaced
+    // `cgs_function_return_hex` with the per-value `cgs_flat_return_hex` and
+    // added `cgs_branch_hex`, `cgs_jump_hex`, `cgs_block_terminator_hex` and
+    // `cgs_equal_fixed_hex`.
+    //
+    // The measured shape rules are the ones from STEP-0507: a user call may not
+    // sit directly in a return expression, a call argument may not be another
+    // call, and a host call may not take a host call as its argument -- every
+    // one of them goes through a cell first.  The branch emitters stay inside
+    // them: they only read the IR and concatenate hex.
+    for name in [
+        "cgs_function_instr_hex",
+        "cgs_flat_return_hex",
+        "cgs_branch_hex",
+        "cgs_jump_hex",
+        "cgs_block_terminator_hex",
+        "cgs_equal_fixed_hex",
+        "cgs_function_body_hex",
+        "cgs_run_body_hex",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
@@ -6501,7 +6540,7 @@ fn sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly() {
 // Every slice so far pinned one shape of the `sico.text.concat` family. The
 // family itself was never measured as a table, so "what does the guest
 // support" was an accumulation of per-slice claims. The table below measures
-// thirty-three shapes on four axes -- the Rust frontend's canonical IR, the Rust
+// thirty-six shapes on four axes -- the Rust frontend's canonical IR, the Rust
 // backend's production component, the guest frontend's verdict and the guest
 // emitter's verdict -- and pins the result.
 //
@@ -6517,9 +6556,6 @@ enum GuestVerdict {
     Exact,
     /// The guest frontend refuses the shape with the typed identity.
     FrontendRefused,
-    /// The guest frontend lowers the shape byte for byte, but the component
-    /// emission refuses it with the typed identity.
-    CodegenRefused,
 }
 
 #[test]
@@ -6534,7 +6570,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
     // The rows that are refused are the point of the table: they are the
     // shapes the support-surface registration has to carry (D15), and they
     // are the shapes that keep the family from closing.
-    let rows: [(&str, &str, usize, usize, GuestVerdict); 33] = [
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 36] = [
         (
             "let-binding-parameters",
             "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
@@ -6768,11 +6804,41 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             GuestVerdict::Exact,
         ),
         (
+            // STEP-0523 measured this shape as a component refusal and
+            // STEP-0526 closed it: the emitter emits the per-block terminator,
+            // so the branch, the jump and the two returns all reach the
+            // backend's own bytes.
             "concat-inside-an-if-block",
             "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"a\", a)\n  end if\n  return \"\"\nend function",
             3119,
             1198,
-            GuestVerdict::CodegenRefused,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: an `if` with an `else` arm -- the arm the control
+            // flow cannot reach is an `unreachable` terminator
+            "branch-with-an-else-arm",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return a\n  else:\n    return \"\"\n  end if\nend function",
+            2853,
+            1100,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: a `while` loop -- the back edge is a `jump` terminator
+            "branch-in-a-while-loop",
+            "function join(a: Text) returns Text:\n  let n = U64.literal(0)\n  while U64.equal(n, U64.literal(2)):\n    set n = U64.literal(1)\n  end while\n  return a\nend function",
+            3293,
+            1116,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: two `if` blocks in one body -- six blocks, two
+            // branches and two jumps
+            "two-branches-in-one-body",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return a\n  end if\n  if U64.equal(U64.literal(2), U64.literal(2)):\n    return a\n  end if\n  return \"\"\nend function",
+            3530,
+            1178,
+            GuestVerdict::Exact,
         ),
     ];
     for (label, body, ir_bytes, component_bytes, verdict) in rows {
@@ -6830,27 +6896,40 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
                     .validate_all(&actual)
                     .expect("the guest-emitted component must pass the real Wasm validator");
             }
-            GuestVerdict::CodegenRefused => {
-                // STEP-0523: the frontend lowers the shape byte for byte, but the
-                // component emission refuses it.  That is the state of every
-                // shape that needs a **branch** in the IR: the guest's emitter
-                // only knows a single straight-line block, so the refusal is
-                // about the IR's control flow, not about the T1 family.
-                let RunOutcome::Output(output) = run_guest(&source) else {
-                    panic!("the guest frontend must lower the {label} shape")
-                };
-                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
-                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
-                let RunOutcome::Domain { code, message } =
-                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
-                else {
-                    panic!("the guest must refuse the {label} component with a typed identity")
-                };
-                assert_eq!(code, "invalid-input", "{label}");
-                assert_eq!(message, "unsupported codegen source shape", "{label}");
-            }
         }
     }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_branching_run_function() {
+    // STEP-0526: the emitter learned the branch and the jump terminator, but
+    // the Script `run` returns through the result area, which is a
+    // single-block shape: a `run` whose body branches still has no result
+    // area to return through.
+    //
+    // The frontend lowers the shape byte for byte -- it is the **emission**
+    // that refuses it, with the typed identity.  That is the same state the
+    // removed `CodegenRefused` verdict carried, so it is pinned here instead
+    // of on a truth-table row (a truth-table row cannot bring its own `run`).
+    let source = "function run(flag: Bool) returns I64:\n  if flag:\n    return I64.literal(1)\n  end if\n  return I64.literal(2)\nend function\n";
+    let expected_ir = rust_ir(source);
+    assert_eq!(
+        expected_ir.len(),
+        930,
+        "the measured canonical IR size of the branching run is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("the guest frontend must lower the branching run")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest must refuse the branching run component with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "unsupported codegen source shape");
 }
 
 #[test]
@@ -7370,12 +7449,12 @@ fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
     //   * `declaration_name`  -- a call with **two** arguments inside an `if`
     //     block, and a nested concat beside it.
     //
-    // The first two are the ones this slice closed.  The last two are still
-    // refused -- but not by the frontend: the frontend lowers them byte for
-    // byte, and the **component emission** refuses them, because the guest's
-    // emitter only knows a single straight-line block.  That is a branch gap
-    // in the emitter, not a T1 family gap, and it is pinned here so the
-    // register can name it exactly.
+    // The first two are the ones this slice closed.  The last two -- the S
+    // call sites whose concat sits inside an `if` block -- were refused by
+    // the **component emission** (the frontend lowered them byte for byte),
+    // because the guest's emitter only knew a single straight-line block.
+    // STEP-0526 gave the emitter the branch and the jump terminator, so they
+    // moved into their own test that asserts the byte equality.
     let closed: [(&str, &str, usize, usize); 2] = [
         (
             "s-post-body-hex",
@@ -7426,7 +7505,21 @@ fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
             "the guest-emitted {label} component must equal the Rust backend exactly"
         );
     }
-    let branched: [(&str, &str, usize, usize); 2] = [
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_gd_branch_shapes_byte_exactly() {
+    // STEP-0526, G-d2: the two S call sites whose `sico.text.concat` sits
+    // inside an `if` block -- `cgs_zero_hex` and `declaration_name`.
+    //
+    // STEP-0523 measured them and pinned their **component refusal**: the
+    // frontend lowered them byte for byte, but the guest's emitter only knew
+    // a single straight-line block, so any `if` block hit the wall.  That was
+    // a branch gap in the emitter, not a T1 family gap.
+    //
+    // The emitter now writes the per-block terminator -- the branch, the jump
+    // and the two returns -- so both shapes reach the backend's own bytes.
+    for (label, body, ir_bytes, component_bytes) in [
         (
             "s-zero-hex",
             "function join(kind: Text, slot: U64) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"4100\", helper(slot))\n  end if\n  return \"\"\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
@@ -7439,8 +7532,7 @@ fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
             4387,
             1316,
         ),
-    ];
-    for (label, body, ir_bytes, component_bytes) in branched {
+    ] {
         let source = text_concat_fixture(body);
         let module = rust_module(&source);
         let expected_ir = rust_ir(&source);
@@ -7456,18 +7548,28 @@ fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
             component_bytes,
             "the measured component size is pinned ({label})"
         );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
         let RunOutcome::Output(output) = run_guest(&source) else {
             panic!("the guest frontend must lower the {label} shape")
         };
         assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
-        let RunOutcome::Domain { code, message } =
+        let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-component-hex".into()])
         else {
-            panic!("the guest must refuse the {label} component with a typed identity")
+            panic!("the guest must emit the {label} component")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "unsupported codegen source shape", "{label}");
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&decode_hex(&output.stdout))
+            .expect("the guest-emitted component must pass the real Wasm validator");
     }
 }
 

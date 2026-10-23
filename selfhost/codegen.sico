@@ -3113,7 +3113,35 @@ function cgs_op_hex(bytes: Bytes, run: U64, instr: U64) returns Text:
   if cg_is_word(coph_name, "call"):
     return cgs_call_hex(bytes, run, instr, coph_data, coph_result0)
   end if
+  if cg_is_word(coph_name, "equal_fixed"):
+    return cgs_equal_fixed_hex(bytes, run, coph_data, coph_result0)
+  end if
   return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of a fixed-width equality comparison: the two operand slots, the
+// comparison and the result store.
+//
+// The backend's `emit_fixed_comparison` compares the two operand slots with
+// `i64.eq` and stores the boolean result, and the frontend only lowers this
+// operation for fixed-width operands, so the comparison is the same form for
+// every shape it reaches.
+function cgs_equal_fixed_hex(bytes: Bytes, run: U64, data: U64, result0: U64) returns Text:
+  let cefh_left = cgj_value_text(bytes, cgj_member(bytes, data, "left"))
+  let cefh_right = cgj_value_text(bytes, cgj_member(bytes, data, "right"))
+  let cefh_left_slot = cgs_value_slot(bytes, run, cefh_left)
+  if U64.equal(cefh_left_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cefh_right_slot = cgs_value_slot(bytes, run, cefh_right)
+  if U64.equal(cefh_right_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cefh_out = cgs_local_get_hex(cgs_sub(cefh_left_slot, U64.literal(1)))
+  set cefh_out = sico.text.concat(cefh_out, cgs_local_get_hex(cgs_sub(cefh_right_slot, U64.literal(1))))
+  set cefh_out = sico.text.concat(cefh_out, "51")
+  set cefh_out = sico.text.concat(cefh_out, cgs_local_set_hex(result0))
+  return cefh_out
 end function
 
 // The instruction segment of the Script-profile `run` body: the dispatcher
@@ -3124,7 +3152,7 @@ function cgs_run_instr_hex(bytes: Bytes) returns Text:
   if U64.equal(crih_run, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let crih_instr = cgs_function_instr_hex(bytes, crih_run)
+  let crih_instr = cgs_function_instr_hex(bytes, crih_run, U64.literal(0))
   return crih_instr
 end function
 
@@ -3133,8 +3161,9 @@ end function
 //
 // The shell and the dispatch are the backend's own shape (STEP-0502); STEP-0507
 // applies them to every module function, not just to `run`.
-function cgs_function_instr_hex(bytes: Bytes, fn: U64) returns Text:
+function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
   let crih_run = fn
+  let crih_terms = terms
   let crih_blocks = cgj_member(bytes, crih_run, "blocks")
   if U64.equal(crih_blocks, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
@@ -3184,6 +3213,14 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64) returns Text:
         end if
         set crih_iindex = cg_next(crih_iindex)
       end while
+      if U64.equal(crih_terms, U64.literal(1)):
+        let crih_terminator = cgs_block_terminator_hex(bytes, crih_run, crih_block)
+        if sico.text.starts_with(crih_terminator, "ERR:"):
+          return crih_terminator
+        end if
+        set crih_out = sico.text.concat(crih_out, crih_terminator)
+        set crih_out = sico.text.concat(crih_out, "0b")
+      end if
     end if
     set crih_bindex = cg_next(crih_bindex)
   end while
@@ -4272,35 +4309,18 @@ function cgs_core_exports_hex(bytes: Bytes) returns Text:
   return cceh_out
 end function
 
-// The direct return of the module function `fn`: the returned value's slots,
-// then `return`.
+// The direct return of the value with the id text `value` in the module
+// function `fn`: the returned value's slots, then `return`.
 //
 // The Script `run` returns through the result area instead (its own path);
 // every other function returns its flat value directly, which is the
 // backend's `emit_return` form for a non-`run` callee.
-function cgs_function_return_hex(bytes: Bytes, fn: U64) returns Text:
-  let cgfrh_blocks = cgj_member(bytes, fn, "blocks")
-  if U64.equal(cgfrh_blocks, U64.literal(0)):
-    return "ERR:E-SH-CG-IR-PLAN"
-  end if
-  let cgfrh_block = cgj_array_item(bytes, cgfrh_blocks, U64.literal(0))
-  if U64.equal(cgfrh_block, U64.literal(0)):
-    return "ERR:E-SH-CG-IR-PLAN"
-  end if
-  let cgfrh_term = cgj_member(bytes, cgfrh_block, "terminator")
-  if U64.equal(cgfrh_term, U64.literal(0)):
-    return "ERR:E-SH-CG-IR-PLAN"
-  end if
-  let cgfrh_kind = cgj_ident_text(bytes, cgj_member(bytes, cgfrh_term, "kind"))
-  if cg_is_word(cgfrh_kind, "branch"):
-    return "ERR:E-SH-CG-IR-PLAN"
-  end if
-  let cgfrh_value = cgj_value_text(bytes, cgj_member(bytes, cgfrh_term, "data"))
-  let cgfrh_slot = cgs_value_slot(bytes, fn, cgfrh_value)
+function cgs_flat_return_hex(bytes: Bytes, fn: U64, value: Text) returns Text:
+  let cgfrh_slot = cgs_value_slot(bytes, fn, value)
   if U64.equal(cgfrh_slot, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let cgfrh_ty = cgs_value_ty(bytes, fn, cgfrh_value)
+  let cgfrh_ty = cgs_value_ty(bytes, fn, value)
   if U64.equal(cgfrh_ty, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
@@ -4316,6 +4336,102 @@ function cgs_function_return_hex(bytes: Bytes, fn: U64) returns Text:
   end while
   set cgfrh_out = sico.text.concat(cgfrh_out, "0f")
   return cgfrh_out
+end function
+
+// The branch terminator of a block: the condition, the two dispatch targets
+// and the jump back to the dispatcher loop.
+//
+// The backend's `compile_terminator` writes the condition, an `if`, the two
+// dispatch stores, an `else` and a `br 1`, so the guest writes the same
+// bytes in the same order.
+function cgs_branch_hex(bytes: Bytes, fn: U64, term: U64) returns Text:
+  let cgbh_data = cgj_member(bytes, term, "data")
+  if U64.equal(cgbh_data, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgbh_condition = cgj_value_text(bytes, cgj_member(bytes, cgbh_data, "condition"))
+  if cgs_decimal_bad(cgbh_condition):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgbh_then = cgj_value_text(bytes, cgj_member(bytes, cgbh_data, "then_block"))
+  if cgs_decimal_bad(cgbh_then):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgbh_else = cgj_value_text(bytes, cgj_member(bytes, cgbh_data, "else_block"))
+  if cgs_decimal_bad(cgbh_else):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgbh_slot = cgs_value_slot(bytes, fn, cgbh_condition)
+  if U64.equal(cgbh_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgbh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  if U64.equal(cgbh_dispatcher, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgbh_out = cgs_local_get_hex(cgs_sub(cgbh_slot, U64.literal(1)))
+  set cgbh_out = sico.text.concat(cgbh_out, "0440")
+  set cgbh_out = sico.text.concat(cgbh_out, cgs_i32_const_hex(cgs_decimal_u64(cgbh_then)))
+  set cgbh_out = sico.text.concat(cgbh_out, cgs_local_set_hex(cgbh_dispatcher))
+  set cgbh_out = sico.text.concat(cgbh_out, "05")
+  set cgbh_out = sico.text.concat(cgbh_out, cgs_i32_const_hex(cgs_decimal_u64(cgbh_else)))
+  set cgbh_out = sico.text.concat(cgbh_out, cgs_local_set_hex(cgbh_dispatcher))
+  set cgbh_out = sico.text.concat(cgbh_out, "0b")
+  set cgbh_out = sico.text.concat(cgbh_out, "0c01")
+  return cgbh_out
+end function
+
+// The jump terminator of a block: the dispatch target and the jump back to
+// the dispatcher loop.
+//
+// The backend's `compile_terminator` writes the target store and a `br 1`,
+// so the guest writes the same bytes in the same order.
+function cgs_jump_hex(bytes: Bytes, fn: U64, term: U64) returns Text:
+  let cgjh_target = cgj_value_text(bytes, cgj_member(bytes, term, "data"))
+  if cgs_decimal_bad(cgjh_target):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgjh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  if U64.equal(cgjh_dispatcher, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgjh_out = cgs_i32_const_hex(cgs_decimal_u64(cgjh_target))
+  set cgjh_out = sico.text.concat(cgjh_out, cgs_local_set_hex(cgjh_dispatcher))
+  set cgjh_out = sico.text.concat(cgjh_out, "0c01")
+  return cgjh_out
+end function
+
+// The terminator bytes of the block `block` of the module function `fn`:
+// the flat return, the branch, the jump or the unreachable byte.
+//
+// The Script `run` returns through the result area instead of a flat value,
+// and that return is written by the result-area path, so a terminator for the
+// `run` function is refused here. A terminator kind outside the set above is
+// refused instead of approximated.
+function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64) returns Text:
+  let cbth_term = cgj_member(bytes, block, "terminator")
+  if U64.equal(cbth_term, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cbth_kind = cgj_ident_text(bytes, cgj_member(bytes, cbth_term, "kind"))
+  let cbth_name = cgj_ident_text(bytes, cgj_member(bytes, fn, "name"))
+  if cg_is_word(cbth_name, "run"):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if cg_is_word(cbth_kind, "return"):
+    let cbth_value = cgj_value_text(bytes, cgj_member(bytes, cbth_term, "data"))
+    return cgs_flat_return_hex(bytes, fn, cbth_value)
+  end if
+  if cg_is_word(cbth_kind, "branch"):
+    return cgs_branch_hex(bytes, fn, cbth_term)
+  end if
+  if cg_is_word(cbth_kind, "jump"):
+    return cgs_jump_hex(bytes, fn, cbth_term)
+  end if
+  if cg_is_word(cbth_kind, "unreachable"):
+    return "00"
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
 end function
 
 // The whole body of the module function at `index`: the local declaration
@@ -4338,12 +4454,8 @@ function cgs_function_body_hex(bytes: Bytes, index: U64) returns Text:
   if sico.text.starts_with(cgfh_locals, "ERR:"):
     return ""
   end if
-  let cgfh_code = cgs_function_instr_hex(bytes, cgfh_fn)
+  let cgfh_code = cgs_function_instr_hex(bytes, cgfh_fn, U64.literal(1))
   if sico.text.starts_with(cgfh_code, "ERR:"):
-    return ""
-  end if
-  let cgfh_return = cgs_function_return_hex(bytes, cgfh_fn)
-  if sico.text.starts_with(cgfh_return, "ERR:"):
     return ""
   end if
   let cgfh_local_len = sico.text.length(cgfh_locals)
@@ -4351,8 +4463,7 @@ function cgs_function_body_hex(bytes: Bytes, index: U64) returns Text:
   let cgfh_group_hex = cg_leb_hex(cgfh_groups)
   let cgfh_body = sico.text.concat(cgfh_group_hex, cgfh_locals)
   set cgfh_body = sico.text.concat(cgfh_body, cgfh_code)
-  set cgfh_body = sico.text.concat(cgfh_body, cgfh_return)
-  set cgfh_body = sico.text.concat(cgfh_body, "0b000b0b000b")
+  set cgfh_body = sico.text.concat(cgfh_body, "000b0b000b")
   return cgfh_body
 end function
 
