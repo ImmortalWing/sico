@@ -5970,41 +5970,16 @@ fn sico_compiler_lowers_the_step0518_parser_function_byte_exactly() {
     // slices established for the functions they added.
     //
     // The closure is the transitive callee set of `direct_text_concat_return_ir`
-    // in parser.sico, emitted in file order (the guest frontend refuses
-    // forward-referenced user-function calls). It is the STEP-0512 closure of
+    // in parser.sico, emitted in file order. It is the STEP-0512 closure of
     // the sibling route (`direct_host_call_return_ir`) -- the new route calls
     // the same helpers -- plus the route itself, which sits after them.
-    let base = [
-        "next_index",
-        "word_at",
-        "is_word",
-        "is_ident_byte",
-        "record_named_type",
-        "type_json",
-        "line_end",
-        "intrinsic_instruction_json",
-        "find_text_from",
-        "binding_parameter_index",
-        "matching_close",
-        "is_intrinsic_path",
-        "scalar_type_kind",
-        "binding_parameter_kind",
-        "gw_find_code_text",
-        "return_expression_end",
-        "parameter_name_start",
-        "parameters_ir",
-        "has_return_at",
-        "return_expression_start",
-    ]
-    .iter()
-    .map(|name| parser_function_text(name))
-    .collect::<Vec<_>>()
-    .join("\n");
-    let source = format!(
-        "{}\n{}",
-        base,
-        parser_function_text("direct_text_concat_return_ir")
-    );
+    //
+    // STEP-0523 reshaped the route: the operand lowering moved into
+    // `straight_text_concat_packed` (the helper the `let`-binding routes
+    // already use), so the closure grew by that helper and its own callees.
+    // The closure is now computed from the file instead of being kept by
+    // hand, so it cannot drift out of date when the route changes again.
+    let source = parser_closure_source("direct_text_concat_return_ir");
     let expected = rust_ir(&source);
     let RunOutcome::Output(output) = run_guest(&source) else {
         panic!("direct_text_concat_return_ir closure must compile")
@@ -6073,30 +6048,29 @@ fn sico_compiler_lowers_the_text_concat_as_the_whole_expression_byte_exactly() {
 fn sico_compiler_keeps_the_unclosed_text_concat_shapes_typed_refused() {
     // STEP-0517 / STEP-0518: the knife is one shape, not a widening of the
     // `sico.text.concat` surface. The shapes the STEP-0517 truth slice
-    // measured next to the supported one stay typed refusals:
-    //
-    //   * two literal operands -- the route claims parameter operands only;
-    //   * a nested host call in operand position -- host call eating a host
-    //     call;
-    //   * a mixed operand pair (parameter plus literal).
+    // measured next to the supported one stay typed refusals.
     //
     // STEP-0518 claimed the two-parameter shape whose whole expression is the
     // call -- the shape this pin refused at STEP-0517 -- so that case moved
     // to the STEP-0518 pin above. Every shape the knife does *not* claim
     // keeps the identity the STEP-0517 measurement recorded
     // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    //
+    // STEP-0523 widened the single-`return` route: the three shapes this pin
+    // used to refuse -- two literal operands, a nested host call in operand
+    // position, and a mixed operand pair -- are now **claimed** (they are
+    // pinned byte for byte by the T1 family truth table and by
+    // `sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly`).
+    // The shapes that are still unclaimed are the ones below, and they keep
+    // the same fail-closed identity.
     for (label, body) in [
         (
-            "return-position-literals",
-            "function join() returns Text:\n  return sico.text.concat(\"a\", \"b\")\nend function",
+            "user-call-with-two-arguments",
+            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
         ),
         (
-            "return-position-mixed",
-            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
-        ),
-        (
-            "nested-call",
-            "function join(kind: Text, name: Text) returns Text:\n  return sico.text.concat(kind, sico.text.concat(\":\", name))\nend function",
+            "wrong-operand-kind",
+            "function join(a: U64) returns Text:\n  return sico.text.concat(a, a)\nend function",
         ),
     ] {
         let source = text_concat_fixture(body);
@@ -6566,6 +6540,9 @@ enum GuestVerdict {
     Exact,
     /// The guest frontend refuses the shape with the typed identity.
     FrontendRefused,
+    /// The guest frontend lowers the shape byte for byte, but the component
+    /// emission refuses it with the typed identity.
+    CodegenRefused,
 }
 
 #[test]
@@ -6580,7 +6557,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
     // The rows that are refused are the point of the table: they are the
     // shapes the support-surface registration has to carry (D15), and they
     // are the shapes that keep the family from closing.
-    let rows: [(&str, &str, usize, usize, GuestVerdict); 18] = [
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 24] = [
         (
             "let-binding-parameters",
             "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
@@ -6635,21 +6612,21 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             "function join() returns Text:\n  return sico.text.concat(\"a\", \"b\")\nend function",
             2372,
             1124,
-            GuestVerdict::FrontendRefused,
+            GuestVerdict::Exact,
         ),
         (
             "mixed-operand-pair",
             "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
             2334,
             1113,
-            GuestVerdict::FrontendRefused,
+            GuestVerdict::Exact,
         ),
         (
             "nested-host-call",
             "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, sico.text.concat(b, a))\nend function",
             2447,
             1112,
-            GuestVerdict::FrontendRefused,
+            GuestVerdict::Exact,
         ),
         (
             "literal-operands-with-a-statement",
@@ -6698,7 +6675,7 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
             2334,
             1113,
-            GuestVerdict::FrontendRefused,
+            GuestVerdict::Exact,
         ),
         (
             "literal-in-a-later-function-only",
@@ -6706,6 +6683,48 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
             2721,
             1155,
             GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-second",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-first",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(helper(slot), \"20\")\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-nested",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", sico.text.concat(helper(slot), \"x\"))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            3152,
+            1208,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-chain",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return sico.text.concat(\"21\", helper2(x))\nend function\nfunction helper2(y: U64) returns Text:\n  return \"z\"\nend function",
+            3594,
+            1260,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-arguments",
+            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
+            3036,
+            1185,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            "concat-inside-an-if-block",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"a\", a)\n  end if\n  return \"\"\nend function",
+            3119,
+            1198,
+            GuestVerdict::CodegenRefused,
         ),
     ];
     for (label, body, ir_bytes, component_bytes, verdict) in rows {
@@ -6762,6 +6781,25 @@ fn sico_codegen_guest_pins_the_t1_family_truth_table() {
                 wasmparser::Validator::new()
                     .validate_all(&actual)
                     .expect("the guest-emitted component must pass the real Wasm validator");
+            }
+            GuestVerdict::CodegenRefused => {
+                // STEP-0523: the frontend lowers the shape byte for byte, but the
+                // component emission refuses it.  That is the state of every
+                // shape that needs a **branch** in the IR: the guest's emitter
+                // only knows a single straight-line block, so the refusal is
+                // about the IR's control flow, not about the T1 family.
+                let RunOutcome::Output(output) = run_guest(&source) else {
+                    panic!("the guest frontend must lower the {label} shape")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+                let RunOutcome::Domain { code, message } =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must refuse the {label} component with a typed identity")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "unsupported codegen source shape", "{label}");
             }
         }
     }
@@ -7122,6 +7160,290 @@ fn sico_compiler_lowers_the_step0522_codegen_functions_byte_exactly() {
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {
             panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+/// Every function name `parser.sico` declares.
+fn parser_function_names() -> Vec<&'static str> {
+    PARSER_SOURCE
+        .lines()
+        .filter_map(|line| line.strip_prefix("function "))
+        .filter_map(|rest| rest.split('(').next())
+        .map(|name| name.trim())
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect()
+}
+
+/// The parameter list and the return type of a `parser.sico` function.
+fn parser_signature(name: &str) -> (String, String) {
+    let head = parser_function_text(name)
+        .lines()
+        .next()
+        .expect("the function has a signature line")
+        .to_owned();
+    let open = head.find('(').expect("the signature has parameters");
+    let close = head
+        .rfind(')')
+        .expect("the signature closes its parameters");
+    let params = head[open + 1..close].trim().to_owned();
+    let returns = head[close + 1..]
+        .trim()
+        .trim_start_matches("returns ")
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_owned();
+    (params, returns)
+}
+
+/// A stub for one `parser.sico` function: the real signature, a trivial body.
+fn parser_stub(name: &str) -> String {
+    let (params, returns) = parser_signature(name);
+    let body = match returns.as_str() {
+        "U64" => "U64.literal(0)",
+        "I64" => "I64.literal(0)",
+        "Bool" => "false",
+        "Text" => "\"\"",
+        "Bytes" => "sico.text.encode(\"\")",
+        other => panic!("parser function {name} has an unexpected return type {other}"),
+    };
+    format!("function {name}({params}) returns {returns}:\n  return {body}\nend function\n")
+}
+
+/// The `parser.sico` functions the text calls, in first-call order.
+fn parser_callees(text: &str, own: &str) -> Vec<String> {
+    let names = parser_function_names();
+    let chars: Vec<char> = text.chars().collect();
+    let mut callees: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if !chars[index].is_ascii_alphabetic() && chars[index] != '_' {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < chars.len() && (chars[index].is_ascii_alphanumeric() || chars[index] == '_') {
+            index += 1;
+        }
+        let word: String = chars[start..index].iter().collect();
+        let member = start > 0 && chars[start - 1] == '.';
+        let mut after = index;
+        while after < chars.len() && chars[after] == ' ' {
+            after += 1;
+        }
+        let called = after < chars.len() && chars[after] == '(';
+        if called
+            && !member
+            && word != own
+            && names.contains(&word.as_str())
+            && !callees.contains(&word)
+        {
+            callees.push(word);
+        }
+    }
+    callees
+}
+
+/// A `parser.sico` function with a stub for every function it calls.
+fn parser_function_source(name: &str) -> String {
+    let text = parser_function_text(name);
+    let mut source = String::new();
+    for callee in parser_callees(&text, name) {
+        source.push_str(&parser_stub(&callee));
+    }
+    source.push_str(&text);
+    source
+}
+
+/// The transitive callee closure of one `parser.sico` function, emitted in
+/// **file order** and with the real function texts.
+///
+/// STEP-0518 kept this list by hand. STEP-0523 reshaped the route it
+/// describes -- the route now calls `straight_text_concat_packed` and
+/// `gw_decimal_value` -- so a hand-maintained list drifts out of the closure
+/// the moment the route changes. The closure is computed from the file
+/// instead, which is what the list always meant.
+fn parser_closure_source(name: &str) -> String {
+    let mut wanted: Vec<String> = Vec::new();
+    let mut queue: Vec<String> = vec![name.to_owned()];
+    while let Some(current) = queue.pop() {
+        if wanted.contains(&current) {
+            continue;
+        }
+        let text = parser_function_text(&current);
+        for callee in parser_callees(&text, &current) {
+            if !wanted.contains(&callee) {
+                queue.push(callee);
+            }
+        }
+        wanted.push(current);
+    }
+    let mut ordered: Vec<(usize, String)> = wanted
+        .iter()
+        .map(|item| {
+            (
+                PARSER_SOURCE
+                    .find(&format!("function {item}("))
+                    .expect("the closure member is in the file"),
+                item.clone(),
+            )
+        })
+        .collect();
+    ordered.sort();
+    ordered
+        .iter()
+        .map(|(_, item)| parser_function_text(item))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
+    // STEP-0523, G-d: a function body whose **only** statement is a single
+    // `return` whose expression is a `sico.text.concat` call.
+    //
+    // The route that owns that shape (`direct_text_concat_return_ir`) used to
+    // accept **two `Text` parameters only**.  Every other operand shape -- a
+    // literal, a nested concat, a call to another function -- was refused with
+    // `ERR:E-SH-IR-EXPRESSION`, even though the Rust backend lowers all of
+    // them.  The frozen set S contains six such call sites, so the gap was a
+    // hard blocker for the family (D10: no downgrade).
+    //
+    // The shapes below are the ones S actually contains, spelled out:
+    //   * `cg_post_body_hex`  -- a literal beside a **nested** concat whose
+    //     first operand is a call to another function,
+    //   * `cgs_local_get_hex` -- a literal beside a call to another function,
+    //   * `cgs_zero_hex`      -- the same call inside an `if` block,
+    //   * `declaration_name`  -- a call with **two** arguments inside an `if`
+    //     block, and a nested concat beside it.
+    //
+    // The first two are the ones this slice closed.  The last two are still
+    // refused -- but not by the frontend: the frontend lowers them byte for
+    // byte, and the **component emission** refuses them, because the guest's
+    // emitter only knows a single straight-line block.  That is a branch gap
+    // in the emitter, not a T1 family gap, and it is pinned here so the
+    // register can name it exactly.
+    let closed: [(&str, &str, usize, usize); 2] = [
+        (
+            "s-post-body-hex",
+            "function join(arena_base: U64) returns Text:\n  return sico.text.concat(\"00\", sico.text.concat(helper(arena_base), \"240041ffffffff072401410024020b\"))\nend function\nfunction helper(base: U64) returns Text:\n  return \"z\"\nend function",
+            3190,
+            1237,
+        ),
+        (
+            "s-local-get-hex",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes) in closed {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-d fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+    let branched: [(&str, &str, usize, usize); 2] = [
+        (
+            "s-zero-hex",
+            "function join(kind: Text, slot: U64) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"4100\", helper(slot))\n  end if\n  return \"\"\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            3753,
+            1266,
+        ),
+        (
+            "s-declaration-name",
+            "function join(kind: Text, items: List[Text]) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(helper(items, U64.literal(1)), sico.text.concat(\".\", helper(items, U64.literal(2))))\n  end if\n  return \"\"\nend function\nfunction helper(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            4387,
+            1316,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes) in branched {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-d fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must refuse the {label} component with a typed identity")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0523_parser_functions_byte_exactly() {
+    // STEP-0523, G-d: the route that owns the single-`return` concat shape
+    // (`direct_text_concat_return_ir`) was reshaped, and the guest frontend
+    // has to keep lowering it -- otherwise the bootstrap could never consume
+    // its own frontend code.  This is the same self-hosting shape frontier the
+    // STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 / STEP-0520 / STEP-0521 /
+    // STEP-0522 slices established for the functions they added or reshaped.
+    //
+    // The reshape moved the operand lowering into `straight_text_concat_packed`
+    // -- the helper the `let`-binding routes already use -- so the route no
+    // longer carries its own copy of the operand rules.  The frontier did not
+    // move: the route lowers, and so does the helper it now calls.
+    for name in [
+        "direct_text_concat_return_ir",
+        "straight_text_concat_packed",
+    ] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
         };
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());

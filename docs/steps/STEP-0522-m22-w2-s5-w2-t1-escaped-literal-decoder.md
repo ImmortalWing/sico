@@ -1,6 +1,6 @@
 # STEP-0522 m22-w2 S5 **W2 族 T1 的 G-b 刀**：转义字面量解码 + 空字面量（G-e）
 
-> - status: **implementation complete locally**（本机验证电池 **16/16 `BATTERY_GREEN`**；随本片提交并推送；独立 CI 裁决待下一批回填）
+> - status: **closed**（本机验证电池 **16/16 `BATTERY_GREEN`**；已提交 `8bdd58d` 并推送到 `codex/m22-w1-ci`；**独立 CI run #29 = success ✅**）
 > - date: 2026-10-23
 > - owners: autonomous-agent
 > - depends: [STEP-0521](./STEP-0521-m22-w2-s5-w2-t1-family-truth-table.md)（族级真值表 + D15 登记）、[STEP-0520](./STEP-0520-m22-w2-s5-w2-shared-local-cell-support.md)（cell 共享前置）、[STEP-0519](./STEP-0519-m22-w2-s5-w2-t1-codegen-knife.md)（codegen 刀）
@@ -136,7 +136,7 @@ STEP-0521 记录：`cgs_literal_text` 仍在自举形状前沿之外（guest 前
 | 未闭合项 | 状态 |
 |---|---|
 | **G-d**（单语句 `return` 的非形参操作数） | ⏳ **仍在前端**（S 内 10 个调用点）⇒ 按 D10 **不得降级** |
-| **独立 CI** | 本片推送后触发（上一批 `a5e0b65` 的 **run #28 = success** ✅） |
+| **独立 CI** | ✅ **run #29 = success**（提交 `8bdd58d` ⇒ `codex/m22-w1-ci`） |
 | 语料覆盖 | **0 条**（S 内 2,943 个调用点一个都没进语料） |
 | 整文件自举 | **仍开**（`List[Text]` ⇒ `ERR:E-SH-IR-RECORD-TYPE`） |
 

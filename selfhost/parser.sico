@@ -8927,14 +8927,9 @@ function direct_host_call_let_ir(words: List[Text], src: Bytes, name_idx: U64, b
 end function
 
 // The `sico.text.concat` call in the whole-expression position: the body
-// holds one statement only, and both operands are text parameters.
+// holds one statement only; the operands follow `straight_text_concat_packed`.
 function direct_text_concat_return_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
   let dtcr_n = sico.list.length(words)
-  if U64.equal(parameter_count, U64.literal(2)):
-    let dtcr_arity_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
   if is_word(return_kind, "string"):
     let dtcr_return_ok = I64.literal(1)
   else:
@@ -8974,55 +8969,6 @@ function direct_text_concat_return_ir(words: List[Text], src: Bytes, name_idx: U
   else:
     return "SKIP"
   end if
-  let dtcr_open = next_index(next_index(next_index(next_index(next_index(dtcr_expr, dtcr_n), dtcr_n), dtcr_n), dtcr_n), dtcr_n)
-  if is_word(word_at(words, dtcr_open), "("):
-    let dtcr_open_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  let dtcr_close = matching_close(words, dtcr_open, dtcr_line)
-  if U64.equal(next_index(dtcr_close, dtcr_n), dtcr_line):
-    let dtcr_tail_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  let dtcr_operand0 = next_index(dtcr_open, dtcr_n)
-  let dtcr_separator = next_index(dtcr_operand0, dtcr_n)
-  if is_word(word_at(words, dtcr_separator), ","):
-    let dtcr_separator_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  let dtcr_operand1 = next_index(dtcr_separator, dtcr_n)
-  if U64.equal(next_index(dtcr_operand1, dtcr_n), dtcr_close):
-    let dtcr_pair_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  let dtcr_name0 = word_at(words, dtcr_operand0)
-  let dtcr_name1 = word_at(words, dtcr_operand1)
-  let dtcr_value0 = binding_parameter_index(words, name_idx, dtcr_name0)
-  let dtcr_value1 = binding_parameter_index(words, name_idx, dtcr_name1)
-  if U64.less_than(dtcr_value0, parameter_count):
-    let dtcr_operand0_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  if U64.less_than(dtcr_value1, parameter_count):
-    let dtcr_operand1_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  if is_word(binding_parameter_kind(words, name_idx, dtcr_name0), "string"):
-    let dtcr_kind0_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
-  if is_word(binding_parameter_kind(words, name_idx, dtcr_name1), "string"):
-    let dtcr_kind1_ok = I64.literal(1)
-  else:
-    return "SKIP"
-  end if
   let dtcr_parameters = parameters_ir(words, name_idx, src, fn_start)
   if sico.text.starts_with(dtcr_parameters, "ERR:"):
     return dtcr_parameters
@@ -9032,14 +8978,30 @@ function direct_text_concat_return_ir(words: List[Text], src: Bytes, name_idx: U
     return "SKIP"
   end if
   let dtcr_expression_end = return_expression_end(src, dtcr_expression_start)
-  let dtcr_operand0_text = sico.u64.to_text(dtcr_value0)
-  let dtcr_operand1_text = sico.u64.to_text(dtcr_value1)
-  let dtcr_pair_body = sico.text.concat(dtcr_operand0_text, ",")
-  let dtcr_pair_open = sico.text.concat("[", dtcr_pair_body)
-  let dtcr_pair_mid = sico.text.concat(dtcr_pair_open, dtcr_operand1_text)
-  let dtcr_arguments = sico.text.concat(dtcr_pair_mid, "]")
-  let dtcr_result = parameter_count
-  let dtcr_instructions = intrinsic_instruction_json(dtcr_result, "string", "sico.text.concat", dtcr_arguments, dtcr_expression_start, dtcr_expression_end)
+  let dtcr_empty_names = sico.text.split_lines("")
+  let dtcr_empty_kinds = sico.text.split_lines("")
+  let dtcr_empty_values = sico.list.empty[U64]()
+  let dtcr_pack = straight_text_concat_packed(words, src, name_idx, dtcr_expr, dtcr_line, dtcr_expression_start, dtcr_expression_end, "cell", dtcr_empty_names, dtcr_empty_kinds, dtcr_empty_values, parameter_count, parameter_count)
+  if sico.text.starts_with(dtcr_pack, "ERR:"):
+    return "SKIP"
+  end if
+  let dtcr_parts = sico.text.split_lines(dtcr_pack)
+  let dtcr_index0 = U64.literal(0)
+  let dtcr_index1 = U64.literal(1)
+  let dtcr_index3 = U64.literal(3)
+  let dtcr_index4 = U64.literal(4)
+  let dtcr_result = gw_decimal_value(word_at(dtcr_parts, dtcr_index1))
+  let dtcr_inner = word_at(dtcr_parts, dtcr_index3)
+  let dtcr_intrinsic = word_at(dtcr_parts, dtcr_index4)
+  if is_word(dtcr_inner, "-"):
+    set dtcr_inner = ""
+  end if
+  let dtcr_instructions = dtcr_inner
+  let dtcr_inner_length = sico.text.length(dtcr_inner)
+  if U64.less_than(U64.literal(0), dtcr_inner_length):
+    set dtcr_instructions = sico.text.concat(dtcr_inner, ",")
+  end if
+  set dtcr_instructions = sico.text.concat(dtcr_instructions, dtcr_intrinsic)
   let dtcr_end_offset = gw_find_code_text(src, "end function", fn_start)
   let dtcr_fn_end = fn_start
   match U64.checked_add(dtcr_end_offset, U64.literal(13)):

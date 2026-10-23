@@ -170,12 +170,47 @@ $cases = @(
     @{
         Name = 'text-concat-with-literal-operands'
         Source = "function join() returns Text:`n  return sico.text.concat(""a"", ""b"")`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+        Expected = 'lowered'
     }
     @{
         Name = 'text-concat-with-a-mixed-operand-pair'
         Source = "function join(a: Text) returns Text:`n  return sico.text.concat(a, ""\t"")`nend function`n"
+        Expected = 'lowered'
+    }
+    # STEP-0523: the single-`return` route used to accept two `Text`
+    # parameters only, so every other operand shape was refused even though
+    # the Rust backend lowers it. The route now shares the operand lowering
+    # with the `let`-binding routes, and these cases pin the widened frontier.
+    @{
+        Name = 'text-concat-with-a-user-call-operand'
+        Source = "function join(slot: U64) returns Text:`n  return sico.text.concat(""20"", helper(slot))`nend function`n`nfunction helper(x: U64) returns Text:`n  return ""z""`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-a-user-call-operand-first'
+        Source = "function join(slot: U64) returns Text:`n  return sico.text.concat(helper(slot), ""20"")`nend function`n`nfunction helper(x: U64) returns Text:`n  return ""z""`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-concat-with-a-nested-user-call-operand'
+        Source = "function join(slot: U64) returns Text:`n  return sico.text.concat(""20"", sico.text.concat(helper(slot), ""x""))`nend function`n`nfunction helper(x: U64) returns Text:`n  return ""z""`nend function`n"
+        Expected = 'lowered'
+    }
+    # A user call with **two** arguments is still outside the operand rules the
+    # route borrows: the operand helper lowers one argument per call.
+    @{
+        Name = 'text-concat-with-a-two-argument-user-call-operand'
+        Source = "function join(a: Text, b: U64) returns Text:`n  return sico.text.concat(helper(a, b), ""20"")`nend function`n`nfunction helper(x: Text, y: U64) returns Text:`n  return ""z""`nend function`n"
         Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    # The frontend lowers a concat inside an `if` block; the **component
+    # emission** refuses it, because the guest's emitter only knows a single
+    # straight-line block. This probe measures the frontend, so the verdict is
+    # `lowered` -- the emitter gap is registered in the T1 support surface.
+    @{
+        Name = 'text-concat-inside-an-if-block'
+        Source = "function join(a: Text) returns Text:`n  if U64.equal(U64.literal(1), U64.literal(1)):`n    return sico.text.concat(""a"", a)`n  end if`n  return """"`nend function`n"
+        Expected = 'lowered'
     }
     # STEP-0521: the same operand kinds lower byte for byte once the body
     # carries one more statement, so the refusal above is a route gate, not a
