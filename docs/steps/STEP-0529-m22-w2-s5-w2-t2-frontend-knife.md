@@ -247,10 +247,10 @@ end function
 
 ⇒ **BATTERY_GREEN 19/19**
 
-### 6.3 独立 CI 回填（run #35）
+### 6.3 独立 CI 回填（run #35 / run #36）
 
 - **STEP-0528** 推送（`25e752a`）触发的 **run #35**（run id `40004257414`，head_sha `25e752ab765951bd9be157c8462095ed16b5a303`）= ✅ **success**（2026-10-24 本机经 GitHub API 复核）。
-- **本片**推送后触发新一轮，裁决由**下一片**回填。
+- **本片**推送（`e5f657a`）触发的 **run #36**（run id `40016972272`，head_sha `e5f657a7455e9f173032ada52d5f43ccc75d0266`）= ✅ **success**（2026-10-24 本机经 GitHub API 复核，**由 STEP-0530 回填**）。
 
 ## 7. 诚实性
 

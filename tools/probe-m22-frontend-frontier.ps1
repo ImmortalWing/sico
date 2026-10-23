@@ -321,6 +321,16 @@ $cases = @(
         Source = "function size(src: Bytes) returns U64:`n  let n = sico.text.length(sico.bytes.utf8_decode(src))`n  return n`nend function`n"
         Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
     }
+    # STEP-0530: the T2 codegen knife moved the **component** layer, not the
+    # frontend, so the nested-call-argument boundary is unchanged -- and this
+    # case pins the *return* position of that boundary, which is the shape the
+    # T2-g2 knife has to move next.  The oracle lowers and emits it (1183 B);
+    # the guest frontend still refuses it with the same typed identity.
+    @{
+        Name = 'text-length-over-a-nested-call-argument-in-a-return-position'
+        Source = "function size(t: Text) returns U64:`n  return sico.text.length(sico.text.concat(t, `"x`"))`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
     @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"

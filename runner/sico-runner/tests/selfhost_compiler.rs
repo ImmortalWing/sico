@@ -7993,37 +7993,181 @@ fn the_text_length_argument_type_is_refused_by_the_rust_frontend_itself() {
 }
 
 #[test]
-fn sico_codegen_guest_refuses_the_text_length_component_outside_the_subset() {
-    // STEP-0528, T2 truth (emitter side): the guest frontend lowers the
-    // `sico.text.length` shapes byte for byte, but the **emitter** does not
-    // know the operator yet -- `cgs_intrinsic_hex` recognizes
-    // `sico.bytes.length` and `sico.text.concat` only, so the component is
-    // refused with the typed identity.
+fn sico_codegen_guest_emits_the_text_length_component_byte_exactly() {
+    // STEP-0530, T2 codegen knife: the guest **emitter** knows the
+    // `sico.text.length` operator now, and the component it emits is byte for
+    // byte the Rust backend's own production component -- not merely a
+    // component that passes the validator.
     //
-    // The Rust backend emits the very same shape (1167 B) and it passes the
-    // real Wasm validator, so the gap is the guest's emitter, not the shape.
-    let body = "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function";
-    let source = text_length_fixture(body);
-    let module = rust_module(&source);
-    let expected_component = codegen_oracle::compile_script_program(&module)
-        .expect("the Rust backend emits the Script-profile Component for the family fixture");
-    assert_eq!(
-        expected_component.len(),
-        1167,
-        "the measured oracle component size is pinned"
-    );
-    wasmparser::Validator::new()
-        .validate_all(&expected_component)
-        .expect("the oracle component must pass the real Wasm validator");
-    let RunOutcome::Output(output) = run_guest(&source) else {
-        panic!("the guest frontend must lower the text-length shape")
-    };
-    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
-    let RunOutcome::Domain { code, message } =
-        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
-    else {
-        panic!("the guest must refuse the text-length component with a typed identity")
-    };
-    assert_eq!(code, "invalid-input");
-    assert_eq!(message, "unsupported codegen source shape");
+    // The measured truth (never designed, all of it read out of the oracle's
+    // production component):
+    //
+    //   * the helper's core function index is `function_count + 3`, plus one
+    //     more when the module also carries `sico.text.concat` -- the two
+    //     builtin helpers are ordered by their dotted names, so
+    //     `sico.text.concat` is always the first and `sico.text.length` the
+    //     second;
+    //   * the helper's type is `(i32, i32) -> i32` and its body is the locals
+    //     declaration `01 02 7f` (one group of two i32) followed by 51 B of
+    //     code that counts the bytes that are not continuation bytes, so the
+    //     result is the number of UTF-8 code points;
+    //   * the call site is `local.get <ptr>; local.get <len>; call <helper>;
+    //     i64.extend_i32_u (0xad); local.set <result>`.
+    for (label, body, component_bytes) in [
+        (
+            "if-condition",
+            "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1167,
+        ),
+        (
+            "concat-and-length-in-one-module",
+            "function size(t: Text) returns U64:\n  let s = sico.text.concat(t, \"x\")\n  return sico.text.length(s)\nend function",
+            1183,
+        ),
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t)\n  return n\nend function",
+            1091,
+        ),
+        (
+            "local-alias",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = sico.text.length(x)\n  return n\nend function",
+            1091,
+        ),
+        (
+            "set-position",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
+            1113,
+        ),
+        (
+            "two-calls-in-one-function",
+            "function size(t: Text) returns U64:\n  let a = sico.text.length(t)\n  let b = sico.text.length(t)\n  if U64.equal(a, b):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1197,
+        ),
+        (
+            "two-functions",
+            "function first(t: Text) returns U64:\n  return sico.text.length(t)\nend function\n\nfunction second(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            1139,
+        ),
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            1091,
+        ),
+        (
+            "return-position-with-a-literal",
+            "function size() returns U64:\n  return sico.text.length(\"ab\")\nend function",
+            1111,
+        ),
+        (
+            "inside-an-if-block",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    set n = sico.text.length(t)\n  end if\n  return n\nend function",
+            1187,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the family fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} text-length component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset() {
+    // STEP-0530: the guest emitter's remaining refusals are **not**
+    // `sico.text.length` gaps, and the pin says so with a control shape.
+    //
+    // The guest emitter refuses a module whose function body carries a
+    // `while` loop, **whether or not** the loop body carries a length call.
+    // The oracle emits both shapes, so the refusal belongs to the loop shape
+    // -- the guest emitter only knows a single straight-line block -- and not
+    // to this family.  Recording the control shape is what keeps the
+    // remaining gaps honest: a refusal that survives without the operator in
+    // it is not an operator gap.
+    for (label, body, component_bytes) in [
+        (
+            "loop-without-a-length-call",
+            "function size(t: Text) returns U64:\n  let total = U64.literal(0)\n  let more = U64.literal(1)\n  while U64.less_than(U64.literal(0), more):\n    set total = U64.literal(7)\n    set more = U64.literal(0)\n  end while\n  return total\nend function",
+            1142,
+        ),
+        (
+            "loop-with-a-length-call",
+            "function size(t: Text) returns U64:\n  let total = U64.literal(0)\n  let more = U64.literal(1)\n  while U64.less_than(U64.literal(0), more):\n    set total = sico.text.length(t)\n    set more = U64.literal(0)\n  end while\n  return total\nend function",
+            1209,
+        ),
+        (
+            "loop-condition-with-a-length-call",
+            "function size(t: Text) returns U64:\n  let i = U64.literal(0)\n  while U64.less_than(i, sico.text.length(t)):\n    set i = U64.literal(1)\n  end while\n  return i\nend function",
+            1187,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the loop fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} loop shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
+#[test]
+fn the_guest_frontend_narrower_than_the_oracle_on_the_u64_bit_operators() {
+    // STEP-0530: the guest frontend refuses `U64.bit_or` and `U64.shr` with
+    // `ERR:E-SH-IR-EXPRESSION` while the oracle lowers and emits them.  The
+    // refusal is **not** a `sico.text.length` gap -- it reproduces without
+    // the operator in the source -- so it is registered as the guest
+    // frontend's own narrowness and kept out of this family's accounting.
+    for (label, body) in [
+        (
+            "bit-or",
+            "function size(t: Text) returns U64:\n  let a = U64.literal(1)\n  let b = U64.literal(2)\n  return U64.bit_or(a, b)\nend function",
+        ),
+        (
+            "shift-right",
+            "function size(t: Text) returns U64:\n  let a = U64.literal(1)\n  return U64.shr(a, U64.literal(1))\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} operator")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the operator fixture");
+        assert_eq!(
+            expected.len(),
+            1039,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+    }
 }
