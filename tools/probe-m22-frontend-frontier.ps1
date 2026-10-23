@@ -266,6 +266,35 @@ $cases = @(
         Source = "function join(a: Text, b: Text) returns Text:`n  let x = a`n  return sico.text.concat(a, b)`nend function`n"
         Expected = 'lowered'
     }
+    # STEP-0528: the T2 family (`sico.text.length`).  The measurement split the
+    # family in two: the condition positions lower byte for byte, the
+    # statement positions stay typed refusals.  These five cases pin that
+    # measured frontier; the family knife flips them deliberately.
+    @{
+        Name = 'text-length-in-an-if-condition'
+        Source = "function size(t: Text) returns U64:`n  if U64.equal(sico.text.length(t), U64.literal(2)):`n    return U64.literal(1)`n  end if`n  return U64.literal(0)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-in-a-while-condition'
+        Source = "function size(t: Text) returns U64:`n  let i = U64.literal(0)`n  while U64.less_than(i, sico.text.length(t)):`n    set i = U64.literal(1)`n  end while`n  return i`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-inside-an-if-block'
+        Source = "function size(t: Text) returns U64:`n  let n = U64.literal(0)`n  if U64.equal(U64.literal(1), U64.literal(1)):`n    set n = sico.text.length(t)`n  end if`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-in-a-let-binding'
+        Source = "function size(t: Text) returns U64:`n  let n = sico.text.length(t)`n  return n`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
+    @{
+        Name = 'text-length-in-a-set-position'
+        Source = "function size(t: Text) returns U64:`n  let n = U64.literal(0)`n  set n = sico.text.length(t)`n  return n`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-EXPRESSION'
+    }
     @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"

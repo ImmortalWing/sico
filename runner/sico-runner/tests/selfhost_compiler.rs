@@ -7726,3 +7726,193 @@ fn sico_compiler_lowers_the_step0524_parser_functions_byte_exactly() {
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
 }
+// ---------------------------------------------------------------------------
+// STEP-0528: the T2 family truth -- `sico.text.length` over one `Text` argument.
+//
+// STEP-0527 closed the T1 family (`sico.text.concat`). STEP-0528 measures the
+// next family by call-site count in S: `sico.text.length`.
+//
+// Every number below is measured from the Rust frontend's canonical IR and the
+// Rust backend's own production component -- never designed.
+// ---------------------------------------------------------------------------
+
+/// The Script-profile prelude and the `run` entry, shared with the T1 family
+/// fixtures so the two families stay comparable.
+fn text_length_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_length_in_a_condition_position_byte_exactly() {
+    // STEP-0528, T2 truth (frontend side): the `sico.text.length` call is
+    // **already** lowered by the guest frontend in the positions the S call
+    // sites use -- the `if` condition, the `while` condition and a statement
+    // inside a branch block -- byte for byte equal to the Rust frontend's
+    // canonical IR, not merely shape-equal.
+    //
+    // The canonical shape is one `intrinsic` operation named
+    // `sico.text.length` whose single argument is the argument value id:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.length","arguments":[0]}}
+    //
+    // The route that reaches these positions is the generic host-call route
+    // (`gw_intrinsic_call_packed`, `selfhost/parser.sico:7001`); the straight
+    // cell route family (`straight_cell_function_ir`) recognizes
+    // `sico.text.concat` only, which is why the statement positions below
+    // stay refusals.
+    for (label, body, ir_bytes) in [
+        (
+            "if-condition",
+            "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            2991,
+        ),
+        (
+            "while-condition",
+            "function size(t: Text) returns U64:\n  let i = U64.literal(0)\n  while U64.less_than(i, sico.text.length(t)):\n    set i = U64.literal(1)\n  end while\n  return i\nend function",
+            3446,
+        ),
+        (
+            "inside-an-if-block",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    set n = sico.text.length(t)\n  end if\n  return n\nend function",
+            3437,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"name\":\"sico.text.length\""),
+            "the intrinsic keeps its dotted name: {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_keeps_the_unclosed_text_length_positions_typed_refused() {
+    // STEP-0528, T2 truth: the measurement split the family in two.  The
+    // condition positions lower (see the pin above); the **statement**
+    // positions -- a `let` binding, a `set`, a single-`return` body, a literal
+    // argument and a nested call argument -- do not, and they keep the
+    // fail-closed identity the measurement recorded
+    // (`ERR:E-SH-IR-EXPRESSION`).
+    //
+    // 320 of the 322 S call sites pass a local or a parameter as the
+    // argument, so these are the shapes the family knife has to claim; the
+    // two nested-call sites are a separate shape of their own.
+    for (label, body) in [
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+        ),
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t)\n  return n\nend function",
+        ),
+        (
+            "return-position-with-a-literal",
+            "function size() returns U64:\n  return sico.text.length(\"ab\")\nend function",
+        ),
+        (
+            "let-binding-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = sico.text.length(x)\n  return n\nend function",
+        ),
+        (
+            "let-binding-with-a-user-call",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
+        ),
+        (
+            "let-binding-with-a-host-call",
+            "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+        ),
+        (
+            "set-position",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} text-length shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+    }
+}
+
+#[test]
+fn the_text_length_arity_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0528, T2 truth: the arity boundary of `sico.text.length` is
+    // enforced by the **semantic layer**, not by the IR layer -- the Rust
+    // frontend itself refuses zero arguments and two arguments with
+    // `stdlib intrinsic arity`.
+    //
+    // The guest frontend must not invent its own arity check, and the guest's
+    // refusal on these shapes is not a guest-specific gap.
+    for (label, body) in [
+        (
+            "no-argument",
+            "function size() returns U64:\n  let n = sico.text.length()\n  return n\nend function",
+        ),
+        (
+            "two-arguments",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t, t)\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let source_file = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source)
+            .expect("the fixture source is bounded");
+        let error = match lower_core(&source_file) {
+            Ok(_) => panic!("the Rust frontend must refuse the {label} arity"),
+            Err(error) => format!("{error:?}"),
+        };
+        assert!(
+            error.contains("stdlib intrinsic arity"),
+            "the {label} arity must be refused by the semantic layer: {error}"
+        );
+    }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_text_length_component_outside_the_subset() {
+    // STEP-0528, T2 truth (emitter side): the guest frontend lowers the
+    // `sico.text.length` shapes byte for byte, but the **emitter** does not
+    // know the operator yet -- `cgs_intrinsic_hex` recognizes
+    // `sico.bytes.length` and `sico.text.concat` only, so the component is
+    // refused with the typed identity.
+    //
+    // The Rust backend emits the very same shape (1167 B) and it passes the
+    // real Wasm validator, so the gap is the guest's emitter, not the shape.
+    let body = "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function";
+    let source = text_length_fixture(body);
+    let module = rust_module(&source);
+    let expected_component = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the family fixture");
+    assert_eq!(
+        expected_component.len(),
+        1167,
+        "the measured oracle component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected_component)
+        .expect("the oracle component must pass the real Wasm validator");
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest frontend must lower the text-length shape")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest must refuse the text-length component with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "unsupported codegen source shape");
+}
