@@ -6281,6 +6281,10 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
     // `cgs_function_has_intrinsic` / `cgs_module_has_intrinsic`), so the
     // `sico.bytes.utf8_decode` core helper could join the same scan. The
     // frozen `cg_utf8_validate_helper_body_hex` is new in the same slice.
+    //
+    // STEP-0539 (emitter vocabulary A-2) adds the two four-slot numeric
+    // intrinsics: the shared numeric-error arm, the two intrinsic emitters
+    // and the `local.tee` byte helper they need.
     for name in [
         "cgs_function_count",
         "cgs_instruction_is_intrinsic",
@@ -6293,6 +6297,10 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
         "cgs_core_types_hex",
         "cgs_core_funcs_hex",
         "cgs_core_code_hex",
+        "cgs_local_tee_hex",
+        "cgs_numeric_error_hex",
+        "cgs_list_get_hex",
+        "cgs_bytes_slice_hex",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
@@ -8699,19 +8707,27 @@ fn the_match_construct_truth_is_measured_and_pinned() {
     // backend's -- see
     // `sico_codegen_guest_emits_the_match_component_bytes_byte_exactly`.
     //
-    // The `sico.list.get` head is still refused: the emitter carries no host
-    // call transport for that intrinsic yet (gap M-g3'), so a refused shape
-    // stays a typed refusal instead of an approximation.
+    // STEP-0539 (emitter vocabulary A-2) moved the `sico.list.get` head: the
+    // emitter carries that intrinsic's call site now, so the shape is no
+    // longer a typed refusal but a component that is byte for byte the
+    // production backend's.
     let source = match_fixture(
         "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
     );
-    let RunOutcome::Domain { code, message } =
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the list.get fixture");
+    let RunOutcome::Output(output) =
         run_guest_with_args(&source, vec!["--emit-component-hex".into()])
     else {
-        panic!("the guest emitter must refuse the list.get match component")
+        panic!("the guest emitter must emit the list.get match component")
     };
-    assert_eq!(code, "invalid-input");
-    assert_eq!(message, "unsupported codegen source shape");
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_eq!(
+        decode_hex(&output.stdout),
+        expected,
+        "the list.get match head component must be byte for byte equal"
+    );
 }
 
 #[test]
@@ -8842,19 +8858,34 @@ fn sico_codegen_guest_emits_the_match_component_bytes_byte_exactly() {
             "{label}: the guest\'s match component must be byte for byte equal"
         );
     }
-    // The `sico.list.get` head is still refused: the emitter carries no host
-    // call transport for that intrinsic yet.  A refused shape stays a typed
-    // refusal instead of an approximation.
+    // STEP-0539 (emitter vocabulary A-2) moved the `sico.list.get` head: the
+    // emitter carries that intrinsic's call site now, so the shape leaves the
+    // refusal group and joins the byte-exact group above.  The component is
+    // byte for byte the production backend's, the error arm included.
     let source = match_fixture(
         "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
     );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the list.get fixture");
     assert_eq!(
-        run_guest_with_args(&source, vec!["--emit-component-hex".into()]),
-        RunOutcome::Domain {
-            code: "invalid-input".into(),
-            message: "unsupported codegen source shape".into(),
-        },
-        "the list.get match head must stay a typed refusal"
+        expected.len(),
+        1246,
+        "the measured list.get match head component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured list.get component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the list.get match head component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the list.get match head component must be byte for byte equal"
     );
 }
 
@@ -10269,6 +10300,110 @@ fn the_result_layout_and_the_checked_arithmetic_boundaries_are_pinned() {
         ),
         GuestEmission::Component(hex) => {
             panic!("the signed checked shape must stay a typed refusal, got {hex}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0539 (emitter vocabulary A-2): the two inline intrinsics that carry a
+// four-slot numeric `Result`.
+//
+// `sico.list.get` and `sico.bytes.slice` are the two intrinsics the frozen S
+// uses most that return `Result[..., NumericError]`.  That result flattens into
+// **four** slots -- the tag, the `(pointer, length)` pair of the payload and the
+// `NumericError` discriminant -- and both intrinsics are emitted **inline**:
+// the backend writes the call site and the error arm, and needs no core
+// helper.  The `ok` and the `error` arm therefore live in the same function
+// body, and the byte-exact comparison below covers both of them.
+// ---------------------------------------------------------------------------
+
+/// The `sico.list.get` shape of the frozen S: the intrinsic inside a `match`,
+/// with the `ok` arm projecting the element and the `error` arm the fallback.
+fn list_get_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function word_at(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"?\"\n  end match\nend function",
+    ))
+}
+
+/// The `sico.bytes.slice` shape of the frozen S: the intrinsic inside a
+/// `match`, with the `ok` arm decoding the sliced bytes.
+fn bytes_slice_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function slice_text(src: Bytes, start: U64, len: U64) returns Text:\n  match sico.bytes.slice(src, start, len):\n    case ok(part):\n      return sico.bytes.utf8_decode(part)\n    case error(_):\n      return \"?\"\n  end match\nend function",
+    ))
+}
+
+/// The same `sico.list.get` call with its index argument removed: the
+/// intrinsic's own arity gate must stay a typed refusal on both sides.
+fn list_get_without_index_module() -> Module {
+    let mut module = list_get_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.list.get" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_a2_covers_the_list_get_and_bytes_slice_shapes() {
+    // STEP-0539 (emitter vocabulary A-2): the two four-slot numeric intrinsics.
+    // The guest's component is byte for byte the Rust backend's production
+    // component -- not only its length -- and both sides pass the real
+    // `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("list-get", list_get_shape_module(), 1255),
+        ("bytes-slice", bytes_slice_shape_module(), 1769),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the same intrinsic without its index argument is
+    // refused by the Rust verifier and by the guest's own arity gate.
+    let malformed = list_get_without_index_module();
+    assert!(
+        codegen_oracle::compile_script_program(&malformed).is_err(),
+        "the Rust oracle must refuse the list.get call without its index"
+    );
+    match guest_emission(&injected_ir(&malformed)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "the guest must refuse the list.get call without its index"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the guest must refuse the list.get call without its index, got {hex}")
         }
     }
 }

@@ -154,4 +154,11 @@
 
 **独立 CI 裁决**：本片提交推送后触发 `codex/m22-w1-ci` 的 **run #49**；其裁决**由下一片回填**（不在本片预写结论）。
 
+## 6.1 addendum（2026-10-25，由 STEP-0539 回填）
+
+> - **独立 CI 裁决已出**：本片提交 `5c61771` ⇒ run **#49** = `completed` / **`success`**（id `40100457405`，`windows-gnu` job，13:58:54Z → 14:33:39Z = **34m45s**）⇒ **STEP-0538 的独立 CI 裁决为 GO**。
+> - **§2.3 / §2.4 的预测被 STEP-0539 实测确认**：本片 §2.3 记的「发射词表 B = 8 项 helper」清单，在 STEP-0539 刷新普查后**逐项、逐站点数**仍对上（`sico.bytes.equal` 156 / `sico.u64.to_text` 144 / `sico.text.starts_with` 136 / `sico.list.get[U64]` 73 / `sico.text.split_lines` 60 / `sico.list.empty[U64]` 16 / `sico.list.append` 11 / `sico.list.append[U64]` 6）。
+> - **§2.4 的 A-2 预测已兑现**：本片 §4 写的「A-2 只做 `sico.list.get` ⇒ **单独**就能闭合 **MS-017**」被 STEP-0539 实测确认（MS-017 `parser.sico:word_span_offset` 由 `component-refused` 变为 `component-equal`；组件级全等 **13 → 14 / 396**）。
+> - **本片的「组件级全等 13 / 396」「组件被拒 164」是本片快照的实测值**；当前口径以 [`docs/STATUS.md`](../STATUS.md) 与 [STEP-0539](./STEP-0539-m22-w2-s5-emitter-vocabulary-a2.md) 为准（**14 / 396**、组件被拒 **163**）。
+
 ---

@@ -1350,11 +1350,24 @@ function cgs_flat_hex(bytes: Bytes, ty: U64) returns Text:
       if cg_is_word(cgsfh_ok_kind, "u64"):
         set cgsfh_ok_fixed = U64.literal(1)
       end if
+      let cgsfh_ok_pair = U64.literal(0)
+      if cg_is_word(cgsfh_ok_kind, "string"):
+        set cgsfh_ok_pair = U64.literal(1)
+      end if
+      if cg_is_word(cgsfh_ok_kind, "bytes"):
+        set cgsfh_ok_pair = U64.literal(1)
+      end if
       if cg_is_word(cgsfh_error_name, "NumericError"):
         if U64.equal(cgsfh_ok_fixed, U64.literal(1)):
           let cgsfh_numeric_hex = "017f"
           set cgsfh_numeric_hex = sico.text.concat(cgsfh_numeric_hex, cgsfh_ok_hex)
           return cgsfh_numeric_hex
+        end if
+        if U64.equal(cgsfh_ok_pair, U64.literal(1)):
+          let cgsfh_pair_hex = "017f"
+          set cgsfh_pair_hex = sico.text.concat(cgsfh_pair_hex, cgsfh_ok_hex)
+          set cgsfh_pair_hex = sico.text.concat(cgsfh_pair_hex, "017f")
+          return cgsfh_pair_hex
         end if
       end if
       return ""
@@ -1722,6 +1735,11 @@ end function
 // The bytes of a `local.set` of the slot.
 function cgs_local_set_hex(slot: U64) returns Text:
   return sico.text.concat("21", cg_leb_hex(slot))
+end function
+
+// The bytes of a `local.tee` of the slot: the value stays on the stack.
+function cgs_local_tee_hex(slot: U64) returns Text:
+  return sico.text.concat("22", cg_leb_hex(slot))
 end function
 
 // The bytes of an `i32.const` of the value.
@@ -3201,6 +3219,12 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
   end if
   if cg_is_word(cih_name, "sico.bytes.at"):
     return cgs_bytes_at_hex(bytes, run, instr, data, result0)
+  end if
+  if cg_is_word(cih_name, "sico.list.get"):
+    return cgs_list_get_hex(bytes, run, instr, data, result0)
+  end if
+  if cg_is_word(cih_name, "sico.bytes.slice"):
+    return cgs_bytes_slice_hex(bytes, run, instr, data, result0)
   end if
   return "ERR:E-SH-CG-IR-EMIT"
 end function
@@ -5109,6 +5133,242 @@ function cgs_bytes_at_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0
   set cbah_out = sico.text.concat(cbah_out, cgs_local_set_hex(result0))
   set cbah_out = sico.text.concat(cbah_out, "0b")
   return cbah_out
+end function
+
+// The bytes of the numeric-error arm of a four-slot numeric Result.
+//
+// The backend's `emit_numeric_error` writes the error tag, the empty pair and
+// the `NumericError.overflow` discriminant, and the Script profile seeds that
+// discriminant to the constant zero, so the guest writes the same bytes in the
+// same order.
+function cgs_numeric_error_hex(tag: U64, pointer: U64, length: U64, error_tag: U64) returns Text:
+  let cneh_out = cgs_i32_const_hex(U64.literal(1))
+  set cneh_out = sico.text.concat(cneh_out, cgs_local_set_hex(tag))
+  set cneh_out = sico.text.concat(cneh_out, cgs_i32_const_hex(U64.literal(0)))
+  set cneh_out = sico.text.concat(cneh_out, cgs_local_set_hex(pointer))
+  set cneh_out = sico.text.concat(cneh_out, cgs_i32_const_hex(U64.literal(0)))
+  set cneh_out = sico.text.concat(cneh_out, cgs_local_set_hex(length))
+  set cneh_out = sico.text.concat(cneh_out, cgs_i32_const_hex(U64.literal(0)))
+  set cneh_out = sico.text.concat(cneh_out, cgs_local_set_hex(error_tag))
+  return cneh_out
+end function
+
+// The bytes of the list element intrinsic.
+//
+// The backend's `sico.list.get` reads the element when the index is inside the
+// list and writes the numeric error otherwise; the element record is three
+// i32s wide and the pair is swapped into place at the end, so the guest writes
+// the same bytes in the same order.
+function cgs_list_get_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let clgh_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(clgh_arguments, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_first = cgj_array_item(bytes, clgh_arguments, U64.literal(0))
+  if U64.equal(clgh_first, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_second = cgj_array_item(bytes, clgh_arguments, U64.literal(1))
+  if U64.equal(clgh_second, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_third = cgj_array_item(bytes, clgh_arguments, U64.literal(2))
+  if U64.less_than(U64.literal(0), clgh_third):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_list = cgj_value_text(bytes, clgh_first)
+  let clgh_index = cgj_value_text(bytes, clgh_second)
+  let clgh_list_slot = cgs_value_slot(bytes, run, clgh_list)
+  if U64.equal(clgh_list_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_index_slot = cgs_value_slot(bytes, run, clgh_index)
+  if U64.equal(clgh_index_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_list_ty = cgs_value_ty(bytes, run, clgh_list)
+  if U64.equal(clgh_list_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_list_kind = cgj_ident_text(bytes, cgj_member(bytes, clgh_list_ty, "kind"))
+  if cg_is_word(clgh_list_kind, "list"):
+    let clgh_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_index_ty = cgs_value_ty(bytes, run, clgh_index)
+  if U64.equal(clgh_index_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cgs_type_slots(bytes, clgh_index_ty), U64.literal(1)):
+    let clgh_index_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cgs_type_slots(bytes, cgj_member(bytes, instr, "ty")), U64.literal(4)):
+    let clgh_result_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let clgh_table = cgs_sub(clgh_list_slot, U64.literal(1))
+  let clgh_count = clgh_list_slot
+  let clgh_index_local = cgs_sub(clgh_index_slot, U64.literal(1))
+  let clgh_tag = result0
+  let clgh_pointer = cgs_add(result0, U64.literal(1))
+  let clgh_length = cgs_add(result0, U64.literal(2))
+  let clgh_error = cgs_add(result0, U64.literal(3))
+  let clgh_out = cgs_local_get_hex(clgh_index_local)
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_count))
+  set clgh_out = sico.text.concat(clgh_out, "ad")
+  set clgh_out = sico.text.concat(clgh_out, "5a")
+  set clgh_out = sico.text.concat(clgh_out, "0440")
+  set clgh_out = sico.text.concat(clgh_out, cgs_numeric_error_hex(clgh_tag, clgh_pointer, clgh_length, clgh_error))
+  set clgh_out = sico.text.concat(clgh_out, "05")
+  set clgh_out = sico.text.concat(clgh_out, cgs_i32_const_hex(U64.literal(0)))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_set_hex(clgh_tag))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_table))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_index_local))
+  set clgh_out = sico.text.concat(clgh_out, "a7")
+  set clgh_out = sico.text.concat(clgh_out, cgs_i32_const_hex(U64.literal(3)))
+  set clgh_out = sico.text.concat(clgh_out, "74")
+  set clgh_out = sico.text.concat(clgh_out, "6a")
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_tee_hex(clgh_pointer))
+  set clgh_out = sico.text.concat(clgh_out, "280200")
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_set_hex(clgh_length))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_pointer))
+  set clgh_out = sico.text.concat(clgh_out, "280204")
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_set_hex(clgh_pointer))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_length))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_get_hex(clgh_pointer))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_set_hex(clgh_length))
+  set clgh_out = sico.text.concat(clgh_out, cgs_local_set_hex(clgh_pointer))
+  set clgh_out = sico.text.concat(clgh_out, "0b")
+  return clgh_out
+end function
+
+// The bytes of the byte slice intrinsic.
+//
+// The backend's `sico.bytes.slice` refuses the inputs that do not fit the
+// 32-bit arena and the inputs that wrap or overrun the source, and writes the
+// sliced pair otherwise; both refusals are the numeric error arm, so the guest
+// writes the same bytes in the same order.
+function cgs_bytes_slice_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let cbsh_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(cbsh_arguments, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_first = cgj_array_item(bytes, cbsh_arguments, U64.literal(0))
+  if U64.equal(cbsh_first, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_second = cgj_array_item(bytes, cbsh_arguments, U64.literal(1))
+  if U64.equal(cbsh_second, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_third = cgj_array_item(bytes, cbsh_arguments, U64.literal(2))
+  if U64.equal(cbsh_third, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_fourth = cgj_array_item(bytes, cbsh_arguments, U64.literal(3))
+  if U64.less_than(U64.literal(0), cbsh_fourth):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_source = cgj_value_text(bytes, cbsh_first)
+  let cbsh_start = cgj_value_text(bytes, cbsh_second)
+  let cbsh_requested = cgj_value_text(bytes, cbsh_third)
+  let cbsh_source_slot = cgs_value_slot(bytes, run, cbsh_source)
+  if U64.equal(cbsh_source_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_start_slot = cgs_value_slot(bytes, run, cbsh_start)
+  if U64.equal(cbsh_start_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_requested_slot = cgs_value_slot(bytes, run, cbsh_requested)
+  if U64.equal(cbsh_requested_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_source_ty = cgs_value_ty(bytes, run, cbsh_source)
+  if U64.equal(cbsh_source_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_source_kind = cgj_ident_text(bytes, cgj_member(bytes, cbsh_source_ty, "kind"))
+  if cg_is_word(cbsh_source_kind, "bytes"):
+    let cbsh_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_start_ty = cgs_value_ty(bytes, run, cbsh_start)
+  if U64.equal(cbsh_start_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cgs_type_slots(bytes, cbsh_start_ty), U64.literal(1)):
+    let cbsh_start_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_requested_ty = cgs_value_ty(bytes, run, cbsh_requested)
+  if U64.equal(cbsh_requested_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cgs_type_slots(bytes, cbsh_requested_ty), U64.literal(1)):
+    let cbsh_requested_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if U64.equal(cgs_type_slots(bytes, cgj_member(bytes, instr, "ty")), U64.literal(4)):
+    let cbsh_result_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cbsh_source_pointer = cgs_sub(cbsh_source_slot, U64.literal(1))
+  let cbsh_source_length = cbsh_source_slot
+  let cbsh_start_local = cgs_sub(cbsh_start_slot, U64.literal(1))
+  let cbsh_requested_local = cgs_sub(cbsh_requested_slot, U64.literal(1))
+  let cbsh_tag = result0
+  let cbsh_pointer = cgs_add(result0, U64.literal(1))
+  let cbsh_length = cgs_add(result0, U64.literal(2))
+  let cbsh_error = cgs_add(result0, U64.literal(3))
+  let cbsh_limit = cgs_i64_const_hex(U64.literal(4294967296))
+  let cbsh_out = cgs_local_get_hex(cbsh_start_local)
+  set cbsh_out = sico.text.concat(cbsh_out, cbsh_limit)
+  set cbsh_out = sico.text.concat(cbsh_out, "5a")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_requested_local))
+  set cbsh_out = sico.text.concat(cbsh_out, cbsh_limit)
+  set cbsh_out = sico.text.concat(cbsh_out, "5a")
+  set cbsh_out = sico.text.concat(cbsh_out, "72")
+  set cbsh_out = sico.text.concat(cbsh_out, "0440")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_numeric_error_hex(cbsh_tag, cbsh_pointer, cbsh_length, cbsh_error))
+  set cbsh_out = sico.text.concat(cbsh_out, "05")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_start_local))
+  set cbsh_out = sico.text.concat(cbsh_out, "a7")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_requested_local))
+  set cbsh_out = sico.text.concat(cbsh_out, "a7")
+  set cbsh_out = sico.text.concat(cbsh_out, "6a")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_tee_hex(cbsh_length))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_start_local))
+  set cbsh_out = sico.text.concat(cbsh_out, "a7")
+  set cbsh_out = sico.text.concat(cbsh_out, "49")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_length))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_source_length))
+  set cbsh_out = sico.text.concat(cbsh_out, "4b")
+  set cbsh_out = sico.text.concat(cbsh_out, "72")
+  set cbsh_out = sico.text.concat(cbsh_out, "0440")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_numeric_error_hex(cbsh_tag, cbsh_pointer, cbsh_length, cbsh_error))
+  set cbsh_out = sico.text.concat(cbsh_out, "05")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_i32_const_hex(U64.literal(0)))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_set_hex(cbsh_tag))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_source_pointer))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_start_local))
+  set cbsh_out = sico.text.concat(cbsh_out, "a7")
+  set cbsh_out = sico.text.concat(cbsh_out, "6a")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_set_hex(cbsh_pointer))
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_get_hex(cbsh_requested_local))
+  set cbsh_out = sico.text.concat(cbsh_out, "a7")
+  set cbsh_out = sico.text.concat(cbsh_out, cgs_local_set_hex(cbsh_length))
+  set cbsh_out = sico.text.concat(cbsh_out, "0b")
+  set cbsh_out = sico.text.concat(cbsh_out, "0b")
+  return cbsh_out
 end function
 
 // The bytes of an `i32.const` of the value -1.
