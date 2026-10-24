@@ -7,9 +7,9 @@
     {
       "id": "MS-01",
       "path": "codegen.sico",
-      "line": 331,
+      "line": 362,
       "function": "cg_next",
-      "function_line": 330,
+      "function_line": 361,
       "head": "U64.checked_add(i, U64.literal(1))",
       "labels": "ok+error",
       "case_shape": "1:return | 1:return",
@@ -22,9 +22,9 @@
     {
       "id": "MS-02",
       "path": "codegen.sico",
-      "line": 1517,
+      "line": 1548,
       "function": "cgs_add",
-      "function_line": 1516,
+      "function_line": 1547,
       "head": "U64.checked_add(left, right)",
       "labels": "ok+error",
       "case_shape": "1:return | 1:return",

@@ -78,7 +78,7 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 
 ### 5.1 固件
 
-- **174 passed / 0 failed**（本片新增 3 条）。
+- **176 passed / 0 failed**（M-g4a 段新增 3 条 ⇒ 174；R0.3 / R0.5 段再新增 2 条 ⇒ 176，见 §7.1 / §7.2）。
 
 ### 5.2 前沿探针
 
@@ -102,19 +102,22 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 | fmt (workspace) | 1 | 0 | `cargo fmt --all -- --check` |
 | fmt (runner) | 2 | 0 | `cargo fmt --manifest-path runner/sico-runner/Cargo.toml --all -- --check` |
 | clippy (workspace) | 1 | 0 | `cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings` |
-| clippy (runner) | 2 | 0 | `cargo clippy --locked --offline --manifest-path runner/sico-runner/Cargo.toml --all-targets -- -D warnings` |
-| ci-one-key | 425 | 0 | `powershell -File tools/run-ci.ps1` |
-| validate-0245 | 124 | 0 | `powershell -File tools/validate-step-0245.ps1` |
-| validate-0262 | 142 | 0 | `powershell -File tools/validate-step-0262.ps1` |
-| probe-frontend-frontier | 478 | 0 | `powershell -File tools/probe-m22-frontend-frontier.ps1` |
-| probe-ir-plan-frontier | 27 | 0 | `powershell -File tools/probe-m22-ir-plan-frontier.ps1` |
+| clippy (runner) | 1 | 0 | `cargo clippy --locked --offline --manifest-path runner/sico-runner/Cargo.toml --all-targets -- -D warnings` |
+| ci-one-key | 423 | 0 | `powershell -File tools/run-ci.ps1` |
+| validate-0245 | 134 | 0 | `powershell -File tools/validate-step-0245.ps1` |
+| validate-0262 | 151 | 0 | `powershell -File tools/validate-step-0262.ps1` |
+| probe-frontend-frontier | 483 | 0 | `powershell -File tools/probe-m22-frontend-frontier.ps1` |
+| probe-ir-plan-frontier | 26 | 0 | `powershell -File tools/probe-m22-ir-plan-frontier.ps1` |
 | comment-discipline | 0 | 0 | `python tools/validate-selfhost-comment-discipline.py` |
 | match-site-census | 0 | 0 | `python tools/census-m22-match-sites.py --check` |
 | match-site-coverage | 6 | 0 | `powershell -File tools/probe-m22-match-coverage.ps1` |
-| firmware-selfhost | 113 | 0 | `cargo test --manifest-path runner/sico-runner/Cargo.toml --test selfhost_compiler` |
+| firmware-selfhost | 123 | 0 | `cargo test --manifest-path runner/sico-runner/Cargo.toml --test selfhost_compiler` |
 | git-diff-check | 0 | 0 | `git diff --check` |
 
-⇒ **BATTERY_GREEN 14/14**（版本化电池；固件步单独跑 = **174 passed / 0 failed**）。
+⇒ **BATTERY_GREEN 14/14**（版本化电池；固件步单独跑 = **176 passed / 0 failed**；同轮 `FRONTIER_UNCHANGED` / `PLAN_FRONTIER_UNCHANGED` / `LEDGER_CURRENT sites=42` / `MATCH_COVERAGE_OK`）。
+
+> **电池必须单实例运行（实测踩坑）**：本片第一次重跑时，上一轮遗留的电池进程**仍在运行**（未退出），于是**两个电池实例并发**争用同一 `target/` 与同一 `battery.log` ⇒ 日志被交错、步骤顺序失真、结果不可引用。处置 = 终止陈旧进程 ⇒ **单实例重跑** ⇒ 上表即来自那次**干净单实例**运行（`battery-clean.log`）。**结论**：电池的「每步 exit」只有在**同一时刻只有一个实例**时才是证据；并发跑的电池**必须作废重跑**，不能拿它当绿灯。
+
 
 ### 5.6 独立 CI 回填（run #43 = 上一批 STEP-0534）
 
@@ -128,6 +131,23 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 
 > **观测说明**：run #43 在观测窗口内一度显示 `in_progress` ⇒ **最终完成且为绿** ⇒ 「CI 长时间 in_progress」时**必须以最终态为准**（承 STEP-0534 §7.6 的同一条结论）。
 
+### 5.7 独立 CI 回填（run #44 = 本片 STEP-0535）= **failure**
+
+| 项 | 值 |
+|---|---|
+| run | **#44**（id `40067049721`） |
+| head_sha | `da01829`（STEP-0535） |
+| 结论 | **failure ❌** |
+| 用时 | 2026-10-24T05:38:36Z → 06:04:03Z（**25m27s**） |
+| GitHub 步骤 | `Set up job` ✅ / `checkout` ✅ / `Install GNU build tools` ✅ / **`Run repository CI on a fresh runner` ❌** / `Post checkout` ✅ / `Complete job` ✅ |
+| 注解 | `windows-gnu — Process completed with exit code 1`（另两条 Node.js 20 / MINGW64 弃用警告，与失败无关） |
+
+> **失败子步骤不可得**：GitHub 的 **Actions 日志需要登录会话**才能读（匿名 API 的 `jobs/{id}/logs` 返回 **403**，网页端显示「Sign in to view logs」）⇒ 与 **run #39** 同一个限制 ⇒ **必须由 owner 提供已登录会话 / `gh` / token 才能定位**。本片**不把红灯包装成绿灯**，也**不**在没有证据的情况下把它归因到某个子步骤。
+>
+> **本机对照（实测）**：`da01829` **本身**：整轮版本化电池 **14 / 14 绿**（含 `run-ci.ps1` 自身）、固件 **174 / 174**；**本片工作区**（多出 R0.3 / R0.5 两条新固件）：干净**单实例**电池 **14 / 14 绿**（固件 **176 / 176**，见 §5.5）、冷组件缓存下**整个 runner 套件全绿** ⇒ 本机**无法复现**该红灯 ⇒ 红灯目前只知「发生在 `run-ci.ps1` 之内」。
+>
+> **可诊断性改进（本片附带）**：`tools/run-ci.ps1` 现在把**失败子步骤的名字**与**该子步骤输出的末尾若干行**写成 GitHub **工作流注解**（`::error title=CI step failed::…`），并把逐步骤结果表写进 **job summary** ⇒ 这两者在**运行页面上无需登录**即可读（run #44 的页面已证明「Annotations」区块匿名可见）⇒ **下一次红灯的子步骤不再需要凭据就能定位**。
+
 ## 6. 诚实性
 
 ### 6.1 本片**闭合**了什么
@@ -136,6 +156,8 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 - **订正了 STEP-0534 的归因**：组件层零支持是**五个缺口**叠加，不是「`match` 没实现」。
 - **发射形状全部来自生产后端**（`compile_terminator` / `emit_checked_fixed` / `apply_result_fields` / `lower_local_types`）⇒ 逐字节等同是可证的，不是设计值。
 - **R0.4**：把「42 / 519 形状面闭合」的外推换成 **42 个候选真实站点的逐站证据**（组件级全等 **8 / 42**），并用**版本化电池**取代一次性脚本 ⇒ 本片的声明现在只覆盖实测范围。
+- **R0.3**：canonical IR 边界上**两道真实缺口**已补齐并**双方 typed 拒**（完整 flat-type 比较 + variant-layout 校验），且拒绝身份**沿发射链透传**（`component_refusal_for_ir`）⇒ 失败从「空串」变成**可归因的身份**。
+- **R0.5**：六个布局/边界形状（ok/error 投影、Result cell、布尔模式、U64 add/sub 判定）与生产后端**逐字节等同**，有符号 checked 的收窄**钉成双方拒绝身份**。
 
 ### 6.2 本片**没有**闭合什么
 
@@ -143,23 +165,23 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 |---|---|
 | **`match` 构造的族闭合** | ❌ **NO-GO** —— 组件层覆盖 **4 个合成形状**，**真实站点只有 8 / 42 组件级全等**（R0.4 实测），`sico.list.get` 系列 **15 站点**仍拒 ⇒ **D10 ⇒ 不得降级、不得宣告闭合** |
 | **`sico.list.get` 头的组件层** | ❌ **M-g3' 仍开** —— 发射器没有该 intrinsic 的宿主调用传输（**实测**：生产后端对它**不是** import 调用，而是**内联线性内存查表序列**） |
-| **有符号的 checked 运算** | ❌ `I64.checked_add` / `checked_sub` **仍 typed 拒**（guest 只实现了无符号的两个变体） |
-| **bool 匹配头的槽位校验** | ⏔ guest 的 bool 模式项直接用值的第一个槽，**没有像后端那样校验标量槽数** ⇒ 该形状**不可达**（前端不降 bool 匹配头），但这一条**尚未做 fail-closed 校验**，记为待办 |
-| **畸形 canonical IR 的 fail-closed** | ❌ **R0.3 未做** —— Result 投影只比较**槽数**、未比较**完整 Wasm 类型序列**；variant 模式**未拒绝非 variant 值** ⇒ 尚未证明可由合法 Sico 源触发，但**必须**作为 canonical-IR 边界的 fail-closed 缺口整改 |
+| **有符号的 checked 运算** | ❌ `I64.checked_add` / `checked_sub` **仍 typed 拒**（guest 只实现了无符号的两个变体）；**R0.5 已把这条收窄钉成双方拒绝身份**（oracle 发射、guest `ERR:E-SH-CG-IR-EMIT`） |
+| **bool 匹配头的槽位校验** | ✅ **R0.5 已闭合** —— guest 的 bool 模式项现在要求被匹配值是 `bool` 单槽标量（`ERR:E-SH-CG-IR-MATCH-SCALAR`），与后端 `LocalLayout::scalar` 的「aggregate used as scalar」对齐 |
+| **畸形 canonical IR 的 fail-closed** | ✅ **R0.3 已闭合** —— Result 投影改比**完整 Wasm 类型序列**（`ERR:E-SH-CG-IR-PROJECT-TYPE`），variant 模式拒**非 variant 值**（`ERR:E-SH-CG-IR-MATCH-VARIANT`）；四个畸形形状**双方 typed 拒**（§7.1） |
+| **溢出/下溢的运行期行为** | ⏔ R0.5 覆盖的是**发射字节**（判定指令序列逐字节等同），**不是**运行期行为证据 —— 注入的 `size` 不在 `run` 的可达路径上，本片没有执行发射出的组件 |
 | **前端三个门** | ❌ **M-g1（354）/ M-g2（46）/ M-g3（21）** 一个都没动（本片只改发射端）；**M-g1 已在真实站点复现**（`codegen.sico:cg_next` ⇒ `ERR:E-SH-IR-MATCH-SHAPE`） |
 | **语料覆盖** | ⏔ **仍 0 条** |
 | **整文件自举** | ⏔ 仍未关闭；本片把它的首要阻塞点从「组件层 0」推进到「组件层真实站点 8 / 42」 |
 | **M22 出口门** | ❌ 门 3 / 6 仍 **NO-GO**；门 1 / 4 / 5 / 7 GO；门 2 PARTIAL；**M22 整体仍 NO-GO** |
 
-### 6.3 下一刀（按实测杠杆，R0.4 之后）
+### 6.3 下一刀（按实测杠杆，R0 全部交付之后）
 
 1. **M-g1 形参计数门**（**354 站点**）—— 前端刀：放宽 `checked_arithmetic_*` 路由的形参计数门（**两个落点**：`selfhost/parser.sico:19473-19479` 的 `set` 路由只允许 1..2 形参、`:20364` 的 `return` 路由只允许恰好 2）。**R0.4 已在真实站点复现**（`codegen.sico:cg_next`）⇒ 不是理论缺口。
-2. **R0.3 畸形 IR fail-closed**（owner 审计 §10.4 R0.3）—— 同槽数异型 Result 投影 / 非 variant 值模式 / 非法嵌套 payload：guest 与 Rust 必须**双方 typed 拒**；guest 侧要补**完整 flat-type 比较**与 **variant-layout 校验**。
-3. **M-g3' 组件层的 `sico.list.get` 宿主调用传输**（**15 站点**）—— 发射端刀：**实测**生产后端对它**不是** import 调用，而是**内联线性内存查表序列**（`table`/`count` → `i32.const 3; i32.shl; i32.add` → 读 `ptr`/`len`）⇒ 这一步是内联序列，不是「加一个 import」。
-4. **发射端对真实函数体形状的覆盖**（**9 个真实站点**）—— `is_ident_byte` / `type_json` / `lex_words` ×5 / `gw_instr_count` / `return_expression_start` 的 IR 已逐字节等同，但**发射端不认识这些函数体** ⇒ 组件轴缺的是**分支 / 循环 / 多语句函数体**的发射能力。
-5. **M-g2 算子白名单**（**46 站点**）—— 前端刀：`checked_sub` / `checked_div` / `checked_mul`；其中 `checked_sub` 的**发射**本片已经具备。
-6. **M-g3 未认领的匹配头**（**21 站点**）—— 前端刀：`sico.bytes.slice` 头。
-7. 之后回到 **T3 族**、**语料覆盖**、**门 3 / 6**。
+2. **M-g3' 组件层的 `sico.list.get` 宿主调用传输**（**15 站点**）—— 发射端刀：**实测**生产后端对它**不是** import 调用，而是**内联线性内存查表序列**（`table`/`count` → `i32.const 3; i32.shl; i32.add` → 读 `ptr`/`len`）⇒ 这一步是内联序列，不是「加一个 import」。
+3. **发射端对真实函数体形状的覆盖**（**9 个真实站点**）—— `is_ident_byte` / `type_json` / `lex_words` ×5 / `gw_instr_count` / `return_expression_start` 的 IR 已逐字节等同，但**发射端不认识这些函数体** ⇒ 组件轴缺的是**分支 / 循环 / 多语句函数体**的发射能力。
+4. **M-g2 算子白名单**（**46 站点**）—— 前端刀：`checked_sub` / `checked_div` / `checked_mul`；其中 `checked_sub` 的**发射**本片已经具备（**R0.5 已逐字节钉**）。
+5. **M-g3 未认领的匹配头**（**21 站点**）—— 前端刀：`sico.bytes.slice` 头。
+6. 之后回到 **T3 族**、**语料覆盖**、**门 3 / 6**。
 
 > **一条方法学结论**：**「某形状被拒绝」≠「该形状没实现」**（承 STEP-0521）在本族再次成立，而且这次代价更大：组件层的一个「拒绝」背后可能是**五个**独立的缺口 ⇒ **拒绝必须逐个归因**，否则下一片会按错误口径下刀。
 >
@@ -174,8 +196,8 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 | **R0.1 修正声明** | 登记表 / STATUS / ROADMAP / handoff / 计划一律降为「**4 个合成形状通过**；**42 个候选站点逐站复核**（组件级全等 **8 / 42**）」；旧口径「组件层 42 / 519（形状面）」与「组件层 0 / 519」标注作废 | ✅ |
 | **R0.2 恢复可复现电池** | **版本化** `tools/validate-m22-s5.ps1`（**14 步**：fmt ×2 / clippy ×2 / `run-ci.ps1` / 0245 / 0262 / 两个前沿探针 / comment discipline / 站点普查 / 站点覆盖 / 固件 / `git diff --check`），**每步记录命令、耗时与 exit，任一步失败即整体失败**；**不再依赖** `target/tmp/step0526/integrity.py` 的硬编码 dirty-list | ✅ |
 | **R0.4 建立真实站点账本** | `selfhost/match-component-coverage-v0.json`（42 条：path / function / head / labels / case-shape / **verdict** / **source·ir·component 三条 digests**）+ 普查脚本 `tools/census-m22-match-sites.py`（账本的唯一写者，可 `--check` / `--update`）+ 探针 `tools/probe-m22-match-coverage.ps1` + 固件钉 `sico_compiler_reproduces_the_frozen_match_site_ledger`（逐站 IR + 组件 + **真实 `wasmparser::Validator`**） | ✅ |
-| **R0.3 畸形 IR 拒绝测试** | canonical-IR 注入夹具 + guest 的完整 flat-type 比较与 variant-layout 校验 | ⏔ **未做**（下一片） |
-| **R0.5 布局/边界补测** | ok/error 投影、Result cell、布尔模式、I64 checked 明确拒、U64 add 溢出 / sub 下溢的逐字节或双方拒绝身份 | ⏔ **未做**（下一片） |
+| **R0.3 畸形 IR 拒绝测试** | canonical-IR 注入夹具 + guest 的完整 flat-type 比较与 variant-layout 校验 | ✅（§7.1） |
+| **R0.5 布局/边界补测** | ok/error 投影、Result cell、布尔模式、I64 checked 明确拒、U64 add 溢出 / sub 下溢的逐字节或双方拒绝身份 | ✅（§7.2） |
 
 **R0.4 的实测结论（42 个真实站点）**：
 
@@ -190,7 +212,48 @@ STEP-0534 记的是「发射端没有任何 `match` 支持」。本片逐个关�
 
 **探针与账本的纪律**：账本是**冻结的期望表** —— 站点行号、函数行号、匹配头、case 标签都在固件钉里逐条复核；任何站点移动 ⇒ **钉失败**（与前沿探针同一条纪律）。账本只能由 `tools/census-m22-match-sites.py` 写，`--check` 模式证明它仍描述冻结的 S。
 
-> **R0 exit 的当前状态**：版本化电池 ✅、42/42 候选站点有当前快照证据 ✅、畸形 IR 测试 ⏔（R0.3 未做）、文档只声明实测范围 ✅ ⇒ **R0 尚未整体闭合**，本片只交付 R0.1 / R0.2 / R0.4 三项。
+> **R0 exit 的当前状态**：版本化电池 ✅、42/42 候选站点有当前快照证据 ✅、**畸形 IR 测试 ✅（§7.1）**、文档只声明实测范围 ✅ ⇒ **R0 的五项已全部交付**；**R0 exit 仍差最后一项外部条件**：STEP-0535 的**精确提交快照**的独立 CI 裁决（run #44）。
+
+### 7.1 R0.3：畸形 canonical IR 的 fail-closed（注入夹具）
+
+**机制**：canonical IR 是 guest 发射器的**不可信边界输入**。本片在 **runner 测试侧**建了一个注入夹具（`IR_INJECTION_SOURCE`）：它把 stdin 的 canonical IR **直接**交给 `codegen.component_hex_for_ir` / `codegen.component_refusal_for_ir`，因此**Sico 前端无法产生的 IR 也能到达生产后端看到的同一条边界**。**没有新增产品 CLI，没有改 Rust oracle**（`crates/*` 零改动）；畸形 IR 用 `serde_json::to_string` 序列化（`canonical_json` 会先跑 `verify`，无法序列化畸形模块）。
+
+**guest 侧两处真实缺口与修法**（`selfhost/codegen.sico`）：
+
+| 缺口 | 生产后端合同 | guest 修法 | 新身份 |
+|---|---|---|---|
+| Result 投影只比**槽数** | `Operation::Project` 布局比较**完整 Wasm 类型序列**（`layout.types != expected`） | 新增 `cgs_result_arm_ty`（取臂的 IR 类型），`cgs_project_result_hex` 改为比较臂的 **flat-type 序列**与声明类型的 flat-type 序列 | `ERR:E-SH-CG-IR-PROJECT-TYPE` |
+| variant 模式不校验**变体布局** | `LocalLayout::tag` 拒「variant pattern over non-variant value」；`LocalLayout::scalar` 拒「aggregate used as scalar」 | `cgs_match_pattern_hex`：variant 臂要求被匹配值的类型是 `result`；bool 臂要求被匹配值的类型是 `bool`（单槽标量） | `ERR:E-SH-CG-IR-MATCH-VARIANT` / `ERR:E-SH-CG-IR-MATCH-SCALAR` |
+
+**拒绝身份透传**：此前发射链把每个失败都塌缩成空串（`""`），无法区分是哪一道闸门拒的。本片让**身份沿链透传**（`cgs_function_body_hex` → `cgs_core_code_hex` → `cg_core_module_hex` → `cg_component_hex`），并新增导出函数 `component_refusal_for_ir`：成功返回 `""`，失败返回**第一道拒绝的身份**；`component_hex_for_ir` 的公开契约不变（失败仍是 `""` ⇒ 驱动侧仍报 `unsupported codegen source shape`）。
+
+**实测（固件 `the_malformed_canonical_ir_is_refused_by_the_guest_and_by_the_rust_oracle`）**：
+
+| 形状 | Rust oracle | guest 身份 |
+|---|---|---|
+| **阳性对照**：未畸形的 match 模块 | 发射组件（过真实 validator） | **组件字节逐字节等同**（证明注入夹具确实到达了发射端） |
+| **同槽数异型投影**（`project ok` 声明成 `bool`） | 拒（verifier `TypeMismatch`） | `ERR:E-SH-CG-IR-PROJECT-TYPE` |
+| **非 variant 值上的 variant 模式**（匹配值改成 `u64` 参数） | 拒（verifier `TypeMismatch`） | `ERR:E-SH-CG-IR-MATCH-VARIANT` |
+| **非布尔值上的字面模式**（匹配值改成 `u64` 参数、模式改成 bool） | 拒（verifier `TypeMismatch`） | `ERR:E-SH-CG-IR-MATCH-SCALAR` |
+| **非法嵌套 payload**（variant 模式里再套 variant 模式） | 拒（后端「match payload inspection」） | `ERR:E-SH-CG-IR-EMIT` |
+
+> **归因订正**：这**四个**形状**都不能由合法 Sico 源触发**（verifier 先拒）⇒ 它们测的是**canonical-IR 边界**的 fail-closed，不是语言能力。**「被拒绝」≠「没实现」**：这里被拒的正是**应当被拒**的输入。
+
+### 7.2 R0.5：布局与边界补测
+
+固件 `the_result_layout_and_the_checked_arithmetic_boundaries_are_pinned`。**每个被接受的形状都与生产后端逐字节比较**（不是只比长度），并都过真实 `wasmparser::Validator`：
+
+| 形状 | 覆盖点 | 结论 |
+|---|---|---|
+| `ok-arm-projection` | `project ok` 的**槽位算术 + 类型序列** | 组件字节**逐字节等同** |
+| `result-cell` | `Result[u64,u64]` cell 的**局部声明 + 回读** | 组件字节**逐字节等同** |
+| `error-arm-projection` | `project error` 的**臂偏移（tag + ok 载荷之后）** | 组件字节**逐字节等同** |
+| `bool-pattern` | **布尔模式**的 `i32.eq` 发射 | 组件字节**逐字节等同** |
+| `u64-add-overflow-check` | `checked_add` 的**无符号溢出判定**（`i64.lt_u`）与错误载荷 | 组件字节**逐字节等同** |
+| `u64-sub-underflow-check` | `checked_sub` 的**无符号下溢判定**与错误载荷（与 add 的错误载荷不同） | 组件字节**逐字节等同** |
+| **I64 checked** | guest 覆盖**窄于** oracle：后端发射有符号溢出判定，guest **明确拒绝** | 双方**拒绝身份**：oracle 发射；guest `ERR:E-SH-CG-IR-EMIT` |
+
+> **诚实性边界**：本片的溢出/下溢覆盖是**发射字节级**的（溢出判定的指令序列逐字节等同生产后端），**不是**运行期行为证据 —— 注入的 `size` 函数不在 `run` 的可达路径上，本片**没有**执行发射出的组件去观测运行期溢出结果。该缺口登记在 §6.2。
 
 ---
 

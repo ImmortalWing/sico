@@ -29,6 +29,7 @@ $pythonDir = Split-Path -Parent $env:SICO_PYTHON
 $env:Path = "$pythonDir;$env:Path"
 
 $failures = New-Object System.Collections.Generic.List[string]
+$results = New-Object System.Collections.Generic.List[string]
 function Invoke-Step([string]$name, [scriptblock]$body) {
     Write-Host "=== CI: $name" -ForegroundColor Cyan
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -36,10 +37,30 @@ function Invoke-Step([string]$name, [scriptblock]$body) {
     $code = $LASTEXITCODE
     $timer.Stop()
     $elapsed = $timer.Elapsed.ToString('hh\:mm\:ss')
+    $results.Add(("{0}`t{1}`t{2}" -f $name, $elapsed, $code)) | Out-Null
     if ($code -ne 0) {
-        $output.Substring([Math]::Max(0, $output.Length - 2000)) | Write-Host
+        $tail = $output.Substring([Math]::Max(0, $output.Length - 2000))
+        $tail | Write-Host
         $failures.Add($name) | Out-Null
         Write-Host "=== FAIL: $name ($elapsed)" -ForegroundColor Red
+        # The independent CI log needs a signed-in session to read, so the
+        # failing step would otherwise be invisible to anyone without one.
+        # GitHub renders workflow commands as annotations on the run page
+        # without a session, so the failing step and the tail of its output
+        # are published there. A line that starts with `::` in the step
+        # output would be read as a workflow command of its own, so those
+        # lines are neutralized first.
+        $safe = ($tail -split "`r?`n" | ForEach-Object { if ($_ -match '^\s*::') { ':' + $_.TrimStart(':') } else { $_ } })
+        Write-Host "::error title=CI step failed::$name"
+        # A workflow command carries one line, and GitHub keeps a bounded
+        # number of annotations per step, so the last lines of the step's
+        # output are published one by one.
+        $lines = @($safe | Where-Object { $_.Trim().Length -gt 0 } | Select-Object -Last 8)
+        foreach ($line in $lines) {
+            $short = $line
+            if ($short.Length -gt 900) { $short = $short.Substring(0, 900) + ' ...' }
+            Write-Host "::error title=CI step output::$short"
+        }
     } else {
         Write-Host "=== PASS: $name ($elapsed)" -ForegroundColor Green
     }
@@ -79,7 +100,25 @@ Invoke-Step 'whitespace (git diff --check)' { git diff --check; $LASTEXITCODE }
 
 if ($failures.Count -gt 0) {
     Write-Host ("CI RED: " + ($failures -join ', ')) -ForegroundColor Red
+    # The per-step table also lands in the job summary, which the run page
+    # renders without a signed-in session.
+    if ($env:GITHUB_STEP_SUMMARY) {
+        $summary = @("| step | elapsed | exit |", "|---|---|---|")
+        foreach ($row in $results) {
+            $parts = $row -split "`t"
+            $summary += ("| {0} | {1} | {2} |" -f $parts[0], $parts[1], $parts[2])
+        }
+        [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, (($summary -join "`n") + "`n"))
+    }
     exit 1
+}
+if ($env:GITHUB_STEP_SUMMARY) {
+    $summary = @("| step | elapsed | exit |", "|---|---|---|")
+    foreach ($row in $results) {
+        $parts = $row -split "`t"
+        $summary += ("| {0} | {1} | {2} |" -f $parts[0], $parts[1], $parts[2])
+    }
+    [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, (($summary -join "`n") + "`n"))
 }
 Write-Host 'CI GREEN' -ForegroundColor Green
 exit 0

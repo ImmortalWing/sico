@@ -187,11 +187,11 @@ end function
 function cg_run_body_hex_from_ir(ir: Bytes) returns Text:
   let cgrbhi_body = cgs_run_body_hex(ir)
   if sico.text.starts_with(cgrbhi_body, "ERR:"):
-    return ""
+    return cgrbhi_body
   end if
   let cgrbhi_locals = cgs_local_hex(ir)
   if sico.text.starts_with(cgrbhi_locals, "ERR:"):
-    return ""
+    return cgrbhi_locals
   end if
   let cgrbhi_local_len = sico.text.length(cgrbhi_locals)
   let cgrbhi_groups = U64.shr(cgrbhi_local_len, U64.literal(2))
@@ -234,6 +234,9 @@ function cg_core_module_hex(ir: Bytes) returns Text:
     return ""
   end if
   let cgmh_code = cgs_core_code_hex(ir, cgmh_arena)
+  if sico.text.starts_with(cgmh_code, "ERR:"):
+    return cgmh_code
+  end if
   if U64.equal(sico.text.length(cgmh_code), U64.literal(0)):
     return ""
   end if
@@ -255,6 +258,9 @@ end function
 // Alias 6, CanonicalFunction 8, Import 10, Export 11).
 function cg_component_hex(ir: Bytes) returns Text:
   let core = cg_core_module_hex(ir)
+  if sico.text.starts_with(core, "ERR:"):
+    return core
+  end if
   if U64.equal(sico.text.length(core), U64.literal(0)):
     return ""
   end if
@@ -277,8 +283,33 @@ end function
 // (the Script-profile `run`) and no data section, and the run body itself is
 // derived from the IR (STEP-0504), so any other shape fails closed here and
 // the driver reports the typed "unsupported codegen source shape" refusal.
+//
+// The refusal stays "" here: the driver turns it into the typed refusal. The
+// identity of the refusal itself is available through
+// `component_refusal_for_ir`.
 function component_hex_for_ir(ir: Bytes) returns Text:
-  return cg_component_hex(ir)
+  let chfir_out = cg_component_hex(ir)
+  if sico.text.starts_with(chfir_out, "ERR:"):
+    return ""
+  end if
+  return chfir_out
+end function
+
+// The identity of the first refusal the component emission hits; "" when the
+// emission succeeds.
+//
+// The canonical IR is an untrusted boundary input, so the emitter's own gates
+// name the shape they refused instead of collapsing every refusal into one
+// empty string.
+function component_refusal_for_ir(ir: Bytes) returns Text:
+  let crfir_out = cg_component_hex(ir)
+  if sico.text.starts_with(crfir_out, "ERR:"):
+    return crfir_out
+  end if
+  if U64.equal(sico.text.length(crfir_out), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  return ""
 end function
 
 // ---------------------------------------------------------------------------
@@ -2119,6 +2150,12 @@ end function
 // the `ok` arm sits behind the tag, the `error` arm behind the `ok` payload
 // -- and its `copy_slots` copies the arm's slots one pair at a time, so the
 // guest writes the same bytes in the same order.
+//
+// The backend's `Operation::Project` layout also compares the projected
+// field's whole Wasm type sequence with the declared result type and refuses
+// a mismatch, so the guest compares the arm's flat layout with the declared
+// one instead of comparing slot counts: a projection that carries the same
+// number of slots but a different type stays a typed refusal.
 function cgs_project_result_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
   let cprh_base = cgj_value_text(bytes, cgj_member(bytes, data, "base"))
   let cprh_field = cgj_ident_text(bytes, cgj_member(bytes, data, "field"))
@@ -2133,18 +2170,32 @@ function cgs_project_result_hex(bytes: Bytes, run: U64, instr: U64, data: U64, r
   let cprh_ok_slots = cgs_result_arm_slots(bytes, run, cprh_base, "ok")
   let cprh_count = U64.literal(0)
   let cprh_offset = U64.literal(1)
+  let cprh_arm = "ok"
   if cg_is_word(cprh_field, "ok"):
     set cprh_count = cprh_ok_slots
   end if
   if cg_is_word(cprh_field, "error"):
     set cprh_count = cgs_result_arm_slots(bytes, run, cprh_base, "error")
     set cprh_offset = cgs_add(U64.literal(1), cprh_ok_slots)
+    set cprh_arm = "error"
   end if
   if U64.equal(cprh_count, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cprh_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
-  if U64.equal(cprh_result_slots, cprh_count):
+  let cprh_arm_ty = cgs_result_arm_ty(bytes, run, cprh_base, cprh_arm)
+  if U64.equal(cprh_arm_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PROJECT-TYPE"
+  end if
+  let cprh_arm_hex = cgs_flat_hex(bytes, cprh_arm_ty)
+  if U64.equal(sico.text.length(cprh_arm_hex), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PROJECT-TYPE"
+  end if
+  let cprh_declared_ty = cgj_member(bytes, instr, "ty")
+  let cprh_declared_hex = cgs_flat_hex(bytes, cprh_declared_ty)
+  if U64.equal(sico.text.length(cprh_declared_hex), U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PROJECT-TYPE"
+  end if
+  if cg_is_word(cprh_arm_hex, cprh_declared_hex):
     let cprh_out = ""
     let cprh_base0 = cgs_sub(cprh_base_slot, U64.literal(1))
     let cprh_index = U64.literal(0)
@@ -2157,7 +2208,7 @@ function cgs_project_result_hex(bytes: Bytes, run: U64, instr: U64, data: U64, r
     end while
     return cprh_out
   end if
-  return "ERR:E-SH-CG-IR-EMIT"
+  return "ERR:E-SH-CG-IR-PROJECT-TYPE"
 end function
 
 // The bytes of a `project` instruction: the base's field slots copied into the
@@ -3978,6 +4029,28 @@ function cgs_result_arm_slots(bytes: Bytes, run: U64, value_id: Text, arm: Text)
   return cgs_type_slots(bytes, cras_arm_ty)
 end function
 
+// The IR offset of the type of the result arm `arm` of the value `value_id`;
+// 0 when the value or the arm carries no type.
+//
+// The backend's `Operation::Project` layout compares the projected field's
+// whole Wasm type sequence with the declared result type, so the guest needs
+// the arm's own type and not only its slot count.
+function cgs_result_arm_ty(bytes: Bytes, run: U64, value_id: Text, arm: Text) returns U64:
+  let crat_ty = cgs_value_ty(bytes, run, value_id)
+  if U64.equal(crat_ty, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crat_data = cgj_member(bytes, crat_ty, "data")
+  if U64.equal(crat_data, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let crat_arm_ty = cgj_member(bytes, crat_data, arm)
+  if U64.equal(crat_arm_ty, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  return crat_arm_ty
+end function
+
 // The bytes that store the one-byte scalar field at `slot` into the
 // result area.
 //
@@ -4798,6 +4871,12 @@ end function
 // discriminant is the first slot of the value and the canonical tags are
 // ok=0 and error=1. A binding pattern is refused, exactly as the backend
 // refuses it.
+//
+// The backend reads the discriminant through `LocalLayout::tag`, which refuses
+// a variant pattern over a value that is not a variant, and reads the literal
+// through `LocalLayout::scalar`, which refuses a value that is not a single
+// scalar slot. The guest keeps both gates: a variant pattern needs a `result`
+// value and a literal pattern needs a `bool` value.
 function cgs_match_pattern_hex(bytes: Bytes, fn: U64, value: Text, pattern: U64) returns Text:
   let cmph_kind = cgj_ident_text(bytes, cgj_member(bytes, pattern, "kind"))
   if cg_is_word(cmph_kind, "wildcard"):
@@ -4811,46 +4890,57 @@ function cgs_match_pattern_hex(bytes: Bytes, fn: U64, value: Text, pattern: U64)
     return "ERR:E-SH-CG-IR-PLAN"
   end if
   let cmph_local = cgs_sub(cmph_slot, U64.literal(1))
+  let cmph_ty = cgs_value_ty(bytes, fn, value)
+  if U64.equal(cmph_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cmph_value_kind = cgj_ident_text(bytes, cgj_member(bytes, cmph_ty, "kind"))
   if cg_is_word(cmph_kind, "bool"):
-    let cmph_bool_text = cgj_value_text(bytes, cgj_member(bytes, pattern, "data"))
-    let cmph_bool_value = U64.literal(0)
-    if cg_is_word(cmph_bool_text, "true"):
-      set cmph_bool_value = U64.literal(1)
+    if cg_is_word(cmph_value_kind, "bool"):
+      let cmph_bool_text = cgj_value_text(bytes, cgj_member(bytes, pattern, "data"))
+      let cmph_bool_value = U64.literal(0)
+      if cg_is_word(cmph_bool_text, "true"):
+        set cmph_bool_value = U64.literal(1)
+      end if
+      let cmph_bool_out = cgs_local_get_hex(cmph_local)
+      set cmph_bool_out = sico.text.concat(cmph_bool_out, cgs_i32_const_hex(cmph_bool_value))
+      set cmph_bool_out = sico.text.concat(cmph_bool_out, "46")
+      return cmph_bool_out
     end if
-    let cmph_bool_out = cgs_local_get_hex(cmph_local)
-    set cmph_bool_out = sico.text.concat(cmph_bool_out, cgs_i32_const_hex(cmph_bool_value))
-    set cmph_bool_out = sico.text.concat(cmph_bool_out, "46")
-    return cmph_bool_out
+    return "ERR:E-SH-CG-IR-MATCH-SCALAR"
   end if
   if cg_is_word(cmph_kind, "variant"):
-    let cmph_data = cgj_member(bytes, pattern, "data")
-    if U64.equal(cmph_data, U64.literal(0)):
-      return "ERR:E-SH-CG-IR-PLAN"
-    end if
-    let cmph_name = cgj_ident_text(bytes, cgj_member(bytes, cmph_data, "name"))
-    let cmph_tag = U64.literal(0)
-    let cmph_known = U64.literal(0)
-    if cg_is_word(cmph_name, "ok"):
-      set cmph_known = U64.literal(1)
-    end if
-    if cg_is_word(cmph_name, "error"):
-      set cmph_known = U64.literal(1)
-      set cmph_tag = U64.literal(1)
-    end if
-    if U64.equal(cmph_known, U64.literal(0)):
+    if cg_is_word(cmph_value_kind, "result"):
+      let cmph_data = cgj_member(bytes, pattern, "data")
+      if U64.equal(cmph_data, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let cmph_name = cgj_ident_text(bytes, cgj_member(bytes, cmph_data, "name"))
+      let cmph_tag = U64.literal(0)
+      let cmph_known = U64.literal(0)
+      if cg_is_word(cmph_name, "ok"):
+        set cmph_known = U64.literal(1)
+      end if
+      if cg_is_word(cmph_name, "error"):
+        set cmph_known = U64.literal(1)
+        set cmph_tag = U64.literal(1)
+      end if
+      if U64.equal(cmph_known, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cmph_payload = cgj_member(bytes, cmph_data, "payload")
+      if U64.equal(cmph_payload, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      if cgs_match_payload_ok(bytes, cmph_payload):
+        let cmph_out = cgs_local_get_hex(cmph_local)
+        set cmph_out = sico.text.concat(cmph_out, cgs_i32_const_hex(cmph_tag))
+        set cmph_out = sico.text.concat(cmph_out, "46")
+        return cmph_out
+      end if
       return "ERR:E-SH-CG-IR-EMIT"
     end if
-    let cmph_payload = cgj_member(bytes, cmph_data, "payload")
-    if U64.equal(cmph_payload, U64.literal(0)):
-      return "ERR:E-SH-CG-IR-PLAN"
-    end if
-    if cgs_match_payload_ok(bytes, cmph_payload):
-      let cmph_out = cgs_local_get_hex(cmph_local)
-      set cmph_out = sico.text.concat(cmph_out, cgs_i32_const_hex(cmph_tag))
-      set cmph_out = sico.text.concat(cmph_out, "46")
-      return cmph_out
-    end if
-    return "ERR:E-SH-CG-IR-EMIT"
+    return "ERR:E-SH-CG-IR-MATCH-VARIANT"
   end if
   return "ERR:E-SH-CG-IR-EMIT"
 end function
@@ -5007,11 +5097,11 @@ function cgs_function_body_hex(bytes: Bytes, index: U64) returns Text:
   end if
   let cgfh_locals = cgs_function_local_hex(bytes, cgfh_fn)
   if sico.text.starts_with(cgfh_locals, "ERR:"):
-    return ""
+    return cgfh_locals
   end if
   let cgfh_code = cgs_function_instr_hex(bytes, cgfh_fn, U64.literal(1))
   if sico.text.starts_with(cgfh_code, "ERR:"):
-    return ""
+    return cgfh_code
   end if
   let cgfh_local_len = sico.text.length(cgfh_locals)
   let cgfh_groups = U64.shr(cgfh_local_len, U64.literal(2))
@@ -5042,6 +5132,9 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   let cccsh_index = U64.literal(0)
   while U64.less_than(cccsh_index, cccsh_count):
     let cccsh_body = cgs_function_body_hex(bytes, cccsh_index)
+    if sico.text.starts_with(cccsh_body, "ERR:"):
+      return cccsh_body
+    end if
     if U64.equal(sico.text.length(cccsh_body), U64.literal(0)):
       return ""
     end if

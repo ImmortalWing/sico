@@ -61,6 +61,8 @@ STEP-0533 为了给 T2 的拒绝归因，顺带量了两个族的覆盖面：
 | **M-g3** 未认领的匹配头 | `sico.bytes.slice` 被拒 `ERR:E-SH-IR-STATEMENT` | 没有任何 match 路由认领这个头 | **21** | 本族（前端） |
 | **M-g4** 组件层零支持 | **全部** match 形状被发射端拒 | **STEP-0535 订正：这不是一个缺口，而是五个缺口叠加** —— 见下表 | **519**（全部） | 本族（发射端） |
 | **R0.4** 真实站点复核 | 组件层只测过 **4 个合成 fixture** | 「42 / 519 形状面闭合」是**外推**，owner 审计（AGENTS.md §10.1）判定不成立 ⇒ 改为逐站复核 | **42**（候选） | 本族（证据） |
+| **R0.3** canonical-IR 边界的 fail-closed | Result 投影只比**槽数**、variant 模式不校验**变体布局** | guest 的发射链把每个失败塌缩成空串，且两处闸门缺失 | **0**（不可由合法源触发） | 本族（发射端） |
+| **R0.5** 布局与边界覆盖 | ok/error 投影、Result cell、布尔模式、I64 checked、U64 溢出/下溢未逐字节钉 | 覆盖缺口，不是行为缺口 | **0**（合成形状） | 本族（证据） |
 
 **真实站点复核结果（R0.4，账本 `selfhost/match-component-coverage-v0.json`）**：42 个候选站点（`U64.checked_add` 头 + 宿主函数 ≤2 形参）逐站对 oracle 跑**两条轴**（canonical IR + 组件字节，组件轴过真实 `wasmparser::Validator`）：
 
@@ -82,6 +84,35 @@ STEP-0533 为了给 T2 的拒绝归因，顺带量了两个族的覆盖面：
 | **M-g4c** 分支载荷投影 | arm 体读载荷的 `project` 只认**命名记录** | 没有 Result 分支（`ok` / `error`）的投影 | ✅ **闭合（STEP-0535）** |
 | **M-g4d** Result 扁平布局 | `Result[U64, NumericError]` 被拒 `ERR:E-SH-CG-IR-FLAT` | 生产后端 `lower_local_types` 对该形状有专门分支（`[i32 tag, i64 ok]`） | ✅ **闭合（STEP-0535）** |
 | **M-g3'** 宿主调用传输 | `sico.list.get` 头的形状仍被拒 | 发射器没有该 intrinsic 的宿主调用传输 | ❌ **仍开（15 站点）** |
+
+### 3.1 R0.3 / R0.5：canonical-IR 边界的 fail-closed 与布局覆盖
+
+**注入夹具**（runner 测试侧，**不新增产品 CLI、不改 Rust oracle**）：把 stdin 的 canonical IR **直接**交给 `codegen.component_hex_for_ir` / `codegen.component_refusal_for_ir` ⇒ **Sico 前端无法产生的 IR 也能到达生产后端看到的同一条边界**；畸形 IR 用 `serde_json::to_string` 序列化（`canonical_json` 会先跑 `verify`）。
+
+**guest 侧补齐的两道闸门**（`selfhost/codegen.sico`）：
+
+| 闸门 | 生产后端合同 | guest 现状 → 现在 | 身份 |
+|---|---|---|---|
+| Result 投影的**完整 Wasm 类型序列** | `Operation::Project` 布局比较 `layout.types != expected` | 只比槽数 → **比完整 flat-type 序列**（新增 `cgs_result_arm_ty`） | `ERR:E-SH-CG-IR-PROJECT-TYPE` |
+| variant 模式的**变体布局** | `LocalLayout::tag` 拒非变体值；`LocalLayout::scalar` 拒聚合值 | 直接读首槽 → **要求 `result` 值 / `bool` 单槽标量** | `ERR:E-SH-CG-IR-MATCH-VARIANT` / `ERR:E-SH-CG-IR-MATCH-SCALAR` |
+
+**拒绝身份透传**：发射链此前把失败塌缩成空串 ⇒ 现改为**身份沿链透传**，并新增导出函数 `component_refusal_for_ir`（成功 `""`，失败返回第一道拒绝的身份）；`component_hex_for_ir` 的公开契约不变。
+
+**实测（R0.3，固件 `the_malformed_canonical_ir_is_refused_by_the_guest_and_by_the_rust_oracle`）**：
+
+| 形状 | Rust oracle | guest 身份 |
+|---|---|---|
+| 阳性对照（未畸形） | 发射组件 | **组件字节逐字节等同** |
+| 同槽数异型投影 | 拒（verifier） | `ERR:E-SH-CG-IR-PROJECT-TYPE` |
+| 非 variant 值上的 variant 模式 | 拒（verifier） | `ERR:E-SH-CG-IR-MATCH-VARIANT` |
+| 非布尔值上的字面模式 | 拒（verifier） | `ERR:E-SH-CG-IR-MATCH-SCALAR` |
+| 非法嵌套 payload | 拒（后端 payload inspection） | `ERR:E-SH-CG-IR-EMIT` |
+
+**实测（R0.5，固件 `the_result_layout_and_the_checked_arithmetic_boundaries_are_pinned`）**：六个形状与生产后端**逐字节等同**（都过真实 validator）—— `ok` 投影 / `Result[u64,u64]` cell / `error` 投影 / 布尔模式 / `U64` add 溢出判定 / `U64` sub 下溢判定；**I64 checked 是 guest 的显式收窄**：oracle 发射、guest `ERR:E-SH-CG-IR-EMIT`。
+
+> **口径**：这些覆盖是**合成形状**口径（可由前端产生的 IR + 不可由前端产生的畸形 IR），**不是**真实站点口径，也**不是**冻结语料口径 ⇒ 三种口径分别报告，不合并计数。
+>
+> **残留**：溢出/下溢的覆盖是**发射字节级**的，**不是**运行期行为证据（注入的 `size` 不在 `run` 的可达路径上）。
 
 ## 4. S 内 `match` 语句普查（519 条，口径：文本计数）
 
@@ -119,7 +150,8 @@ STEP-0533 为了给 T2 的拒绝归因，顺带量了两个族的覆盖面：
 | **真实站点逐站复核** | ✅ **STEP-0535 R0.4**：账本 `selfhost/match-component-coverage-v0.json`（42 条，含 path/function/head/case-shape/verdict/digests）+ 探针 `tools/probe-m22-match-coverage.ps1` + 固件 `sico_compiler_reproduces_the_frozen_match_site_ledger`（逐站 IR + 组件 + 真实 validator）⇒ **42 / 42 有当前快照证据** |
 | `wasmparser::Validator` 通过 | ⏳ 前端逐字节等同的行本身两侧都过；**真实站点**：**8 / 42** 的组件两侧都过真实 validator |
 | 前沿探针期望值已翻转 | ✅ STEP-0534：**65 → 71** 条（**+6**：3 条 `lowered` + 3 条 typed 拒绝期望）⇒ 实测 `FRONTIER_UNCHANGED`（71/71）；**STEP-0535 只改发射端，前沿不变** |
-| 固件电池绿 | ✅ STEP-0535：**173 → 174**（**+1 条**：站点账本钉）+ **版本化电池** `tools/validate-m22-s5.ps1`（取代一次性 `target/tmp` 电池脚本） |
+| 固件电池绿 | ✅ STEP-0535：**173 → 174**（**+1 条**：站点账本钉）+ **版本化电池** `tools/validate-m22-s5.ps1`（取代一次性 `target/tmp` 电池脚本）；**R0.3 / R0.5 再 +2 条**（畸形 IR 拒绝 + 布局/边界）⇒ **176** |
+| **canonical-IR 边界的 fail-closed** | ✅ **R0.3**：四个畸形形状**双方 typed 拒**（Rust oracle 拒 + guest 带**可归因身份**拒），阳性对照证明夹具确实到达发射端（§3.1） |
 | **独立 CI 绿** | ⏳ 本片推送后触发下一轮，**裁决由下一片回填**；上一批 **STEP-0533** 的 **run #42 = success ✅**（run id `40048806433`，01:13:31Z → 01:33:09Z，19m38s ⇒ #40 / #41 / #42 三轮连续绿）—— 见 [STEP-0534 §7.6](./steps/STEP-0534-m22-w2-s5-w2-match-truth.md) |
 
 ⇒ **本族未闭合**：`match` 构造在 guest 里**前端只覆盖 11% 的 S 形状**，**组件层真实站点只有 8 / 42 组件级全等**；**D10 ⇒ 不得降级、不得宣告闭合**。

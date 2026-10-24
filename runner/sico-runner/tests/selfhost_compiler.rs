@@ -3,7 +3,10 @@
 //! reserializes them byte-exactly.
 
 use sico_codegen_wasm as codegen_oracle;
-use sico_ir::{Module, Operation, Terminator, Type, ValueId, canonical_json, lower_core, verify};
+use sico_ir::{
+    Block, BlockId, Function, Instruction, Local, MatchArm, Module, Operation, Parameter, Pattern,
+    SourceRange, Terminator, Type, ValueId, canonical_json, lower_core, verify,
+};
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
@@ -8740,6 +8743,9 @@ fn sico_compiler_lowers_the_step0535_codegen_functions_byte_exactly() {
         "cgs_match_hex",
         "cgs_checked_fixed_hex",
         "cgs_project_result_hex",
+        "cgs_result_arm_ty",
+        "component_hex_for_ir",
+        "component_refusal_for_ir",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
@@ -9506,6 +9512,593 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
                 "{}: the Component digest of {path}:{function}",
                 site.id
             );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0536 (M22 R0.3 / R0.5): the canonical-IR injection harness.
+//
+// The canonical IR is the guest emitter's untrusted boundary input. The
+// injection fixture hands the ingested IR straight to `codegen`, so an IR the
+// Sico frontend cannot produce still reaches the boundary the production
+// backend sees, and both sides are asked the same question about the same
+// bytes.
+//
+// Nothing here changes the production compiler: the oracle stays the Rust
+// frontend plus the Rust backend, and the guest stays the Sico emitter.
+// ---------------------------------------------------------------------------
+
+/// The injection fixture: it reads the canonical IR from stdin and answers
+/// with the emitted component, or with the identity of the refusal.
+const IR_INJECTION_SOURCE: &str = r#"record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+use codegen.component_hex_for_ir
+use codegen.component_refusal_for_ir
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let refusal = codegen.component_refusal_for_ir(input.stdin)
+  if U64.equal(sico.text.length(refusal), U64.literal(0)):
+    let component_hex = codegen.component_hex_for_ir(input.stdin)
+    return ok(ScriptOutput(stdout: sico.text.encode(component_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  end if
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: refusal))
+end function
+"#;
+
+fn injection_sources() -> [(&'static str, &'static str); 2] {
+    [
+        ("inject.sico", IR_INJECTION_SOURCE),
+        ("codegen.sico", CODEGEN_SOURCE),
+    ]
+}
+
+fn injection_component() -> &'static [u8] {
+    static COMPONENT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    COMPONENT.get_or_init(|| cached_component("inject.sico", &injection_sources()))
+}
+
+/// The guest's answer for one injected canonical IR: the emitted component
+/// hex, or the identity of the refusal.
+enum GuestEmission {
+    Component(String),
+    Refusal(String),
+}
+
+fn guest_emission(ir: &str) -> GuestEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel: 800_000_000_000,
+            timeout: std::time::Duration::from_secs(120),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    let outcome = outcome.expect("the injected IR bounds hold");
+    match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestEmission::Component(String::from_utf8(output.stdout).expect("the hex is utf-8"))
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestEmission::Refusal(message)
+        }
+        _ => panic!("the injection fixture must answer with a component or a refusal"),
+    }
+}
+
+/// The canonical IR text of a module, without the verifier's gate: the
+/// malformed shapes have to reach the emitter, so they are serialized
+/// directly instead of through `canonical_json`.
+fn injected_ir(module: &Module) -> String {
+    serde_json::to_string(module).expect("the module serializes")
+}
+
+fn zero_range() -> SourceRange {
+    SourceRange { start: 0, end: 0 }
+}
+
+fn injected_parameter(id: u32, name: &str, ty: Type) -> Parameter {
+    Parameter {
+        id: ValueId(id),
+        name: name.to_owned(),
+        ty,
+        range: zero_range(),
+    }
+}
+
+fn injected_local(name: &str, ty: Type) -> Local {
+    Local {
+        name: name.to_owned(),
+        ty,
+        range: zero_range(),
+    }
+}
+
+fn injected_instruction(result: u32, ty: Type, operation: Operation) -> Instruction {
+    Instruction {
+        result: ValueId(result),
+        ty,
+        operation,
+        range: zero_range(),
+    }
+}
+
+fn injected_block(id: u32, instructions: Vec<Instruction>, terminator: Terminator) -> Block {
+    Block {
+        id: BlockId(id),
+        instructions,
+        terminator,
+        range: zero_range(),
+    }
+}
+
+fn injected_arm(patterns: Vec<Pattern>, target: u32) -> MatchArm {
+    MatchArm {
+        patterns,
+        target: BlockId(target),
+        range: zero_range(),
+    }
+}
+
+/// The `size` function of the module, for the shapes that rewrite it.
+fn injected_size(module: &mut Module) -> &mut Function {
+    module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function")
+}
+
+/// The canonical IR of the two-parameter `U64.checked_add` match shape: the
+/// packed `Result` cell, the `ok` arm projection and the checked add.
+fn match_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+    ))
+}
+
+/// The `Result[u64, u64]` cell shape: both arms flatten, so the cell's flat
+/// layout is the tag plus two payload slots and the `error` arm can be
+/// projected. The shape is a layout shape, not a semantics one: the arm the
+/// block belongs to is not the arm the block projects.
+fn result_cell_module(field: &str) -> Module {
+    let mut module = match_shape_module();
+    let result_ty = Type::Result {
+        ok: Box::new(Type::U64),
+        error: Box::new(Type::U64),
+    };
+    let blocks = vec![
+        injected_block(
+            0,
+            vec![
+                injected_instruction(2, Type::U64, Operation::ConstU64(0)),
+                injected_instruction(
+                    3,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 0,
+                        value: ValueId(2),
+                    },
+                ),
+                injected_instruction(
+                    4,
+                    result_ty.clone(),
+                    Operation::Variant {
+                        name: "error".to_owned(),
+                        payload: vec![ValueId(2)],
+                    },
+                ),
+                injected_instruction(
+                    5,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 1,
+                        value: ValueId(4),
+                    },
+                ),
+            ],
+            Terminator::Match {
+                values: vec![ValueId(4)],
+                arms: vec![
+                    injected_arm(
+                        vec![Pattern::Variant {
+                            name: "ok".to_owned(),
+                            payload: vec![Pattern::Binding("total".to_owned())],
+                        }],
+                        1,
+                    ),
+                    injected_arm(
+                        vec![Pattern::Variant {
+                            name: "error".to_owned(),
+                            payload: vec![Pattern::Wildcard],
+                        }],
+                        2,
+                    ),
+                ],
+            },
+        ),
+        injected_block(
+            1,
+            vec![
+                injected_instruction(6, result_ty.clone(), Operation::ReadLocal { local: 1 }),
+                injected_instruction(
+                    7,
+                    Type::U64,
+                    Operation::Project {
+                        base: ValueId(6),
+                        field: field.to_owned(),
+                    },
+                ),
+                injected_instruction(
+                    8,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 2,
+                        value: ValueId(7),
+                    },
+                ),
+                injected_instruction(9, Type::U64, Operation::ReadLocal { local: 2 }),
+                injected_instruction(
+                    10,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 0,
+                        value: ValueId(9),
+                    },
+                ),
+            ],
+            Terminator::Jump(BlockId(3)),
+        ),
+        injected_block(
+            2,
+            vec![injected_instruction(11, Type::U64, Operation::ConstU64(0))],
+            Terminator::Return(Some(ValueId(11))),
+        ),
+        injected_block(
+            3,
+            vec![injected_instruction(
+                12,
+                Type::U64,
+                Operation::ReadLocal { local: 0 },
+            )],
+            Terminator::Return(Some(ValueId(12))),
+        ),
+    ];
+    let function = injected_size(&mut module);
+    function.locals = vec![
+        injected_local("out", Type::U64),
+        injected_local("#match1", result_ty),
+        injected_local("#matchtotal", Type::U64),
+    ];
+    function.blocks = blocks;
+    module
+}
+
+/// The boolean match shape: a `bool` value read by a literal pattern.
+fn bool_pattern_module() -> Module {
+    let mut module = match_shape_module();
+    let blocks = vec![
+        injected_block(
+            0,
+            Vec::new(),
+            Terminator::Match {
+                values: vec![ValueId(0)],
+                arms: vec![
+                    injected_arm(vec![Pattern::Bool(true)], 1),
+                    injected_arm(vec![Pattern::Bool(false)], 2),
+                ],
+            },
+        ),
+        injected_block(
+            1,
+            vec![injected_instruction(1, Type::U64, Operation::ConstU64(1))],
+            Terminator::Return(Some(ValueId(1))),
+        ),
+        injected_block(
+            2,
+            vec![injected_instruction(2, Type::U64, Operation::ConstU64(2))],
+            Terminator::Return(Some(ValueId(2))),
+        ),
+    ];
+    let function = injected_size(&mut module);
+    function.parameters = vec![injected_parameter(0, "a", Type::Bool)];
+    function.locals = Vec::new();
+    function.blocks = blocks;
+    module
+}
+
+/// The signed checked shape: the same match over `i64` operands.
+fn i64_checked_module() -> Module {
+    let mut module = match_shape_module();
+    let result_ty = Type::Result {
+        ok: Box::new(Type::I64),
+        error: Box::new(Type::Named("NumericError".to_owned())),
+    };
+    let function = injected_size(&mut module);
+    function.return_type = Type::I64;
+    function.parameters = vec![
+        injected_parameter(0, "a", Type::I64),
+        injected_parameter(1, "b", Type::I64),
+    ];
+    function.locals = vec![
+        injected_local("out", Type::I64),
+        injected_local("#match1", result_ty.clone()),
+        injected_local("#matchtotal", Type::I64),
+    ];
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            let replacement = match &instruction.operation {
+                Operation::ConstU64(value) => {
+                    Some(Operation::ConstI64(i64::try_from(*value).unwrap_or(0)))
+                }
+                _ => None,
+            };
+            if let Some(operation) = replacement {
+                instruction.operation = operation;
+            }
+            instruction.ty = match &instruction.ty {
+                Type::U64 => Type::I64,
+                Type::Result { ok, error } if **ok == Type::U64 => Type::Result {
+                    ok: Box::new(Type::I64),
+                    error: error.clone(),
+                },
+                other => other.clone(),
+            };
+        }
+    }
+    module
+}
+
+/// The unsigned checked subtraction: the underflow check next to the
+/// overflow one.
+fn checked_sub_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::CheckedAdd { left, right } = instruction.operation {
+                    instruction.operation = Operation::CheckedSub { left, right };
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The projection that reads the `ok` arm but declares a `bool` result: the
+/// same slot count, a different Wasm type.
+fn project_type_mismatch_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::Project { .. } = &instruction.operation {
+                    instruction.ty = Type::Bool;
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The match whose value is a plain `u64`: a variant pattern over a value
+/// that carries no discriminant.
+fn variant_over_scalar_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { values, .. } = &mut block.terminator {
+                values[0] = ValueId(0);
+            }
+        }
+    }
+    module
+}
+
+/// The match whose value is a plain `u64` read by a literal pattern: a
+/// literal pattern needs a single scalar slot, and `u64` is one -- but the
+/// pattern's own type does not match the value's.
+fn bool_over_scalar_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { values, arms } = &mut block.terminator {
+                values[0] = ValueId(0);
+                for arm in arms {
+                    arm.patterns.fill(Pattern::Bool(true));
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The match arm whose variant pattern carries a nested variant pattern.
+fn nested_payload_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { arms, .. } = &mut block.terminator {
+                for arm in arms {
+                    for pattern in &mut arm.patterns {
+                        if let Pattern::Variant { payload, .. } = pattern {
+                            payload.clear();
+                            payload.push(Pattern::Variant {
+                                name: "ok".to_owned(),
+                                payload: Vec::new(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_malformed_canonical_ir_is_refused_by_the_guest_and_by_the_rust_oracle() {
+    // STEP-0536, M22 R0.3: the canonical IR is an untrusted boundary input.
+    // The two malformed shapes the audit named -- a projection that carries
+    // the same slot count but a different Wasm type, and a variant pattern
+    // over a value that carries no discriminant -- must be refused on both
+    // sides, and the third one -- a nested pattern payload -- must stay
+    // refused as well.
+    //
+    // The positive control comes first: the same harness, the same module
+    // and no malformation must still emit the production component, so a
+    // refusal below is the malformation and not a broken harness.
+    let control = match_shape_module();
+    let expected =
+        codegen_oracle::compile_script_program(&control).expect("the oracle emits the match shape");
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the emitted match component passes the real Wasm validator");
+    match guest_emission(&injected_ir(&control)) {
+        GuestEmission::Component(hex) => assert_eq!(
+            decode_hex(hex.as_bytes()),
+            expected,
+            "the injection harness must reach the emitter"
+        ),
+        GuestEmission::Refusal(identity) => {
+            panic!("the injection harness must reach the emitter, refused with {identity}")
+        }
+    }
+
+    for (label, module, identity) in [
+        (
+            "same-slot-count-wrong-type-projection",
+            project_type_mismatch_module(),
+            "ERR:E-SH-CG-IR-PROJECT-TYPE",
+        ),
+        (
+            "variant-pattern-over-a-non-variant-value",
+            variant_over_scalar_module(),
+            "ERR:E-SH-CG-IR-MATCH-VARIANT",
+        ),
+        (
+            "literal-pattern-over-a-non-boolean-value",
+            bool_over_scalar_module(),
+            "ERR:E-SH-CG-IR-MATCH-SCALAR",
+        ),
+        (
+            "nested-payload-pattern",
+            nested_payload_module(),
+            "ERR:E-SH-CG-IR-EMIT",
+        ),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "{label}: the Rust oracle must refuse the malformed IR"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(actual) => assert_eq!(
+                actual, identity,
+                "{label}: the guest must refuse the malformed IR with its own identity"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!("{label}: the guest must refuse the malformed IR, got {hex}")
+            }
+        }
+    }
+}
+
+#[test]
+fn the_result_layout_and_the_checked_arithmetic_boundaries_are_pinned() {
+    // STEP-0536, M22 R0.5: the layout and boundary shapes the audit named.
+    // Every accepted shape is compared byte for byte against the production
+    // backend -- not only its length -- and the one shape the guest covers
+    // narrower than the oracle keeps its own typed refusal identity.
+    for (label, module) in [
+        ("ok-arm-projection", match_shape_module()),
+        ("result-cell", result_cell_module("ok")),
+        ("error-arm-projection", result_cell_module("error")),
+        ("bool-pattern", bool_pattern_module()),
+        ("u64-add-overflow-check", match_shape_module()),
+        ("u64-sub-underflow-check", checked_sub_module()),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => assert_eq!(
+                decode_hex(hex.as_bytes()),
+                expected,
+                "{label}: the guest component must be byte for byte equal"
+            ),
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The signed checked arithmetic is the guest's own narrowing: the backend
+    // emits the signed overflow check, the guest refuses the shape with a
+    // typed identity instead of approximating the signed comparison.
+    let signed = i64_checked_module();
+    let signed_oracle = codegen_oracle::compile_script_program(&signed);
+    assert!(
+        signed_oracle.is_ok(),
+        "the oracle emits the signed checked shape: {signed_oracle:?}"
+    );
+    match guest_emission(&injected_ir(&signed)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "the signed checked shape must stay a typed refusal"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the signed checked shape must stay a typed refusal, got {hex}")
         }
     }
 }
