@@ -27,6 +27,11 @@ This census answers exactly that question, per site, from the frozen sources:
 The result is a named gap list, not a capability claim: the guest still refuses
 every item the census reports as missing.
 
+The gap list covers **every site whose canonical IR already equals the
+oracle's and whose component is not byte-equal yet** -- the component axis may
+end in a typed refusal or in a budget exhaustion, and both leave the same
+vocabulary gap open (STEP-0540).
+
 Exit codes: 0 = the frozen artifact still describes the frozen S,
 1 = the artifact drifted, the closure rule disagrees with the ledger, or the
 oracle could not be reached.
@@ -61,6 +66,7 @@ SCHEMA = "sico.m22.emitter-vocabulary.v1"
 # up in the guest source without an entry here, so the guest's helper coverage
 # and the census can never drift apart silently.
 GUEST_HELPER_BODIES = {
+    "sico.bytes.equal": "cg_bytes_equal_helper_body_hex",
     "sico.bytes.utf8_decode": "cg_utf8_validate_helper_body_hex",
     "sico.text.concat": "cg_concat_helper_body_hex",
     "sico.text.length": "cg_text_length_helper_body_hex",
@@ -379,7 +385,14 @@ def main() -> int:
     required_helper_frequency: Counter[str] = Counter()
     missing_helper_frequency: Counter[str] = Counter()
     for site in ledger["sites"]:
-        if not site["verdict"].startswith("ir-equal+component-refused"):
+        # A site owes the guest emitter a component exactly when its canonical IR
+        # already equals the oracle's and the guest has **not** produced the
+        # oracle's component bytes yet.  The component axis can end in a typed
+        # refusal *or* in a budget exhaustion (STEP-0540); both leave the
+        # vocabulary gap open, so the census must not drop the exhausted sites.
+        if not site["verdict"].startswith("ir-equal"):
+            continue
+        if site["verdict"].startswith("ir-equal+component-equal"):
             continue
         body, reason = closure(sources[site["path"]], site["function"])
         if body is None:

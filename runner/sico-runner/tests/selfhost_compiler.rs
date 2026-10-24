@@ -6285,6 +6285,17 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
     // STEP-0539 (emitter vocabulary A-2) adds the two four-slot numeric
     // intrinsics: the shared numeric-error arm, the two intrinsic emitters
     // and the `local.tee` byte helper they need.
+    //
+    // STEP-0540 (emitter vocabulary B-1) adds the first **core helper** of
+    // the vocabulary: the frozen `sico.bytes.equal` helper body, the generic
+    // helper index that numbers the helpers in the backend's own
+    // alphabetical order, and the intrinsic emitter that calls it.
+    //
+    // The same slice also put the emitter's own type dispatch under the
+    // frontier: `cgs_flat_hex` and `cgs_value_ty` are the two functions the
+    // dispatch runs through, and neither was pinned before.  Pinning them
+    // keeps the frontier honest -- the guest frontend has to be able to lower
+    // the emitter's own code, not just the helpers this slice added.
     for name in [
         "cgs_function_count",
         "cgs_instruction_is_intrinsic",
@@ -6301,11 +6312,17 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
         "cgs_numeric_error_hex",
         "cgs_list_get_hex",
         "cgs_bytes_slice_hex",
+        "cg_bytes_equal_helper_body_hex",
+        "cgs_helper_index",
+        "cgs_bytes_equal_hex",
+        "cgs_flat_hex",
+        "cgs_value_ty",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
-        let RunOutcome::Output(output) = run_guest(&source) else {
-            panic!("codegen function {name} must compile through the guest frontend")
+        let outcome = run_guest(&source);
+        let RunOutcome::Output(output) = outcome else {
+            panic!("codegen function {name} must compile through the guest frontend: {outcome:?}")
         };
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
@@ -10404,6 +10421,147 @@ fn the_emitter_vocabulary_a2_covers_the_list_get_and_bytes_slice_shapes() {
         ),
         GuestEmission::Component(hex) => {
             panic!("the guest must refuse the list.get call without its index, got {hex}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0540 (emitter vocabulary B-1): the first **core helper** of the
+// emission vocabulary -- `sico.bytes.equal`.
+//
+// `sico.bytes.equal` is not an inline intrinsic: the backend emits a core
+// helper function for it and the call site only forwards the two
+// `(pointer, length)` pairs into that helper.  The helper is the first one in
+// the backend's own alphabetical helper order, so a module that uses it
+// shifts every helper the guest already knew about by one index -- which is
+// exactly what the `bytes.equal` + `text.concat` shape below pins.
+// ---------------------------------------------------------------------------
+
+/// The `sico.bytes.equal` shape of the frozen S: two encoded byte strings
+/// compared for equality.
+fn bytes_equal_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(w: Text, target: Text) returns Bool:\n  return sico.bytes.equal(sico.text.encode(w), sico.text.encode(target))\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `bytes.equal` takes
+/// the lower core index and `concat` the next one.
+fn bytes_equal_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(a: Text, b: Text) returns Text:\n  if sico.bytes.equal(sico.text.encode(a), sico.text.encode(b)):\n    return sico.text.concat(a, b)\n  end if\n  return sico.text.concat(b, a)\nend function",
+    ))
+}
+
+/// The same call with its second argument removed: the intrinsic's own arity
+/// gate must stay a typed refusal on both sides.
+fn bytes_equal_without_second_module() -> Module {
+    let mut module = bytes_equal_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.bytes.equal" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operands are the two **text** parameters instead of
+/// the two encoded byte strings: the operand-kind gate must stay a typed
+/// refusal on both sides.
+fn bytes_equal_text_operand_module() -> Module {
+    let mut module = bytes_equal_shape_module();
+    for function in &mut module.functions {
+        let parameters: Vec<ValueId> = function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id)
+            .collect();
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.bytes.equal" {
+                    arguments.clear();
+                    arguments.extend_from_slice(&parameters);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b1_covers_the_bytes_equal_helper_shape() {
+    // STEP-0540 (emitter vocabulary B-1): the first core helper of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("bytes-equal", bytes_equal_shape_module(), 1130),
+        (
+            "bytes-equal-and-concat",
+            bytes_equal_and_concat_module(),
+            1274,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its second argument and the
+    // intrinsic with text operands are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", bytes_equal_without_second_module()),
+        ("operand-kind", bytes_equal_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the bytes.equal shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the bytes.equal shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the bytes.equal shape with the {label} fault, got {hex}"
+                )
+            }
         }
     }
 }
