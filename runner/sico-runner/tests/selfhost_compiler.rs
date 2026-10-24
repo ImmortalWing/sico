@@ -8516,6 +8516,150 @@ fn the_t2_match_head_sites_keep_their_measured_refusal_identities() {
     }
 }
 
+fn match_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn the_match_construct_truth_is_measured_and_pinned() {
+    // STEP-0534: the `match` construct is the largest uncovered shape in the
+    // frozen source set S (519 statements, measured by the STEP-0534 census).
+    // The guest frontend lowers three of the shape cells byte for byte and
+    // refuses the others with typed identities; the guest **emitter** refuses
+    // every match shape, because it has no match support at all.
+    //
+    // These are the measured numbers the next knife has to move.  Every byte
+    // count is the Rust frontend's own canonical IR length, measured from
+    // production output.
+    for (label, body, ir_bytes) in [
+        (
+            "checked-add-in-a-two-parameter-function",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4511,
+        ),
+        (
+            "checked-add-in-a-one-parameter-function",
+            "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4438,
+        ),
+        (
+            "list-get-generic",
+            "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+            3615,
+        ),
+        (
+            "list-get-typed-in-a-three-parameter-function",
+            "function size(values: List[U64], idx: U64, fallback: U64) returns U64:\n  match sico.list.get[U64](values, idx):\n    case ok(value):\n      return value\n    case error(_):\n      return fallback\n  end match\nend function",
+            3577,
+        ),
+        (
+            "nested-match",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      match U64.checked_sub(total, b):\n        case ok(inner):\n          set out = inner\n        case error(_):\n          return U64.literal(0)\n      end match\n    case error(_):\n      return U64.literal(1)\n  end match\n  return out\nend function",
+            6342,
+        ),
+        (
+            "two-return-cases",
+            "function size(a: U64, b: U64) returns U64:\n  match U64.checked_add(a, b):\n    case ok(total):\n      return total\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            3547,
+        ),
+    ] {
+        let source = match_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} match shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} match shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The refusals, each with its own measured identity.  The parameter-count
+    // gate (`ERR:E-SH-IR-MATCH-SHAPE`) belongs to the checked-arithmetic match
+    // route; the operator whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a second,
+    // different gate; a head no match route claims at all falls through to the
+    // general route (`ERR:E-SH-IR-STATEMENT`).
+    for (label, body, identity, ir_bytes) in [
+        (
+            "checked-add-in-a-three-parameter-function",
+            "function size(a: U64, b: U64, c: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-MATCH-SHAPE",
+            4585,
+        ),
+        (
+            "checked-add-in-a-twelve-parameter-function",
+            "function size(a: U64, b: U64, c: U64, d: U64, e: U64, f: U64, g: U64, h: U64, i: U64, j: U64, k: U64, l: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-MATCH-SHAPE",
+            5247,
+        ),
+        (
+            "checked-sub",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_sub(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "checked-div",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_div(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "checked-mul",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_mul(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "bytes-slice",
+            "function size(data: Bytes, start: U64, length: U64) returns Bytes:\n  let out = data\n  match sico.bytes.slice(data, start, length):\n    case ok(piece):\n      set out = piece\n    case error(_):\n      set out = data\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-STATEMENT",
+            4555,
+        ),
+    ] {
+        let source = match_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} match shape is pinned"
+        );
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} match shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // The component layer refuses **every** match shape: the guest emitter has
+    // no match support at all, so not one of the 519 S match statements can
+    // reach a component yet.
+    for (label, body) in [
+        (
+            "checked-add-in-a-two-parameter-function",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+        ),
+        (
+            "list-get-generic",
+            "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+        ),
+        (
+            "nested-match",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      match U64.checked_sub(total, b):\n        case ok(inner):\n          set out = inner\n        case error(_):\n          return U64.literal(0)\n      end match\n    case error(_):\n      return U64.literal(1)\n  end match\n  return out\nend function",
+        ),
+    ] {
+        let source = match_fixture(body);
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} match component")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
 #[test]
 fn sico_compiler_lowers_the_step0532_parser_functions_byte_exactly() {
     // STEP-0532, T2-g2: the guest frontend has to keep lowering the

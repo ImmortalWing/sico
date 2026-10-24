@@ -415,6 +415,45 @@ $cases = @(
         Source = "function hex_text_bytes(text: Text) returns U64:`n  match U64.checked_div(sico.text.length(text), U64.literal(2)):`n    case ok(length):`n      return length`n    case error(_):`n      return U64.literal(0)`n  end match`nend function`n"
         Expected = 'refused:ERR:E-SH-IR-MATCH-SHAPE'
     }
+    # STEP-0534: the `match` construct is the largest uncovered shape in the
+    # frozen source set S (519 statements, measured).  The guest frontend
+    # lowers three of the shape cells and refuses the others with typed
+    # identities; the emitter refuses every match shape.
+    @{
+        Name = 'match-checked-add-in-a-two-parameter-function'
+        Source = "function size(a: U64, b: U64) returns U64:`n  let out = U64.literal(0)`n  match U64.checked_add(a, b):`n    case ok(total):`n      set out = total`n    case error(_):`n      return U64.literal(0)`n  end match`n  return out`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'match-checked-add-in-a-one-parameter-function'
+        Source = "function size(a: U64) returns U64:`n  let out = U64.literal(0)`n  match U64.checked_add(a, a):`n    case ok(total):`n      set out = total`n    case error(_):`n      return U64.literal(0)`n  end match`n  return out`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'match-list-get-generic'
+        Source = "function size(words: List[Text], i: U64) returns Text:`n  match sico.list.get(words, i):`n    case ok(w):`n      return w`n    case error(_):`n      return """"`n  end match`nend function`n"
+        Expected = 'lowered'
+    }
+    # STEP-0534: the nested match is measured by the firmware pin (the
+    # runner's 800 B fuel budget), not here: under the CLI's default fuel
+    # budget the same shape exhausts the fuel, and the smaller variant without
+    # the `let`/`set` shape is refused with `ERR:E-SH-IR-UNRESOLVED` -- a
+    # budget boundary, not a shape boundary.
+    @{
+        Name = 'match-checked-add-in-a-three-parameter-function'
+        Source = "function size(a: U64, b: U64, c: U64) returns U64:`n  let out = U64.literal(0)`n  match U64.checked_add(a, b):`n    case ok(total):`n      set out = total`n    case error(_):`n      return U64.literal(0)`n  end match`n  return out`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-MATCH-SHAPE'
+    }
+    @{
+        Name = 'match-checked-sub'
+        Source = "function size(a: U64, b: U64) returns U64:`n  let out = U64.literal(0)`n  match U64.checked_sub(a, b):`n    case ok(total):`n      set out = total`n    case error(_):`n      return U64.literal(0)`n  end match`n  return out`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-CALL-TARGET'
+    }
+    @{
+        Name = 'match-bytes-slice'
+        Source = "function size(data: Bytes, start: U64, length: U64) returns Bytes:`n  let out = data`n  match sico.bytes.slice(data, start, length):`n    case ok(piece):`n      set out = piece`n    case error(_):`n      set out = data`n  end match`n  return out`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-STATEMENT'
+    }
     @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"
