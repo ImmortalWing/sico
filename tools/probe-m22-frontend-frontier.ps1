@@ -351,6 +351,70 @@ $cases = @(
         Source = "function size(t: Text) returns U64:`n  let n = U64.literal(0)`n  set n = sico.text.length(sico.text.concat(t, `"x`"))`n  return n`nend function`n"
         Expected = 'lowered'
     }
+    # STEP-0533: the T2 family closure slice measured the S call sites as a
+    # matrix (position x argument form x enclosing operator).  The cells below
+    # are the ones the D15 truth table had no representative for -- the
+    # argument is a **local cell** rather than a parameter, or the call sits on
+    # the **right** side of the condition's operator.  All of them lower.
+    @{
+        Name = 'text-length-over-a-local-binding-in-a-set-position'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.literal(0)`n  set n = sico.text.length(x)`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-local-binding-in-an-if-condition'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  if U64.equal(sico.text.length(x), U64.literal(2)):`n    return U64.literal(1)`n  end if`n  return U64.literal(0)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-local-binding-in-an-if-condition-in-a-cell-function'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.literal(0)`n  if U64.equal(sico.text.length(x), U64.literal(2)):`n    set n = U64.literal(1)`n  end if`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-on-the-right-of-a-less-than-condition'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.literal(0)`n  if U64.less_than(U64.literal(0), sico.text.length(x)):`n    set n = U64.literal(1)`n  end if`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-on-the-right-of-an-equal-condition'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.literal(0)`n  if U64.equal(U64.literal(0), sico.text.length(x)):`n    set n = U64.literal(1)`n  end if`n  return n`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-local-binding-in-a-return-position'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  return sico.text.length(x)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-over-a-local-binding-in-a-return-position-in-a-cell-function'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.literal(0)`n  set n = U64.literal(1)`n  return sico.text.length(x)`nend function`n"
+        Expected = 'lowered'
+    }
+    @{
+        Name = 'text-length-in-a-real-s-function'
+        Source = "function append_shape(shape: Text, kind: Text, name: Text) returns Text:`n  let entry = sico.text.concat(kind, sico.text.concat(`":`", name))`n  if U64.equal(sico.text.length(shape), U64.literal(0)):`n    return entry`n  end if`n  return sico.text.concat(shape, sico.text.concat(`",`", entry))`nend function`n"
+        Expected = 'lowered'
+    }
+    # STEP-0533: the one cell the family does **not** cover -- the length call
+    # is an operand of another operator.  Seven S call sites sit in it; the
+    # guest frontend refuses them with two typed identities, and the refusal
+    # belongs to this family (T2-g3).
+    @{
+        Name = 'text-length-as-an-operator-operand'
+        Source = "function size(t: Text) returns U64:`n  let x = t`n  let n = U64.shr(sico.text.length(x), U64.literal(1))`n  return n`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-CALL-ARITY'
+    }
+    @{
+        Name = 'text-length-as-an-operator-operand-in-a-match-head'
+        Source = "function size(a: Text, b: Text) returns U64:`n  match U64.checked_div(sico.text.length(a), U64.literal(2)):`n    case ok(length):`n      return length`n    case error(_):`n      return U64.literal(0)`n  end match`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-CALL-ARGUMENT'
+    }
+    @{
+        Name = 'text-length-as-a-match-head-operand-in-a-one-parameter-function'
+        Source = "function hex_text_bytes(text: Text) returns U64:`n  match U64.checked_div(sico.text.length(text), U64.literal(2)):`n    case ok(length):`n      return length`n    case error(_):`n      return U64.literal(0)`n  end match`nend function`n"
+        Expected = 'refused:ERR:E-SH-IR-MATCH-SHAPE'
+    }
     @{
         Name = 'script-profile-run'
         Source = "record ScriptInput:`n  field arguments: List[Text]`n  field stdin: Bytes`nend record`n`nrecord ScriptOutput:`n  field stdout: Bytes`n  field stderr: Bytes`n  field exit_code: I64`nend record`n`nenum ScriptErrorCode:`n  case InvalidInput`nend enum`n`nrecord ScriptError:`n  field code: ScriptErrorCode`n  field message: Text`nend record`n`nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:`n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))`nend function`n"

@@ -8221,6 +8221,302 @@ fn the_t2_g2_s_site_refusals_belong_to_other_families() {
 }
 
 #[test]
+fn the_t2_cell_matrix_lowers_byte_exactly() {
+    // STEP-0533, T2 family closure slice X: the D15 truth table measured **one
+    // representative per position**, but the S call sites pair a position with
+    // an argument form and with an enclosing operator.  The census (measured,
+    // 332 call sites) has eight cells, and five of them had **no** byte-exact
+    // pin: the argument being a local cell rather than a parameter.
+    //
+    // This pin covers the cells that lower, so the family's coverage is a
+    // measured table instead of an assumption.  Every byte count is the Rust
+    // frontend's own canonical IR length, measured from production output.
+    for (label, body, ir_bytes) in [
+        (
+            "set-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = sico.text.length(x)\n  return n\nend function",
+            3080,
+        ),
+        (
+            "if-condition-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            3317,
+        ),
+        (
+            "if-condition-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3754,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3753,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right-of-an-equal",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3754,
+        ),
+        (
+            "return-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  return sico.text.length(x)\nend function",
+            2212,
+        ),
+        (
+            "return-position-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = U64.literal(1)\n  return sico.text.length(x)\nend function",
+            3069,
+        ),
+        (
+            "real-s-function-append-shape",
+            "function append_shape(shape: Text, kind: Text, name: Text) returns Text:\n  let entry = sico.text.concat(kind, sico.text.concat(\":\", name))\n  if U64.equal(sico.text.length(shape), U64.literal(0)):\n    return entry\n  end if\n  return sico.text.concat(shape, sico.text.concat(\",\", entry))\nend function",
+            4245,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn the_t2_cell_matrix_component_layer_covers_what_the_emitter_knows() {
+    // STEP-0533: the component layer of the T2 cells follows the frontend for
+    // the shapes whose **enclosing operator** the emitter knows, and refuses
+    // the others with its own typed identity.  The refusals belong to the
+    // operator family -- the control shapes below carry the same operators
+    // **without** a length call and are refused the same way.
+    //
+    // The emitter knows `U64.equal` conditions; it does not know
+    // `U64.less_than` ones.  That is a separate family (S has 990
+    // `U64.less_than` call sites), not a gap of this one.
+    for (label, body, component_bytes) in [
+        (
+            "set-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = sico.text.length(x)\n  return n\nend function",
+            1137,
+        ),
+        (
+            "if-condition-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1192,
+        ),
+        (
+            "if-condition-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right-of-an-equal",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
+        ),
+        (
+            "return-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  return sico.text.length(x)\nend function",
+            1091,
+        ),
+        (
+            "return-position-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = U64.literal(1)\n  return sico.text.length(x)\nend function",
+            1137,
+        ),
+        (
+            "real-s-function-append-shape",
+            "function append_shape(shape: Text, kind: Text, name: Text) returns Text:\n  let entry = sico.text.concat(kind, sico.text.concat(\":\", name))\n  if U64.equal(sico.text.length(shape), U64.literal(0)):\n    return entry\n  end if\n  return sico.text.concat(shape, sico.text.concat(\",\", entry))\nend function",
+            1360,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the cell fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} cell component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+    // The `U64.less_than` condition cells: the emitter refuses them, and the
+    // refusal is the operator family's -- the control shape carries the same
+    // operator without a length call and is refused the same way.
+    for (label, body) in [
+        (
+            "if-condition-with-the-length-on-the-right",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+        ),
+        (
+            "control-without-a-length-call",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), U64.literal(5)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} less_than condition")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
+#[test]
+fn the_t2_g3_operator_operand_gap_is_measured_and_attributed() {
+    // STEP-0533: the census found one T2 cell the family does **not** cover:
+    // the length call is an **operand of another operator**
+    // (`U64.shr(sico.text.length(x), U64.literal(1))`).  Seven S call sites
+    // sit in that cell (four in a `let`, one in a `return`, two in a `match`
+    // head).
+    //
+    // The oracle lowers all of them; the guest frontend refuses them with two
+    // typed identities -- `ERR:E-SH-IR-CALL-ARITY` in a statement position and
+    // `ERR:E-SH-IR-CALL-ARGUMENT` in a match head.  The control shapes below
+    // attribute the refusal: the same operator over non-length operands lowers
+    // byte for byte, so the gap is the **length call as an operand**, not the
+    // operator itself.
+    //
+    // The component layer refuses these shapes too, and so it refuses the
+    // control shape as well: the emitter knows neither `U64.shr` nor
+    // `U64.checked_div`.  Two independent gaps, recorded separately.
+    for (label, body, identity, ir_bytes) in [
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(sico.text.length(x), U64.literal(1))\n  return n\nend function",
+            "ERR:E-SH-IR-CALL-ARITY",
+            2437,
+        ),
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  let x = t\n  return U64.shr(sico.text.length(x), U64.literal(2))\nend function",
+            "ERR:E-SH-IR-CALL-ARITY",
+            2437,
+        ),
+        (
+            "match-head",
+            "function size(a: Text, b: Text) returns U64:\n  match U64.checked_div(sico.text.length(a), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+            3806,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} operator-operand shape is pinned"
+        );
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} operator-operand shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // Controls: the same operators over non-length operands lower byte for
+    // byte, so the refusal is the length call as an operand.
+    for (label, body, ir_bytes) in [
+        (
+            "control-shr",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(U64.literal(4), U64.literal(1))\n  return n\nend function",
+            2395,
+        ),
+        (
+            "control-match-route",
+            "function size(a: Text, b: Text) returns U64:\n  match U64.checked_div(U64.literal(4), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            3764,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} control shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} control shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The component layer refuses the operator-operand shapes **and** their
+    // controls: the emitter knows neither `U64.shr` nor `U64.checked_div`.
+    for (label, body) in [
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(sico.text.length(x), U64.literal(1))\n  return n\nend function",
+        ),
+        (
+            "control-shr",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(U64.literal(4), U64.literal(1))\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} shift shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
+#[test]
+fn the_t2_match_head_sites_keep_their_measured_refusal_identities() {
+    // STEP-0533: the two S call sites that sit in a `match` head
+    // (`compiler.sico`: `hex_text_bytes`, `positive_sleb_length`) carry two
+    // refusals, and the census separates them.
+    //
+    // The real functions have **one** parameter, so the match route's
+    // parameter-count gate refuses them first (`ERR:E-SH-IR-MATCH-SHAPE`).
+    // With the gate satisfied (two parameters) the same shape is refused by
+    // the operator-operand path (`ERR:E-SH-IR-CALL-ARGUMENT`), which is the
+    // T2-g3 gap -- not the match route.
+    for (label, body, identity) in [
+        (
+            "real-s-function-hex-text-bytes",
+            "function hex_text_bytes(text: Text) returns U64:\n  match U64.checked_div(sico.text.length(text), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            "ERR:E-SH-IR-MATCH-SHAPE",
+        ),
+        (
+            "real-s-function-positive-sleb-length",
+            "function positive_sleb_length(initial: U64) returns U64:\n  match U64.checked_div(sico.text.length(positive_sleb_hex(initial)), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function",
+            "ERR:E-SH-IR-MATCH-SHAPE",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+}
+
+#[test]
 fn sico_compiler_lowers_the_step0532_parser_functions_byte_exactly() {
     // STEP-0532, T2-g2: the guest frontend has to keep lowering the
     // functions this slice added or reshaped -- otherwise the bootstrap
