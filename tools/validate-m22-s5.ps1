@@ -18,9 +18,11 @@ The battery covers, in order:
   6. the selfhost comment-discipline validator;
   7. the `match` site ledger census check and the per-site coverage probe
      (owner audit R0.4);
-  8. the selfhost firmware suite on its own, so the R0 exit evidence is an
+  8. the component-layer emitter vocabulary census (STEP-0537): the named
+     per-site gap list of the component axis;
+  9. the selfhost firmware suite on its own, so the R0 exit evidence is an
      explicit step and not a by-product of the CI step;
-  9. `git diff --check`.
+ 10. `git diff --check`.
 
 Unlike the retired ad-hoc batteries this one carries **no hard-coded dirty
 file list**: the workspace hygiene claim is made by the versioned ledger and
@@ -117,6 +119,9 @@ Invoke-BatteryStep 'match-site-census' 'python tools/census-m22-match-sites.py -
 }
 Invoke-BatteryStep 'match-site-coverage' 'powershell -File tools/probe-m22-match-coverage.ps1' {
     & powershell -ExecutionPolicy Bypass -File .\tools\probe-m22-match-coverage.ps1
+}
+Invoke-BatteryStep 'emitter-vocabulary-census' 'python tools/census-m22-emitter-vocabulary.py --check' {
+    & $env:SICO_PYTHON .\tools\census-m22-emitter-vocabulary.py --check
 }
 Invoke-BatteryStep 'firmware-selfhost' 'cargo test --manifest-path runner/sico-runner/Cargo.toml --test selfhost_compiler' {
     & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test selfhost_compiler -- --test-threads=1

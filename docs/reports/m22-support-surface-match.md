@@ -150,7 +150,8 @@ STEP-0533 为了给 T2 的拒绝归因，顺带量了两个族的覆盖面：
 - **STEP-0535 之后**：4 个**合成**形状的组件字节**逐字节等同**生产后端（1215 / 1214 / 1167 / 1389 B），`sico.list.get` 头仍 typed 拒；
 - **STEP-0535 R0.4 之后**：合成形状 **4 个**；**真实站点逐站复核 42 个** ⇒ **组件级全等 8 个 / IR 全等 9 个 / 前端拒 1 个 / 闭包过大 24 个**；
 - **STEP-0536（M-g1）之后（当前口径）**：合成形状 **4 个**；**真实站点逐站复核 396 个**（账本 v1，候选规则 = 全部 `U64.checked_add` 匹配头，逐站记录真实形参数）⇒ **组件级全等 9 个 / IR 全等但组件被拒 168 个 / 前端拒 0 个 / 闭包过大 219 个** ⇒ **前端轴 396 / 396 逐字节等同**（形参门已拆）；
-- ⇒ 组件层从 **0 个形状**推进到 **4 个合成形状 + 9 个真实站点**（**真实站点口径 9 / 396**）⇒ **M-g4 尚未闭合**（M-g3' 与组件层的**逐站点词表缺口**仍开；该缺口的**具名清单**由下一片 STEP-0537 交付）。
+- ⇒ 组件层从 **0 个形状**推进到 **4 个合成形状 + 9 个真实站点**（**真实站点口径 9 / 396**）⇒ **M-g4 尚未闭合**。
+- **STEP-0537（组件层发射词表真值测量片）之后（当前口径）**：**168** 个组件被拒站点的缺口**逐站点命名**（工件 `selfhost/emitter-vocabulary-v0.json`，普查 `tools/census-m22-emitter-vocabulary.py`）⇒ 缺的**算子 3 项**（`less_fixed` **167** / `const_bool` **154** / `checked_mul` **54** 站点）+ **内建 14 个名字**（`sico.bytes.at` **161** / `sico.text.encode` **159** / `sico.list.get` **157** / `sico.bytes.equal` **156** / `sico.list.length` **153** / `sico.u64.to_text` **144** / `sico.text.starts_with` **136** / `sico.bytes.slice` **89** / `sico.bytes.utf8_decode` **89** / `sico.list.get[U64]` **73** / `sico.text.split_lines` **60** / `sico.list.empty[U64]` **16** / `sico.list.append` **11** / `sico.list.append[U64]` **6**）⇒ **终结符全部已支持**（branch / jump / match / return / unreachable）⇒ **先前「缺分支 / 循环 / 多语句函数体」的措辞是未验证推断，本报告撤回**。
 - ⇒ **旧口径「组件层 42 / 519（形状面）」作废**（owner 审计 AGENTS.md §10.1）：那是**按形状归并**的外推，不是逐站点证据 ⇒ **D10 ⇒ 不得降级、不得宣告闭合**。
 
 ## 6. 族级出口判据（六项缺一不算闭合）
@@ -170,11 +171,12 @@ STEP-0533 为了给 T2 的拒绝归因，顺带量了两个族的覆盖面：
 
 ## 7. 下一刀（按实测杠杆）
 
-1. **组件层发射**（**168** 个站点）—— 发射端刀：这些站点的 canonical IR **已经**与 oracle 逐字节等同，但**发射端仍然拒**。**缺口的具体形态尚未逐站点命名** ⇒ 先前写的「分支 / 循环 / 多语句函数体」是**未验证的推断**，本报告**撤回**该措辞；下一片（STEP-0537）以**逐站点发射词表普查**交付具名清单（每个站点缺哪个算子 / 内建），再按清单分片实现。**这仍是当前最大的杠杆**（168 > 15 > 46 > 21）。
-2. **M-g3' 组件层的 `sico.list.get` 宿主调用传输**（**15** 站点）—— **发射端刀**：让发射器能发 `sico.list.get` 这类宿主调用 ⇒ 需要宿主调用传输路径。**注意（实测）**：生产后端对 `sico.list.get` **不是** import 调用，而是**内联线性内存查表序列**（`table`/`count` → `i32.const 3; i32.shl; i32.add` → 读 `ptr`/`len`），所以这一步的工作量是**内联序列**而不是「加一个 import」。
-3. **M-g2 算子白名单**（**46** 站点）—— 前端刀：把 `checked_sub` / `checked_div` / `checked_mul` 纳入匹配头的白名单；其中 `checked_sub` 的**发射**本片已经具备。
-4. **M-g3 未认领的匹配头**（**21** 站点）—— 前端刀：`sico.bytes.slice` 头。
-5. **闭包规模**（**219** 站点）—— 组件轴**没有证据**（依赖闭包 > 64 函数 / 256 KiB）⇒ 这是「**未测**」不是「通过」；要么给比较单元一个更小的切法，要么把闭包上限登记成一条边界。
-6. 之后回到 **T3 族** / **语料覆盖** / **门 3 / 6**。
+1. **发射词表 A（9 项内联）** —— 发射端刀：**3 个算子**（`less_fixed` / `const_bool` / `checked_mul`）+ **6 个内联内建**（`sico.text.encode` / `sico.bytes.utf8_decode` / `sico.list.length` / `sico.bytes.at` / `sico.list.get` / `sico.bytes.slice`）⇒ 按 STEP-0537 的词表覆盖**预期**闭合 **5** 个站点（**预测，待实测**）。
+2. **发射词表 B（8 项 helper）** —— 发射端刀：`sico.bytes.equal`（**156** 站点）→ `sico.u64.to_text`（**144**）→ `sico.text.starts_with`（**136**）→ `sico.list.get[U64]`（**73**）→ `sico.text.split_lines`（**60**）→ `sico.list.empty[U64]`（**16**）→ `sico.list.append`（**11**）→ `sico.list.append[U64]`（**6**）⇒ 每项都要**新增一个 core 模块函数**（helper）并**逐字节**复现它的函数体 / 函数段 / 类型段；guest 已有先例 `cg_concat_helper_body_hex` / `cg_text_length_helper_body_hex`。
+3. **M-g3' 组件层的 `sico.list.get` 宿主调用传输**（**15** 站点）—— **发射端刀**：让发射器能发 `sico.list.get` 这类宿主调用 ⇒ 需要宿主调用传输路径。**注意（实测）**：生产后端对 `sico.list.get` **不是** import 调用，而是**内联线性内存查表序列**（`table`/`count` → `i32.const 3; i32.shl; i32.add` → 读 `ptr`/`len`），所以这一步的工作量是**内联序列**而不是「加一个 import」。**该内联序列已列入发射词表 A。**
+4. **M-g2 算子白名单**（**46** 站点）—— 前端刀：把 `checked_sub` / `checked_div` / `checked_mul` 纳入匹配头的白名单；其中 `checked_sub` 的**发射**本片已经具备。
+5. **M-g3 未认领的匹配头**（**21** 站点）—— 前端刀：`sico.bytes.slice` 头。
+6. **闭包规模**（**219** 站点）—— 组件轴**没有证据**（依赖闭包 > 64 函数 / 256 KiB）⇒ 这是「**未测**」不是「通过」；要么给比较单元一个更小的切法，要么把闭包上限登记成一条边界。
+7. 之后回到 **T3 族** / **语料覆盖** / **门 3 / 6**。
 
 > **ADR 判定（STEP-0535 实测）**：**不需要新开 ADR** —— 生产后端 `crates/sico-codegen-wasm/src/lib.rs` 的 `compile_terminator`（`Terminator::Match` 分支 `:2295`）、`emit_match_condition`（`:2325`）、`emit_checked_fixed`（`:3010`）、`apply_result_fields`（`:2193`）与 `lower_local_types`（`:2924`）**已经**冻结了逐字节的发射形状，[ADR-0015](../../adr/ADR-0015-compiler-bootstrap-closure-v0.md) 的 `A == B == C` 字节闭合与 [ADR-0016](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) §6 的 canary 梯级也已冻结目标 ⇒ 这是**已冻结合同的实现**，需要的是**对照字节钉**。
