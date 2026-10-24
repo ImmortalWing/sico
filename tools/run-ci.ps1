@@ -78,13 +78,27 @@ if (-not $Fast) {
     Invoke-Step 'clippy (runner)' { & $cargo clippy --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --all-targets -- -D warnings; $LASTEXITCODE }
 }
 Invoke-Step 'build (runner debug)' { & $cargo build --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml; $LASTEXITCODE }
-Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --all-targets --all-features; $LASTEXITCODE }
 # The runner suite's RSS/handle budget asserts measure the *process-wide*
 # metrics of the test binary; under the default threaded harness, sibling
 # test allocations land inside those measurements (deterministic 83 MB
 # false growth on this host). The suite is seconds long, so CI runs it
 # serially; the budget constants themselves are unchanged.
-Invoke-Step 'test (runner)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1; $LASTEXITCODE }
+#
+# STEP-0536: the `runner` binary also carries the second env-sensitive budget
+# assert -- `prepared_program_reruns_are_isolated_and_survive_a_trap` measures
+# the warm median of a persistent rerun against the 20 ms M9 planning budget
+# (the reference host measures 17.4 ms). It is classified in the M19 plan
+# (§3.1) as failing under load and passing solo, so it has to be measured on a
+# machine that is not still busy with a multi-minute test suite: on the
+# independent runner of run #46 it measured 20.83 ms right after the workspace
+# suite, and cargo aborts a test invocation at the first failing binary, so
+# the self-host suites never ran in that job. The budget constant and the
+# assertion are unchanged; only the order is: the timing-sensitive binary runs
+# first, on a fresh machine, and the rest of the suite runs after it with the
+# timing test skipped so that it is measured exactly once.
+Invoke-Step 'test (runner core)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test runner -- --test-threads=1; $LASTEXITCODE }
+Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --all-targets --all-features; $LASTEXITCODE }
+Invoke-Step 'test (runner suite)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1 --skip prepared_program_reruns_are_isolated_and_survive_a_trap; $LASTEXITCODE }
 Invoke-Step 'module boundaries' { & powershell -ExecutionPolicy Bypass -File tools\validate-module-boundaries.ps1; $LASTEXITCODE }
 # The guest frontend's lexer does not skip `//` comments, so a comment inside
 # a function body is read as source by the guest's statement scanner and a

@@ -96,7 +96,7 @@
 
 - `LEDGER_CURRENT sites=396` + `MATCH_COVERAGE_OK`（pending = 0）。
 
-### 7.4 电池（**两次：第一次 RED，第二次 GREEN**）
+### 7.4 电池（**三次：第一次 RED，第二次 GREEN，第三次 = CI 加固后 GREEN**）
 
 版本化电池 `tools/validate-m22-s5.ps1`（**14 步**；每步记录命令、耗时与 exit，任一步失败即整体失败）。日志：`target/tmp/m22-s5-battery/battery.log`（gitignored）。
 
@@ -142,6 +142,27 @@
 
 ⇒ **BATTERY_GREEN 14/14**。
 
+**第三次（GREEN，单实例、CI 加固之后）** —— 本次电池跑的是**加固后的** `tools/run-ci.ps1`（新增 `test (runner core)` 步、`test (runner)` 改为 `test (runner suite)`）：
+
+| 步 | 秒 | exit | 命令 |
+|---|---|---|---|
+| fmt (workspace) | 1 | 0 | `cargo fmt --all -- --check` |
+| fmt (runner) | 2 | 0 | `cargo fmt --manifest-path runner/sico-runner/Cargo.toml --all -- --check` |
+| clippy (workspace) | 1 | 0 | `cargo clippy --locked --offline --workspace --all-targets --all-features -- -D warnings` |
+| clippy (runner) | 1 | 0 | `cargo clippy --locked --offline --manifest-path runner/sico-runner/Cargo.toml --all-targets -- -D warnings` |
+| ci-one-key | 612 | 0 | `powershell -File tools/run-ci.ps1` |
+| validate-0245 | 285 | 0 | `powershell -File tools/validate-step-0245.ps1` |
+| validate-0262 | 284 | 0 | `powershell -File tools/validate-step-0262.ps1` |
+| probe-frontend-frontier | 484 | 0 | `powershell -File tools/probe-m22-frontend-frontier.ps1` |
+| probe-ir-plan-frontier | 26 | 0 | `powershell -File tools/probe-m22-ir-plan-frontier.ps1` |
+| comment-discipline | 0 | 0 | `python tools/validate-selfhost-comment-discipline.py` |
+| match-site-census | 0 | 0 | `python tools/census-m22-match-sites.py --check` |
+| match-site-coverage | 127 | 0 | `powershell -File tools/probe-m22-match-coverage.ps1` |
+| firmware-selfhost | 246 | 0 | `cargo test --manifest-path runner/sico-runner/Cargo.toml --test selfhost_compiler` |
+| git-diff-check | 0 | 0 | `git diff --check` |
+
+⇒ **BATTERY_GREEN 14/14**（日志 `target/tmp/m22-s5-battery/battery-step0536-ci.log`）。**加固后的 CI 步在本机一次通过**；但**独立 runner 上的裁决仍未到手**（run #47 由本片推送后触发，裁决由下一片回填）⇒ **不得把本机绿当作 CI 绿**。
+
 **归因（诚实）**：该断言**单独复跑通过**（`1 passed; 0 failed`），整轮**单实例**重跑也通过 ⇒ 归因为**主机负载**，**不是**实现回归（本片改的是 guest 前端的一条路由与测试固件，不触碰 runner 的持久化热重跑路径）。**但必须记下这条因果链**：本片把账本从 42 站点扩到 **396** 站点 ⇒ runner 套件的固件步从 **122 s** 拉长到 **241 s** ⇒ `test (runner)` 之前的机器负载更高 ⇒ 那个 20 ms 预算断言**更容易**在这台主机上翻红。**预算常数不得上调**（M19 计划）⇒ 处置只能是把负载降下来（单实例、不并发跑别的重活）。
 
 > **附带成果（重要）**：第一次红灯的失败子步骤**就是靠 STEP-0535 引入的 GitHub 注解机制定位的** —— `::error title=CI step failed::test (runner)` 与输出末尾若干行，**无需登录凭据**即可读到 ⇒ 这正是 **run #44** 当时缺的能力（本片之前的两次红灯都只能记「子步骤不可得」）。
@@ -156,7 +177,28 @@
 | 用时 | 2026-10-24T07:14:46Z → 07:33:50Z（**19m04s**） |
 | GitHub 步骤 | `Set up job` ✅ / `checkout` ✅ / `Install GNU build tools` ✅ / `Run repository CI on a fresh runner` ✅ / `Post checkout` ✅ / `Complete job` ✅ |
 
-⇒ owner 审计 `AGENTS.md` §10.4 的 **R0 五项全部闭合 ⇒ R0 exit 达成**。本片自己的提交触发下一轮独立 CI，**裁决由下一片回填**。
+⇒ owner 审计 `AGENTS.md` §10.4 的 **R0 五项全部闭合 ⇒ R0 exit 达成**。
+
+### 7.6 独立 CI 回填（run #46 = 本片 `9c2657b`）= **failure ❌** ⇒ **失败子步骤首次可匿名定位**
+
+| 项 | 值 |
+|---|---|
+| run | **#46**（id `40079477808`，check-run id `120829826359`） |
+| head_sha | `9c2657b`（本片） |
+| 结论 | **failure ❌** |
+| 用时 | 2026-10-24T08:48:33Z → 09:13:51Z（**25m18s**） |
+| **失败子步骤** | **`test (runner)`** —— 由本片引入的 GitHub **工作流注解**给出（`::error title=CI step failed::test (runner)`） |
+| **失败断言** | `prepared_program_reruns_are_isolated_and_survive_a_trap`（`runner/sico-runner/tests/runner.rs:1471`） |
+| **实测值** | **warm median 20.8275 ms** vs **20 ms** 预算（M19 计划 §3.1 登记的两个**环境敏感预算断言**之一；参考主机实测 17.4 ms） |
+
+> **本片的第一项方法学成果**：**失败子步骤第一次在没有任何凭据的情况下被定位** —— `GET /repos/{owner}/{repo}/check-runs/{id}/annotations` **匿名可读**，注解逐行给出失败子步骤名、失败断言名与断言输出 ⇒ 这正是 **run #39 / #44** 两次红灯当时缺的能力（那两次只能记「子步骤不可得」）。
+
+> **归因（实测，不是猜测）**：① cargo 在**第一个失败二进制**处中止整个 test 调用 ⇒ run #46 的 `selfhost_checker` / `selfhost_compiler` / `selfhost_parser` **根本没跑**；② 该二进制在 CI 步内的次序是 **`bootstrap_bundle` → `runner` → `selfhost_checker` → `selfhost_compiler` → `selfhost_parser`**（`cargo test -- --list` 实测）⇒ **本片把固件套件从 122 s 拉长到 241 s 这件事，不可能影响这个测量** —— 计时断言跑在重活**之前**；③ 它前面唯一的负载是 `test (workspace)`（根工作区，**本片零改动**）；④ 断言的**预算常数与断言本身本片一律未改**（M19 计划 §3.1 与代码注释都写明「预算常数保持不变」）。
+>
+> ⇒ **结论**：run #46 的红灯 = **那条已登记的环境敏感预算断言在一次较慢的独立 runner 上翻红**（20.83 ms vs 20 ms 预算、参考主机 17.4 ms ⇒ 余量只有 ~15%），**不是** M-g1 的实现回归，**也不是** M-g1 把套件拉长的副作用。
+
+> **本片据此加固 CI（预算常数与断言均未动）**：`tools/run-ci.ps1` 把**计时敏感的二进制单独提到最前面**（`test (runner core)`，紧跟 `build (runner debug)`，在任何多分钟测试套件之前），其余套件放在后面（`test (runner suite)`，用 `--skip prepared_program_reruns_are_isolated_and_survive_a_trap` 保证该断言**只测一次**）⇒ 断言在**冷机器**上测量，符合 M19 计划「重载下失败、单独跑通过」的分类意图。CI 内层步数 **13 → 14**。**这次改动的裁决由下一轮独立 CI 给出**（本片推送后触发）。
+
 
 ## 8. 诚实性
 
@@ -164,7 +206,7 @@
 |---|---|
 | **`match` 族的闭合** | ❌ **NO-GO** —— 组件级全等 **9 / 396**（合成形状另计 4 个）⇒ **D10 ⇒ 不得降级、不得宣告闭合** |
 | **前端三门** | ⏳ **M-g1 已闭合**（本片）；**M-g2（46）/ M-g3（21）** 仍开 |
-| **组件层** | ❌ **168** 个站点 canonical IR 已等同但**发射端**拒（分支 / 循环 / 多语句函数体）+ **M-g3'（`sico.list.get`，15 站点）** 仍开 |
+| **组件层** | ❌ **168** 个站点 canonical IR 已等同但**发射端**拒 —— **缺口形态尚未逐站点命名**（先前写的「分支 / 循环 / 多语句函数体」是**未验证的推断**，本片**撤回**；具名清单由下一片 STEP-0537 的逐站点词表普查交付）+ **M-g3'（`sico.list.get`，15 站点）** 仍开 |
 | **闭包规模** | ⏔ **219** 个站点的组件轴**没有证据**（依赖闭包 > 64 函数 / 256 KiB）⇒ 这不是「通过」，是**未测** |
 | **语料覆盖** | ⏔ **仍 0 条** |
 | **整文件自举** | ⏔ 仍未关闭 |
@@ -172,7 +214,7 @@
 
 ## 9. 下一刀（按实测杠杆）
 
-1. **组件层发射**：**168** 个站点 canonical IR 已逐字节等同，组件轴缺的是**分支 / 循环 / 多语句函数体**的发射能力（M-g4b/M-g4c 之外的第三类）。
+1. **组件层发射**：**168** 个站点 canonical IR 已逐字节等同，组件轴仍被发射端拒。**缺口的具体形态尚未逐站点命名** ⇒ 先前写的「分支 / 循环 / 多语句函数体」是**未验证的推断**，本片撤回；下一片（STEP-0537）以**逐站点发射词表普查**（每个站点缺哪个算子 / 内建，逐项命名）交付具名清单，再按清单分片实现。
 2. **M-g3' `sico.list.get` 宿主调用传输**（**15** 站点）：生产后端对它**不是** import 调用，而是**内联线性内存查表序列**。
 3. **M-g2 算子白名单**（**46** 站点）：`checked_sub` / `checked_div` / `checked_mul`；`checked_sub` 的发射已具备。
 4. **M-g3 未认领的匹配头**（**21** 站点）：`sico.bytes.slice` 头。
