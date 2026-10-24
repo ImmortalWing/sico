@@ -61,6 +61,9 @@ release-windows.ps1
 - `validate-module-boundaries.ps1`：稳定的架构边界门禁；
 - `validate-step-*.ps1`、`validate-m*-exit.ps1`：历史里程碑证据，不是用户入口；
 - `validate-*.ps1`、`measure-*.ps1`：专项验证与性能测量；
+- `validate-m22-s5.ps1`：M22 S5 自举线的**版本化验证电池**（fmt / clippy / 一键 CI / 0245 / 0262 / 两个前沿探针 / 注释纪律 / `match` 站点普查与覆盖 / 固件 / 空白检查；每步记录命令、耗时与 exit，任一步失败即整体失败）；
+- `probe-m22-match-coverage.ps1`：**`match` 构造族的真实站点覆盖探针**（账本 `selfhost/match-component-coverage-v0.json` 的逐站 IR + 组件差分与真实 validator）；
+- `census-m22-match-sites.py`：上述账本的**唯一写者**（`--check` 校验 / `--update` 回填实测裁决）；
 - `prepare-ai-eval.ps1`、`test-ai-eval.ps1`、`score-ai-eval.ps1`、`validate-ai-eval.ps1`：AI 评估流水线。
 
 新增脚本时应优先放入以上职责之一，并在本页登记；不要继续向 `release-windows.ps1` 内嵌独立安装器实现。

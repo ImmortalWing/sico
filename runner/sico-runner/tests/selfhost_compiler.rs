@@ -8632,31 +8632,122 @@ fn the_match_construct_truth_is_measured_and_pinned() {
         assert_eq!(code, "invalid-input", "{label}");
         assert_eq!(message, identity, "{label}");
     }
-    // The component layer refuses **every** match shape: the guest emitter has
-    // no match support at all, so not one of the 519 S match statements can
-    // reach a component yet.
-    for (label, body) in [
+    // STEP-0535 moved the component layer: the `U64.checked_add` shapes (the
+    // two-parameter, the one-parameter, the two-`return` and the nested one)
+    // now emit a component that is byte for byte equal to the production
+    // backend's -- see
+    // `sico_codegen_guest_emits_the_match_component_bytes_byte_exactly`.
+    //
+    // The `sico.list.get` head is still refused: the emitter carries no host
+    // call transport for that intrinsic yet (gap M-g3'), so a refused shape
+    // stays a typed refusal instead of an approximation.
+    let source = match_fixture(
+        "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+    );
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest emitter must refuse the list.get match component")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "unsupported codegen source shape");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_match_component_bytes_byte_exactly() {
+    // STEP-0535, M-g4a: the guest emitter\'s `match` path, the checked
+    // arithmetic it reads and the Result arm projection it writes -- the first
+    // `match` shapes whose **component** bytes are byte for byte equal to the
+    // production backend\'s.
+    //
+    // The backend\'s `compile_terminator` (the `Terminator::Match` branch),
+    // its `emit_checked_fixed` and the Result arm field maps of
+    // `apply_result_fields` define the byte shape; the guest reproduces them,
+    // so the two components must be identical byte for byte.
+    for (label, body, bytes) in [
         (
             "checked-add-in-a-two-parameter-function",
             "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            1215,
         ),
         (
-            "list-get-generic",
-            "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+            "checked-add-in-a-one-parameter-function",
+            "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            1214,
+        ),
+        (
+            "checked-add-in-a-two-parameter-function-return-return",
+            "function size(a: U64, b: U64) returns U64:\n  match U64.checked_add(a, b):\n    case ok(total):\n      return total\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            1167,
         ),
         (
             "nested-match",
             "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      match U64.checked_sub(total, b):\n        case ok(inner):\n          set out = inner\n        case error(_):\n          return U64.literal(0)\n      end match\n    case error(_):\n      return U64.literal(1)\n  end match\n  return out\nend function",
+            1389,
         ),
     ] {
         let source = match_fixture(body);
-        let RunOutcome::Domain { code, message } =
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the match fixture");
+        assert_eq!(
+            expected.len(),
+            bytes,
+            "the measured {label} component size is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured match component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-component-hex".into()])
         else {
-            panic!("the guest emitter must refuse the {label} match component")
+            panic!("the {label} component must be emitted through the guest")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "unsupported codegen source shape", "{label}");
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "{label}: the guest\'s match component must be byte for byte equal"
+        );
+    }
+    // The `sico.list.get` head is still refused: the emitter carries no host
+    // call transport for that intrinsic yet.  A refused shape stays a typed
+    // refusal instead of an approximation.
+    let source = match_fixture(
+        "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+    );
+    assert_eq!(
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()]),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "unsupported codegen source shape".into(),
+        },
+        "the list.get match head must stay a typed refusal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0535_codegen_functions_byte_exactly() {
+    // STEP-0535, M-g4a: the guest\'s own new emitter code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest\'s own emitter, otherwise the bootstrap could never consume its
+    // own code.
+    for name in [
+        "cgs_i32_const_neg_one_hex",
+        "cgs_match_payload_ok",
+        "cgs_match_pattern_hex",
+        "cgs_match_condition_hex",
+        "cgs_match_hex",
+        "cgs_checked_fixed_hex",
+        "cgs_project_result_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
 }
 
@@ -8946,5 +9037,475 @@ fn the_guest_frontend_narrower_than_the_oracle_on_the_u64_bit_operators() {
             1039,
             "the measured oracle component size of the {label} shape is pinned"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0536 / M22 R0.4: the frozen `match` site ledger.
+//
+// STEP-0535 proved four **synthetic** `match` fixtures byte for byte at the
+// component layer and then wrote "42 / 519 sites (shape面)".  The owner audit
+// (AGENTS.md §10.1, §10.4 R0.4) rejects that extrapolation: the 42 candidates
+// are real S sites and each of them needs its own verdict against the Rust
+// oracle -- canonical IR, Component bytes and a real validator run.
+//
+// This test is the executor.  It reads the frozen ledger
+// (`selfhost/match-component-coverage-v0.json`), re-derives every site from
+// the frozen S, compares the guest against the Rust oracle and checks the
+// recorded verdict.  A site that moves is a failure, exactly like the
+// frontend frontier probe.
+//
+// The unit of comparison is the site's **same-file dependency closure** plus
+// the Script-profile harness (`run` + the ScriptInput/ScriptOutput records),
+// so both sides see the same module and the Component axis is comparable.
+// A closure that grows past the bound is not silently skipped: it is reported
+// as `closure-too-large` and its IR evidence comes from the whole-file
+// differential pin that covers that file.
+// ---------------------------------------------------------------------------
+
+const MATCH_COVERAGE_LEDGER: &str =
+    include_str!("../../../selfhost/match-component-coverage-v0.json");
+const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler_semantics.sico");
+
+/// Closure bound: a site whose same-file dependency closure grows past this
+/// many functions (or bytes) is compared through the whole-file differential
+/// instead of a standalone one.
+const MATCH_CLOSURE_FUNCTION_LIMIT: usize = 64;
+const MATCH_CLOSURE_BYTE_LIMIT: usize = 262_144;
+
+/// The files whose **whole-file** canonical IR differential is pinned by the
+/// firmware, so a `closure-too-large` site still has a current-snapshot IR
+/// witness.  A new file must not appear here without a matching pin.
+const MATCH_WHOLE_FILE_PINNED: &[(&str, &str)] = &[(
+    "parser.sico",
+    "sico_guest_arena_accommodates_full_parser_selfhost_input",
+)];
+
+#[derive(serde::Deserialize)]
+struct MatchCoverageLedger {
+    schema: String,
+    sites: Vec<MatchCoverageSite>,
+}
+
+#[derive(serde::Deserialize)]
+struct MatchCoverageSite {
+    id: String,
+    path: String,
+    line: u64,
+    function: String,
+    function_line: u64,
+    head: String,
+    labels: String,
+    case_shape: String,
+    verdict: String,
+    source_sha256: String,
+    ir_sha256: String,
+    component_sha256: String,
+    note: String,
+}
+
+struct MatchSicoFunction {
+    name: String,
+    line: u64,
+    text: String,
+}
+
+#[derive(Clone)]
+struct MatchSiteOutcome {
+    verdict: String,
+    source_sha256: String,
+    ir_sha256: String,
+    component_sha256: String,
+}
+
+fn match_frozen_source(path: &str) -> Option<&'static str> {
+    Some(match path {
+        "codegen.sico" => CODEGEN_SOURCE,
+        "compiler.sico" => COMPILER_SOURCE,
+        "compiler_lexer.sico" => COMPILER_LEXER_SOURCE,
+        "compiler_parser.sico" => COMPILER_PARSER_SOURCE,
+        "compiler_semantics.sico" => COMPILER_SEMANTICS_SOURCE,
+        "formatter.sico" => FORMATTER_SOURCE,
+        "parser.sico" => PARSER_SOURCE,
+        _ => return None,
+    })
+}
+
+fn match_sico_functions(text: &str) -> Vec<MatchSicoFunction> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<MatchSicoFunction> = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let trimmed = lines[index].trim_start();
+        if let Some(rest) = trimmed.strip_prefix("function ") {
+            let name: String = rest
+                .chars()
+                .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+                .collect();
+            let mut end = index;
+            while end < lines.len() && lines[end].trim() != "end function" {
+                end += 1;
+            }
+            if end < lines.len() && !name.is_empty() {
+                out.push(MatchSicoFunction {
+                    name,
+                    line: (index + 1) as u64,
+                    text: lines[index..=end].join("\n"),
+                });
+                index = end + 1;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    out
+}
+
+/// The same-file functions a function body calls.  A name is a call only when
+/// it is not a member access (`U64.checked_add(`) and not part of a longer
+/// identifier, so `sico.text.length(` never becomes a local callee.
+fn match_sico_callees(text: &str, known: &[String]) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut found: Vec<String> = Vec::new();
+    for index in 0..bytes.len() {
+        if bytes[index] != b'(' {
+            continue;
+        }
+        let mut start = index;
+        while start > 0 {
+            let byte = bytes[start - 1];
+            if byte.is_ascii_alphanumeric() || byte == b'_' {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        if start == index || start == 0 {
+            continue;
+        }
+        let before = bytes[start - 1];
+        if before == b'.' || before.is_ascii_alphanumeric() || before == b'_' {
+            continue;
+        }
+        let name = &text[start..index];
+        if known.iter().any(|candidate| candidate == name)
+            && !found.iter().any(|candidate| candidate == name)
+        {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
+/// The transitive same-file dependency closure of `root`, emitted in file
+/// order so the original declaration order is preserved.
+fn match_sico_closure(text: &str, root: &str) -> Result<String, String> {
+    let functions = match_sico_functions(text);
+    let names: Vec<String> = functions.iter().map(|f| f.name.clone()).collect();
+    let mut selected = vec![false; functions.len()];
+    let mut stack = vec![root.to_string()];
+    let mut count = 0usize;
+    let mut bytes = 0usize;
+    while let Some(name) = stack.pop() {
+        let Some(position) = functions.iter().position(|f| f.name == name) else {
+            continue;
+        };
+        if selected[position] {
+            continue;
+        }
+        selected[position] = true;
+        count += 1;
+        bytes += functions[position].text.len();
+        if count > MATCH_CLOSURE_FUNCTION_LIMIT || bytes > MATCH_CLOSURE_BYTE_LIMIT {
+            return Err(format!("closure-too-large:{count}fn/{bytes}B"));
+        }
+        for callee in match_sico_callees(&functions[position].text, &names) {
+            stack.push(callee);
+        }
+    }
+    let mut out = String::new();
+    for (position, function) in functions.iter().enumerate() {
+        if selected[position] {
+            out.push_str(&function.text);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+fn match_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Compares one real site against the Rust oracle on both axes and returns
+/// the verdict plus the digests the ledger freezes.
+fn match_compare_site(path: &str, function: &str) -> MatchSiteOutcome {
+    let blank = MatchSiteOutcome {
+        verdict: "unknown-source".to_string(),
+        source_sha256: String::new(),
+        ir_sha256: String::new(),
+        component_sha256: String::new(),
+    };
+    let Some(text) = match_frozen_source(path) else {
+        return blank;
+    };
+    let closure = match match_sico_closure(text, function) {
+        Ok(closure) => closure,
+        Err(reason) => {
+            return MatchSiteOutcome {
+                verdict: reason,
+                ..blank
+            };
+        }
+    };
+    let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+    let source_sha256 = match_sha256(source.as_bytes());
+
+    let guest = run_guest(&source);
+    let rust = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source.clone())
+        .map_err(|error| format!("source:{error:?}"))
+        .and_then(|file| lower_core(&file).map_err(|error| format!("{error:?}")));
+
+    let (guest_ir, guest_refusal) = match guest {
+        RunOutcome::Output(output) if output.exit_code == 0 => (Some(output.stdout), None),
+        RunOutcome::Domain { message, .. } => (None, Some(message)),
+        other => (None, Some(format!("{other:?}"))),
+    };
+
+    let module = match (guest_ir, rust) {
+        (Some(_), Ok(module)) => module,
+        (None, Err(refusal)) => {
+            return MatchSiteOutcome {
+                verdict: format!("both-refused:{refusal}"),
+                source_sha256,
+                ..blank
+            };
+        }
+        (None, Ok(_)) => {
+            return MatchSiteOutcome {
+                verdict: format!("guest-refused:{}", guest_refusal.unwrap_or_default()),
+                source_sha256,
+                ..blank
+            };
+        }
+        (Some(_), Err(reason)) => {
+            return MatchSiteOutcome {
+                verdict: format!("rust-refused:{reason}"),
+                source_sha256,
+                ..blank
+            };
+        }
+    };
+
+    let expected_ir = canonical_json(&module).expect("the Rust oracle emits canonical IR");
+    let ir_sha256 = match_sha256(expected_ir.as_bytes());
+
+    // The Component axis: the Rust backend is the oracle, the guest emitter
+    // is the implementation under test, and both must produce the same bytes.
+    let expected_component = match codegen_oracle::compile_script_program(&module) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return MatchSiteOutcome {
+                verdict: format!("ir-equal+component-refused-rust:{error:?}"),
+                source_sha256,
+                ir_sha256,
+                ..blank
+            };
+        }
+    };
+    wasmparser::Validator::new()
+        .validate_all(&expected_component)
+        .expect("the Rust oracle Component must pass the real Wasm validator");
+    let component_sha256 = match_sha256(&expected_component);
+
+    match run_guest_with_args(&source, vec!["--emit-component-hex".into()]) {
+        RunOutcome::Output(output) => {
+            let actual = decode_hex(&output.stdout);
+            if actual == expected_component {
+                MatchSiteOutcome {
+                    verdict: "ir-equal+component-equal".to_string(),
+                    source_sha256,
+                    ir_sha256,
+                    component_sha256,
+                }
+            } else {
+                MatchSiteOutcome {
+                    verdict: "component-mismatch".to_string(),
+                    source_sha256,
+                    ir_sha256,
+                    component_sha256,
+                }
+            }
+        }
+        RunOutcome::Domain { message, .. } => MatchSiteOutcome {
+            verdict: format!("ir-equal+component-refused-guest:{message}"),
+            source_sha256,
+            ir_sha256,
+            component_sha256,
+        },
+        other => MatchSiteOutcome {
+            verdict: format!("ir-equal+component-other:{other:?}"),
+            source_sha256,
+            ir_sha256,
+            component_sha256,
+        },
+    }
+}
+
+#[test]
+fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
+    // STEP-0536, M22 R0.4: the 42 candidate `match` sites of the frozen S are
+    // re-derived from the frozen sources, compared against the Rust oracle on
+    // both axes (canonical IR and Component bytes, with a real validator run)
+    // and checked against the frozen ledger.
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    assert_eq!(
+        ledger.schema, "sico.m22.match-coverage.v0",
+        "the ledger schema is frozen"
+    );
+    assert_eq!(
+        ledger.sites.len(),
+        42,
+        "the ledger registers the 42 candidate sites"
+    );
+
+    // The site list itself must stay derived from the frozen S: every entry
+    // names a function that still exists at the recorded line.
+    for site in &ledger.sites {
+        let Some(text) = match_frozen_source(&site.path) else {
+            panic!("{} names an unknown source file {}", site.id, site.path);
+        };
+        let functions = match_sico_functions(text);
+        let function = functions
+            .iter()
+            .find(|f| f.name == site.function)
+            .unwrap_or_else(|| {
+                panic!("{} names a missing function {}", site.id, site.function);
+            });
+        assert_eq!(
+            function.line, site.function_line,
+            "{}: the frozen function line moved",
+            site.id
+        );
+        let lines: Vec<&str> = text.split('\n').collect();
+        let site_line = site.line as usize;
+        assert!(
+            site_line >= 1 && site_line <= lines.len(),
+            "{}: the frozen site line is outside the file",
+            site.id
+        );
+        let head_line = lines[site_line - 1];
+        assert!(
+            head_line.contains("match") && head_line.contains("checked_add"),
+            "{}: the frozen site line no longer holds the match head",
+            site.id
+        );
+        assert!(
+            !site.case_shape.is_empty() && !site.head.is_empty(),
+            "{}: the frozen shape fields must stay recorded",
+            site.id
+        );
+        assert!(
+            site.head.contains("checked_add"),
+            "{}: the frozen head must stay a checked_add match head",
+            site.id
+        );
+        assert_eq!(site.labels, "ok+error", "{}: the case labels", site.id);
+    }
+
+    // One comparison per distinct enclosing function; the verdict applies to
+    // every site inside it.
+    let mut groups: Vec<(String, String, Vec<&MatchCoverageSite>)> = Vec::new();
+    for site in &ledger.sites {
+        match groups
+            .iter_mut()
+            .find(|(path, function, _)| path == &site.path && function == &site.function)
+        {
+            Some((_, _, members)) => members.push(site),
+            None => groups.push((site.path.clone(), site.function.clone(), vec![site])),
+        }
+    }
+
+    let mut actuals: Vec<(String, String, MatchSiteOutcome)> = Vec::new();
+    for (path, function, _members) in &groups {
+        let outcome = match_compare_site(path, function);
+        actuals.push((path.clone(), function.clone(), outcome));
+    }
+
+    // The actual outcomes are written next to the ledger so the census script
+    // can refresh the frozen expectations without hand-editing 42 records.
+    // They are written before the assertions on purpose: a first run has to
+    // be able to publish what it measured even though the frozen ledger
+    // still carries the previous verdict.
+    let directory = std::env::temp_dir().join("sico-m22-match-coverage");
+    std::fs::create_dir_all(&directory).expect("the coverage directory is writable");
+    let mut report = String::from("[\n");
+    for (index, (path, function, outcome)) in actuals.iter().enumerate() {
+        report.push_str(&format!(
+            "  {{ \"path\": \"{path}\", \"function\": \"{function}\", \"verdict\": \"{}\", \"source_sha256\": \"{}\", \"ir_sha256\": \"{}\", \"component_sha256\": \"{}\" }}{}\n",
+            outcome.verdict,
+            outcome.source_sha256,
+            outcome.ir_sha256,
+            outcome.component_sha256,
+            if index + 1 == actuals.len() { "" } else { "," }
+        ));
+    }
+    report.push_str("]\n");
+    std::fs::write(directory.join("actual.json"), report).expect("the coverage report is writable");
+
+    for (path, function, members) in &groups {
+        let outcome = actuals
+            .iter()
+            .find(|(recorded_path, recorded_function, _)| {
+                recorded_path == path && recorded_function == function
+            })
+            .map(|(_, _, outcome)| outcome.clone())
+            .expect("every group has a measured outcome");
+        if outcome.verdict.starts_with("closure-too-large") {
+            let pinned = MATCH_WHOLE_FILE_PINNED
+                .iter()
+                .find(|(file, _)| file == path)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: the closure of {path}:{function} is too large and the file has no whole-file IR pin",
+                        members[0].id
+                    )
+                });
+            assert!(
+                members.iter().all(|site| site.note.contains(pinned.1)),
+                "{}: a closure-too-large site must name the whole-file pin in its note",
+                members[0].id
+            );
+        }
+        for site in members {
+            assert_eq!(
+                site.verdict, outcome.verdict,
+                "{}: the verdict of {path}:{function} moved",
+                site.id
+            );
+            assert_eq!(
+                site.source_sha256, outcome.source_sha256,
+                "{}: the compared source digest of {path}:{function}",
+                site.id
+            );
+            assert_eq!(
+                site.ir_sha256, outcome.ir_sha256,
+                "{}: the canonical IR digest of {path}:{function}",
+                site.id
+            );
+            assert_eq!(
+                site.component_sha256, outcome.component_sha256,
+                "{}: the Component digest of {path}:{function}",
+                site.id
+            );
+        }
     }
 }

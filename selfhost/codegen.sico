@@ -1286,6 +1286,26 @@ function cgs_flat_hex(bytes: Bytes, ty: U64) returns Text:
     end if
     let cgsfh_error_hex = cgs_flat_hex(bytes, cgsfh_error_off)
     if U64.equal(sico.text.length(cgsfh_error_hex), U64.literal(0)):
+      let cgsfh_error_kind = cgj_ident_text(bytes, cgj_member(bytes, cgsfh_error_off, "kind"))
+      let cgsfh_error_name = ""
+      if cg_is_word(cgsfh_error_kind, "named"):
+        set cgsfh_error_name = cgj_ident_text(bytes, cgj_member(bytes, cgsfh_error_off, "data"))
+      end if
+      let cgsfh_ok_kind = cgj_ident_text(bytes, cgj_member(bytes, cgsfh_ok_off, "kind"))
+      let cgsfh_ok_fixed = U64.literal(0)
+      if cg_is_word(cgsfh_ok_kind, "i64"):
+        set cgsfh_ok_fixed = U64.literal(1)
+      end if
+      if cg_is_word(cgsfh_ok_kind, "u64"):
+        set cgsfh_ok_fixed = U64.literal(1)
+      end if
+      if cg_is_word(cgsfh_error_name, "NumericError"):
+        if U64.equal(cgsfh_ok_fixed, U64.literal(1)):
+          let cgsfh_numeric_hex = "017f"
+          set cgsfh_numeric_hex = sico.text.concat(cgsfh_numeric_hex, cgsfh_ok_hex)
+          return cgsfh_numeric_hex
+        end if
+      end if
       return ""
     end if
     let cgsfh_hex = "017f"
@@ -1383,6 +1403,9 @@ function cgs_cell_flat_hex(bytes: Bytes, ty: U64) returns Text:
   end if
   if cg_is_word(ccfh_kind, "bytes"):
     return "017f017f"
+  end if
+  if cg_is_word(ccfh_kind, "result"):
+    return cgs_flat_hex(bytes, ty)
   end if
   return ""
 end function
@@ -2089,6 +2112,54 @@ function cgs_zero_hex(slot: U64, kind: Text) returns Text:
   return ""
 end function
 
+// The bytes of a `project` instruction that reads the payload of a Result
+// arm: the arm's slots copied into the result's slots.
+//
+// The backend's `apply_result_fields` gives the arm field maps of a Result --
+// the `ok` arm sits behind the tag, the `error` arm behind the `ok` payload
+// -- and its `copy_slots` copies the arm's slots one pair at a time, so the
+// guest writes the same bytes in the same order.
+function cgs_project_result_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
+  let cprh_base = cgj_value_text(bytes, cgj_member(bytes, data, "base"))
+  let cprh_field = cgj_ident_text(bytes, cgj_member(bytes, data, "field"))
+  let cprh_base_ty = cgs_value_ty(bytes, run, cprh_base)
+  if U64.equal(cprh_base_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cprh_base_slot = cgs_value_slot(bytes, run, cprh_base)
+  if U64.equal(cprh_base_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cprh_ok_slots = cgs_result_arm_slots(bytes, run, cprh_base, "ok")
+  let cprh_count = U64.literal(0)
+  let cprh_offset = U64.literal(1)
+  if cg_is_word(cprh_field, "ok"):
+    set cprh_count = cprh_ok_slots
+  end if
+  if cg_is_word(cprh_field, "error"):
+    set cprh_count = cgs_result_arm_slots(bytes, run, cprh_base, "error")
+    set cprh_offset = cgs_add(U64.literal(1), cprh_ok_slots)
+  end if
+  if U64.equal(cprh_count, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cprh_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
+  if U64.equal(cprh_result_slots, cprh_count):
+    let cprh_out = ""
+    let cprh_base0 = cgs_sub(cprh_base_slot, U64.literal(1))
+    let cprh_index = U64.literal(0)
+    while U64.less_than(cprh_index, cprh_count):
+      let cprh_src = cgs_add(cgs_add(cprh_base0, cprh_offset), cprh_index)
+      let cprh_dst = cgs_add(result0, cprh_index)
+      set cprh_out = sico.text.concat(cprh_out, cgs_local_get_hex(cprh_src))
+      set cprh_out = sico.text.concat(cprh_out, cgs_local_set_hex(cprh_dst))
+      set cprh_index = cg_next(cprh_index)
+    end while
+    return cprh_out
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
 // The bytes of a `project` instruction: the base's field slots copied into the
 // result's slots.
 function cgs_project_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
@@ -2100,6 +2171,10 @@ function cgs_project_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0:
   let cph_base_ty = cgs_value_ty(bytes, run, cph_base)
   if U64.equal(cph_base_ty, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cph_kind = cgj_ident_text(bytes, cgj_member(bytes, cph_base_ty, "kind"))
+  if cg_is_word(cph_kind, "result"):
+    return cgs_project_result_hex(bytes, run, instr, data, result0)
   end if
   let cph_record = cgs_named_text(bytes, cph_base_ty)
   if U64.equal(sico.text.length(cph_record), U64.literal(0)):
@@ -3296,6 +3371,12 @@ function cgs_op_hex(bytes: Bytes, run: U64, instr: U64) returns Text:
   end if
   if cg_is_word(coph_name, "equal_fixed"):
     return cgs_equal_fixed_hex(bytes, run, coph_data, coph_result0)
+  end if
+  if cg_is_word(coph_name, "checked_add"):
+    return cgs_checked_fixed_hex(bytes, run, instr, coph_data, coph_result0, "add")
+  end if
+  if cg_is_word(coph_name, "checked_sub"):
+    return cgs_checked_fixed_hex(bytes, run, instr, coph_data, coph_result0, "sub")
   end if
   return "ERR:E-SH-CG-IR-EMIT"
 end function
@@ -4593,6 +4674,285 @@ function cgs_jump_hex(bytes: Bytes, fn: U64, term: U64) returns Text:
   return cgjh_out
 end function
 
+// The bytes of a checked fixed-width addition or subtraction.
+//
+// The backend's `emit_checked_fixed` computes the wrapped sum in the payload
+// slot, tests the overflow with the type's own comparison, and then writes the
+// tag and the error payload in the two arms of the `if`, so the guest writes
+// the same bytes in the same order.
+//
+// The backend covers the signed and the unsigned combinations. The guest
+// covers the two unsigned ones and refuses the signed ones with a typed
+// refusal instead of approximating them.
+function cgs_checked_fixed_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, kind: Text) returns Text:
+  let cfh_ty = cgj_member(bytes, instr, "ty")
+  if U64.equal(cfh_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cfh_ty_data = cgj_member(bytes, cfh_ty, "data")
+  if U64.equal(cfh_ty_data, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cfh_ok = cgj_member(bytes, cfh_ty_data, "ok")
+  if U64.equal(cfh_ok, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cfh_ok_kind = cgj_ident_text(bytes, cgj_member(bytes, cfh_ok, "kind"))
+  let cfh_result_slots = cgs_type_slots(bytes, cfh_ty)
+  let cfh_layout_ok = U64.literal(0)
+  if U64.equal(cfh_result_slots, U64.literal(2)):
+    set cfh_layout_ok = U64.literal(1)
+  end if
+  if U64.equal(cfh_layout_ok, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cfh_left_text = cgj_value_text(bytes, cgj_member(bytes, data, "left"))
+  let cfh_right_text = cgj_value_text(bytes, cgj_member(bytes, data, "right"))
+  let cfh_left_slot = cgs_value_slot(bytes, run, cfh_left_text)
+  let cfh_right_slot = cgs_value_slot(bytes, run, cfh_right_text)
+  if U64.equal(cfh_left_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  if U64.equal(cfh_right_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cfh_left_local = cgs_sub(cfh_left_slot, U64.literal(1))
+  let cfh_right_local = cgs_sub(cfh_right_slot, U64.literal(1))
+  let cfh_tag = result0
+  let cfh_payload = cgs_add(result0, U64.literal(1))
+  let cfh_out = cgs_local_get_hex(cfh_left_local)
+  set cfh_out = sico.text.concat(cfh_out, cgs_local_get_hex(cfh_right_local))
+  if cg_is_word(kind, "add"):
+    set cfh_out = sico.text.concat(cfh_out, "7c")
+  else:
+    set cfh_out = sico.text.concat(cfh_out, "7d")
+  end if
+  set cfh_out = sico.text.concat(cfh_out, cgs_local_set_hex(cfh_payload))
+  if cg_is_word(cfh_ok_kind, "u64"):
+    if cg_is_word(kind, "add"):
+      set cfh_out = sico.text.concat(cfh_out, cgs_local_get_hex(cfh_payload))
+      set cfh_out = sico.text.concat(cfh_out, cgs_local_get_hex(cfh_left_local))
+    else:
+      set cfh_out = sico.text.concat(cfh_out, cgs_local_get_hex(cfh_left_local))
+      set cfh_out = sico.text.concat(cfh_out, cgs_local_get_hex(cfh_right_local))
+    end if
+    set cfh_out = sico.text.concat(cfh_out, "54")
+    set cfh_out = sico.text.concat(cfh_out, "0440")
+    set cfh_out = sico.text.concat(cfh_out, cgs_i32_const_hex(U64.literal(1)))
+    set cfh_out = sico.text.concat(cfh_out, cgs_local_set_hex(cfh_tag))
+    if cg_is_word(kind, "add"):
+      set cfh_out = sico.text.concat(cfh_out, cgs_i64_const_hex(U64.literal(0)))
+    else:
+      set cfh_out = sico.text.concat(cfh_out, cgs_i64_const_hex(U64.literal(1)))
+    end if
+    set cfh_out = sico.text.concat(cfh_out, cgs_local_set_hex(cfh_payload))
+    set cfh_out = sico.text.concat(cfh_out, "05")
+    set cfh_out = sico.text.concat(cfh_out, cgs_i32_const_hex(U64.literal(0)))
+    set cfh_out = sico.text.concat(cfh_out, cgs_local_set_hex(cfh_tag))
+    set cfh_out = sico.text.concat(cfh_out, "0b")
+    return cfh_out
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of an `i32.const` of the value -1.
+//
+// The backend's dispatcher uses -1 as the "no arm selected" sentinel: it
+// writes the sentinel before the arm chain and compares against it after
+// every arm.
+function cgs_i32_const_neg_one_hex() returns Text:
+  return "417f"
+end function
+
+// True when the payload of a variant pattern carries neither a literal nor a
+// variant.
+//
+// The backend refuses both ("match payload inspection"), while a binding
+// payload needs no inspection at all: the arm block reads the payload
+// through a project instruction.
+function cgs_match_payload_ok(bytes: Bytes, payload: U64) returns Bool:
+  let cmpo_index = U64.literal(0)
+  let cmpo_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cmpo_more):
+    let cmpo_item = cgj_array_item(bytes, payload, cmpo_index)
+    if U64.equal(cmpo_item, U64.literal(0)):
+      set cmpo_more = U64.literal(0)
+    else:
+      let cmpo_kind = cgj_ident_text(bytes, cgj_member(bytes, cmpo_item, "kind"))
+      if cg_is_word(cmpo_kind, "bool"):
+        return false
+      end if
+      if cg_is_word(cmpo_kind, "variant"):
+        return false
+      end if
+    end if
+    set cmpo_index = cg_next(cmpo_index)
+  end while
+  return true
+end function
+
+// The bytes of one pattern test of a `match` arm.
+//
+// The backend tests the discriminant for a variant pattern, the value itself
+// for a literal pattern and writes a constant true for a wildcard. The
+// discriminant is the first slot of the value and the canonical tags are
+// ok=0 and error=1. A binding pattern is refused, exactly as the backend
+// refuses it.
+function cgs_match_pattern_hex(bytes: Bytes, fn: U64, value: Text, pattern: U64) returns Text:
+  let cmph_kind = cgj_ident_text(bytes, cgj_member(bytes, pattern, "kind"))
+  if cg_is_word(cmph_kind, "wildcard"):
+    return cgs_i32_const_hex(U64.literal(1))
+  end if
+  if cg_is_word(cmph_kind, "binding"):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cmph_slot = cgs_value_slot(bytes, fn, value)
+  if U64.equal(cmph_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cmph_local = cgs_sub(cmph_slot, U64.literal(1))
+  if cg_is_word(cmph_kind, "bool"):
+    let cmph_bool_text = cgj_value_text(bytes, cgj_member(bytes, pattern, "data"))
+    let cmph_bool_value = U64.literal(0)
+    if cg_is_word(cmph_bool_text, "true"):
+      set cmph_bool_value = U64.literal(1)
+    end if
+    let cmph_bool_out = cgs_local_get_hex(cmph_local)
+    set cmph_bool_out = sico.text.concat(cmph_bool_out, cgs_i32_const_hex(cmph_bool_value))
+    set cmph_bool_out = sico.text.concat(cmph_bool_out, "46")
+    return cmph_bool_out
+  end if
+  if cg_is_word(cmph_kind, "variant"):
+    let cmph_data = cgj_member(bytes, pattern, "data")
+    if U64.equal(cmph_data, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    let cmph_name = cgj_ident_text(bytes, cgj_member(bytes, cmph_data, "name"))
+    let cmph_tag = U64.literal(0)
+    let cmph_known = U64.literal(0)
+    if cg_is_word(cmph_name, "ok"):
+      set cmph_known = U64.literal(1)
+    end if
+    if cg_is_word(cmph_name, "error"):
+      set cmph_known = U64.literal(1)
+      set cmph_tag = U64.literal(1)
+    end if
+    if U64.equal(cmph_known, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let cmph_payload = cgj_member(bytes, cmph_data, "payload")
+    if U64.equal(cmph_payload, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
+    end if
+    if cgs_match_payload_ok(bytes, cmph_payload):
+      let cmph_out = cgs_local_get_hex(cmph_local)
+      set cmph_out = sico.text.concat(cmph_out, cgs_i32_const_hex(cmph_tag))
+      set cmph_out = sico.text.concat(cmph_out, "46")
+      return cmph_out
+    end if
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of the `match` condition of one arm: the accumulator, one test
+// per pattern and an `i32.and` after each of them.
+//
+// The backend's `emit_match_condition` writes them in that order, so the
+// guest writes the same bytes in the same order. The values and the patterns
+// are zipped, exactly as the backend zips them.
+function cgs_match_condition_hex(bytes: Bytes, fn: U64, values: U64, patterns: U64) returns Text:
+  let cmch_out = cgs_i32_const_hex(U64.literal(1))
+  let cmch_index = U64.literal(0)
+  let cmch_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cmch_more):
+    let cmch_value = cgj_array_item(bytes, values, cmch_index)
+    let cmch_pattern = cgj_array_item(bytes, patterns, cmch_index)
+    if U64.equal(cmch_value, U64.literal(0)):
+      set cmch_more = U64.literal(0)
+    else:
+      if U64.equal(cmch_pattern, U64.literal(0)):
+        set cmch_more = U64.literal(0)
+      else:
+        let cmch_value_text = cgj_value_text(bytes, cmch_value)
+        let cmch_test = cgs_match_pattern_hex(bytes, fn, cmch_value_text, cmch_pattern)
+        if sico.text.starts_with(cmch_test, "ERR:"):
+          return cmch_test
+        end if
+        set cmch_out = sico.text.concat(cmch_out, cmch_test)
+        set cmch_out = sico.text.concat(cmch_out, "71")
+      end if
+    end if
+    set cmch_index = cg_next(cmch_index)
+  end while
+  return cmch_out
+end function
+
+// The bytes of the `match` terminator of a block: the dispatcher sentinel,
+// one guarded arm per arm and the jump back to the dispatcher loop.
+//
+// The backend's `compile_terminator` writes the sentinel, then for every arm
+// the dispatcher check, the arm's condition, the arm's dispatch store and the
+// two closing `end`s, and finally the unreachable guard and the `br 1`, so
+// the guest writes the same bytes in the same order.
+function cgs_match_hex(bytes: Bytes, fn: U64, term: U64) returns Text:
+  let cgmh_data = cgj_member(bytes, term, "data")
+  if U64.equal(cgmh_data, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgmh_values = cgj_member(bytes, cgmh_data, "values")
+  if U64.equal(cgmh_values, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgmh_arms = cgj_member(bytes, cgmh_data, "arms")
+  if U64.equal(cgmh_arms, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-PLAN"
+  end if
+  let cgmh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  if U64.equal(cgmh_dispatcher, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let cgmh_out = cgs_i32_const_neg_one_hex()
+  set cgmh_out = sico.text.concat(cgmh_out, cgs_local_set_hex(cgmh_dispatcher))
+  let cgmh_index = U64.literal(0)
+  let cgmh_more = U64.literal(1)
+  while U64.less_than(U64.literal(0), cgmh_more):
+    let cgmh_arm = cgj_array_item(bytes, cgmh_arms, cgmh_index)
+    if U64.equal(cgmh_arm, U64.literal(0)):
+      set cgmh_more = U64.literal(0)
+    else:
+      let cgmh_patterns = cgj_member(bytes, cgmh_arm, "patterns")
+      if U64.equal(cgmh_patterns, U64.literal(0)):
+        return "ERR:E-SH-CG-IR-PLAN"
+      end if
+      let cgmh_target_text = cgj_value_text(bytes, cgj_member(bytes, cgmh_arm, "target"))
+      if cgs_decimal_bad(cgmh_target_text):
+        return "ERR:E-SH-CG-IR-EMIT"
+      end if
+      let cgmh_condition = cgs_match_condition_hex(bytes, fn, cgmh_values, cgmh_patterns)
+      if sico.text.starts_with(cgmh_condition, "ERR:"):
+        return cgmh_condition
+      end if
+      set cgmh_out = sico.text.concat(cgmh_out, cgs_local_get_hex(cgmh_dispatcher))
+      set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_neg_one_hex())
+      set cgmh_out = sico.text.concat(cgmh_out, "460440")
+      set cgmh_out = sico.text.concat(cgmh_out, cgmh_condition)
+      set cgmh_out = sico.text.concat(cgmh_out, "0440")
+      set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_hex(cgs_decimal_u64(cgmh_target_text)))
+      set cgmh_out = sico.text.concat(cgmh_out, cgs_local_set_hex(cgmh_dispatcher))
+      set cgmh_out = sico.text.concat(cgmh_out, "0b0b")
+    end if
+    set cgmh_index = cg_next(cgmh_index)
+  end while
+  set cgmh_out = sico.text.concat(cgmh_out, cgs_local_get_hex(cgmh_dispatcher))
+  set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_neg_one_hex())
+  set cgmh_out = sico.text.concat(cgmh_out, "460440")
+  set cgmh_out = sico.text.concat(cgmh_out, "00")
+  set cgmh_out = sico.text.concat(cgmh_out, "0b")
+  set cgmh_out = sico.text.concat(cgmh_out, "0c01")
+  return cgmh_out
+end function
+
 // The terminator bytes of the block `block` of the module function `fn`:
 // the flat return, the branch, the jump or the unreachable byte.
 //
@@ -4619,6 +4979,9 @@ function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64) returns Tex
   end if
   if cg_is_word(cbth_kind, "jump"):
     return cgs_jump_hex(bytes, fn, cbth_term)
+  end if
+  if cg_is_word(cbth_kind, "match"):
+    return cgs_match_hex(bytes, fn, cbth_term)
   end if
   if cg_is_word(cbth_kind, "unreachable"):
     return "00"
