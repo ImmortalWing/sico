@@ -256,3 +256,12 @@ text-length-over-a-nested-call-argument-in-a-return-position
 ### 7.3 下一刀（W2 族 T2 的第 4 拍 / **T2-g2 刀**）
 
 **T2-g2 刀**：让 guest 前端认**实参本身是嵌套调用**的 `sico.text.length`（`sico.text.length(sico.text.concat(t, "x"))` 与 `sico.text.length(sico.bytes.utf8_decode(src))` 两个形状）。做法应沿用 **T1 族 G-f2 刀（STEP-0525）**的先例：**新形状必须落在既有可降形状的延长线上**——`sico.text.concat` 的实参下降器（`stc_call_operand_packed`）已经能递归进嵌套调用 ⇒ 形状**可复用**，但**不得**顺带把 `sico.text.length` 的**元数**或**类型**闸门放宽。之后是 **T2 族收口片（X）**。
+
+## 8. 附录（后续 STEP 的订正，**原文不改**）
+
+### 8.1 STEP-0538：§7.2 的「guest 发射端仍不认循环 / 分支形状」已**部分过期**
+
+- 本片（STEP-0530）记的「`while` 体、分支块内的语句一律 `unsupported codegen source shape`」在 **STEP-0538** 之后**不再成立**：发射端补上 `less_fixed` 算子后，**三个 `while` 循环形状**（无 length 调用 / 带 length 调用 / 条件带 length 调用）**逐字节等同**生产后端（**1142 / 1209 / 1187 B**）。
+- **对应的钉改名并升级**：固件里的 `sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset` **改名为** `sico_codegen_guest_emits_the_loop_shapes_with_a_less_than_condition_byte_exactly`，断言从「**必须拒**」变成「**必须逐字节等同**」（**更强的断言**）。
+- **本节原文保留**（它记录的是 2026-10-24 当时的事实）；当前口径见 [STEP-0538](./STEP-0538-m22-w2-s5-emitter-vocabulary-a1.md) §2.2 与 `docs/STATUS.md`。
+- **未过期、仍然成立**的部分：**分支块内的语句**（非 `while` 形状）仍不由本片负责；**T2-g2** 早在 STEP-0532 闭合；**语料覆盖仍 0 条**。

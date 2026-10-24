@@ -164,4 +164,14 @@
 
 ⇒ **BATTERY_GREEN 15/15**（步数 **14 → 15**，新增 `emitter-vocabulary-census`）；固件 **177 / 177**（本片**零实现**）。
 
+## 6. 附录（后续 STEP 的订正，**原文不改**）
+
+### 6.1 STEP-0538：工件升 v1，并补上 **helper 轴**
+
+- **工件改名**：`selfhost/emitter-vocabulary-v0.json` → **`selfhost/emitter-vocabulary-v1.json`**（schema `sico.m22.emitter-vocabulary.v0` → **`sico.m22.emitter-vocabulary.v1`**；v0 **已删除**，与站点账本 v0 → v1 同一口径）。逐站新增 `required_helpers` / `missing_helpers` 两列，聚合新增 `required_helper_frequency` / `missing_helper_frequency`。
+- **为什么必须加这条轴**：本片只测「**调用点词表**」；但有些内建**除了调用点还要一个 core helper 函数**。`sico.bytes.utf8_decode` 就是这样一个 —— 它在 oracle 的 `INTRINSIC_HELPERS`（`crates/sico-codegen-wasm/src/lib.rs:565`）里 ⇒ 后端**除了调用点上的 (ptr,len) 透传**还要**额外发一个 458 B 的 core helper**（UTF-8 校验体）。本片把 `sico.bytes.utf8_decode` 列在「**内联**」一栏（`:4487` 的调用点确实是内联）⇒ **该分类只覆盖调用点，不覆盖 helper** ⇒ 本片的清单在 helper 这一维上是**不完整的**。STEP-0538 实测发现这一点后，给普查补上了 helper 轴（helper 规则**直接读冻结 oracle 的源码**，后端 sha256 冻进工件）。
+- **本片的预测因此被交叉验证**：STEP-0538 用 helper 轴实测出的「**发射词表 B = 8 项 helper**」（`sico.bytes.equal` **156** / `sico.u64.to_text` **144** / `sico.text.starts_with` **136** / `sico.list.get[U64]` **73** / `sico.text.split_lines` **60** / `sico.list.empty[U64]` **16** / `sico.list.append` **11** / `sico.list.append[U64]` **6**）与本片 §2.4 的预测**逐项、逐站点数对上** ⇒ **预测成立，但工具化的分类口径在 helper 这一维需要补齐**。
+- **§2.4 的「9 项内联项预期闭合 5 个站点」**：STEP-0538 实测 **7 项**（3 算子 + 4 内联内建）闭合 **4** 个站点（`MS-013` / `MS-016` / `MS-020` / `MS-158`）；第 5 个 `MS-017` `word_span_offset` 还缺 `sico.list.get` ⇒ **与本片的表一致**（该表里 `MS-017` 本就多列了 `sico.list.get`）⇒ **预测成立**。
+- **本节原文保留**（它记录的是 2026-10-24 当时的事实）；当前口径见 [STEP-0538](./STEP-0538-m22-w2-s5-emitter-vocabulary-a1.md)。
+
 ---

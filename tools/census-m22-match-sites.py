@@ -67,6 +67,7 @@ def enumerate_sites() -> list[dict[str, object]]:
         current_function = ""
         current_function_line = 0
         current_params = 0
+        current_ordinal = 0
         index = 0
         while index < len(lines):
             line = lines[index]
@@ -74,6 +75,7 @@ def enumerate_sites() -> list[dict[str, object]]:
             if matched:
                 current_function = matched.group(1)
                 current_function_line = index + 1
+                current_ordinal = 0
                 raw = line[line.index("(") + 1 : line.rindex(")")]
                 current_params = len([part for part in raw.split(",") if part.strip()])
             matched = MATCH.match(line)
@@ -132,19 +134,35 @@ def enumerate_sites() -> list[dict[str, object]]:
                     "head": head,
                     "labels": "+".join(labels),
                     "case_shape": " | ".join(shapes),
+                    "ordinal": current_ordinal,
                 }
             )
+            current_ordinal += 1
     return sites
+
+
+def site_key(site: dict[str, object]) -> str:
+    """A site's identity, independent of the line it happens to sit on.
+
+    The line number moves whenever the frozen S grows or shrinks; the site's
+    identity does not.  The key is therefore the path, the enclosing function
+    and the ordinal of the `checked_add` match inside that function.
+    """
+    return f"{site['path']}:{site['function']}:{site['ordinal']}"
 
 
 def load_ledger() -> dict[str, dict[str, object]]:
     if not LEDGER.exists():
         return {}
     data = json.loads(LEDGER.read_text(encoding="utf-8"))
-    return {
-        f"{site['path']}:{site['line']}:{site['function']}": site
-        for site in data.get("sites", [])
-    }
+    out: dict[str, dict[str, object]] = {}
+    counters: dict[str, int] = {}
+    for site in data.get("sites", []):
+        scope = f"{site['path']}:{site['function']}"
+        ordinal = counters.get(scope, 0)
+        counters[scope] = ordinal + 1
+        out[f"{scope}:{ordinal}"] = site
+    return out
 
 
 def load_actuals() -> dict[tuple[str, str], dict[str, str]]:
@@ -169,7 +187,7 @@ def main() -> int:
 
     records = []
     for number, site in enumerate(sites, start=1):
-        key = f"{site['path']}:{site['line']}:{site['function']}"
+        key = site_key(site)
         old = previous.get(key, {})
         actual = actuals.get((str(site["path"]), str(site["function"])))
         verdict = str(old.get("verdict", "pending"))

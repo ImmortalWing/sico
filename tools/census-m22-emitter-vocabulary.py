@@ -16,6 +16,13 @@ This census answers exactly that question, per site, from the frozen sources:
   3. It compares that vocabulary against the vocabulary the **guest emitter**
      actually supports, read out of `selfhost/codegen.sico` itself, so the
      work list can never drift away from the code.
+  4. (STEP-0538) It also reports the **core helper** each site needs.  The
+     backend emits a helper function for some intrinsics besides the call
+     site itself, so a site can be blocked by a missing helper body even when
+     the guest already knows the call site.  The helper rule is read out of
+     the backend's own source (`helper_dependencies` and `INTRINSIC_HELPERS`),
+     never re-implemented here, and the source digest is frozen into the
+     artifact.
 
 The result is a named gap list, not a capability claim: the guest still refuses
 every item the census reports as missing.
@@ -44,9 +51,26 @@ from collections import Counter
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LEDGER = ROOT / "selfhost" / "match-component-coverage-v1.json"
-ARTIFACT = ROOT / "selfhost" / "emitter-vocabulary-v0.json"
+ARTIFACT = ROOT / "selfhost" / "emitter-vocabulary-v1.json"
 CODEGEN = ROOT / "selfhost" / "codegen.sico"
-SCHEMA = "sico.m22.emitter-vocabulary.v0"
+BACKEND_SOURCE = ROOT / "crates" / "sico-codegen-wasm" / "src" / "lib.rs"
+SCHEMA = "sico.m22.emitter-vocabulary.v1"
+
+# The core helpers the guest emitter owns, by the guest function that emits
+# the helper body.  The census fails loudly when a helper-body function shows
+# up in the guest source without an entry here, so the guest's helper coverage
+# and the census can never drift apart silently.
+GUEST_HELPER_BODIES = {
+    "sico.bytes.utf8_decode": "cg_utf8_validate_helper_body_hex",
+    "sico.text.concat": "cg_concat_helper_body_hex",
+    "sico.text.length": "cg_text_length_helper_body_hex",
+}
+
+# A monomorphized collection or record-list intrinsic: the backend leaks the
+# canonical name as its own helper.  The census treats every bracketed
+# `sico.<family>.<operation>[...]` name that way; the backend's own grammar is
+# narrower, so the census can only over-report a helper here, never miss one.
+MONOMORPH_PATTERN = re.compile(r"^sico\.[a-z]+\.[a-z_]+\[[^\]]+\]$")
 
 # The frozen closure bound of the Rust firmware.
 CLOSURE_FUNCTION_LIMIT = 64
@@ -239,9 +263,73 @@ def guest_vocabulary() -> dict:
     return {
         "ops": sorted(set(OP_PATTERN.findall(text))),
         "intrinsics": sorted(set(INTRINSIC_PATTERN.findall(text))),
+        "helpers": guest_helpers(text),
         "source": "selfhost/codegen.sico",
         "source_sha256": sha256_text(text),
     }
+
+
+def guest_helpers(text: str) -> list[str]:
+    """The core helpers the guest emitter can emit.
+
+    The guest emits one helper body per helper it owns; the census checks
+    that the guest source and the table agree, so a new helper body in the
+    guest stops the census (red) until the table names it.
+    """
+    found = set(re.findall(r"function (cg_[A-Za-z0-9_]*helper_body_hex)\(", text))
+    expected = set(GUEST_HELPER_BODIES.values())
+    if found != expected:
+        raise RuntimeError(
+            "the guest helper bodies and the census table disagree: "
+            f"unlisted={sorted(found - expected)} absent={sorted(expected - found)}"
+        )
+    return sorted(GUEST_HELPER_BODIES)
+
+
+def backend_helper_rule() -> dict:
+    """The backend's helper rule, read out of the oracle's own source.
+
+    The Rust backend decides which core helper a module needs in
+    `helper_dependencies`; the census reads that rule out of the backend's
+    source instead of re-implementing it, so the two cannot drift apart
+    silently -- the artifact records the source digest, and any change to the
+    backend invalidates the artifact.
+    """
+    text = BACKEND_SOURCE.read_text(encoding="utf-8")
+    block = re.search(r"const INTRINSIC_HELPERS[^=]*=\s*&\[(.*?)\n\];", text, re.S)
+    if block is None:
+        raise RuntimeError("the backend's INTRINSIC_HELPERS list was not found")
+    intrinsic_helpers = sorted(set(re.findall(r'"([^"]+)"', block.group(1))))
+    function = re.search(r"fn helper_dependencies\(.*?\n\}\n", text, re.S)
+    if function is None:
+        raise RuntimeError("the backend's helper_dependencies function was not found")
+    arms: dict[str, list[str]] = {}
+    for names_text, helpers_text in re.findall(
+        r'(?m)^\s*((?:"[^"]+"\s*\|\s*)*"[^"]+")\s*=>\s*&\[([^\]]*)\],', function.group(0)
+    ):
+        helpers = re.findall(r'"([^"]+)"', helpers_text)
+        for name in re.findall(r'"([^"]+)"', names_text):
+            arms[name] = helpers
+    if not arms:
+        raise RuntimeError("the backend's helper_dependencies arms were not found")
+    return {
+        "source": "crates/sico-codegen-wasm/src/lib.rs",
+        "source_sha256": sha256_text(text),
+        "intrinsic_helpers": intrinsic_helpers,
+        "explicit_arms": {name: arms[name] for name in sorted(arms)},
+    }
+
+
+def required_helpers(name: str, rule: dict) -> list[str]:
+    """The core helpers the backend emits for the intrinsic `name`."""
+    arms = rule["explicit_arms"]
+    if name in arms:
+        return list(arms[name])
+    if name in rule["intrinsic_helpers"]:
+        return [name]
+    if MONOMORPH_PATTERN.match(name):
+        return [name]
+    return []
 
 
 def main() -> int:
@@ -256,8 +344,10 @@ def main() -> int:
     ledger = json.loads(LEDGER.read_text(encoding="utf-8"))
     sources = {name: (ROOT / "selfhost" / name).read_text(encoding="utf-8") for name in FROZEN_SOURCES}
     guest = guest_vocabulary()
+    rule = backend_helper_rule()
     supported_ops = set(guest["ops"])
     supported_intrinsics = set(guest["intrinsics"])
+    guest_helpers = set(guest["helpers"])
 
     work = ROOT / "target" / "tmp" / "m22-emitter-vocabulary"
     work.mkdir(parents=True, exist_ok=True)
@@ -286,6 +376,8 @@ def main() -> int:
     op_frequency: Counter[str] = Counter()
     intrinsic_frequency: Counter[str] = Counter()
     terminator_frequency: Counter[str] = Counter()
+    required_helper_frequency: Counter[str] = Counter()
+    missing_helper_frequency: Counter[str] = Counter()
     for site in ledger["sites"]:
         if not site["verdict"].startswith("ir-equal+component-refused"):
             continue
@@ -299,9 +391,16 @@ def main() -> int:
         ops, intrinsics, terminators = vocabulary(module)
         missing_ops = sorted(ops - supported_ops)
         missing_intrinsics = sorted(intrinsics - supported_intrinsics)
+        helpers: set[str] = set()
+        for intrinsic in intrinsics:
+            helpers.update(required_helpers(intrinsic, rule))
+        required = sorted(helpers)
+        missing_helpers = sorted(helpers - guest_helpers)
         op_frequency.update(missing_ops)
         intrinsic_frequency.update(missing_intrinsics)
         terminator_frequency.update(terminators)
+        required_helper_frequency.update(required)
+        missing_helper_frequency.update(missing_helpers)
         sites.append({
             "id": site["id"],
             "path": site["path"],
@@ -312,18 +411,23 @@ def main() -> int:
             "terminators": sorted(terminators),
             "missing_ops": missing_ops,
             "missing_intrinsics": missing_intrinsics,
-            "additions_needed": len(missing_ops) + len(missing_intrinsics),
+            "required_helpers": required,
+            "missing_helpers": missing_helpers,
+            "additions_needed": len(missing_ops) + len(missing_intrinsics) + len(missing_helpers),
         })
 
     histogram = Counter(site["additions_needed"] for site in sites)
     artifact = {
         "schema": SCHEMA,
         "guest_emitter": guest,
+        "backend_helper_rule": rule,
         "sites": sites,
         "aggregate": {
             "sites": len(sites),
             "missing_op_frequency": dict(sorted(op_frequency.items(), key=lambda item: (-item[1], item[0]))),
             "missing_intrinsic_frequency": dict(sorted(intrinsic_frequency.items(), key=lambda item: (-item[1], item[0]))),
+            "required_helper_frequency": dict(sorted(required_helper_frequency.items(), key=lambda item: (-item[1], item[0]))),
+            "missing_helper_frequency": dict(sorted(missing_helper_frequency.items(), key=lambda item: (-item[1], item[0]))),
             "terminator_frequency": dict(sorted(terminator_frequency.items(), key=lambda item: (-item[1], item[0]))),
             "additions_needed_histogram": {str(key): histogram[key] for key in sorted(histogram)},
         },
@@ -355,6 +459,8 @@ def main() -> int:
         print(f"  {count:4} sites  op        {name}")
     for name, count in artifact["aggregate"]["missing_intrinsic_frequency"].items():
         print(f"  {count:4} sites  intrinsic {name}")
+    for name, count in artifact["aggregate"]["missing_helper_frequency"].items():
+        print(f"  {count:4} sites  helper    {name}")
     return 0
 
 

@@ -6272,13 +6272,23 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
     //
     // The four scan functions and the `sico.text.concat` branch are new; the
     // three section functions and the intrinsic emitter were reshaped.
+    //
+    // STEP-0538 (emitter vocabulary A-1) reshaped the scan functions once
+    // more: the three `sico.text.concat` specific scans and the three
+    // `sico.text.length` specific scans became **one** generic scan that
+    // takes the intrinsic name as a parameter
+    // (`cgs_instruction_is_intrinsic` / `cgs_block_has_intrinsic` /
+    // `cgs_function_has_intrinsic` / `cgs_module_has_intrinsic`), so the
+    // `sico.bytes.utf8_decode` core helper could join the same scan. The
+    // frozen `cg_utf8_validate_helper_body_hex` is new in the same slice.
     for name in [
         "cgs_function_count",
-        "cgs_instruction_is_text_concat",
-        "cgs_block_has_text_concat",
-        "cgs_function_has_text_concat",
-        "cgs_module_has_text_concat",
+        "cgs_instruction_is_intrinsic",
+        "cgs_block_has_intrinsic",
+        "cgs_function_has_intrinsic",
+        "cgs_module_has_intrinsic",
         "cg_concat_helper_body_hex",
+        "cg_utf8_validate_helper_body_hex",
         "cgs_intrinsic_hex",
         "cgs_core_types_hex",
         "cgs_core_funcs_hex",
@@ -8136,28 +8146,51 @@ fn the_t2_g2_component_layer_covers_the_nested_shapes_the_emitter_knows() {
             .validate_all(&actual)
             .expect("the guest component must pass the real Wasm validator");
     }
-    for (label, body) in [
+    // STEP-0538 (emitter vocabulary A-1): the `sico.bytes.utf8_decode` shapes
+    // used to be refused by the emitter, which did not know that intrinsic.
+    // The emitter knows it now, so the three shapes move from the refusal
+    // group into the byte-exact group above: the component is byte for byte
+    // the Rust backend's production component.
+    for (label, body, component_bytes) in [
         (
             "s-site-utf8-decode",
             "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            1570,
         ),
         (
             "s-site-let-binding",
             "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
+            1570,
         ),
         (
             "let-binding-utf8-decode",
             "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+            1570,
         ),
     ] {
         let source = text_length_fixture(body);
-        let RunOutcome::Domain { code, message } =
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the utf8_decode fixture",
+        );
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-component-hex".into()])
         else {
-            panic!("the guest emitter must refuse the {label} utf8_decode shape")
+            panic!("the guest emitter must emit the {label} utf8_decode component")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "unsupported codegen source shape", "{label}");
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
     }
 }
 
@@ -8366,27 +8399,46 @@ fn the_t2_cell_matrix_component_layer_covers_what_the_emitter_knows() {
             .validate_all(&actual)
             .expect("the guest component must pass the real Wasm validator");
     }
-    // The `U64.less_than` condition cells: the emitter refuses them, and the
-    // refusal is the operator family's -- the control shape carries the same
-    // operator without a length call and is refused the same way.
-    for (label, body) in [
+    // STEP-0538 (emitter vocabulary A-1): the `U64.less_than` condition cells
+    // used to be refused by the emitter, which did not know the `less_fixed`
+    // operation.  The emitter knows it now, so the two cells move from the
+    // refusal group into the byte-exact group: the component is byte for byte
+    // the Rust backend's production component.
+    for (label, body, component_bytes) in [
         (
             "if-condition-with-the-length-on-the-right",
             "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
         ),
         (
             "control-without-a-length-call",
             "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), U64.literal(5)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1132,
         ),
     ] {
         let source = text_length_fixture(body);
-        let RunOutcome::Domain { code, message } =
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the less_than fixture",
+        );
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-component-hex".into()])
         else {
-            panic!("the guest emitter must refuse the {label} less_than condition")
+            panic!("the guest emitter must emit the {label} less_than component")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "unsupported codegen source shape", "{label}");
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
     }
 }
 
@@ -9042,7 +9094,7 @@ fn sico_codegen_guest_emits_the_text_length_component_byte_exactly() {
 }
 
 #[test]
-fn sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset() {
+fn sico_codegen_guest_emits_the_loop_shapes_with_a_less_than_condition_byte_exactly() {
     // STEP-0530: the guest emitter's remaining refusals are **not**
     // `sico.text.length` gaps, and the pin says so with a control shape.
     //
@@ -9053,6 +9105,13 @@ fn sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset() {
     // to this family.  Recording the control shape is what keeps the
     // remaining gaps honest: a refusal that survives without the operator in
     // it is not an operator gap.
+    //
+    // STEP-0538 (emitter vocabulary A-1): the emitter now knows the
+    // `less_fixed` operation, so the three loop shapes are **emitted** and the
+    // component is byte for byte the Rust backend's production component.  The
+    // pin was renamed from
+    // `sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset`;
+    // STEP-0530 keeps the original text and gains an addendum.
     for (label, body, component_bytes) in [
         (
             "loop-without-a-length-call",
@@ -9079,13 +9138,19 @@ fn sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset() {
             component_bytes,
             "the measured oracle component size of the {label} shape is pinned"
         );
-        let RunOutcome::Domain { code, message } =
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
             run_guest_with_args(&source, vec!["--emit-component-hex".into()])
         else {
-            panic!("the guest emitter must refuse the {label} loop shape")
+            panic!("the guest emitter must emit the {label} loop component")
         };
-        assert_eq!(code, "invalid-input", "{label}");
-        assert_eq!(message, "unsupported codegen source shape", "{label}");
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
     }
 }
 
