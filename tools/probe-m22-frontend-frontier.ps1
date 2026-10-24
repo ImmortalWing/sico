@@ -413,7 +413,11 @@ $cases = @(
     @{
         Name = 'text-length-as-a-match-head-operand-in-a-one-parameter-function'
         Source = "function hex_text_bytes(text: Text) returns U64:`n  match U64.checked_div(sico.text.length(text), U64.literal(2)):`n    case ok(length):`n      return length`n    case error(_):`n      return U64.literal(0)`n  end match`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-MATCH-SHAPE'
+        # STEP-0536 (M-g1): the parameter-count gate used to refuse this shape
+        # first and hide the operator-operand identity behind it.  The gate is
+        # gone, so the shape now reports the same identity as the
+        # two-parameter control shape above.
+        Expected = 'refused:ERR:E-SH-IR-CALL-ARGUMENT'
     }
     # STEP-0534: the `match` construct is the largest uncovered shape in the
     # frozen source set S (519 statements, measured).  The guest frontend
@@ -442,7 +446,9 @@ $cases = @(
     @{
         Name = 'match-checked-add-in-a-three-parameter-function'
         Source = "function size(a: U64, b: U64, c: U64) returns U64:`n  let out = U64.literal(0)`n  match U64.checked_add(a, b):`n    case ok(total):`n      set out = total`n    case error(_):`n      return U64.literal(0)`n  end match`n  return out`nend function`n"
-        Expected = 'refused:ERR:E-SH-IR-MATCH-SHAPE'
+        # STEP-0536 (M-g1): the parameter-count gate is gone, so the shape
+        # lowers -- byte for byte equal to the Rust oracle.
+        Expected = 'lowered'
     }
     @{
         Name = 'match-checked-sub'

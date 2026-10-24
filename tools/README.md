@@ -62,7 +62,7 @@ release-windows.ps1
 - `validate-step-*.ps1`、`validate-m*-exit.ps1`：历史里程碑证据，不是用户入口；
 - `validate-*.ps1`、`measure-*.ps1`：专项验证与性能测量；
 - `validate-m22-s5.ps1`：M22 S5 自举线的**版本化验证电池**（fmt / clippy / 一键 CI / 0245 / 0262 / 两个前沿探针 / 注释纪律 / `match` 站点普查与覆盖 / 固件 / 空白检查；每步记录命令、耗时与 exit，任一步失败即整体失败）。**必须单实例运行**：两个实例并发会争用同一 `target/` 与同一 `battery.log`，日志交错、步骤顺序失真 ⇒ 这种运行的「绿灯」不可引用，必须终止陈旧实例后单实例重跑；
-- `probe-m22-match-coverage.ps1`：**`match` 构造族的真实站点覆盖探针**（账本 `selfhost/match-component-coverage-v0.json` 的逐站 IR + 组件差分与真实 validator）；
+- `probe-m22-match-coverage.ps1`：**`match` 构造族的真实站点覆盖探针**（账本 `selfhost/match-component-coverage-v1.json` 的逐站 IR + 组件差分与真实 validator；v1 账本覆盖冻结 S 里**全部 396** 个 `U64.checked_add` 匹配头，含每个站点的真实形参数）；
 - `census-m22-match-sites.py`：上述账本的**唯一写者**（`--check` 校验 / `--update` 回填实测裁决）；
 - `run-ci.ps1`：一键 CI（fmt / clippy / 构建 / workspace 与 runner 测试 / 模块边界 / 注释纪律 / 规划合同 / 跨主机矩阵 / 空白检查）。**失败时**把失败子步骤的名字与该子步骤输出的末尾若干行写成 GitHub **工作流注解**，并把逐步骤结果表写进 **job summary** ⇒ 独立 CI 的红灯在运行页面上**无需登录**即可定位（Actions 日志本身需要登录会话）；
 - `prepare-ai-eval.ps1`、`test-ai-eval.ps1`、`score-ai-eval.ps1`、`validate-ai-eval.ps1`：AI 评估流水线。

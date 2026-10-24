@@ -7,11 +7,10 @@ component layer and then wrote "42 / 519 sites (shape面)".  The owner audit
 are real S sites, and each of them needs its own verdict against the Rust
 oracle.
 
-This script owns the ledger `selfhost/match-component-coverage-v0.json`:
+This script owns the ledger `selfhost/match-component-coverage-v1.json`:
 
-* it re-derives the candidate sites from the **frozen** S (the `match`
-  statements whose head is `U64.checked_add` and whose enclosing function has
-  at most two parameters -- the sites the guest frontend lowers today);
+* it re-derives the candidate sites from the **frozen** S (every `match`
+  statement whose head is `U64.checked_add`, at any parameter count);
 * it keeps the recorded verdict and digests of the sites that did not move;
 * with `--update` it merges the actual outcomes measured by the firmware test
   `sico_compiler_reproduces_the_frozen_match_site_ledger` (which writes
@@ -37,14 +36,20 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 SOURCE_DIRECTORY = REPO / "selfhost"
-LEDGER = SOURCE_DIRECTORY / "match-component-coverage-v0.json"
+LEDGER = SOURCE_DIRECTORY / "match-component-coverage-v1.json"
 ACTUAL = pathlib.Path(tempfile.gettempdir()) / "sico-m22-match-coverage" / "actual.json"
 
 FN_START = re.compile(r"^function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(")
 MATCH = re.compile(r"^(\s*)match\s+(.*?):\s*$")
 CASE = re.compile(r"^\s*case\s+([A-Za-z_][A-Za-z0-9_]*)\s*(\([^)]*\))?\s*:\s*$")
 
-SCHEMA = "sico.m22.match-coverage.v0"
+SCHEMA = "sico.m22.match-coverage.v1"
+
+# The number of `U64.checked_add` match statements in the frozen S, at any
+# parameter count.  STEP-0534 measured 354 of them behind the parameter-count
+# gate and 42 below it; STEP-0536 removed the gate, so the candidate set is
+# the whole 396.
+EXPECTED_SITES = 396
 
 # The files whose whole-file canonical IR differential is pinned by the
 # firmware; a site whose closure is too large leans on that pin.
@@ -54,7 +59,7 @@ WHOLE_FILE_PINS = {
 
 
 def enumerate_sites() -> list[dict[str, object]]:
-    """Every `checked_add` match head whose enclosing function has <= 2 params."""
+    """Every `checked_add` match head, at any parameter count."""
     sites: list[dict[str, object]] = []
     for path in sorted(SOURCE_DIRECTORY.glob("*.sico")):
         text = path.read_text(encoding="utf-8")
@@ -115,7 +120,7 @@ def enumerate_sites() -> list[dict[str, object]]:
             # The case bodies are consumed above, so a `match` nested inside a
             # case body is not counted twice -- the same top-level-only rule
             # the STEP-0534 census used (519 statements, 478 of them top level).
-            if operator != "checked_add" or current_params > 2:
+            if operator != "checked_add":
                 continue
             sites.append(
                 {
@@ -123,6 +128,7 @@ def enumerate_sites() -> list[dict[str, object]]:
                     "line": match_line,
                     "function": current_function,
                     "function_line": current_function_line,
+                    "parameter_count": current_params,
                     "head": head,
                     "labels": "+".join(labels),
                     "case_shape": " | ".join(shapes),
@@ -155,8 +161,8 @@ def main() -> int:
     arguments = parser.parse_args()
 
     sites = enumerate_sites()
-    if len(sites) != 42:
-        print(f"CENSUS_MISMATCH expected=42 actual={len(sites)}")
+    if len(sites) != EXPECTED_SITES:
+        print(f"CENSUS_MISMATCH expected={EXPECTED_SITES} actual={len(sites)}")
         return 1
     previous = load_ledger()
     actuals = load_actuals()
@@ -189,11 +195,12 @@ def main() -> int:
                 note = "measured by the frozen ledger firmware test"
         records.append(
             {
-                "id": f"MS-{number:02d}",
+                "id": f"MS-{number:03d}",
                 "path": site["path"],
                 "line": site["line"],
                 "function": site["function"],
                 "function_line": site["function_line"],
+                "parameter_count": site["parameter_count"],
                 "head": site["head"],
                 "labels": site["labels"],
                 "case_shape": site["case_shape"],
@@ -210,9 +217,9 @@ def main() -> int:
         "generated_by": "tools/census-m22-match-sites.py",
         "source_set": "selfhost/*.sico (frozen S)",
         "rule": (
-            "a `match` statement whose head is U64.checked_add and whose enclosing "
-            "function has at most two parameters -- the 42 sites the guest frontend "
-            "lowers today"
+            "a `match` statement whose head is U64.checked_add, at any parameter "
+            "count -- the 396 candidate sites of the frozen S (42 below the "
+            "removed parameter-count gate and 354 behind it)"
         ),
         "sites": records,
     }

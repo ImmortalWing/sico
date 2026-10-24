@@ -8169,11 +8169,15 @@ fn the_t2_g2_s_site_refusals_belong_to_other_families() {
     // and the control shapes that attribute them.
     //
     // S site 2 (`compiler.sico`: `positive_sleb_length`) is refused by the
-    // match route's **parameter-count gate** (`checked_arithmetic_match_ir`
-    // wants exactly two parameters; the function has one) and, behind it, by
-    // the fixed-operator operand path, which does not accept a `sico.*`
-    // operand **at all** -- the control shape below carries a plain
-    // (non-nested) length operand and is refused the same way.
+    // fixed-operator operand path, which does not accept a `sico.*` operand
+    // **at all** -- the control shape below carries a plain (non-nested)
+    // length operand and is refused the same way.
+    //
+    // STEP-0536 (M-g1) removed the match route's parameter-count gate, which
+    // used to refuse this one-parameter function *first* and hide the deeper
+    // identity behind it.  The refusal is unchanged -- it is still a typed
+    // refusal -- but the identity is now the deeper one, and it is now the
+    // **same** identity the two-parameter control shapes report.
     //
     // S site 1 (`compiler.sico`: `lex_words`) is refused by the
     // `sico.list.append` shape it carries (`sico.list.append(<local>,
@@ -8191,7 +8195,7 @@ fn the_t2_g2_s_site_refusals_belong_to_other_families() {
         (
             "one-parameter-nested-match",
             match_probe("initial: U64", "positive_sleb_hex(initial)"),
-            "ERR:E-SH-IR-MATCH-SHAPE",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
         ),
         (
             "two-parameter-plain-match",
@@ -8493,21 +8497,23 @@ fn the_t2_match_head_sites_keep_their_measured_refusal_identities() {
     // (`compiler.sico`: `hex_text_bytes`, `positive_sleb_length`) carry two
     // refusals, and the census separates them.
     //
-    // The real functions have **one** parameter, so the match route's
-    // parameter-count gate refuses them first (`ERR:E-SH-IR-MATCH-SHAPE`).
-    // With the gate satisfied (two parameters) the same shape is refused by
-    // the operator-operand path (`ERR:E-SH-IR-CALL-ARGUMENT`), which is the
-    // T2-g3 gap -- not the match route.
+    // The real functions have **one** parameter.  While the match route's
+    // parameter-count gate was in place it refused them first
+    // (`ERR:E-SH-IR-MATCH-SHAPE`) and hid the deeper identity.  STEP-0536
+    // (M-g1) removed that gate, so both sites now report the operator-operand
+    // path's identity (`ERR:E-SH-IR-CALL-ARGUMENT`) -- the same identity the
+    // two-parameter control shape reports, which is the T2-g3 gap -- not the
+    // match route.
     for (label, body, identity) in [
         (
             "real-s-function-hex-text-bytes",
             "function hex_text_bytes(text: Text) returns U64:\n  match U64.checked_div(sico.text.length(text), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
-            "ERR:E-SH-IR-MATCH-SHAPE",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
         ),
         (
             "real-s-function-positive-sleb-length",
             "function positive_sleb_length(initial: U64) returns U64:\n  match U64.checked_div(sico.text.length(positive_sleb_hex(initial)), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function",
-            "ERR:E-SH-IR-MATCH-SHAPE",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
         ),
     ] {
         let source = text_length_fixture(body);
@@ -8546,6 +8552,16 @@ fn the_match_construct_truth_is_measured_and_pinned() {
             4438,
         ),
         (
+            "checked-add-in-a-three-parameter-function",
+            "function size(a: U64, b: U64, c: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4585,
+        ),
+        (
+            "checked-add-in-a-twelve-parameter-function",
+            "function size(a: U64, b: U64, c: U64, d: U64, e: U64, f: U64, g: U64, h: U64, i: U64, j: U64, k: U64, l: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            5247,
+        ),
+        (
             "list-get-generic",
             "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
             3615,
@@ -8579,24 +8595,14 @@ fn the_match_construct_truth_is_measured_and_pinned() {
         assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
     }
-    // The refusals, each with its own measured identity.  The parameter-count
-    // gate (`ERR:E-SH-IR-MATCH-SHAPE`) belongs to the checked-arithmetic match
-    // route; the operator whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a second,
-    // different gate; a head no match route claims at all falls through to the
-    // general route (`ERR:E-SH-IR-STATEMENT`).
+    // The refusals, each with its own measured identity.  STEP-0536 (M-g1)
+    // removed the match route's parameter-count gate, so the three-parameter
+    // and the twelve-parameter shapes moved from this list to the lowered list
+    // above -- the gate was the only thing that refused them.  The operator
+    // whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a second, different gate; a
+    // head no match route claims at all falls through to the general route
+    // (`ERR:E-SH-IR-STATEMENT`).
     for (label, body, identity, ir_bytes) in [
-        (
-            "checked-add-in-a-three-parameter-function",
-            "function size(a: U64, b: U64, c: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
-            "ERR:E-SH-IR-MATCH-SHAPE",
-            4585,
-        ),
-        (
-            "checked-add-in-a-twelve-parameter-function",
-            "function size(a: U64, b: U64, c: U64, d: U64, e: U64, f: U64, g: U64, h: U64, i: U64, j: U64, k: U64, l: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
-            "ERR:E-SH-IR-MATCH-SHAPE",
-            5247,
-        ),
         (
             "checked-sub",
             "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_sub(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
@@ -8654,6 +8660,77 @@ fn the_match_construct_truth_is_measured_and_pinned() {
     };
     assert_eq!(code, "invalid-input");
     assert_eq!(message, "unsupported codegen source shape");
+}
+
+#[test]
+fn sico_compiler_lowers_the_checked_arithmetic_match_at_any_parameter_count_byte_exactly() {
+    // STEP-0536, M-g1: the checked-arithmetic `match` route used to refuse any
+    // function whose parameter count was not 1 or 2 -- the gate that blocked
+    // 354 of the 519 `match` statements in the frozen source set S (measured by
+    // the STEP-0534 census; reproduced on the real site `codegen.sico:cg_next`).
+    //
+    // The gate was a guard whose result was never read: the route already
+    // resolved its operands through the binding parameter index and already
+    // compared the operand index against the parameter count, so the count was
+    // never a shape constraint.  Removing it lets the route lower the shape at
+    // any arity.
+    //
+    // The bytes must stay byte for byte equal to the Rust frontend's canonical
+    // IR: the value ids, the SSA order and the ranges must not move.  The
+    // pinned byte counts are the Rust frontend's own measured output.
+    for (label, arity, ir_bytes) in [
+        ("one-parameter", 1usize, 4438),
+        ("two-parameter", 2, 4511),
+        ("three-parameter", 3, 4585),
+        ("four-parameter", 4, 0),
+        ("nine-parameter", 9, 0),
+        ("twelve-parameter", 12, 5247),
+        ("seventeen-parameter", 17, 0),
+    ] {
+        // The parameter names follow the STEP-0534 truth fixtures (`a`, `b`,
+        // `c`, ...) so the pinned byte counts stay comparable: the canonical IR
+        // carries source ranges, so a rename would move them.
+        let params = (0..arity)
+            .map(|index| {
+                let name = (b'a' + index as u8) as char;
+                format!("{name}: U64")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        // A one-parameter function has no second operand, so the head reads the
+        // same parameter twice -- the shape the STEP-0534 truth test measured.
+        let second = if arity >= 2 { "b" } else { "a" };
+        let body = format!(
+            "function size({params}) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, {second}):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function"
+        );
+        let source = match_fixture(&body);
+        let expected = rust_ir(&source);
+        if ir_bytes != 0 {
+            assert_eq!(
+                expected.len(),
+                ir_bytes,
+                "the measured canonical IR size of the {label} match shape is pinned"
+            );
+        }
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} match shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The operator whitelist is a **different** gate: a head the assignment-body
+    // route does not claim stays a typed refusal, and the identity must stay
+    // stable.  The arity gate used to shadow it, so the same head in a
+    // one-parameter function used to report the arity identity; it now
+    // reports the whitelist identity.
+    let source = match_fixture(
+        "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_div(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the checked_div match shape")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-CALL-TARGET");
 }
 
 #[test]
@@ -9056,10 +9133,14 @@ fn the_guest_frontend_narrower_than_the_oracle_on_the_u64_bit_operators() {
 // oracle -- canonical IR, Component bytes and a real validator run.
 //
 // This test is the executor.  It reads the frozen ledger
-// (`selfhost/match-component-coverage-v0.json`), re-derives every site from
+// (`selfhost/match-component-coverage-v1.json`), re-derives every site from
 // the frozen S, compares the guest against the Rust oracle and checks the
 // recorded verdict.  A site that moves is a failure, exactly like the
 // frontend frontier probe.
+//
+// STEP-0536 (M-g1) extended the ledger from the 42 sites the parameter-count
+// gate let through to all 396 `U64.checked_add` match statements of the
+// frozen S -- the 42 plus the 354 the gate used to refuse.
 //
 // The unit of comparison is the site's **same-file dependency closure** plus
 // the Script-profile harness (`run` + the ScriptInput/ScriptOutput records),
@@ -9070,7 +9151,7 @@ fn the_guest_frontend_narrower_than_the_oracle_on_the_u64_bit_operators() {
 // ---------------------------------------------------------------------------
 
 const MATCH_COVERAGE_LEDGER: &str =
-    include_str!("../../../selfhost/match-component-coverage-v0.json");
+    include_str!("../../../selfhost/match-component-coverage-v1.json");
 const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler_semantics.sico");
 
 /// Closure bound: a site whose same-file dependency closure grows past this
@@ -9100,6 +9181,7 @@ struct MatchCoverageSite {
     line: u64,
     function: String,
     function_line: u64,
+    parameter_count: u64,
     head: String,
     labels: String,
     case_shape: String,
@@ -9367,20 +9449,26 @@ fn match_compare_site(path: &str, function: &str) -> MatchSiteOutcome {
 
 #[test]
 fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
-    // STEP-0536, M22 R0.4: the 42 candidate `match` sites of the frozen S are
+    // STEP-0536, M22 R0.4: the 396 candidate `match` sites of the frozen S are
     // re-derived from the frozen sources, compared against the Rust oracle on
     // both axes (canonical IR and Component bytes, with a real validator run)
     // and checked against the frozen ledger.
+    //
+    // STEP-0536 (M-g1) removed the checked-arithmetic route's parameter-count
+    // gate, so the candidate set grew from the 42 sites the gate let through
+    // to **all** 396 `U64.checked_add` match statements -- the 42 plus the 354
+    // the gate used to refuse.  Each site records its real parameter count,
+    // so the ledger states the arity it was measured at.
     let ledger: MatchCoverageLedger =
         serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
     assert_eq!(
-        ledger.schema, "sico.m22.match-coverage.v0",
+        ledger.schema, "sico.m22.match-coverage.v1",
         "the ledger schema is frozen"
     );
     assert_eq!(
         ledger.sites.len(),
-        42,
-        "the ledger registers the 42 candidate sites"
+        396,
+        "the ledger registers the 396 candidate sites"
     );
 
     // The site list itself must stay derived from the frozen S: every entry
@@ -9400,6 +9488,23 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
             function.line, site.function_line,
             "{}: the frozen function line moved",
             site.id
+        );
+        // STEP-0536 (M-g1): the ledger states the **real** parameter count of
+        // every site, so a site cannot silently drift to another arity.
+        let signature = function.text.split('\n').next().unwrap_or_default();
+        let open = signature.find('(').unwrap_or(0);
+        let close = signature[open..]
+            .find(')')
+            .map(|offset| offset + open)
+            .unwrap_or(open);
+        let real_parameters = signature[open + 1..close]
+            .split(',')
+            .filter(|part| !part.trim().is_empty())
+            .count() as u64;
+        assert_eq!(
+            site.parameter_count, real_parameters,
+            "{}: the recorded parameter count of {}:{} moved",
+            site.id, site.path, site.function
         );
         let lines: Vec<&str> = text.split('\n').collect();
         let site_line = site.line as usize;
