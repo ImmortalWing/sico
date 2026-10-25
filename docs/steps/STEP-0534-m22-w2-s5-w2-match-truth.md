@@ -177,7 +177,7 @@
 
 ### 8.3 下一刀（按实测杠杆排序）
 
-1. **M-g4 组件层 `match` 发射路径**（**519** 站点）—— 本族**最大**的一块，也是收口前的硬门槛。**ADR 判定（已用证据收敛）**：发射形状**不是新架构**，而是**已冻结合同的实现** ——（a）生产后端 `crates/sico-codegen-wasm/src/lib.rs` 的 `compile_terminator`（`Terminator::Match` 分支，`:2295`）与 `emit_match_condition`（`:2325`）**已经**定义了逐字节的发射形状（dispatcher 局部 + 逐 arm 的 `if` 链 + `variant_tags` 表）；（b）[ADR-0015](../../adr/ADR-0015-compiler-bootstrap-closure-v0.md) 的 `A == B == C` Component 字节闭合与 [ADR-0016](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) §6 的 canary 梯级（scalar IR → `formatter.sico` 组件级 → 语料组件级 → 完整 bundle 组件级）**已冻结**目标形状 ⇒ **不需要新开 ADR**，需要的是**对照字节钉**（guest 的 match 组件字节 ≡ 生产后端字节）。
+1. **M-g4 组件层 `match` 发射路径**（**519** 站点）—— 本族**最大**的一块，也是收口前的硬门槛。**ADR 判定（已用证据收敛）**：发射形状**不是新架构**，而是**已冻结合同的实现** ——（a）生产后端 `crates/sico-codegen-wasm/src/lib.rs` 的 `compile_terminator`（`Terminator::Match` 分支，`:2295`）与 `emit_match_condition`（`:2325`）**已经**定义了逐字节的发射形状（dispatcher 局部 + 逐 arm 的 `if` 链 + `variant_tags` 表）；（b）[ADR-0015](../adr/ADR-0015-compiler-bootstrap-closure-v0.md) 的 `A == B == C` Component 字节闭合与 [ADR-0016](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) §6 的 canary 梯级（scalar IR → `formatter.sico` 组件级 → 语料组件级 → 完整 bundle 组件级）**已冻结**目标形状 ⇒ **不需要新开 ADR**，需要的是**对照字节钉**（guest 的 match 组件字节 ≡ 生产后端字节）。
 2. **M-g1 形参计数门**（**354** 站点）—— 前端刀：放宽 `checked_arithmetic_match_ir` 的「恰好 2 个形参」。
 3. **M-g2 算子白名单**（**46** 站点）—— 前端刀：`checked_sub` / `checked_div` / `checked_mul`。
 4. **M-g3 未认领的匹配头**（**21** 站点）—— 前端刀：`sico.bytes.slice`。

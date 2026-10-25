@@ -13,7 +13,7 @@
 - **决策 1（同意）**：允许插入一个**纯测量片**并前置到 37 语料梯级之前，用途是把"1 MB 级组件发射是否可行"这个可能推翻里程碑的唯一未知量提前暴露。
 - **决策 2（同意）**：授权在**合格跑之前**重新基线化 arena / fuel / timeout 限额（ADR-0015 决策 8 允许事前固定限额；失败后上调作废该次 attempt）。
 - **决策 3（同意）**：`origin/dev` 并行冲突历史的裁决**推迟到门 6 收尾**统一处理。
-- **追加授权（2026-10-22，会话末）**："全权拍板" ⇒ 本会话把剩余全部待决项（canary 次序、判读阈值、探针落点、并行规则、降级规则、工具面、喂入定界、耗量口径、冲突裁决方式、交付物清单）**一次性裁决为 D4–D15**，登记进计划 §3.3.2 与本记录 §4.2；**唯一触及的合同** = [ADR-0016 A1](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md)（组件级 canary 次序重排，只改次序、不改门与 `A == B == C`）。
+- **追加授权（2026-10-22，会话末）**："全权拍板" ⇒ 本会话把剩余全部待决项（canary 次序、判读阈值、探针落点、并行规则、降级规则、工具面、喂入定界、耗量口径、冲突裁决方式、交付物清单）**一次性裁决为 D4–D15**，登记进计划 §3.3.2 与本记录 §4.2；**唯一触及的合同** = [ADR-0016 A1](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md)（组件级 canary 次序重排，只改次序、不改门与 `A == B == C`）。
 
 **结论**：M22 剩余工作已收敛为 **7 个 slice（W1–W7）、约 75–125 片**，关键路径 = `W1 → W2 → W3 → W5 → W6 → W7`。阶梯全文写入 [M22 计划 §3.3](../plans/M22-compiler-self-host.md)，是执行会话的唯一权威入口。
 
@@ -53,7 +53,7 @@
 
 | 编号 | 决定 | 落点 |
 |---|---|---|
-| D4 | 组件级 canary 次序冻结为 `formatter 组件级 → 37 语料组件级 → bundle 组件级 → harness`（**先广度后尺度**） | **[ADR-0016 A1](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md)**（新增修订段，status 行标注 A1）；STEP-0486 §2.4 加对齐注记（原句保留以便追溯） |
+| D4 | 组件级 canary 次序冻结为 `formatter 组件级 → 37 语料组件级 → bundle 组件级 → harness`（**先广度后尺度**） | **[ADR-0016 A1](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md)**（新增修订段，status 行标注 A1）；STEP-0486 §2.4 加对齐注记（原句保留以便追溯） |
 | D5 | W1 探针**不进 `selfhost/`**，放 runner 测试侧独立 fixture；探针组件**不得进入 A/B/C 链** | 计划 §3.3.4 |
 | D6 | W1 判读阈值固定（≤6× 可行 / ≤16× 临界 / >16× 不可行） | 计划 §3.3.4 |
 | D7 | 不可行分支方案优先级：二进制输出通道 > 流式/分块发射 > 降中间表示成本 > 提高限额 | 计划 §3.3.4 |
@@ -77,7 +77,7 @@
 ## 5. 诚实性
 
 - 本片**没有**新增任何 guest 能力、**没有**推进任何出口门、**没有**产生新的运行时或性能主张；M22 仍为 **NO-GO**（门 1/4/5/7 GO、门 2 PARTIAL、门 3/6 NO-GO，2026-10-20 出口审计口径）。
-- 本片**触及了一处合同**：[ADR-0016 A1](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) 把决策 6 的组件级 canary 次序按"先广度后尺度"重排（owner 2026-10-22 授权）。该修订**只改次序**，不改任何出口门、不改 `A == B == C`、不改证据等级、不改支持面主张；STEP-0486 §2.4 的原表述**保留**并加对齐注记以便追溯。
+- 本片**触及了一处合同**：[ADR-0016 A1](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) 把决策 6 的组件级 canary 次序按"先广度后尺度"重排（owner 2026-10-22 授权）。该修订**只改次序**，不改任何出口门、不改 `A == B == C`、不改证据等级、不改支持面主张；STEP-0486 §2.4 的原表述**保留**并加对齐注记以便追溯。
 - 阶梯里的规模数字（75–125 片）是**规划估计，不是承诺**；三处最大不确定源已在计划 §3.3.13 逐条列明（W1 可能改写 W2 的实施方式；W3-b 的脚本 ABI 组宽度未知；W4 的 116 条 LEXICAL 可能是成片系统性偏差）。
 - 本片**不预留任何 STEP 号**：阶梯只用 slice 标识（W1–W7 / T1–T20 / G1–G2 / R1–R3），执行会话按 §3.2 的取号规则在**开工时**顺取（取号前核对 `docs/steps/README.md` 与 `handoff-m22.md`；M24 占 STEP-0330–0337、M23 已占 STEP-0489/0490）。
 - 本片编号 **STEP-0514** 为规划片自身；执行线下一片从 **STEP-0515** 起顺取（若并行会话已占用 0514/0515，按本线既有先例顺延并在 handoff 登记）。
@@ -89,7 +89,7 @@
 |---|---|---|
 | 规划合同 | `.\tools\validate-step-0124.ps1` | `STEP_0124_OK`（计划保留 `Entry gate` / `Non-goals` / `Exit gates` 与 `no STEP numbers reserved`；门 5 ADR-0015 行未动） |
 | 空白纪律 | `git diff --check` | 净 |
-| 合同修订 | [ADR-0016 A1](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) + [STEP-0486 §2.4 对齐注记](../../steps/STEP-0486-m22-w2-s5-codegen-wave.md) | 决策 6 组件级 canary 次序 = `formatter 组件级 → 37 语料组件级 → bundle 组件级 → harness`；原句保留可追溯 |
+| 合同修订 | [ADR-0016 A1](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) + [STEP-0486 §2.4 对齐注记](../../steps/STEP-0486-m22-w2-s5-codegen-wave.md) | 决策 6 组件级 canary 次序 = `formatter 组件级 → 37 语料组件级 → bundle 组件级 → harness`；原句保留可追溯 |
 | 组件分段基线 | 解析 `target/tmp/step0506/compiler.component.wasm` | 1,024,613 B；core 1,024,161 / code 1,003,250 / data 16,487 / type 3,685 |
 | 内建族统计 | `selfhost/*.sico` 全文 `sico.<ns>.<fn>` 统计 | 20 族，`text.concat` 2,882 次最多 |
 | 语料分布 | `selfhost/script-build-corpus-v0.json` | 37 accepted / 178 refused；LEXICAL 116 / SCRIPT_ABI 28 / 散码 34 |

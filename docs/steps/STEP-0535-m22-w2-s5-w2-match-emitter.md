@@ -3,7 +3,7 @@
 > - status: **本机实测绿**（随本片提交并推送；独立 CI 裁决待下一片回填）
 > - date: 2026-10-24
 > - owners: autonomous-agent
-> - depends: [STEP-0534](./STEP-0534-m22-w2-s5-w2-match-truth.md)（519 条 `match` 普查 + 三个拒绝门的归因 + **M-g4 缺口登记**）、[STEP-0533](./STEP-0533-m22-w2-s5-w2-t2-family-closure.md)（族级真值表方法学 + 「族调用点计数不是常量」）、[ADR-0015](../../adr/ADR-0015-compiler-bootstrap-closure-v0.md)（`A == B == C` 字节闭合）、[ADR-0016](../../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) §6（canary 梯级）、**AGENTS.md §10（2026-10-24 owner 审计：R0–R6 整改计划）**
+> - depends: [STEP-0534](./STEP-0534-m22-w2-s5-w2-match-truth.md)（519 条 `match` 普查 + 三个拒绝门的归因 + **M-g4 缺口登记**）、[STEP-0533](./STEP-0533-m22-w2-s5-w2-t2-family-closure.md)（族级真值表方法学 + 「族调用点计数不是常量」）、[ADR-0015](../adr/ADR-0015-compiler-bootstrap-closure-v0.md)（`A == B == C` 字节闭合）、[ADR-0016](../adr/ADR-0016-selfhost-soa-compilation-unit-v0.md) §6（canary 梯级）、**AGENTS.md §10（2026-10-24 owner 审计：R0–R6 整改计划）**
 > - gate: **闭合 M-g4 的第一段**（组件层 **0 → 4 个形状端到端字节全等**）+ **R0.1 / R0.2 / R0.4 三项证据整改**；**族仍未闭合** ⇒ **不推进任何出口门**、**不包装为特性支持**
 > - numbering: **STEP-0535**（取号前已核对 `docs/steps/`：最大号 0534；*0535 未被占用*；M24 轨 STEP-0330–0337、M23 轨 0489/0490，均不冲突）。**本片的 R0 部分不另占 STEP 号**（owner 把 R0 定义为「STEP-0535 证据整改」，见 AGENTS.md §10.1.1 与 §10.4）
 > - 产物: [支持面登记表](../reports/m22-support-surface-match.md)（本片更新缺口分解与组件层真值）、**站点账本** `selfhost/match-component-coverage-v0.json`（R0.4）、**版本化电池** `tools/validate-m22-s5.ps1`（R0.2）、**站点探针** `tools/probe-m22-match-coverage.ps1`（R0.4）
