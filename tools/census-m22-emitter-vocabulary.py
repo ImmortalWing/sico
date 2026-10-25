@@ -70,6 +70,8 @@ GUEST_HELPER_BODIES = {
     "sico.bytes.utf8_decode": "cg_utf8_validate_helper_body_hex",
     "sico.text.concat": "cg_concat_helper_body_hex",
     "sico.text.length": "cg_text_length_helper_body_hex",
+    "sico.text.starts_with": "cg_starts_with_helper_body_hex",
+    "sico.u64.to_text": "cg_u64_to_text_helper_body_hex",
 }
 
 # A monomorphized collection or record-list intrinsic: the backend leaks the

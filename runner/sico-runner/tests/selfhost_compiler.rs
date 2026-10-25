@@ -6317,6 +6317,8 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
         "cgs_bytes_equal_hex",
         "cgs_flat_hex",
         "cgs_value_ty",
+        "cg_starts_with_helper_body_hex",
+        "cg_u64_to_text_helper_body_hex",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
@@ -10560,6 +10562,273 @@ fn the_emitter_vocabulary_b1_covers_the_bytes_equal_helper_shape() {
             GuestEmission::Component(hex) => {
                 panic!(
                     "the guest must refuse the bytes.equal shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0541 (emitter vocabulary B-2): the `sico.u64.to_text` core helper.
+//
+// `sico.u64.to_text` is the second **core helper** of the emission
+// vocabulary: the backend emits a helper function that formats the i64 value
+// into the arena and returns the `(pointer, length)` pair.  The helper calls
+// the arena allocator twice, so its body carries the allocator's core index,
+// and it sorts **last** in the backend's alphabetical helper order -- so the
+// helpers the guest already knew about keep their core indices.
+// ---------------------------------------------------------------------------
+
+/// The `sico.u64.to_text` shape of the frozen S: a U64 rendered as decimal
+/// text.  The second parameter gives the module a text value, so the
+/// operand-kind control below has something to point at.
+fn u64_to_text_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(n: U64, s: Text) returns Text:\n  return sico.u64.to_text(n)\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `text.concat` keeps
+/// the lower core index and `u64.to_text` takes the last one.
+fn u64_to_text_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(n: U64, a: Text, b: Text) returns Text:\n  return sico.text.concat(sico.u64.to_text(n), sico.text.concat(a, b))\nend function",
+    ))
+}
+
+/// The same call with its argument removed: the intrinsic's own arity gate
+/// must stay a typed refusal on both sides.
+fn u64_to_text_without_argument_module() -> Module {
+    let mut module = u64_to_text_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.u64.to_text" {
+                    arguments.clear();
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operand is the **text** parameter instead of the U64:
+/// the operand-kind gate must stay a typed refusal on both sides.
+fn u64_to_text_text_operand_module() -> Module {
+    let mut module = u64_to_text_shape_module();
+    for function in &mut module.functions {
+        let text_parameter = function
+            .parameters
+            .iter()
+            .find(|parameter| parameter.ty == Type::String)
+            .map(|parameter| parameter.id);
+        let Some(text_parameter) = text_parameter else {
+            continue;
+        };
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.u64.to_text" {
+                    arguments.clear();
+                    arguments.push(text_parameter);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b3_covers_the_text_starts_with_helper_shape() {
+    // STEP-0541 (emitter vocabulary B-3): the third core helper of the
+    // emission vocabulary.  Its body calls nothing, so it is frozen verbatim;
+    // it sorts between `sico.text.length` and `sico.u64.to_text`, so the
+    // helpers the guest already knew about keep their core indices.
+    for (label, module, component_bytes) in [
+        ("starts-with", starts_with_shape_module(), 1106),
+        (
+            "starts-with-and-concat",
+            starts_with_and_concat_module(),
+            1252,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its fourth argument and the
+    // intrinsic with byte operands are refused by the Rust verifier and by the
+    // guest's own gates.
+    for (label, module) in [
+        ("arity", starts_with_without_fourth_argument_module()),
+        ("operand-kind", starts_with_bytes_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the starts_with shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the starts_with shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the starts_with shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0541 (emitter vocabulary B-3): the `sico.text.starts_with` core helper.
+//
+// `sico.text.starts_with` is the third **core helper** of the emission
+// vocabulary: the backend emits a helper function that compares the prefix
+// and returns a boolean.  The helper calls nothing, so its body is frozen
+// verbatim, and it sorts between `sico.text.length` and `sico.u64.to_text`.
+// ---------------------------------------------------------------------------
+
+/// The `sico.text.starts_with` shape of the frozen S: a prefix test on two
+/// texts.
+fn starts_with_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function starts(a: Text, b: Text) returns Bool:\n  return sico.text.starts_with(a, b)\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `text.concat` takes
+/// the lower core index and `text.starts_with` the next one.
+fn starts_with_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function starts(a: Text, b: Text, c: Text) returns Text:\n  if sico.text.starts_with(a, b):\n    return sico.text.concat(a, c)\n  end if\n  return sico.text.concat(b, c)\nend function",
+    ))
+}
+
+/// The same call with its fourth argument removed: the intrinsic's own arity
+/// gate must stay a typed refusal on both sides.
+fn starts_with_without_fourth_argument_module() -> Module {
+    let mut module = starts_with_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.text.starts_with" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operands are **bytes** instead of texts: the
+/// operand-kind gate must stay a typed refusal on both sides.
+fn starts_with_bytes_operand_module() -> Module {
+    let mut module = starts_with_shape_module();
+    for function in &mut module.functions {
+        for parameter in &mut function.parameters {
+            parameter.ty = Type::Bytes;
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b2_covers_the_u64_to_text_helper_shape() {
+    // STEP-0541 (emitter vocabulary B-2): the second core helper of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("u64-to-text", u64_to_text_shape_module(), 1154),
+        (
+            "u64-to-text-and-concat",
+            u64_to_text_and_concat_module(),
+            1245,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its argument and the
+    // intrinsic with a text operand are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", u64_to_text_without_argument_module()),
+        ("operand-kind", u64_to_text_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the u64.to_text shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the u64.to_text shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the u64.to_text shape with the {label} fault, got {hex}"
                 )
             }
         }
