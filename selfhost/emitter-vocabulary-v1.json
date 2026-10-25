@@ -1,47 +1,31 @@
 {
   "aggregate": {
     "additions_needed_histogram": {
-      "0": 66,
-      "10": 6,
-      "2": 24,
-      "4": 41,
-      "6": 10
+      "0": 145
     },
-    "missing_helper_frequency": {
-      "sico.list.append": 11,
-      "sico.list.append[U64]": 6,
-      "sico.list.empty[U64]": 16,
-      "sico.list.get[U64]": 73,
-      "sico.text.split_lines": 60
-    },
-    "missing_intrinsic_frequency": {
-      "sico.list.append": 11,
-      "sico.list.append[U64]": 6,
-      "sico.list.empty[U64]": 16,
-      "sico.list.get[U64]": 73,
-      "sico.text.split_lines": 60
-    },
+    "missing_helper_frequency": {},
+    "missing_intrinsic_frequency": {},
     "missing_op_frequency": {},
     "required_helper_frequency": {
-      "sico.bytes.equal": 141,
+      "sico.bytes.equal": 140,
       "sico.bytes.utf8_decode": 89,
       "sico.list.append": 11,
       "sico.list.append[U64]": 6,
       "sico.list.empty[U64]": 16,
-      "sico.list.get[U64]": 73,
-      "sico.text.concat": 142,
-      "sico.text.length": 126,
+      "sico.list.get[U64]": 67,
+      "sico.text.concat": 140,
+      "sico.text.length": 128,
       "sico.text.split_lines": 60,
-      "sico.text.starts_with": 135,
-      "sico.u64.to_text": 138
+      "sico.text.starts_with": 130,
+      "sico.u64.to_text": 136
     },
-    "sites": 147,
+    "sites": 145,
     "terminator_frequency": {
-      "branch": 147,
-      "jump": 147,
-      "match": 147,
-      "return": 147,
-      "unreachable": 126
+      "branch": 145,
+      "jump": 145,
+      "match": 145,
+      "return": 145,
+      "unreachable": 121
     }
   },
   "backend_helper_rule": {
@@ -128,8 +112,14 @@
     "helpers": [
       "sico.bytes.equal",
       "sico.bytes.utf8_decode",
+      "sico.list.append",
+      "sico.list.append[U64]",
+      "sico.list.empty[U64]",
+      "sico.list.get[U64]",
       "sico.text.concat",
+      "sico.text.join",
       "sico.text.length",
+      "sico.text.split_lines",
       "sico.text.starts_with",
       "sico.u64.to_text"
     ],
@@ -139,11 +129,17 @@
       "sico.bytes.length",
       "sico.bytes.slice",
       "sico.bytes.utf8_decode",
+      "sico.list.append",
+      "sico.list.append[U64]",
+      "sico.list.empty[U64]",
       "sico.list.get",
+      "sico.list.get[U64]",
       "sico.list.length",
       "sico.text.concat",
       "sico.text.encode",
+      "sico.text.join",
       "sico.text.length",
+      "sico.text.split_lines",
       "sico.text.starts_with",
       "sico.u64.to_text"
     ],
@@ -166,12 +162,12 @@
       "write_local"
     ],
     "source": "selfhost/codegen.sico",
-    "source_sha256": "7363cb91fc3d9c4f980962b26bd76b4707260ab7f24cf3f32e321d029ea4b753"
+    "source_sha256": "da0fec5f803279f3b2f35c7cc693a2c1c5b144ec773cfe00b47eb7793036e730"
   },
   "schema": "sico.m22.emitter-vocabulary.v1",
   "sites": [
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-003",
       "intrinsics": [
@@ -182,14 +178,8 @@
         "sico.text.length",
         "sico.text.split_lines"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -223,7 +213,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-004",
       "intrinsics": [
@@ -234,14 +224,8 @@
         "sico.text.length",
         "sico.text.split_lines"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -275,121 +259,7 @@
       ]
     },
     {
-      "additions_needed": 2,
-      "function": "gw_intrinsic_call_packed",
-      "id": "MS-019",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.get[U64]",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "checked_sub",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 14,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 2,
-      "function": "operand_cell_or_literal_json",
-      "id": "MS-037",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.get[U64]",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.length",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "const_bool",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 9,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.length",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_rhs_packed",
       "id": "MS-052",
       "intrinsics": [
@@ -405,12 +275,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -448,7 +314,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_rhs_packed",
       "id": "MS-053",
       "intrinsics": [
@@ -464,12 +330,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -507,7 +369,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_local_src_packed",
       "id": "MS-054",
       "intrinsics": [
@@ -523,12 +385,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -566,7 +424,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_local_src_packed",
       "id": "MS-055",
       "intrinsics": [
@@ -582,12 +440,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -625,7 +479,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_local_src_packed",
       "id": "MS-056",
       "intrinsics": [
@@ -641,12 +495,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -684,7 +534,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "while_bytes_at_local_src_packed",
       "id": "MS-057",
       "intrinsics": [
@@ -700,12 +550,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -743,7 +589,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "environment_call_arguments",
       "id": "MS-064",
       "intrinsics": [
@@ -759,12 +605,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -801,7 +643,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "environment_call_arguments",
       "id": "MS-065",
       "intrinsics": [
@@ -817,12 +659,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -859,7 +697,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "environment_call_arguments",
       "id": "MS-066",
       "intrinsics": [
@@ -875,12 +713,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1296,7 +1130,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "user_call_expression_json",
       "id": "MS-075",
       "intrinsics": [
@@ -1316,16 +1150,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1419,7 +1245,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_rhs_single_pack",
       "id": "MS-077",
       "intrinsics": [
@@ -1437,12 +1263,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1481,7 +1303,203 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
+      "function": "fixed_literal_const_segment",
+      "id": "MS-081",
+      "intrinsics": [
+        "sico.bytes.at",
+        "sico.bytes.equal",
+        "sico.bytes.length",
+        "sico.list.get",
+        "sico.list.length",
+        "sico.text.concat",
+        "sico.text.encode",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
+      "missing_ops": [],
+      "ops": [
+        "call",
+        "checked_add",
+        "const_bool",
+        "const_i64",
+        "const_string",
+        "const_u64",
+        "construct",
+        "equal_fixed",
+        "intrinsic",
+        "less_fixed",
+        "project",
+        "read_local",
+        "variant",
+        "write_local"
+      ],
+      "parameter_count": 7,
+      "path": "parser.sico",
+      "required_helpers": [
+        "sico.bytes.equal",
+        "sico.text.concat",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "terminators": [
+        "branch",
+        "jump",
+        "match",
+        "return"
+      ]
+    },
+    {
+      "additions_needed": 0,
+      "function": "fixed_literal_const_segment",
+      "id": "MS-082",
+      "intrinsics": [
+        "sico.bytes.at",
+        "sico.bytes.equal",
+        "sico.bytes.length",
+        "sico.list.get",
+        "sico.list.length",
+        "sico.text.concat",
+        "sico.text.encode",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
+      "missing_ops": [],
+      "ops": [
+        "call",
+        "checked_add",
+        "const_bool",
+        "const_i64",
+        "const_string",
+        "const_u64",
+        "construct",
+        "equal_fixed",
+        "intrinsic",
+        "less_fixed",
+        "project",
+        "read_local",
+        "variant",
+        "write_local"
+      ],
+      "parameter_count": 7,
+      "path": "parser.sico",
+      "required_helpers": [
+        "sico.bytes.equal",
+        "sico.text.concat",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "terminators": [
+        "branch",
+        "jump",
+        "match",
+        "return"
+      ]
+    },
+    {
+      "additions_needed": 0,
+      "function": "fixed_literal_const_segment",
+      "id": "MS-083",
+      "intrinsics": [
+        "sico.bytes.at",
+        "sico.bytes.equal",
+        "sico.bytes.length",
+        "sico.list.get",
+        "sico.list.length",
+        "sico.text.concat",
+        "sico.text.encode",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
+      "missing_ops": [],
+      "ops": [
+        "call",
+        "checked_add",
+        "const_bool",
+        "const_i64",
+        "const_string",
+        "const_u64",
+        "construct",
+        "equal_fixed",
+        "intrinsic",
+        "less_fixed",
+        "project",
+        "read_local",
+        "variant",
+        "write_local"
+      ],
+      "parameter_count": 7,
+      "path": "parser.sico",
+      "required_helpers": [
+        "sico.bytes.equal",
+        "sico.text.concat",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "terminators": [
+        "branch",
+        "jump",
+        "match",
+        "return"
+      ]
+    },
+    {
+      "additions_needed": 0,
+      "function": "fixed_literal_const_segment",
+      "id": "MS-084",
+      "intrinsics": [
+        "sico.bytes.at",
+        "sico.bytes.equal",
+        "sico.bytes.length",
+        "sico.list.get",
+        "sico.list.length",
+        "sico.text.concat",
+        "sico.text.encode",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
+      "missing_ops": [],
+      "ops": [
+        "call",
+        "checked_add",
+        "const_bool",
+        "const_i64",
+        "const_string",
+        "const_u64",
+        "construct",
+        "equal_fixed",
+        "intrinsic",
+        "less_fixed",
+        "project",
+        "read_local",
+        "variant",
+        "write_local"
+      ],
+      "parameter_count": 7,
+      "path": "parser.sico",
+      "required_helpers": [
+        "sico.bytes.equal",
+        "sico.text.concat",
+        "sico.text.length",
+        "sico.u64.to_text"
+      ],
+      "terminators": [
+        "branch",
+        "jump",
+        "match",
+        "return"
+      ]
+    },
+    {
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-085",
       "intrinsics": [
@@ -1500,14 +1518,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1548,7 +1560,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-086",
       "intrinsics": [
@@ -1567,14 +1579,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1615,7 +1621,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-087",
       "intrinsics": [
@@ -1634,14 +1640,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1682,7 +1682,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-088",
       "intrinsics": [
@@ -1701,14 +1701,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1749,7 +1743,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-089",
       "intrinsics": [
@@ -1768,14 +1762,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1816,7 +1804,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-090",
       "intrinsics": [
@@ -1835,14 +1823,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1883,7 +1865,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-091",
       "intrinsics": [
@@ -1902,14 +1884,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -1950,7 +1926,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-092",
       "intrinsics": [
@@ -1969,14 +1945,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2017,7 +1987,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-093",
       "intrinsics": [
@@ -2036,14 +2006,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2084,7 +2048,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-094",
       "intrinsics": [
@@ -2103,14 +2067,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2151,7 +2109,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-095",
       "intrinsics": [
@@ -2170,14 +2128,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2218,7 +2170,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_ok_wrap_rhs_packed",
       "id": "MS-096",
       "intrinsics": [
@@ -2237,14 +2189,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2285,7 +2231,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_rhs_utf8_decode_arm",
       "id": "MS-097",
       "intrinsics": [
@@ -2300,12 +2246,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2341,7 +2283,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_rhs_utf8_decode_arm",
       "id": "MS-098",
       "intrinsics": [
@@ -2356,12 +2298,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2715,175 +2653,7 @@
       ]
     },
     {
-      "additions_needed": 2,
-      "function": "gw_list_sort_rhs_packed",
-      "id": "MS-105",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.get[U64]",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "checked_sub",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 11,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 2,
-      "function": "gw_list_sort_rhs_packed",
-      "id": "MS-106",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.get[U64]",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "checked_sub",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 11,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 2,
-      "function": "gw_list_sort_rhs_packed",
-      "id": "MS-107",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.get[U64]",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "checked_sub",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 11,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_u64_less_than_value_packed",
       "id": "MS-131",
       "intrinsics": [
@@ -2900,14 +2670,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -2947,7 +2711,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "gw_u64_less_than_value_packed",
       "id": "MS-132",
       "intrinsics": [
@@ -2964,14 +2728,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3315,7 +3073,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "direct_text_concat_return_ir",
       "id": "MS-170",
       "intrinsics": [
@@ -3335,16 +3093,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3386,7 +3136,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "nested_text_call_packed",
       "id": "MS-171",
       "intrinsics": [
@@ -3406,16 +3156,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3457,7 +3199,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "nested_text_call_packed",
       "id": "MS-172",
       "intrinsics": [
@@ -3477,16 +3219,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3528,7 +3262,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "nested_text_call_packed",
       "id": "MS-173",
       "intrinsics": [
@@ -3548,16 +3282,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3599,7 +3325,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "direct_text_length_return_ir",
       "id": "MS-174",
       "intrinsics": [
@@ -3619,16 +3345,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3670,7 +3388,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-175",
       "intrinsics": [
@@ -3689,14 +3407,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3737,7 +3449,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-176",
       "intrinsics": [
@@ -3756,14 +3468,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3804,7 +3510,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-177",
       "intrinsics": [
@@ -3823,14 +3529,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3871,7 +3571,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-178",
       "intrinsics": [
@@ -3890,14 +3590,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -3938,7 +3632,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-179",
       "intrinsics": [
@@ -3957,14 +3651,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4005,7 +3693,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-180",
       "intrinsics": [
@@ -4024,14 +3712,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4072,7 +3754,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-181",
       "intrinsics": [
@@ -4091,14 +3773,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4139,7 +3815,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-182",
       "intrinsics": [
@@ -4158,14 +3834,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4206,7 +3876,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-183",
       "intrinsics": [
@@ -4225,14 +3895,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4273,7 +3937,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-184",
       "intrinsics": [
@@ -4292,14 +3956,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4340,7 +3998,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-185",
       "intrinsics": [
@@ -4359,14 +4017,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4407,7 +4059,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-186",
       "intrinsics": [
@@ -4426,14 +4078,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4474,7 +4120,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-187",
       "intrinsics": [
@@ -4493,14 +4139,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4541,7 +4181,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-188",
       "intrinsics": [
@@ -4560,14 +4200,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4608,7 +4242,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-189",
       "intrinsics": [
@@ -4627,14 +4261,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4675,7 +4303,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "straight_text_concat_packed",
       "id": "MS-190",
       "intrinsics": [
@@ -4694,14 +4322,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4742,7 +4364,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "straight_text_length_packed",
       "id": "MS-191",
       "intrinsics": [
@@ -4762,16 +4384,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4813,7 +4427,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "straight_text_length_packed",
       "id": "MS-192",
       "intrinsics": [
@@ -4833,16 +4447,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4884,7 +4490,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "straight_text_length_packed",
       "id": "MS-193",
       "intrinsics": [
@@ -4904,16 +4510,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -4955,7 +4553,7 @@
       ]
     },
     {
-      "additions_needed": 6,
+      "additions_needed": 0,
       "function": "straight_text_length_packed",
       "id": "MS-194",
       "intrinsics": [
@@ -4975,16 +4573,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5026,7 +4616,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-195",
       "intrinsics": [
@@ -5045,14 +4635,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5093,7 +4677,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-196",
       "intrinsics": [
@@ -5112,14 +4696,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5160,7 +4738,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-197",
       "intrinsics": [
@@ -5179,14 +4757,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5227,7 +4799,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-198",
       "intrinsics": [
@@ -5246,14 +4818,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5294,7 +4860,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-199",
       "intrinsics": [
@@ -5313,14 +4879,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5361,7 +4921,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "stc_call_operand_packed",
       "id": "MS-200",
       "intrinsics": [
@@ -5380,14 +4940,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5876,7 +5430,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "record_construct_function_ir",
       "id": "MS-228",
       "intrinsics": [
@@ -5894,12 +5448,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -5939,7 +5489,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "record_variant_function_ir",
       "id": "MS-229",
       "intrinsics": [
@@ -5957,12 +5507,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6002,7 +5548,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "record_variant_function_ir",
       "id": "MS-230",
       "intrinsics": [
@@ -6020,12 +5566,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6065,54 +5607,7 @@
       ]
     },
     {
-      "additions_needed": 2,
-      "function": "gw_deferred_tail_json",
-      "id": "MS-266",
-      "intrinsics": [
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.length",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 6,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.list.get[U64]",
-        "sico.text.concat",
-        "sico.text.length",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return"
-      ]
-    },
-    {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_list_get_subject_packed",
       "id": "MS-267",
       "intrinsics": [
@@ -6128,12 +5623,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6171,7 +5662,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_list_get_subject_packed",
       "id": "MS-268",
       "intrinsics": [
@@ -6187,12 +5678,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6230,7 +5717,7 @@
       ]
     },
     {
-      "additions_needed": 2,
+      "additions_needed": 0,
       "function": "gw_list_get_subject_packed",
       "id": "MS-269",
       "intrinsics": [
@@ -6246,12 +5733,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.get[U64]"
-      ],
-      "missing_intrinsics": [
-        "sico.list.get[U64]"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6601,7 +6084,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-331",
       "intrinsics": [
@@ -6623,20 +6106,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6680,7 +6151,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-332",
       "intrinsics": [
@@ -6702,20 +6173,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6759,7 +6218,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-333",
       "intrinsics": [
@@ -6781,20 +6240,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6838,7 +6285,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-334",
       "intrinsics": [
@@ -6860,20 +6307,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6917,7 +6352,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-335",
       "intrinsics": [
@@ -6939,20 +6374,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -6996,7 +6419,7 @@
       ]
     },
     {
-      "additions_needed": 10,
+      "additions_needed": 0,
       "function": "straight_environment_function_ir",
       "id": "MS-336",
       "intrinsics": [
@@ -7018,20 +6441,8 @@
         "sico.text.starts_with",
         "sico.u64.to_text"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.list.append[U64]",
-        "sico.list.empty[U64]",
-        "sico.list.get[U64]",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -8788,7 +8199,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-394",
       "intrinsics": [
@@ -8799,14 +8210,8 @@
         "sico.list.append",
         "sico.text.split_lines"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -8840,7 +8245,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-395",
       "intrinsics": [
@@ -8851,14 +8256,8 @@
         "sico.list.append",
         "sico.text.split_lines"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",
@@ -8892,7 +8291,7 @@
       ]
     },
     {
-      "additions_needed": 4,
+      "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-396",
       "intrinsics": [
@@ -8903,14 +8302,8 @@
         "sico.list.append",
         "sico.text.split_lines"
       ],
-      "missing_helpers": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
-      "missing_intrinsics": [
-        "sico.list.append",
-        "sico.text.split_lines"
-      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
       "missing_ops": [],
       "ops": [
         "call",

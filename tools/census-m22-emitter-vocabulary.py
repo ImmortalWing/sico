@@ -70,6 +70,12 @@ GUEST_HELPER_BODIES = {
     "sico.bytes.utf8_decode": "cg_utf8_validate_helper_body_hex",
     "sico.text.concat": "cg_concat_helper_body_hex",
     "sico.text.length": "cg_text_length_helper_body_hex",
+    "sico.list.append": "cg_list_append_helper_body_hex",
+    "sico.list.append[U64]": "cg_list_append_scalar_helper_body_hex",
+    "sico.list.empty[U64]": "cg_collection_empty_helper_body_hex",
+    "sico.list.get[U64]": "cg_list_get_scalar_helper_body_hex",
+    "sico.text.join": "cg_text_join_helper_body_hex",
+    "sico.text.split_lines": "cg_split_lines_helper_body_hex",
     "sico.text.starts_with": "cg_starts_with_helper_body_hex",
     "sico.u64.to_text": "cg_u64_to_text_helper_body_hex",
 }

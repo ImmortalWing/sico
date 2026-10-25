@@ -6319,6 +6319,17 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
         "cgs_value_ty",
         "cg_starts_with_helper_body_hex",
         "cg_u64_to_text_helper_body_hex",
+        // STEP-0542 (emitter vocabulary C): the six collection helper bodies and
+        // the generic collection call emitter (plus its two argument gates).
+        "cg_list_append_helper_body_hex",
+        "cg_list_append_scalar_helper_body_hex",
+        "cg_collection_empty_helper_body_hex",
+        "cg_list_get_scalar_helper_body_hex",
+        "cg_text_join_helper_body_hex",
+        "cg_split_lines_helper_body_hex",
+        "cgs_collection_arg_is",
+        "cgs_collection_arg_is_list_of",
+        "cgs_collection_call_hex",
     ] {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
@@ -10829,6 +10840,194 @@ fn the_emitter_vocabulary_b2_covers_the_u64_to_text_helper_shape() {
             GuestEmission::Component(hex) => {
                 panic!(
                     "the guest must refuse the u64.to_text shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0542 (emitter vocabulary C): the six remaining collection helpers.
+//
+// The backend emits a collection helper call as the arguments' flat slots in
+// order, then the call itself, then the result's flat slots in reverse order
+// (`emit_collection_call`, crates/sico-codegen-wasm/src/lib.rs).  The guest
+// now owns the six collection helpers of the vocabulary, so every shape has
+// to be byte for byte the Rust backend's production component -- not only its
+// length -- and both sides have to pass the real `wasmparser::Validator`.
+//
+// The source-level spelling of the monomorphised helpers is the bracket form
+// the frozen end-to-end corpus uses (`tests/end-to-end/list-numeric.sico`):
+// `sico.list.empty[U64]()`, `sico.list.get[U64](list, index)`,
+// `sico.list.append[U64](list, value)`.
+// ---------------------------------------------------------------------------
+
+/// The `sico.list.empty[U64]` shape: the empty numeric list.
+fn list_empty_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64]) returns List[U64]:\n  return sico.list.empty[U64]()\nend function",
+    ))
+}
+
+/// The `sico.list.get[U64]` shape: one element of a numeric list.
+fn list_get_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64], index: U64) returns U64:\n  match sico.list.get[U64](items, index):\n    case ok(first):\n      return first\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+    ))
+}
+
+/// The `sico.list.append[U64]` shape: a numeric list with one more element.
+fn list_append_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64], value: U64) returns List[U64]:\n  return sico.list.append[U64](items, value)\nend function",
+    ))
+}
+
+/// The `sico.list.append` shape: a text list with one more element.
+fn list_append_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[Text], value: Text) returns List[Text]:\n  return sico.list.append(items, value)\nend function",
+    ))
+}
+
+/// The `sico.text.split_lines` shape: the lines of a text.
+fn text_split_lines_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(text: Text) returns List[Text]:\n  return sico.text.split_lines(text)\nend function",
+    ))
+}
+
+/// The `sico.text.join` shape: the elements of a list joined by a separator.
+fn text_join_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[Text], separator: Text) returns Text:\n  return sico.text.join(items, separator)\nend function",
+    ))
+}
+
+/// The same call with its argument removed: the intrinsic's own arity gate
+/// must stay a typed refusal on both sides.
+fn list_get_u64_without_argument_module() -> Module {
+    let mut module = list_get_u64_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.list.get[U64]" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose index operand is a **text** parameter instead of a
+/// U64: the operand-kind gate must stay a typed refusal on both sides.
+fn list_get_u64_text_operand_module() -> Module {
+    let mut module = list_get_u64_shape_module();
+    for function in &mut module.functions {
+        for parameter in &mut function.parameters {
+            if parameter.ty == Type::U64 {
+                parameter.ty = Type::String;
+            }
+        }
+    }
+    module
+}
+
+/// STEP-0542: the measured oracle component sizes of the six collection
+/// shapes, in the order the pin measures them.  The values are the Rust
+/// backend's production output sizes -- they are **measured**, never
+/// hand-written hex.
+const COLLECTION_SHAPE_COMPONENT_BYTES: [(&str, usize); 6] = [
+    ("list-empty-u64", 1044),
+    ("list-get-u64", 1208),
+    ("list-append-u64", 1263),
+    ("list-append", 1293),
+    ("text-split-lines", 1360),
+    ("text-join", 1233),
+];
+
+#[test]
+fn the_emitter_vocabulary_c_covers_the_collection_helper_shapes() {
+    // STEP-0542 (emitter vocabulary C): the six collection helpers of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    //
+    // The measured component sizes are pinned as well, so a change in the
+    // helper set (which moves the core indices and therefore the section
+    // layout) is caught by the size, not only by the byte comparison.
+    let mut measured: Vec<(&str, usize)> = Vec::new();
+    for (label, module) in [
+        ("list-empty-u64", list_empty_u64_shape_module()),
+        ("list-get-u64", list_get_u64_shape_module()),
+        ("list-append-u64", list_append_u64_shape_module()),
+        ("list-append", list_append_shape_module()),
+        ("text-split-lines", text_split_lines_shape_module()),
+        ("text-join", text_join_shape_module()),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                assert_eq!(
+                    hex.len() % 2,
+                    0,
+                    "{label}: the guest hex must be whole bytes (len={})",
+                    hex.len()
+                );
+                assert_eq!(
+                    hex.len() / 2,
+                    expected.len(),
+                    "{label}: the guest component size must match the oracle's"
+                );
+                measured.push((label, expected.len()));
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+    assert_eq!(
+        measured,
+        COLLECTION_SHAPE_COMPONENT_BYTES.to_vec(),
+        "the measured oracle component sizes of the six collection shapes are pinned"
+    );
+
+    // The gates stay live: the intrinsic without its argument and the
+    // intrinsic with a text operand are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", list_get_u64_without_argument_module()),
+        ("operand-kind", list_get_u64_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the list.get[U64] shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the list.get[U64] shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the list.get[U64] shape with the {label} fault, got {hex}"
                 )
             }
         }

@@ -248,6 +248,98 @@ function cg_u64_to_text_helper_body_hex(alloc_index: U64) returns Text:
   return cguthbh_out
 end function
 
+// The `sico.list.append` helper body: `(table, count) = append(table, count, ptr, len)`.
+//
+// The five i32 locals are the new count, the base pointer, the capacity,
+// the next count and the old base pointer. The body is the backend's own
+// `emit_list_append` shape: it grows the table geometrically when the
+// element does not fit, and it copies the element into place. The body
+// calls the arena allocator once, so it carries the allocator's core
+// function index and is not frozen verbatim.
+function cg_list_append_helper_body_hex(alloc_index: U64) returns Text:
+  let cglabh_out = "01057f200141016a2107200041104f0440200041106b2108200828020041cf86a59a05460440200828020c41d4a6a5e20446044020082802042001460440200828020820014b0440200020014103746a2002360200200020014103746a200336020420082007360204200020070f0b0b0b0b0b4101210602400340200620074f0d01200641017421060c000b0b200641037441106a"
+  set cglabh_out = sico.text.concat(cglabh_out, "10")
+  set cglabh_out = sico.text.concat(cglabh_out, cg_leb_hex(alloc_index))
+  set cglabh_out = sico.text.concat(cglabh_out, "2104200441cf86a59a053602002004200736020420042006360208200441d4a6a5e20436020c200441106a2105200520002001410374fc0a0000200520014103746a2002360200200520014103746a2003360204200520070b")
+  return cglabh_out
+end function
+
+// The `sico.list.append[U64]` helper body: `(table, count) = append(table, count, value)`.
+//
+// The five i32 locals are the new count, the base pointer, the capacity,
+// the next count and the old base pointer. The body is the backend's own
+// `emit_list_append_scalar` shape: it grows the table geometrically when
+// the element does not fit, and it stores the i64 element in place. The
+// body calls the arena allocator once, so it carries the allocator's core
+// function index and is not frozen verbatim.
+function cg_list_append_scalar_helper_body_hex(alloc_index: U64) returns Text:
+  let cglasbh_out = "01057f200141016a2106200041104f0440200041106b2107200728020041ce98a59a05460440200728020c41d4a6a5e20446044020072802042001460440200728020820014b0440200020014103746a200237030020072006360204200020060f0b0b0b0b0b4101210502400340200520064f0d01200541017421050c000b0b200541037441106a"
+  set cglasbh_out = sico.text.concat(cglasbh_out, "10")
+  set cglasbh_out = sico.text.concat(cglasbh_out, cg_leb_hex(alloc_index))
+  set cglasbh_out = sico.text.concat(cglasbh_out, "2103200341ce98a59a053602002003200636020420032005360208200341d4a6a5e20436020c200341106a2104200420002001410374fc0a0000200420014103746a2002370300200420060b")
+  return cglasbh_out
+end function
+
+// The `sico.list.empty[U64]` helper body: `(table, count) = empty()`.
+//
+// The backend's `emit_collection_empty` shape: the empty list is the null
+// table with count zero, so the body is two i32 constants and nothing
+// else. The body calls nothing, so it carries no function index and is
+// frozen verbatim.
+function cg_collection_empty_helper_body_hex() returns Text:
+  let cgcebh_out = "00410041000b"
+  return cgcebh_out
+end function
+
+// The `sico.list.get[U64]` helper body: `(tag, value) = get(table, count, index)`.
+//
+// The one i32 local is the result tag and the one i64 local is the
+// payload. The body is the backend's own `emit_list_get_scalar` shape:
+// an out-of-range index yields the error tag with a zero payload, and a
+// hit yields the ok tag with the element loaded from the table at
+// `table + index * 8`. The body calls nothing, so it carries no function
+// index and is frozen verbatim.
+function cg_list_get_scalar_helper_body_hex() returns Text:
+  let cglgsbh_out = "02017f017e20022001ad5a04404101210342002104054100210320002002a74103746a29030021040b200320040b"
+  return cglgsbh_out
+end function
+
+// The `sico.text.join` helper body: `(pointer, length) = join(table, count, sep_ptr, sep_len)`.
+//
+// The six i32 locals are the scratch pointer, the table pointer, the
+// element count, the separator pointer, the separator length and the
+// output length. The body is the backend's own `emit_join` shape: it
+// measures the joined length, allocates the result and copies the
+// elements in, separated by the separator. The body calls the arena
+// allocator twice, so it carries the allocator's core function index and
+// is not frozen verbatim.
+function cg_text_join_helper_body_hex(alloc_index: U64) returns Text:
+  let cgtjbh_out = "01067f20014504404100"
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, "10")
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, cg_leb_hex(alloc_index))
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, "2106200641000f0b2003200141016b6c210402400340200520014f0d012004200020054103746a2802046a2104200541016a21050c000b0b2004")
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, "10")
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, cg_leb_hex(alloc_index))
+  set cgtjbh_out = sico.text.concat(cgtjbh_out, "2106200621074100210502400340200520014f0d01200020054103746a2802002108200020054103746a2802042109200720082009fc0a0000200720096a2107200541016a2001490440200720022003fc0a0000200720036a21070b200541016a21050c000b0b200620040b")
+  return cgtjbh_out
+end function
+
+// The `sico.text.split_lines` helper body: `(table, count) = split_lines(ptr, len)`.
+//
+// The seven i32 locals are the count, the line table, the output index,
+// the line start, the line length, the byte cursor and the element
+// pointer. The body is the backend's own `emit_split_lines` shape: it
+// walks the bytes, splits on LF, and strips a trailing CR. The body calls
+// the arena allocator once, so it carries the allocator's core function
+// index and is not frozen verbatim.
+function cg_split_lines_helper_body_hex(alloc_index: U64) returns Text:
+  let cgslbh_out = "01077f20014504404100210205410121020b02400340200320014f0d01200020036a2d0000410a460440200241016a21020b200341016a21030c000b0b20010440200020016a417f6a2d0000410a4604402002417f6a21020b0b2002410374"
+  set cgslbh_out = sico.text.concat(cgslbh_out, "10")
+  set cgslbh_out = sico.text.concat(cgslbh_out, cg_leb_hex(alloc_index))
+  set cgslbh_out = sico.text.concat(cgslbh_out, "2104410021032000210602400340200320014f0d01200020036a2d0000410a470440200341016a21030c010b200020036a20066b210720070440200620076a417f6a2d0000410d4604402007417f6a21070b0b200420054103746a2006360200200420054103746a2007360204200541016a2105200020036a41016a2106200341016a21030c000b0b2006200020016a490440200020016a20066b210720070440200620076a417f6a2d0000410d4604402007417f6a21070b0b200420054103746a2006360200200420054103746a20073602040b200420020b")
+  return cgslbh_out
+end function
+
 // IR-dependent slot (STEP-0487; STEP-0504): the run body of the Script-profile
 // `run` function, *derived* from the ingested IR -- the local declaration
 // section (STEP-0499) followed by the code bytes (STEP-0502/STEP-0503). The
@@ -3086,16 +3178,52 @@ function cgs_helper_index(bytes: Bytes, wanted: Text) returns U64:
   if U64.equal(cgs_module_has_intrinsic(bytes, "sico.bytes.utf8_decode"), U64.literal(1)):
     set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
   end if
+  if cg_is_word(wanted, "sico.list.append"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.list.append"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
+  if cg_is_word(wanted, "sico.list.append[U64]"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.list.append[U64]"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
+  if cg_is_word(wanted, "sico.list.empty[U64]"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
+  if cg_is_word(wanted, "sico.list.get[U64]"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.list.get[U64]"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
   if cg_is_word(wanted, "sico.text.concat"):
     return cgs_add(cchi_base, cchi_rank)
   end if
   if U64.equal(cgs_module_has_intrinsic(bytes, "sico.text.concat"), U64.literal(1)):
     set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
   end if
+  if cg_is_word(wanted, "sico.text.join"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.text.join"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
   if cg_is_word(wanted, "sico.text.length"):
     return cgs_add(cchi_base, cchi_rank)
   end if
   if U64.equal(cgs_module_has_intrinsic(bytes, "sico.text.length"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
+  if cg_is_word(wanted, "sico.text.split_lines"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.text.split_lines"), U64.literal(1)):
     set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.starts_with"):
@@ -3107,7 +3235,222 @@ function cgs_helper_index(bytes: Bytes, wanted: Text) returns U64:
   if cg_is_word(wanted, "sico.u64.to_text"):
     return cgs_add(cchi_base, cchi_rank)
   end if
+  if U64.equal(cgs_module_has_intrinsic(bytes, "sico.u64.to_text"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
   return U64.literal(0)
+end function
+
+// Whether the argument at `index` of the intrinsic `data` has the kind
+// `want`; 0 when the argument, its value or its type is missing.
+//
+// The guest's operand-kind gate reads the IR type's own `kind` field, the
+// same field the backend's verifier reads, so the two sides agree on the
+// operand shape.
+function cgs_collection_arg_is(bytes: Bytes, run: U64, data: U64, index: U64, want: Text) returns U64:
+  let ccai_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(ccai_arguments, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccai_item = cgj_array_item(bytes, ccai_arguments, index)
+  if U64.equal(ccai_item, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccai_value = cgj_value_text(bytes, ccai_item)
+  let ccai_ty = cgs_value_ty(bytes, run, ccai_value)
+  if U64.equal(ccai_ty, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccai_kind_off = cgj_member(bytes, ccai_ty, "kind")
+  if U64.equal(ccai_kind_off, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  if cg_is_word(cgj_ident_text(bytes, ccai_kind_off), want):
+    return U64.literal(1)
+  end if
+  return U64.literal(0)
+end function
+
+// Whether the argument at `index` of the intrinsic `data` is a list whose
+// element kind is `want`; 0 when the argument, its value or its type is
+// missing, or the element kind differs.
+//
+// The monomorphised collection helpers carry their element type in the name
+// (`sico.list.get[U64]`), so the guest has to read the list's element kind
+// to keep the same shape the backend keeps.
+function cgs_collection_arg_is_list_of(bytes: Bytes, run: U64, data: U64, index: U64, want: Text) returns U64:
+  let ccal_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(ccal_arguments, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccal_item = cgj_array_item(bytes, ccal_arguments, index)
+  if U64.equal(ccal_item, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccal_value = cgj_value_text(bytes, ccal_item)
+  let ccal_ty = cgs_value_ty(bytes, run, ccal_value)
+  if U64.equal(ccal_ty, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccal_kind_off = cgj_member(bytes, ccal_ty, "kind")
+  if U64.equal(ccal_kind_off, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  if cg_is_word(cgj_ident_text(bytes, ccal_kind_off), "list"):
+    let ccal_data = cgj_member(bytes, ccal_ty, "data")
+    if U64.equal(ccal_data, U64.literal(0)):
+      return U64.literal(0)
+    end if
+    let ccal_element_off = cgj_member(bytes, ccal_data, "kind")
+    if U64.equal(ccal_element_off, U64.literal(0)):
+      return U64.literal(0)
+    end if
+    if cg_is_word(cgj_ident_text(bytes, ccal_element_off), want):
+      return U64.literal(1)
+    end if
+    return U64.literal(0)
+  end if
+  return U64.literal(0)
+end function
+
+// The bytes of a collection helper call.
+//
+// The backend emits a collection helper call as the arguments' flat slots in
+// order, then the call itself, then the result's flat slots in reverse order
+// (`emit_collection_call`, crates/sico-codegen-wasm/src/lib.rs).  Every
+// collection helper of the guest's vocabulary returns two slots, so the two
+// result stores are the same two stores for all of them.
+//
+// The gates fail closed: the helper name, the argument count, every
+// argument's kind and the result's slot count are checked before a single
+// byte is emitted.
+function cgs_collection_call_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, name: Text) returns Text:
+  let ccch_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(ccch_arguments, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ccch_known = U64.literal(0)
+  let ccch_arg_count = U64.literal(0)
+  if cg_is_word(name, "sico.list.empty[U64]"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(0)
+  end if
+  if cg_is_word(name, "sico.text.split_lines"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(1)
+  end if
+  if cg_is_word(name, "sico.list.get[U64]"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(2)
+  end if
+  if cg_is_word(name, "sico.list.append"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(2)
+  end if
+  if cg_is_word(name, "sico.list.append[U64]"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(2)
+  end if
+  if cg_is_word(name, "sico.text.join"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(2)
+  end if
+  if U64.equal(ccch_known, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ccch_index = U64.literal(0)
+  while U64.less_than(ccch_index, ccch_arg_count):
+    let ccch_item = cgj_array_item(bytes, ccch_arguments, ccch_index)
+    if U64.equal(ccch_item, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    set ccch_index = cg_next(ccch_index)
+  end while
+  let ccch_extra = cgj_array_item(bytes, ccch_arguments, ccch_arg_count)
+  if U64.less_than(U64.literal(0), ccch_extra):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if cg_is_word(name, "sico.text.split_lines"):
+    if U64.equal(cgs_collection_arg_is(bytes, run, data, U64.literal(0), "string"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  end if
+  if cg_is_word(name, "sico.list.get[U64]"):
+    if U64.equal(cgs_collection_arg_is_list_of(bytes, run, data, U64.literal(0), "u64"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    if U64.equal(cgs_collection_arg_is(bytes, run, data, U64.literal(1), "u64"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  end if
+  if cg_is_word(name, "sico.list.append"):
+    if U64.equal(cgs_collection_arg_is_list_of(bytes, run, data, U64.literal(0), "string"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    if U64.equal(cgs_collection_arg_is(bytes, run, data, U64.literal(1), "string"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  end if
+  if cg_is_word(name, "sico.list.append[U64]"):
+    if U64.equal(cgs_collection_arg_is_list_of(bytes, run, data, U64.literal(0), "u64"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    if U64.equal(cgs_collection_arg_is(bytes, run, data, U64.literal(1), "u64"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  end if
+  if cg_is_word(name, "sico.text.join"):
+    if U64.equal(cgs_collection_arg_is_list_of(bytes, run, data, U64.literal(0), "string"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    if U64.equal(cgs_collection_arg_is(bytes, run, data, U64.literal(1), "string"), U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+  end if
+  let ccch_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
+  if U64.equal(ccch_result_slots, U64.literal(2)):
+    let ccch_result_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ccch_helper = cgs_helper_index(bytes, name)
+  if U64.equal(ccch_helper, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ccch_out = ""
+  let ccch_arg = U64.literal(0)
+  while U64.less_than(ccch_arg, ccch_arg_count):
+    let ccch_arg_item = cgj_array_item(bytes, ccch_arguments, ccch_arg)
+    let ccch_value = cgj_value_text(bytes, ccch_arg_item)
+    let ccch_slot = cgs_value_slot(bytes, run, ccch_value)
+    if U64.equal(ccch_slot, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let ccch_ty = cgs_value_ty(bytes, run, ccch_value)
+    if U64.equal(ccch_ty, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let ccch_count = cgs_type_slots(bytes, ccch_ty)
+    if U64.equal(ccch_count, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let ccch_base = cgs_sub(ccch_slot, U64.literal(1))
+    let ccch_slot_index = U64.literal(0)
+    while U64.less_than(ccch_slot_index, ccch_count):
+      let ccch_local = cgs_add(ccch_base, ccch_slot_index)
+      set ccch_out = sico.text.concat(ccch_out, cgs_local_get_hex(ccch_local))
+      set ccch_slot_index = cg_next(ccch_slot_index)
+    end while
+    set ccch_arg = cg_next(ccch_arg)
+  end while
+  let ccch_call = "10"
+  set ccch_call = sico.text.concat(ccch_call, cg_leb_hex(ccch_helper))
+  set ccch_out = sico.text.concat(ccch_out, ccch_call)
+  let ccch_result_high = cgs_add(result0, U64.literal(1))
+  let ccch_result_low = result0
+  set ccch_out = sico.text.concat(ccch_out, cgs_local_set_hex(ccch_result_high))
+  set ccch_out = sico.text.concat(ccch_out, cgs_local_set_hex(ccch_result_low))
+  return ccch_out
 end function
 
 function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64) returns Text:
@@ -3329,6 +3672,24 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
   end if
   if cg_is_word(cih_name, "sico.u64.to_text"):
     return cgs_u64_to_text_hex(bytes, run, instr, data, result0)
+  end if
+  if cg_is_word(cih_name, "sico.list.empty[U64]"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
+  end if
+  if cg_is_word(cih_name, "sico.list.get[U64]"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
+  end if
+  if cg_is_word(cih_name, "sico.list.append"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
+  end if
+  if cg_is_word(cih_name, "sico.list.append[U64]"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
+  end if
+  if cg_is_word(cih_name, "sico.text.join"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
+  end if
+  if cg_is_word(cih_name, "sico.text.split_lines"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name)
   end if
   return "ERR:E-SH-CG-IR-EMIT"
 end function
@@ -4670,6 +5031,30 @@ function cgs_core_types_hex(bytes: Bytes) returns Text:
   if U64.equal(cctsh_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
+  let cctsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  if U64.equal(cctsh_list_append, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
+  let cctsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  if U64.equal(cctsh_list_append_u64, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
+  let cctsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  if U64.equal(cctsh_list_empty_u64, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
+  let cctsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  if U64.equal(cctsh_list_get_u64, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
+  let cctsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  if U64.equal(cctsh_text_join, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
+  let cctsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  if U64.equal(cctsh_split_lines, U64.literal(1)):
+    set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
+  end if
   let cctsh_out = cg_leb_hex(cctsh_total)
   let cctsh_index = U64.literal(0)
   while U64.less_than(cctsh_index, cctsh_count):
@@ -4689,11 +5074,29 @@ function cgs_core_types_hex(bytes: Bytes) returns Text:
   if U64.equal(cctsh_utf8, U64.literal(1)):
     set cctsh_out = sico.text.concat(cctsh_out, "60027f7f017f")
   end if
+  if U64.equal(cctsh_list_append, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "60047f7f7f7f027f7f")
+  end if
+  if U64.equal(cctsh_list_append_u64, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "60037f7f7e027f7f")
+  end if
+  if U64.equal(cctsh_list_empty_u64, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "6000027f7f")
+  end if
+  if U64.equal(cctsh_list_get_u64, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "60037f7f7e027f7e")
+  end if
   if U64.equal(cctsh_concat, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "60047f7f7f7f027f7f")
+  end if
+  if U64.equal(cctsh_text_join, U64.literal(1)):
     set cctsh_out = sico.text.concat(cctsh_out, "60047f7f7f7f027f7f")
   end if
   if U64.equal(cctsh_length, U64.literal(1)):
     set cctsh_out = sico.text.concat(cctsh_out, "60027f7f017f")
+  end if
+  if U64.equal(cctsh_split_lines, U64.literal(1)):
+    set cctsh_out = sico.text.concat(cctsh_out, "60027f7f027f7f")
   end if
   if U64.equal(cctsh_starts, U64.literal(1)):
     set cctsh_out = sico.text.concat(cctsh_out, "60047f7f7f7f017f")
@@ -4738,6 +5141,30 @@ function cgs_core_funcs_hex(bytes: Bytes) returns Text:
   end if
   let ccfsh_u64 = cgs_module_has_intrinsic(bytes, "sico.u64.to_text")
   if U64.equal(ccfsh_u64, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  if U64.equal(ccfsh_list_append, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  if U64.equal(ccfsh_list_append_u64, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  if U64.equal(ccfsh_list_empty_u64, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  if U64.equal(ccfsh_list_get_u64, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  if U64.equal(ccfsh_text_join, U64.literal(1)):
+    set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
+  end if
+  let ccfsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  if U64.equal(ccfsh_split_lines, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
   let ccfsh_out = cg_leb_hex(ccfsh_total)
@@ -6053,6 +6480,30 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
+  let cccsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  if U64.equal(cccsh_list_append, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
+  let cccsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  if U64.equal(cccsh_list_append_u64, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
+  let cccsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  if U64.equal(cccsh_list_empty_u64, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
+  let cccsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  if U64.equal(cccsh_list_get_u64, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
+  let cccsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  if U64.equal(cccsh_text_join, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
+  let cccsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  if U64.equal(cccsh_split_lines, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
   let cccsh_out = cg_leb_hex(cccsh_total)
   let cccsh_index = U64.literal(0)
   while U64.less_than(cccsh_index, cccsh_count):
@@ -6104,6 +6555,38 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_utf8_hex)
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_utf8_helper)
   end if
+  let cccsh_list_append_helper = cg_list_append_helper_body_hex(cccsh_count)
+  let cccsh_list_append_len = sico.text.length(cccsh_list_append_helper)
+  let cccsh_list_append_size = U64.shr(cccsh_list_append_len, U64.literal(1))
+  let cccsh_list_append_hex = cg_leb_hex(cccsh_list_append_size)
+  if U64.equal(cccsh_list_append, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_helper)
+  end if
+  let cccsh_list_append_u64_helper = cg_list_append_scalar_helper_body_hex(cccsh_count)
+  let cccsh_list_append_u64_len = sico.text.length(cccsh_list_append_u64_helper)
+  let cccsh_list_append_u64_size = U64.shr(cccsh_list_append_u64_len, U64.literal(1))
+  let cccsh_list_append_u64_hex = cg_leb_hex(cccsh_list_append_u64_size)
+  if U64.equal(cccsh_list_append_u64, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_u64_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_u64_helper)
+  end if
+  let cccsh_list_empty_u64_helper = cg_collection_empty_helper_body_hex()
+  let cccsh_list_empty_u64_len = sico.text.length(cccsh_list_empty_u64_helper)
+  let cccsh_list_empty_u64_size = U64.shr(cccsh_list_empty_u64_len, U64.literal(1))
+  let cccsh_list_empty_u64_hex = cg_leb_hex(cccsh_list_empty_u64_size)
+  if U64.equal(cccsh_list_empty_u64, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_empty_u64_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_empty_u64_helper)
+  end if
+  let cccsh_list_get_u64_helper = cg_list_get_scalar_helper_body_hex()
+  let cccsh_list_get_u64_len = sico.text.length(cccsh_list_get_u64_helper)
+  let cccsh_list_get_u64_size = U64.shr(cccsh_list_get_u64_len, U64.literal(1))
+  let cccsh_list_get_u64_hex = cg_leb_hex(cccsh_list_get_u64_size)
+  if U64.equal(cccsh_list_get_u64, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_get_u64_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_get_u64_helper)
+  end if
   let cccsh_helper = cg_concat_helper_body_hex(cccsh_count)
   let cccsh_helper_len = sico.text.length(cccsh_helper)
   let cccsh_helper_size = U64.shr(cccsh_helper_len, U64.literal(1))
@@ -6112,6 +6595,14 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_helper_hex)
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_helper)
   end if
+  let cccsh_text_join_helper = cg_text_join_helper_body_hex(cccsh_count)
+  let cccsh_text_join_len = sico.text.length(cccsh_text_join_helper)
+  let cccsh_text_join_size = U64.shr(cccsh_text_join_len, U64.literal(1))
+  let cccsh_text_join_hex = cg_leb_hex(cccsh_text_join_size)
+  if U64.equal(cccsh_text_join, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_text_join_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_text_join_helper)
+  end if
   let cccsh_length_helper = cg_text_length_helper_body_hex()
   let cccsh_length_len = sico.text.length(cccsh_length_helper)
   let cccsh_length_size = U64.shr(cccsh_length_len, U64.literal(1))
@@ -6119,6 +6610,14 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_length, U64.literal(1)):
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_length_hex)
     set cccsh_out = sico.text.concat(cccsh_out, cccsh_length_helper)
+  end if
+  let cccsh_split_lines_helper = cg_split_lines_helper_body_hex(cccsh_count)
+  let cccsh_split_lines_len = sico.text.length(cccsh_split_lines_helper)
+  let cccsh_split_lines_size = U64.shr(cccsh_split_lines_len, U64.literal(1))
+  let cccsh_split_lines_hex = cg_leb_hex(cccsh_split_lines_size)
+  if U64.equal(cccsh_split_lines, U64.literal(1)):
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_split_lines_hex)
+    set cccsh_out = sico.text.concat(cccsh_out, cccsh_split_lines_helper)
   end if
   let cccsh_starts_helper = cg_starts_with_helper_body_hex()
   let cccsh_starts_len = sico.text.length(cccsh_starts_helper)
