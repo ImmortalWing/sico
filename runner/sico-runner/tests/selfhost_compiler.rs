@@ -11033,3 +11033,439 @@ fn the_emitter_vocabulary_c_covers_the_collection_helper_shapes() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// STEP-0544 (fuel attribution): measuring the guest's fuel cost.
+//
+// Discipline: **measurement only**.  No fuel limit is raised, no size gate is
+// added, no production code changes (`crates/` and `selfhost/` stay untouched).
+//
+// `RunOutcome::FuelExhausted` carries no remaining-fuel reading, so the cost is
+// measured by bisecting the store's fuel budget instead of by adding a public
+// API (ADR-0015 decision 8 / plan D13).
+//
+// The measured shape is emitted by the guest itself; an exhausted budget is a
+// **measurement result**, not a failure: the 140 `FuelExhausted` sites of the
+// ledger are exactly the phenomenon this slice has to explain.  Only a
+// refusal would mean the probe measured the refusal path, and that is a hard
+// failure.
+// ---------------------------------------------------------------------------
+
+/// The fuel ceiling the measurement uses: the same budget the firmware runs
+/// under, so "exhausted" means exactly what it means in the ledger.
+const STEP0544_FUEL_CEILING: u64 = 800_000_000_000;
+
+/// The guest's answer for one injected canonical IR under an explicit fuel
+/// budget: the emitted component hex, the identity of the refusal, or the
+/// fact that the budget was exhausted.
+enum GuestFuelEmission {
+    Component(String),
+    Refusal(String),
+    FuelExhausted,
+    Trap { reason: String },
+}
+
+/// `guest_emission` with the fuel budget as a parameter.
+///
+/// The original helper panics on any outcome that is neither `Output` nor
+/// `Domain`; a fuel-limited run legitimately ends in `FuelExhausted`, so the
+/// budget-limited copy has to classify that outcome instead of panicking.
+fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            timeout: std::time::Duration::from_secs(300),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    let outcome = outcome.expect("the injected IR bounds hold");
+    match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        // A guest trap is neither an emission nor a refusal: the guest died
+        // before it could answer.  It is a measurement result of its own --
+        // the shape is beyond what the guest can emit at all -- so it is
+        // recorded instead of crashing the probe.
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a fuel budget: {:?}", other),
+    }
+}
+
+/// The fuel bracket in which the guest flips from "budget exhausted" to
+/// "component emitted": `low` is a budget that failed and `high` is a budget
+/// that succeeded, so the real consumption lies in `(low, high]`.
+///
+/// The search climbs a geometric ladder from `seed` and then refines the last
+/// octave until the bracket is within a quarter of its upper end -- tight
+/// enough to fit an exponent, and every probe stays close to the threshold.
+/// A ceiling-fueled run of a big closure is the slow case this slice
+/// measures, so probing the ceiling would dominate the wall time.
+fn fuel_bracket<F: FnMut(u64) -> bool>(
+    mut emits: F,
+    ceiling: u64,
+    seed: u64,
+) -> Option<(u64, u64)> {
+    let mut low = 0u64;
+    let mut high;
+    let mut budget = seed.clamp(1, ceiling);
+    loop {
+        if emits(budget) {
+            high = budget;
+            break;
+        }
+        low = budget;
+        if budget >= ceiling {
+            return None;
+        }
+        budget = budget.saturating_mul(2).min(ceiling);
+    }
+    while high - low > 1 && high - low > high / 4 {
+        let middle = low + (high - low) / 2;
+        if emits(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some((low, high))
+}
+
+/// STEP-0544: the bisection itself is pinned, so a flat measurement can be
+/// blamed on the guest and not on the search.
+#[test]
+fn the_fuel_bracket_brackets_the_threshold_where_the_guest_flips() {
+    for threshold in [1_234_567u64, 250_000_000, 700_000_000_000] {
+        let emits = |fuel: u64| fuel >= threshold;
+        let (low, high) =
+            fuel_bracket(emits, STEP0544_FUEL_CEILING, 1_000_000).expect("the ceiling is enough");
+        assert!(
+            low < threshold && threshold <= high,
+            "the bracket must contain the threshold {}: {}..{}",
+            threshold,
+            low,
+            high
+        );
+        assert!(
+            high - low <= high / 4 + 1,
+            "the bracket must be tight enough to fit an exponent: {}..{}",
+            low,
+            high
+        );
+    }
+    // A cost above the ceiling yields no bracket at all: the search climbs to
+    // the ceiling, the guest is still exhausted, and the ladder stops there.
+    // The threshold must be *above* the ceiling, not merely large.
+    assert!(
+        fuel_bracket(
+            |fuel| fuel > STEP0544_FUEL_CEILING,
+            STEP0544_FUEL_CEILING,
+            1_000_000
+        )
+        .is_none(),
+        "a ceiling below the cost yields no bracket"
+    );
+}
+
+/// X family: the module's instruction count `n` grows, everything else stays
+/// constant.  The module is built by cloning a shape the oracle already
+/// accepts and appending exactly `n` instructions, so the instruction count is
+/// **exact** and does not depend on how the frontend lowers a source fixture.
+///
+/// Every instruction makes the guest's emitter resolve one more value slot
+/// (`cgs_value_slot` walks the whole instruction array on every call), so the
+/// X family separates the IR-walk path from the hex-assembly path: the latter
+/// contributes a linear term here, because the number of concatenations
+/// tracks the number of emitted sections, not the number of instructions.
+fn x_family_ir(n: usize) -> String {
+    let mut module = match_shape_module();
+    let function = module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function");
+    for block in &mut function.blocks {
+        for index in 0..n {
+            let id = 10_000 + index as u32;
+            block.instructions.push(injected_instruction(
+                id,
+                Type::U64,
+                Operation::ConstU64(index as u64),
+            ));
+        }
+    }
+    injected_ir(&module)
+}
+
+/// Y family: the instruction count stays constant while one text literal
+/// grows.  The literal is patched at the IR level, because the source-level
+/// contract would turn this into a line-length test instead of a size test.
+fn y_family_ir(length: usize) -> String {
+    let mut module = rust_module(&match_fixture(
+        "function size(a: Text) returns Text:\n  return \"x\"\nend function",
+    ));
+    let filler = "x".repeat(length);
+    let mut patched = 0usize;
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::ConstString(value) = &mut instruction.operation {
+                    *value = filler.clone();
+                    patched += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(patched, 1, "the fixture carries exactly one text literal");
+    injected_ir(&module)
+}
+
+/// What one measured point of the attribution curve says.
+enum FuelProbe {
+    /// The guest emitted a component; the real consumption lies in
+    /// `(low, high]`.
+    Measured { low: u64, high: u64 },
+    /// The 800e9 ceiling was not enough -- the shape is beyond the budget.
+    Exhausted,
+    /// The guest trapped instead of answering: it died before it could emit
+    /// a component, so no fuel threshold exists for this shape.
+    Trapped { fuel: u64, reason: String },
+}
+
+/// One measured point of the attribution curve.
+struct FuelMeasurement {
+    probe: FuelProbe,
+    ir_bytes: usize,
+    component_bytes: usize,
+    wall_ms: u128,
+    work_ms: u128,
+}
+
+/// Measure one synthetic IR: the fuel bracket in which the guest flips from
+/// "budget exhausted" to "component emitted".
+///
+/// An exhausted ceiling is a result, not a failure: it is the phenomenon the
+/// ledger records for 140 sites.  A refusal is a hard failure.  A trap is a
+/// third result of its own: the guest cannot emit that shape at all, so no
+/// fuel threshold exists and the point is recorded as trapped.
+///
+/// `wall_ms` is the wall time of the whole bracket search, which also pays
+/// for the ladder; `work_ms` is the wall time of a single run at the
+/// measured threshold, so the time column stays comparable across points.
+fn measure_fuel(ir: &str, seed: u64) -> FuelMeasurement {
+    let started = std::time::Instant::now();
+    let component_bytes = std::cell::Cell::new(0usize);
+    let trap = std::cell::RefCell::new(None::<(u64, String)>);
+    let mut emits = |fuel: u64| -> bool {
+        if trap.borrow().is_some() {
+            return false;
+        }
+        match guest_emission_with_fuel(ir, fuel) {
+            GuestFuelEmission::Component(hex) => {
+                component_bytes.set(hex.len() / 2);
+                true
+            }
+            GuestFuelEmission::FuelExhausted => false,
+            GuestFuelEmission::Refusal(identity) => {
+                panic!(
+                    "the guest refused the measured shape with {identity}; the probe would measure the refusal path"
+                )
+            }
+            GuestFuelEmission::Trap { reason } => {
+                *trap.borrow_mut() = Some((fuel, reason));
+                false
+            }
+        }
+    };
+    let bracket = fuel_bracket(&mut emits, STEP0544_FUEL_CEILING, seed);
+    let probe = match bracket {
+        Some((low, high)) => FuelProbe::Measured { low, high },
+        None => {
+            let taken = std::mem::take(&mut *trap.borrow_mut());
+            match taken {
+                Some((fuel, reason)) => FuelProbe::Trapped { fuel, reason },
+                None => FuelProbe::Exhausted,
+            }
+        }
+    };
+    let mut work_ms = 0u128;
+    if let FuelProbe::Measured { high, .. } = probe {
+        let work_started = std::time::Instant::now();
+        let _ = guest_emission_with_fuel(ir, high);
+        work_ms = work_started.elapsed().as_millis();
+    }
+    FuelMeasurement {
+        probe,
+        ir_bytes: ir.len(),
+        component_bytes: component_bytes.get(),
+        wall_ms: started.elapsed().as_millis(),
+        work_ms,
+    }
+}
+
+/// Parse a comma separated list of sizes from the environment.
+fn step0544_sizes(name: &str, fallback: &[usize]) -> Vec<usize> {
+    match std::env::var(name) {
+        Ok(raw) => raw
+            .split(',')
+            .filter_map(|part| part.trim().parse::<usize>().ok())
+            .filter(|size| *size > 0)
+            .collect(),
+        Err(_) => fallback.to_vec(),
+    }
+}
+
+/// The text of one measured point.
+fn step0544_verdict(probe: &FuelProbe) -> String {
+    match probe {
+        FuelProbe::Measured { low, high } => format!("{low}\t{high}"),
+        FuelProbe::Exhausted => "exhausted\t-".to_owned(),
+        FuelProbe::Trapped { fuel, reason } => {
+            let tail = reason.lines().last().unwrap_or("trap");
+            let tail: String = tail.chars().take(120).collect();
+            format!("trapped@{fuel}\t{tail}")
+        }
+    }
+}
+
+/// Write the measurement report as it stands.
+///
+/// The report is flushed after every measured point, so a host restart cannot
+/// lose the points that were already measured: the file always holds the
+/// longest prefix of the curve that survived.
+fn step0544_flush(directory: &std::path::Path, report: &str) {
+    std::fs::write(directory.join("fuel-attribution.txt"), report)
+        .expect("the measurement file is writable");
+}
+
+/// STEP-0544: the fuel attribution measurement.
+///
+/// X family: `F(n)` is fitted before any repair is attempted.  If the cubic
+/// term dominates, the IR-walk path is the fuel wall and the fix is
+/// mechanical (cursor advance + a prefix-sum table).  If it does not, the
+/// measurement says so and the next hypothesis is measured instead.
+///
+/// Y family: the fuel cost must grow at most **linearly** with the literal
+/// length -- the hex assembly copies bytes, it does not execute an
+/// instruction per copied byte, so the fuel wall of the assembly path is
+/// the number of assembly steps.  If the fuel grew faster than linearly with
+/// the literal, a third path would exist that the current model does not
+/// cover.  The *time* is expected to grow super-linearly, because the
+/// incremental assembly copies the accumulated bytes again and again.
+///
+/// The test is `#[ignore]`d on purpose: it is a measurement, not a gate, so it
+/// must not stretch the firmware battery or the independent CI.  The sizes can
+/// be overridden with `SICO_STEP0544_X_SIZES` / `SICO_STEP0544_Y_SIZES`.
+#[test]
+#[ignore = "the STEP-0544 fuel attribution measurement; run it explicitly"]
+fn the_fuel_attribution_is_measured_before_any_repair() {
+    let x_sizes = step0544_sizes("SICO_STEP0544_X_SIZES", &[8, 16, 32, 48, 64, 80, 96, 128]);
+    let y_sizes = step0544_sizes(
+        "SICO_STEP0544_Y_SIZES",
+        &[1024, 2048, 4096, 8192, 16384, 32768],
+    );
+
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/step0544");
+    std::fs::create_dir_all(&directory).expect("the measurement directory is writable");
+
+    let mut report = String::new();
+    report.push_str("# STEP-0544 fuel attribution (measurement only)\n");
+    report.push_str("# fuel = the bracket in which the guest flips from exhausted to emitted\n");
+    report.push_str("# the real consumption lies in (fuel_low, fuel_high]\n");
+    report.push_str("# 'exhausted' = the 800e9 ceiling was not enough for that point\n");
+
+    report.push_str("\n## X family: the instruction count grows, the rest is constant\n");
+    report.push_str("n\tir_bytes\tcomponent_bytes\tfuel_low\tfuel_high\tsearch_ms\twork_ms\n");
+    let mut seed = 1_000_000u64;
+    let mut previous: Option<(usize, u64)> = None;
+    for (index, n) in x_sizes.iter().copied().enumerate() {
+        let ir = x_family_ir(n);
+        let measurement = measure_fuel(&ir, seed);
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            seed = high.saturating_mul(2).min(STEP0544_FUEL_CEILING);
+        }
+        report.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            n,
+            measurement.ir_bytes,
+            measurement.component_bytes,
+            step0544_verdict(&measurement.probe),
+            measurement.wall_ms,
+            measurement.work_ms
+        ));
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            if let Some((previous_n, previous_fuel)) = previous {
+                let ratio = high as f64 / previous_fuel as f64;
+                report.push_str(&format!(
+                    "#   n {} -> {}: ratio {:.2} => implied exponent {:.2}\n",
+                    previous_n,
+                    n,
+                    ratio,
+                    ratio.log2()
+                ));
+            }
+            previous = Some((n, high));
+        }
+        step0544_flush(&directory, &report);
+        // The first point is the positive control: it must be measured, or the
+        // probe measured the refusal path instead of the emission path.
+        if index == 0 {
+            assert!(
+                matches!(measurement.probe, FuelProbe::Measured { .. }),
+                "the positive control must be measured"
+            );
+        }
+    }
+
+    report.push_str("\n## Y family: the literal grows, the instruction count is constant\n");
+    report.push_str("length\tir_bytes\tcomponent_bytes\tfuel_low\tfuel_high\tsearch_ms\twork_ms\n");
+    let mut seed = 1_000_000u64;
+    for (index, length) in y_sizes.iter().copied().enumerate() {
+        let ir = y_family_ir(length);
+        let measurement = measure_fuel(&ir, seed);
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            seed = high.saturating_mul(2).min(STEP0544_FUEL_CEILING);
+        }
+        report.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            length,
+            measurement.ir_bytes,
+            measurement.component_bytes,
+            step0544_verdict(&measurement.probe),
+            measurement.wall_ms,
+            measurement.work_ms
+        ));
+        step0544_flush(&directory, &report);
+        if index == 0 {
+            assert!(
+                matches!(measurement.probe, FuelProbe::Measured { .. }),
+                "the positive control must be measured"
+            );
+        }
+    }
+
+    step0544_flush(&directory, &report);
+    println!("{report}");
+}
