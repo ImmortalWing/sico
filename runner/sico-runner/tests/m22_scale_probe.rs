@@ -23,6 +23,11 @@
 //!   This is the shape the guest's own codegen uses today.
 //! * **S2 -- chunked `sico.arena.push_chunk`**: push fixed-size chunks into
 //!   the arena table, then assemble once at the end.
+//! * **S3 -- linear control**: one `sico.text.concat` over two large operands.
+//! * **S4 (STEP-0548, P0) -- `sico.list.append` + one `sico.text.join`**: the
+//!   amortized builder the backend already ships. P0's decision gate asks
+//!   whether *this* shape reaches 1 MiB inside the qualified limits -- it does
+//!   (flat growth, ~0.005% of the fuel ceiling), which is what licenses P1.
 //!
 //! ## Measurement honesty (plan D13)
 //!
@@ -70,6 +75,26 @@ fn concat_probe(reps: u64) -> String {
 fn chunk_probe(reps: u64) -> String {
     format!(
         "{PRELUDE}function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  let chunk = \"0123456789abcdef\"\n  let reps = I64.literal({reps})\n  let chunks = sico.text.split_lines(\"\")\n  let i = I64.literal(0)\n  while I64.less_than(i, reps):\n    match I64.checked_add(i, I64.literal(1)):\n      case ok(next_i):\n        set i = next_i\n      case error(_):\n        return error(ScriptError(code: ScriptErrorCode.DomainError, message: \"overflow\"))\n    end match\n    set chunks = sico.arena.push_chunk(chunks, chunk)\n  end while\n  let total = sico.text.length(sico.text.join(chunks, \"\"))\n  return ok(ScriptOutput(stdout: sico.text.encode(sico.u64.to_text(total)), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\nend function\n"
+    )
+}
+
+/// S4 (STEP-0548, P0): `reps` `sico.list.append` calls into one `List[Text]`,
+/// then one `sico.text.join`.
+///
+/// S2's `sico.arena.push_chunk` rebuilds its chunk table on every push, so it
+/// is quadratic in the number of chunks. `sico.list.append` is the amortized
+/// builder the backend already ships: the list carries a private capacity
+/// header, and while a spare slot remains the element is written in place, so
+/// the table grows geometrically instead of being copied per push
+/// (`crates/sico-codegen-wasm/src/stdlib.rs`: `emit_list_append`, and
+/// `emit_join` for the single linear `join` pass).
+///
+/// This is the strategy P0 asks about: the guest emitter already needs a
+/// fragment list to assemble at 1 MiB, and this is the only shipped primitive
+/// whose cost is not quadratic in the fragment count.
+fn list_append_probe(reps: u64) -> String {
+    format!(
+        "{PRELUDE}function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  let chunk = \"0123456789abcdef\"\n  let reps = I64.literal({reps})\n  let chunks = sico.text.split_lines(\"\")\n  let i = I64.literal(0)\n  while I64.less_than(i, reps):\n    match I64.checked_add(i, I64.literal(1)):\n      case ok(next_i):\n        set i = next_i\n      case error(_):\n        return error(ScriptError(code: ScriptErrorCode.DomainError, message: \"overflow\"))\n    end match\n    set chunks = sico.list.append(chunks, chunk)\n  end while\n  let total = sico.text.length(sico.text.join(chunks, \"\"))\n  return ok(ScriptOutput(stdout: sico.text.encode(sico.u64.to_text(total)), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\nend function\n"
     )
 }
 
@@ -396,12 +421,18 @@ fn the_one_megabyte_emission_scale_is_measured() {
     let evidence_dir = repo_root.join("target").join("tmp").join("step0516");
     std::fs::create_dir_all(&evidence_dir).unwrap();
     let evidence_path = evidence_dir.join("scale-measurement.txt");
+    // STEP-0548 (P0) reads the same report from its own step directory, so the
+    // P0 verdict and the W1 verdict are computed from one observation.
+    let p0_dir = repo_root.join("target").join("tmp").join("step0548");
+    std::fs::create_dir_all(&p0_dir).unwrap();
+    let p0_path = p0_dir.join("assembly-measurement.txt");
     let mut report = String::new();
     let mut per_strategy: Vec<(&str, Vec<Point>)> = Vec::new();
 
     for (strategy, build_probe, ladder, stdin_of) in [
         ("S1-concat", concat_probe as fn(u64) -> String, LADDER, None),
         ("S2-chunked", chunk_probe, LADDER, None),
+        ("S4-list-append", list_append_probe, LADDER, None),
         (
             "S3-linear",
             linear_probe,
@@ -449,6 +480,7 @@ fn the_one_megabyte_emission_scale_is_measured() {
     }
 
     std::fs::write(&evidence_path, &report).unwrap();
+    std::fs::write(&p0_path, &report).unwrap();
     println!("{report}");
 
     // --- The pinned findings (STEP-0516) -------------------------------
@@ -513,5 +545,49 @@ fn the_one_megabyte_emission_scale_is_measured() {
     assert_eq!(
         min_memory, DECLARED_LINEAR_MEMORY_BYTES,
         "the measured memory floor must be the declared linear memory"
+    );
+
+    // --- The P0 verdict (STEP-0548, decision gate D1) -------------------
+    //
+    // The amortized builder (`sico.list.append`) plus one `join` is the only
+    // shipped strategy that reaches 1 MiB at all, and it does so with flat
+    // growth for ~0.005% of the qualified fuel ceiling. That is what licenses
+    // P1 (rewriting the emitter's 461 self-appending `concat` sites into
+    // fragment lists). These pins keep a later change in allocation behaviour
+    // from silently rewriting the verdict -- the same discipline STEP-0516
+    // applied to S1/S3.
+    let appended = points("S4-list-append");
+    let appended_at_1m = appended
+        .iter()
+        .find(|point| point.bytes == 1024 * 1024)
+        .expect("the amortized builder reached 1 MiB");
+    assert_eq!(
+        appended_at_1m.verdict, "ok",
+        "the amortized builder must reach 1 MiB"
+    );
+    assert!(
+        appended_at_1m.min_fuel * 100 < 800_000_000_000,
+        "1 MiB through the amortized builder must cost under 1% of the fuel ceiling, got {}",
+        appended_at_1m.min_fuel
+    );
+    let appended_growth = growth_ratio_256k_to_1m(&appended).expect("both growth endpoints exist");
+    assert!(
+        appended_growth <= D6_FEASIBLE_GROWTH,
+        "the amortized builder's growth must read as feasible, got {appended_growth:.2}x"
+    );
+    let appended_at_256k = appended
+        .iter()
+        .find(|point| point.bytes == 256 * 1024)
+        .expect("the amortized builder reached 256 KiB");
+    let chunked_at_256k = points("S2-chunked")
+        .into_iter()
+        .find(|point| point.bytes == 256 * 1024)
+        .expect("the chunked strategy reached 256 KiB");
+    assert!(
+        appended_at_256k.min_fuel * 10 < chunked_at_256k.min_fuel,
+        "the amortized builder must be at least 10x cheaper than the chunk \
+         table at 256 KiB ({} vs {})",
+        appended_at_256k.min_fuel,
+        chunked_at_256k.min_fuel
     );
 }

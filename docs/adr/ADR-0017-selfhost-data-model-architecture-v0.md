@@ -154,6 +154,19 @@ the R3 counter restarts only after that re-pin.
   continue/rollback decision with the dual-implementation register as
   evidence.
 
+## Scheduling note (2026-10-26, STEP-0547/0548)
+
+The owner decision recorded in `AGENTS.md` §10.1.3 parks the Option A
+re-baseline **until after the M25 v1.0 completion audit**; it is not on the M22
+critical path. Rationale: the frontend IR differential is already green (the
+149/149 census and the whole-source `parser.sico` lowering, byte-equal), so the
+remaining gate 2/3 debt sits in `codegen.sico`'s assembly strategy, not in the
+selfhost data model. Re-baselining now would rewrite the frozen source set `S`
+and invalidate the 396-site ledger's per-site `source_sha256`/`ir_sha256` plus
+the `A = R(S)` byte-equality evidence the whole closure rests on. This note
+changes neither the Decision nor the Revisit conditions; it only re-dates
+Option A's execution.
+
 ## Links
 
 - [`ADR-0015`](./ADR-0015-compiler-bootstrap-closure-v0.md) (closure contract)
