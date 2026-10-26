@@ -162,7 +162,7 @@
       "write_local"
     ],
     "source": "selfhost/codegen.sico",
-    "source_sha256": "da0fec5f803279f3b2f35c7cc693a2c1c5b144ec773cfe00b47eb7793036e730"
+    "source_sha256": "6be9bf9873f05dfcd6c8821cbac09f8cfc98a54d7aef553ab241a36879c88944"
   },
   "schema": "sico.m22.emitter-vocabulary.v1",
   "sites": [

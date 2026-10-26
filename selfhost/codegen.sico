@@ -2717,7 +2717,7 @@ end function
 // An empty string has no bytes and therefore no hex of its own: the empty
 // hex is a literal, not a refusal.
 function cgj_string_hex(bytes: Bytes, start: U64, close: U64) returns Text:
-  let cjsh_out = ""
+  let cjsh_parts = sico.text.split_lines("")
   let cjsh_at = cg_next(start)
   let cjsh_stop = cgs_sub(close, U64.literal(1))
   while U64.less_than(cjsh_at, cjsh_stop):
@@ -2747,7 +2747,7 @@ function cgj_string_hex(bytes: Bytes, start: U64, close: U64) returns Text:
           end if
         end if
         if cjsh_zero:
-          set cjsh_out = sico.text.concat(cjsh_out, cg_hex_byte_i64(I64.literal(0)))
+          set cjsh_parts = sico.list.append(cjsh_parts, cg_hex_byte_i64(I64.literal(0)))
           set cjsh_at = cg_next(cjsh_d3)
         else:
           return "ERR:E-SH-CG-IR-EMIT"
@@ -2757,15 +2757,15 @@ function cgj_string_hex(bytes: Bytes, start: U64, close: U64) returns Text:
         if U64.equal(sico.text.length(cjsh_hex), U64.literal(0)):
           return "ERR:E-SH-CG-IR-EMIT"
         end if
-        set cjsh_out = sico.text.concat(cjsh_out, cjsh_hex)
+        set cjsh_parts = sico.list.append(cjsh_parts, cjsh_hex)
         set cjsh_at = cg_next(cjsh_code)
       end if
     else:
-      set cjsh_out = sico.text.concat(cjsh_out, cg_hex_byte_i64(cjsh_byte))
+      set cjsh_parts = sico.list.append(cjsh_parts, cg_hex_byte_i64(cjsh_byte))
       set cjsh_at = cg_next(cjsh_at)
     end if
   end while
-  return cjsh_out
+  return sico.text.join(cjsh_parts, "")
 end function
 
 // The hex of the byte the escape sequence decodes to; "" when the escape is
@@ -3920,8 +3920,10 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
   if U64.equal(crih_dispatcher, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let crih_out = sico.text.concat(cgs_i32_const_hex(crih_entry), cgs_local_set_hex(crih_dispatcher))
-  set crih_out = sico.text.concat(crih_out, "02400340")
+  let crih_parts = sico.text.split_lines("")
+  set crih_parts = sico.list.append(crih_parts, cgs_i32_const_hex(crih_entry))
+  set crih_parts = sico.list.append(crih_parts, cgs_local_set_hex(crih_dispatcher))
+  set crih_parts = sico.list.append(crih_parts, "02400340")
   let crih_bindex = U64.literal(0)
   let crih_bmore = U64.literal(1)
   while U64.less_than(U64.literal(0), crih_bmore):
@@ -3934,9 +3936,9 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
         return "ERR:E-SH-CG-IR-EMIT"
       end if
       let crih_block_id = cgs_decimal_u64(crih_block_text)
-      set crih_out = sico.text.concat(crih_out, cgs_local_get_hex(crih_dispatcher))
-      set crih_out = sico.text.concat(crih_out, cgs_i32_const_hex(crih_block_id))
-      set crih_out = sico.text.concat(crih_out, "460440")
+      set crih_parts = sico.list.append(crih_parts, cgs_local_get_hex(crih_dispatcher))
+      set crih_parts = sico.list.append(crih_parts, cgs_i32_const_hex(crih_block_id))
+      set crih_parts = sico.list.append(crih_parts, "460440")
       let crih_instructions = cgj_member(bytes, crih_block, "instructions")
       if U64.equal(crih_instructions, U64.literal(0)):
         return "ERR:E-SH-CG-IR-PLAN"
@@ -3952,7 +3954,7 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
           if sico.text.starts_with(crih_op, "ERR:"):
             return crih_op
           end if
-          set crih_out = sico.text.concat(crih_out, crih_op)
+          set crih_parts = sico.list.append(crih_parts, crih_op)
         end if
         set crih_iindex = cg_next(crih_iindex)
       end while
@@ -3961,13 +3963,13 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
         if sico.text.starts_with(crih_terminator, "ERR:"):
           return crih_terminator
         end if
-        set crih_out = sico.text.concat(crih_out, crih_terminator)
-        set crih_out = sico.text.concat(crih_out, "0b")
+        set crih_parts = sico.list.append(crih_parts, crih_terminator)
+        set crih_parts = sico.list.append(crih_parts, "0b")
       end if
     end if
     set crih_bindex = cg_next(crih_bindex)
   end while
-  return crih_out
+  return sico.text.join(crih_parts, "")
 end function
 
 // ---------------------------------------------------------------------------
@@ -4737,7 +4739,7 @@ end function
 // carries the byte the source escape stands for.
 function cgs_data_hex(bytes: Bytes) returns Text:
   let cdh_seen = sico.text.split_lines("")
-  let cdh_out = ""
+  let cdh_parts = sico.text.split_lines("")
   let cdh_functions = cgj_member(bytes, U64.literal(0), "functions")
   if U64.equal(cdh_functions, U64.literal(0)):
     return ""
@@ -4782,7 +4784,7 @@ function cgs_data_hex(bytes: Bytes) returns Text:
                 else:
                   set cdh_seen = sico.list.append(cdh_seen, cdh_hex)
                 end if
-                set cdh_out = sico.text.concat(cdh_out, cdh_chunk)
+                set cdh_parts = sico.list.append(cdh_parts, cdh_chunk)
               end if
             end if
             set cdh_iindex = cg_next(cdh_iindex)
@@ -4793,7 +4795,7 @@ function cgs_data_hex(bytes: Bytes) returns Text:
     end if
     set cdh_findex = cg_next(cdh_findex)
   end while
-  return cdh_out
+  return sico.text.join(cdh_parts, "")
 end function
 
 // The arena base for a static data segment of `data_len` bytes: the segment
@@ -6504,7 +6506,8 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_split_lines, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_out = cg_leb_hex(cccsh_total)
+  let cccsh_parts = sico.text.split_lines("")
+  set cccsh_parts = sico.list.append(cccsh_parts, cg_leb_hex(cccsh_total))
   let cccsh_index = U64.literal(0)
   while U64.less_than(cccsh_index, cccsh_count):
     let cccsh_body = cgs_function_body_hex(bytes, cccsh_index)
@@ -6517,123 +6520,123 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
     let cccsh_body_len = sico.text.length(cccsh_body)
     let cccsh_body_size = U64.shr(cccsh_body_len, U64.literal(1))
     let cccsh_body_hex = cg_leb_hex(cccsh_body_size)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_body_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_body)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_body_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_body)
     set cccsh_index = cg_next(cccsh_index)
   end while
   let cccsh_alloc = cg_alloc_body_hex()
   let cccsh_alloc_len = sico.text.length(cccsh_alloc)
   let cccsh_alloc_size = U64.shr(cccsh_alloc_len, U64.literal(1))
   let cccsh_alloc_hex = cg_leb_hex(cccsh_alloc_size)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_alloc_hex)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_alloc)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_alloc_hex)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_alloc)
   let cccsh_realloc = cg_realloc_body_hex()
   let cccsh_realloc_len = sico.text.length(cccsh_realloc)
   let cccsh_realloc_size = U64.shr(cccsh_realloc_len, U64.literal(1))
   let cccsh_realloc_hex = cg_leb_hex(cccsh_realloc_size)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_realloc_hex)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_realloc)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_realloc_hex)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_realloc)
   let cccsh_post = cg_post_body_hex(arena_base)
   let cccsh_post_len = sico.text.length(cccsh_post)
   let cccsh_post_size = U64.shr(cccsh_post_len, U64.literal(1))
   let cccsh_post_hex = cg_leb_hex(cccsh_post_size)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_post_hex)
-  set cccsh_out = sico.text.concat(cccsh_out, cccsh_post)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_post_hex)
+  set cccsh_parts = sico.list.append(cccsh_parts, cccsh_post)
   let cccsh_equal_helper = cg_bytes_equal_helper_body_hex()
   let cccsh_equal_len = sico.text.length(cccsh_equal_helper)
   let cccsh_equal_size = U64.shr(cccsh_equal_len, U64.literal(1))
   let cccsh_equal_hex = cg_leb_hex(cccsh_equal_size)
   if U64.equal(cccsh_equal, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_equal_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_equal_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_equal_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_equal_helper)
   end if
   let cccsh_utf8_helper = cg_utf8_validate_helper_body_hex()
   let cccsh_utf8_len = sico.text.length(cccsh_utf8_helper)
   let cccsh_utf8_size = U64.shr(cccsh_utf8_len, U64.literal(1))
   let cccsh_utf8_hex = cg_leb_hex(cccsh_utf8_size)
   if U64.equal(cccsh_utf8, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_utf8_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_utf8_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_utf8_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_utf8_helper)
   end if
   let cccsh_list_append_helper = cg_list_append_helper_body_hex(cccsh_count)
   let cccsh_list_append_len = sico.text.length(cccsh_list_append_helper)
   let cccsh_list_append_size = U64.shr(cccsh_list_append_len, U64.literal(1))
   let cccsh_list_append_hex = cg_leb_hex(cccsh_list_append_size)
   if U64.equal(cccsh_list_append, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_append_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_append_helper)
   end if
   let cccsh_list_append_u64_helper = cg_list_append_scalar_helper_body_hex(cccsh_count)
   let cccsh_list_append_u64_len = sico.text.length(cccsh_list_append_u64_helper)
   let cccsh_list_append_u64_size = U64.shr(cccsh_list_append_u64_len, U64.literal(1))
   let cccsh_list_append_u64_hex = cg_leb_hex(cccsh_list_append_u64_size)
   if U64.equal(cccsh_list_append_u64, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_u64_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_append_u64_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_append_u64_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_append_u64_helper)
   end if
   let cccsh_list_empty_u64_helper = cg_collection_empty_helper_body_hex()
   let cccsh_list_empty_u64_len = sico.text.length(cccsh_list_empty_u64_helper)
   let cccsh_list_empty_u64_size = U64.shr(cccsh_list_empty_u64_len, U64.literal(1))
   let cccsh_list_empty_u64_hex = cg_leb_hex(cccsh_list_empty_u64_size)
   if U64.equal(cccsh_list_empty_u64, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_empty_u64_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_empty_u64_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_empty_u64_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_empty_u64_helper)
   end if
   let cccsh_list_get_u64_helper = cg_list_get_scalar_helper_body_hex()
   let cccsh_list_get_u64_len = sico.text.length(cccsh_list_get_u64_helper)
   let cccsh_list_get_u64_size = U64.shr(cccsh_list_get_u64_len, U64.literal(1))
   let cccsh_list_get_u64_hex = cg_leb_hex(cccsh_list_get_u64_size)
   if U64.equal(cccsh_list_get_u64, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_get_u64_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_list_get_u64_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_get_u64_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_get_u64_helper)
   end if
   let cccsh_helper = cg_concat_helper_body_hex(cccsh_count)
   let cccsh_helper_len = sico.text.length(cccsh_helper)
   let cccsh_helper_size = U64.shr(cccsh_helper_len, U64.literal(1))
   let cccsh_helper_hex = cg_leb_hex(cccsh_helper_size)
   if U64.equal(cccsh_concat, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_helper_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_helper_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_helper)
   end if
   let cccsh_text_join_helper = cg_text_join_helper_body_hex(cccsh_count)
   let cccsh_text_join_len = sico.text.length(cccsh_text_join_helper)
   let cccsh_text_join_size = U64.shr(cccsh_text_join_len, U64.literal(1))
   let cccsh_text_join_hex = cg_leb_hex(cccsh_text_join_size)
   if U64.equal(cccsh_text_join, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_text_join_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_text_join_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_text_join_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_text_join_helper)
   end if
   let cccsh_length_helper = cg_text_length_helper_body_hex()
   let cccsh_length_len = sico.text.length(cccsh_length_helper)
   let cccsh_length_size = U64.shr(cccsh_length_len, U64.literal(1))
   let cccsh_length_hex = cg_leb_hex(cccsh_length_size)
   if U64.equal(cccsh_length, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_length_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_length_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_length_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_length_helper)
   end if
   let cccsh_split_lines_helper = cg_split_lines_helper_body_hex(cccsh_count)
   let cccsh_split_lines_len = sico.text.length(cccsh_split_lines_helper)
   let cccsh_split_lines_size = U64.shr(cccsh_split_lines_len, U64.literal(1))
   let cccsh_split_lines_hex = cg_leb_hex(cccsh_split_lines_size)
   if U64.equal(cccsh_split_lines, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_split_lines_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_split_lines_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_split_lines_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_split_lines_helper)
   end if
   let cccsh_starts_helper = cg_starts_with_helper_body_hex()
   let cccsh_starts_len = sico.text.length(cccsh_starts_helper)
   let cccsh_starts_size = U64.shr(cccsh_starts_len, U64.literal(1))
   let cccsh_starts_hex = cg_leb_hex(cccsh_starts_size)
   if U64.equal(cccsh_starts, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_starts_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_starts_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_starts_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_starts_helper)
   end if
   let cccsh_u64_helper = cg_u64_to_text_helper_body_hex(cccsh_count)
   let cccsh_u64_len = sico.text.length(cccsh_u64_helper)
   let cccsh_u64_size = U64.shr(cccsh_u64_len, U64.literal(1))
   let cccsh_u64_hex = cg_leb_hex(cccsh_u64_size)
   if U64.equal(cccsh_u64, U64.literal(1)):
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_u64_hex)
-    set cccsh_out = sico.text.concat(cccsh_out, cccsh_u64_helper)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_u64_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_u64_helper)
   end if
-  return cccsh_out
+  return sico.text.join(cccsh_parts, "")
 end function

@@ -3273,6 +3273,60 @@ fn sico_codegen_guest_emits_the_multi_function_component_byte_exactly() {
     }
 }
 
+/// The Script-profile ABI records every component fixture repeats: the same
+/// prelude the frozen echo fixture opens with, so a generated fixture is the
+/// reference form plus one function of its own.
+const S5_ABI_PRELUDE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\n";
+
+/// The reference form plus one ordinary function that carries a string
+/// literal of `bytes` bytes. The data segment holds every string literal of
+/// the program, so inflating this literal inflates the data section without
+/// touching the frozen `run` shape.
+fn large_literal_source(bytes: usize) -> String {
+    let literal = "a".repeat(bytes);
+    format!(
+        "{S5_ABI_PRELUDE}function label(value: Text) returns Text:\n  let text = \"{literal}\"\n  return text\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n"
+    )
+}
+
+#[test]
+fn sico_codegen_guest_emits_a_large_literal_component_byte_exactly() {
+    // STEP-0549 (P1 assembly rewrite): the guest assembles the component out
+    // of one fragment list per section and one `text.join` at the boundary
+    // instead of a left fold of `text.concat`, so the cost per emitted byte is
+    // linear in the output. The fixture ladder is the data section's own
+    // scale: STEP-0544 measured a 24,576 B literal trapping the left fold, so
+    // the ladder has to reach past it and stay byte-equal to the backend.
+    for bytes in [16 * 1024usize, 64 * 1024, 256 * 1024] {
+        let source = large_literal_source(bytes);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        let started = std::time::Instant::now();
+        let output = match run_guest_with_args(source.as_str(), vec!["--emit-component-hex".into()])
+        {
+            RunOutcome::Output(output) => output,
+            other => panic!(
+                "the {bytes} B literal component must be emitted through the guest: {other:?}"
+            ),
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted component for a {bytes} B literal must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted large-literal component must pass the real Wasm validator");
+        eprintln!(
+            "literal_bytes={bytes} component_bytes={} elapsed_ms={}",
+            actual.len(),
+            started.elapsed().as_millis()
+        );
+    }
+}
+
 const CALL_IN_FIELD_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: helper(I64.literal(7))))\nend function\n";
 
 #[test]
