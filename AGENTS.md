@@ -188,9 +188,9 @@ Before reporting completion:
 
 | 顺序 | 内容 | exit / 决策门 | 片数 |
 |---|---|---|---|
-| P0 | 尺度预检：同一 payload 比较「左折叠 concat」与「分片 `list.append` + 一次 `text.join`」在 64 KiB / 256 KiB / 1 MiB 的 fuel、wall、trap | 两条曲线；**D1** 绿 ⇒ P1，红 ⇒ RFC 或按 R3 止损 | 1 |
-| P1 | 装配重写：hex 段落改分片 + 一次 join，字节输出不变 | 现有 32 个全等站点仍全等 + 新增 ≥256 KiB 站点与 Rust 逐字节全等 | 1–2 |
-| P2 | 批量复算：夹具上限提到 128 fn / 1 MiB，一次重跑 396 站点 | 新直方图 + 每个残差具名原因；**D2** 回绿 <25% ⇒ 判结构性，三选一 | 1 |
+| P0 | 尺度预检：同一 payload 比较「左折叠 concat」与「分片 `list.append` + 一次 `text.join`」在 64 KiB / 256 KiB / 1 MiB 的 fuel、wall、trap | 两条曲线；**D1** 绿 ⇒ P1，红 ⇒ RFC 或按 R3 止损 | 1（**STEP-0548 完成，D1 绿**） |
+| P1 | 装配重写：hex 段落改分片 + 一次 join，字节输出不变 | 现有 32 个全等站点仍全等 + 新增 ≥256 KiB 站点与 Rust 逐字节全等 | 1–2（**STEP-0549 完成**） |
+| P2 | 批量复算：夹具上限 64 fn/256 KiB → **256 fn/1 MiB**，一次重跑 396 站点 | 新直方图 + 每个残差具名原因；**D2** 回绿 <25% ⇒ 判结构性，三选一 | 1（**STEP-0550 完成：回绿 0/364，D2 = 结构性**） |
 | P3–P6 | 具名残差 → 语料/bundle → 自举与预算 → 出口（内容同 §10.1.1，仅改顺序） | 同 §10.10 各族判据 | 12–22 |
 
 约束（与 §10.2/§10.3 一致，且更严）：
@@ -198,7 +198,8 @@ Before reporting completion:
 - **§10.1.1 看板降为残差台账**，不再是执行顺序；「一片一形状」在 P2 之前不算推进主路径。
 - **不新增 per-shape packer**（发射词表缺口已于 STEP-0542 归零）。
 - **不上调 fuel / 内存限额追认**；P0/P1 读数只用于判断策略，不作为放宽闸门的依据。
-- §10.1.2 决策二（下一步 B2）在 P2 之前**不是主路径**；B2 若仍要入库，只能作为 P1 的附带项并单独报站点回绿数。
+- §10.1.2 决策二（下一步 B2）在 P2 之前**不是主路径**；**P2 已完成（STEP-0550，D2 = 结构性）⇒ B2 升级为主路径**：为函数级「值 id → 槽号」建一次索引，exit 必须单独报「195 个新开测站点回绿数」且既有 32 个全等站点逐字节不变。
+- **`parser.sico:scalar_ir` 的 24 个站点**受 runner 8 MiB stdout 结果上限（`runner/sico-runner/src/lib.rs:3599`）阻挡，与 B2 正交；先量 IR 文本真实大小再单独裁决，**不得直接上调结果上限**。
 - **ADR-0017 Option A（记录化重基线）挂起到 M25 之后**：现在重写冻结 S 的源文本会作废 149/149 census 与逐站 `source_sha256`/`ir_sha256`/`component_sha256`。若 owner 决定不挂起，须先给出「重基线后如何重建逐站证据」的方案。
 
 ### 10.2 Global Constraints
@@ -316,6 +317,7 @@ git diff --check
 - [x] **`match` 前端局部覆盖**：57/519 个 S 站点的已测形状可降，包含 `U64.checked_add` 小形参函数和 `sico.list.get` 系列。
 - [x] **STEP-0535 的 4 个合成形状**：2 形参 set/return 1215 B、1 形参 1214 B、return/return 1167 B、嵌套 match 1389 B，guest Component 与 Rust 生产输出逐字节等同；`selfhost_compiler` 最新复跑 173/173、runner clippy 和 fmt 通过。
 - [x] **STEP-0534 独立 CI**：精确 SHA `54b6d9758a4709f5e6fb9d6982854704fbcbd285` 的 run `40053245939` 为 completed/success；该证据不外推到 STEP-0535。
+- [x] **P0/P1/P2 装配与尺度片（STEP-0548/0549/0550）**：D1 绿（1 MiB 分片装配 42.5 M fuel / 38 ms）；四个升维折叠改分片 + 一次 join（64 KiB 字面量从 trap 变为字节全等）；闭包上限放开到 256 fn/1 MiB 后 396 站点首次全部有 verdict，回绿 0/364 ⇒ **D2 结构性**、下一步 B2。组件轴仍 32/396，七门不变。**口径提醒**：词表 artifact 同步扩到 340 站点，`sico.list.length[U64]` 缺 7 站点（`general_while_function_ir`）。
 - [x] **IR-only 预算观察**：整份 parser IR 降低已有 wall-time 和限额内通过记录；它只是门 4 的前置观察，不是 `B(S)` 完整自编译预算。
 
 ### 10.11 未完成清单（当前必须继续做的工作）

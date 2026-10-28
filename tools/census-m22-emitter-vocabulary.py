@@ -86,9 +86,12 @@ GUEST_HELPER_BODIES = {
 # narrower, so the census can only over-report a helper here, never miss one.
 MONOMORPH_PATTERN = re.compile(r"^sico\.[a-z]+\.[a-z_]+\[[^\]]+\]$")
 
-# The frozen closure bound of the Rust firmware.
-CLOSURE_FUNCTION_LIMIT = 64
-CLOSURE_BYTE_LIMIT = 262_144
+# The frozen closure bound of the Rust firmware.  STEP-0550 (M22 P2) raised
+# it from 64 functions / 262,144 bytes to 256 functions / 1,048,576 bytes, so
+# the census now sees the 219 sites that the old bound skipped (all in
+# `parser.sico`; the largest closure is 164 functions / 1,027,015 bytes).
+CLOSURE_FUNCTION_LIMIT = 256
+CLOSURE_BYTE_LIMIT = 1_048_576
 
 # The frozen sources the site ledger is derived from.
 FROZEN_SOURCES = [

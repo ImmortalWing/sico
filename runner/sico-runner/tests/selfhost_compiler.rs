@@ -9337,8 +9337,35 @@ const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler
 /// Closure bound: a site whose same-file dependency closure grows past this
 /// many functions (or bytes) is compared through the whole-file differential
 /// instead of a standalone one.
-const MATCH_CLOSURE_FUNCTION_LIMIT: usize = 64;
-const MATCH_CLOSURE_BYTE_LIMIT: usize = 262_144;
+///
+/// STEP-0550 (M22 P2): the bound was raised from 64 functions / 256 KiB to
+/// 256 functions / 1 MiB.  The bound is a **fixture** limit, not a
+/// measurement: a site reported as `closure-too-large` was never compared at
+/// all.  The frozen ledger carried 219 such sites -- every one of them in
+/// `parser.sico` -- while the largest real closure of the frozen S is 164
+/// functions / 1,027,015 bytes (`scalar_ir`), so the old bound skipped more
+/// than half of the 396 sites and the new one covers all of them.  Only the
+/// fixture bound moves here: the fuel, timeout, memory and hostcall limits
+/// are untouched.
+const MATCH_CLOSURE_FUNCTION_LIMIT: usize = 256;
+const MATCH_CLOSURE_BYTE_LIMIT: usize = 1_048_576;
+
+/// STEP-0550 (M22 P2): the closure bound is **configurable for probes**.
+/// `SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT` / `SICO_M22_MATCH_CLOSURE_BYTE_LIMIT`
+/// move the bound of the probe run only.  The frozen ledger is always checked
+/// under `MATCH_CLOSURE_FUNCTION_LIMIT` / `MATCH_CLOSURE_BYTE_LIMIT` above,
+/// so the frozen expectation table never depends on the environment.
+fn match_probe_closure_limits() -> (usize, usize) {
+    let function_limit = std::env::var("SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(MATCH_CLOSURE_FUNCTION_LIMIT);
+    let byte_limit = std::env::var("SICO_M22_MATCH_CLOSURE_BYTE_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(MATCH_CLOSURE_BYTE_LIMIT);
+    (function_limit, byte_limit)
+}
 
 /// The files whose **whole-file** canonical IR differential is pinned by the
 /// firmware, so a `closure-too-large` site still has a current-snapshot IR
@@ -9467,7 +9494,15 @@ fn match_sico_callees(text: &str, known: &[String]) -> Vec<String> {
 
 /// The transitive same-file dependency closure of `root`, emitted in file
 /// order so the original declaration order is preserved.
-fn match_sico_closure(text: &str, root: &str) -> Result<String, String> {
+///
+/// STEP-0550 (M22 P2): the bound is a parameter so a probe can move it.  The
+/// frozen ledger always passes the frozen bound.
+fn match_sico_closure(
+    text: &str,
+    root: &str,
+    function_limit: usize,
+    byte_limit: usize,
+) -> Result<String, String> {
     let functions = match_sico_functions(text);
     let names: Vec<String> = functions.iter().map(|f| f.name.clone()).collect();
     let mut selected = vec![false; functions.len()];
@@ -9484,7 +9519,7 @@ fn match_sico_closure(text: &str, root: &str) -> Result<String, String> {
         selected[position] = true;
         count += 1;
         bytes += functions[position].text.len();
-        if count > MATCH_CLOSURE_FUNCTION_LIMIT || bytes > MATCH_CLOSURE_BYTE_LIMIT {
+        if count > function_limit || bytes > byte_limit {
             return Err(format!("closure-too-large:{count}fn/{bytes}B"));
         }
         for callee in match_sico_callees(&functions[position].text, &names) {
@@ -9514,7 +9549,15 @@ fn match_sha256(bytes: &[u8]) -> String {
 
 /// Compares one real site against the Rust oracle on both axes and returns
 /// the verdict plus the digests the ledger freezes.
-fn match_compare_site(path: &str, function: &str) -> MatchSiteOutcome {
+///
+/// STEP-0550 (M22 P2): the closure bound is a parameter, so the frozen run
+/// and a probe run share one measurement path and differ only in the bound.
+fn match_compare_site(
+    path: &str,
+    function: &str,
+    function_limit: usize,
+    byte_limit: usize,
+) -> MatchSiteOutcome {
     let blank = MatchSiteOutcome {
         verdict: "unknown-source".to_string(),
         source_sha256: String::new(),
@@ -9524,7 +9567,7 @@ fn match_compare_site(path: &str, function: &str) -> MatchSiteOutcome {
     let Some(text) = match_frozen_source(path) else {
         return blank;
     };
-    let closure = match match_sico_closure(text, function) {
+    let closure = match match_sico_closure(text, function, function_limit, byte_limit) {
         Ok(closure) => closure,
         Err(reason) => {
             return MatchSiteOutcome {
@@ -9627,6 +9670,81 @@ fn match_compare_site(path: &str, function: &str) -> MatchSiteOutcome {
     }
 }
 
+/// The ledger's sites grouped by their enclosing function: one comparison per
+/// distinct (path, function), because the verdict applies to every site
+/// inside it.
+fn match_ledger_groups(
+    ledger: &MatchCoverageLedger,
+) -> Vec<(String, String, Vec<&MatchCoverageSite>)> {
+    let mut groups: Vec<(String, String, Vec<&MatchCoverageSite>)> = Vec::new();
+    for site in &ledger.sites {
+        match groups
+            .iter_mut()
+            .find(|(path, function, _)| path == &site.path && function == &site.function)
+        {
+            Some((_, _, members)) => members.push(site),
+            None => groups.push((site.path.clone(), site.function.clone(), vec![site])),
+        }
+    }
+    groups
+}
+
+/// Writes the measured outcomes next to the ledger so the census script can
+/// refresh the frozen expectations without hand-editing 396 records.
+///
+/// STEP-0550 (M22 P2): the file is rewritten after **every** group and moved
+/// into place atomically, so a recompute that is interrupted keeps whatever it
+/// has already measured and never leaves a half-written report behind.  The
+/// file name is a parameter so a probe run can not clobber the report the
+/// census script reads.
+fn match_write_actual_report(actuals: &[(String, String, MatchSiteOutcome)], name: &str) {
+    let directory = std::env::temp_dir().join("sico-m22-match-coverage");
+    std::fs::create_dir_all(&directory).expect("the coverage directory is writable");
+    // STEP-0550: serialise through `serde_json` instead of interpolating the
+    // verdict into a format string.  A verdict can carry a quoted reason
+    // (`guest-refused:Trap("malformed result: stdout exceeds 8 MiB")`), and
+    // the unescaped form is not JSON -- the census script then refuses the
+    // whole report and the measured groups are lost.
+    let entries: Vec<serde_json::Value> = actuals
+        .iter()
+        .map(|(path, function, outcome)| {
+            serde_json::json!({
+                "path": path,
+                "function": function,
+                "verdict": outcome.verdict,
+                "source_sha256": outcome.source_sha256,
+                "ir_sha256": outcome.ir_sha256,
+                "component_sha256": outcome.component_sha256,
+            })
+        })
+        .collect();
+    let report = serde_json::to_string_pretty(&entries).expect("the coverage report serialises");
+    let report = format!("{report}\n");
+    let target = directory.join(name);
+    let temporary = directory.join(format!("{name}.tmp-{}", std::process::id()));
+    std::fs::write(&temporary, report).expect("the coverage report is writable");
+    std::fs::rename(&temporary, &target).expect("the coverage report is movable");
+}
+
+/// Measures every group under the given closure bound.
+fn match_measure_groups(
+    groups: &[(String, String, Vec<&MatchCoverageSite>)],
+    function_limit: usize,
+    byte_limit: usize,
+    report_name: &str,
+) -> Vec<(String, String, MatchSiteOutcome)> {
+    let mut actuals: Vec<(String, String, MatchSiteOutcome)> = Vec::new();
+    for (path, function, _members) in groups {
+        let outcome = match_compare_site(path, function, function_limit, byte_limit);
+        actuals.push((path.clone(), function.clone(), outcome));
+        // STEP-0550 (P2): flush after every group so an interrupted recompute
+        // keeps the groups it has already measured.
+        match_write_actual_report(&actuals, report_name);
+    }
+    match_write_actual_report(&actuals, report_name);
+    actuals
+}
+
 #[test]
 fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
     // STEP-0536, M22 R0.4: the 396 candidate `match` sites of the frozen S are
@@ -9714,43 +9832,16 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
 
     // One comparison per distinct enclosing function; the verdict applies to
     // every site inside it.
-    let mut groups: Vec<(String, String, Vec<&MatchCoverageSite>)> = Vec::new();
-    for site in &ledger.sites {
-        match groups
-            .iter_mut()
-            .find(|(path, function, _)| path == &site.path && function == &site.function)
-        {
-            Some((_, _, members)) => members.push(site),
-            None => groups.push((site.path.clone(), site.function.clone(), vec![site])),
-        }
-    }
+    let groups = match_ledger_groups(&ledger);
 
-    let mut actuals: Vec<(String, String, MatchSiteOutcome)> = Vec::new();
-    for (path, function, _members) in &groups {
-        let outcome = match_compare_site(path, function);
-        actuals.push((path.clone(), function.clone(), outcome));
-    }
-
-    // The actual outcomes are written next to the ledger so the census script
-    // can refresh the frozen expectations without hand-editing 42 records.
-    // They are written before the assertions on purpose: a first run has to
-    // be able to publish what it measured even though the frozen ledger
-    // still carries the previous verdict.
-    let directory = std::env::temp_dir().join("sico-m22-match-coverage");
-    std::fs::create_dir_all(&directory).expect("the coverage directory is writable");
-    let mut report = String::from("[\n");
-    for (index, (path, function, outcome)) in actuals.iter().enumerate() {
-        report.push_str(&format!(
-            "  {{ \"path\": \"{path}\", \"function\": \"{function}\", \"verdict\": \"{}\", \"source_sha256\": \"{}\", \"ir_sha256\": \"{}\", \"component_sha256\": \"{}\" }}{}\n",
-            outcome.verdict,
-            outcome.source_sha256,
-            outcome.ir_sha256,
-            outcome.component_sha256,
-            if index + 1 == actuals.len() { "" } else { "," }
-        ));
-    }
-    report.push_str("]\n");
-    std::fs::write(directory.join("actual.json"), report).expect("the coverage report is writable");
+    // STEP-0550 (M22 P2): the frozen ledger is always measured under the
+    // **frozen** closure bound, never under an environment override.
+    let actuals = match_measure_groups(
+        &groups,
+        MATCH_CLOSURE_FUNCTION_LIMIT,
+        MATCH_CLOSURE_BYTE_LIMIT,
+        "actual.json",
+    );
 
     for (path, function, members) in &groups {
         let outcome = actuals
@@ -9799,6 +9890,97 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
             );
         }
     }
+}
+
+#[test]
+fn every_match_site_is_measured_on_the_component_axis() {
+    // STEP-0550 (M22 P2): the closure bound is a **fixture** limit, not a
+    // measurement.  A site reported as `closure-too-large` was never compared
+    // at all -- it was skipped, not failed -- and the frozen ledger used to
+    // carry 219 of those, every one of them in `parser.sico`.
+    //
+    // The bound is now large enough to cover the largest real closure of the
+    // frozen S (164 functions / 1,027,015 bytes), so every one of the 396
+    // sites must carry a **measured** verdict, and whatever residue is left
+    // must be a named reason rather than a fixture skip.
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    assert_eq!(
+        ledger.sites.len(),
+        396,
+        "the ledger registers the 396 candidate sites"
+    );
+    let skipped: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.verdict.starts_with("closure-too-large"))
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        skipped.is_empty(),
+        "{} of the 396 sites are still skipped by the closure bound instead of measured: {skipped:?}",
+        skipped.len()
+    );
+    let unmeasured: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.source_sha256.is_empty())
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        unmeasured.is_empty(),
+        "{} of the 396 sites carry no compared-source digest, so they were never compiled: {unmeasured:?}",
+        unmeasured.len()
+    );
+    let unnamed: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.verdict.is_empty() || site.verdict == "pending")
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        unnamed.is_empty(),
+        "{} of the 396 sites carry no verdict at all: {unnamed:?}",
+        unnamed.len()
+    );
+}
+
+/// STEP-0550 (M22 P2): the closure bound **probe**.
+///
+/// It measures the 396 sites under a caller-chosen bound and prints the
+/// verdict histogram.  It never rewrites the frozen ledger, never asserts the
+/// frozen table and writes its report to its own file, so a probe can not
+/// silently move an expectation.
+///
+/// Run it explicitly:
+/// ```text
+/// $env:SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT = '64'
+/// $env:SICO_M22_MATCH_CLOSURE_BYTE_LIMIT = '262144'
+/// cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml \
+///     --test selfhost_compiler -- --ignored --nocapture \
+///     sico_compiler_probes_the_match_site_closure_bound
+/// ```
+#[test]
+#[ignore = "a closure bound probe; run it explicitly"]
+fn sico_compiler_probes_the_match_site_closure_bound() {
+    let (function_limit, byte_limit) = match_probe_closure_limits();
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    let groups = match_ledger_groups(&ledger);
+    let actuals = match_measure_groups(&groups, function_limit, byte_limit, "actual-probe.json");
+    let mut histogram: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    for (_path, _function, outcome) in &actuals {
+        *histogram.entry(outcome.verdict.clone()).or_default() += 1;
+    }
+    println!(
+        "MATCH_CLOSURE_PROBE function_limit={function_limit} byte_limit={byte_limit} groups={}",
+        actuals.len()
+    );
+    for (verdict, count) in &histogram {
+        println!("MATCH_CLOSURE_PROBE {count:>4}  {verdict}");
+    }
+    println!("MATCH_CLOSURE_PROBE_DONE groups={}", actuals.len());
 }
 
 // ---------------------------------------------------------------------------
