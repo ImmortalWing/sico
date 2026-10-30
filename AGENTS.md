@@ -198,7 +198,7 @@ Before reporting completion:
 - **§10.1.1 看板降为残差台账**，不再是执行顺序；「一片一形状」在 P2 之前不算推进主路径。
 - **不新增 per-shape packer**（发射词表缺口已于 STEP-0542 归零）。
 - **不上调 fuel / 内存限额追认**；P0/P1 读数只用于判断策略，不作为放宽闸门的依据。
-- §10.1.2 决策二（下一步 B2）在 P2 之前**不是主路径**；**P2 已完成（STEP-0550，D2 = 结构性）⇒ B2 升级为主路径**：为函数级「值 id → 槽号」建一次索引，exit 必须单独报「195 个新开测站点回绿数」且既有 32 个全等站点逐字节不变。
+- §10.1.2 决策二（下一步 B2）在 P2 之前**不是主路径**；**P2 已完成（STEP-0550，D2 = 结构性）⇒ B2 升级为主路径**：为函数级「值 id → 槽号」建一次索引，exit 必须单独报「195 个新开测站点回绿数」且既有 32 个全等站点逐字节不变。**B2 已完成（STEP-0551，2026-10-28）**：`cgs_value_index` 落地，回绿 **4/364 = 1.10%**（全部来自既有 140，**195 个新开测站点 0 回绿**），既有 32 个全等站点 `component_sha256` 全同；组件轴 **36/396** ⇒ **主路径续为 B3**：剩余 **45 处循环内 `cgj_array_item`** 改游标 + `cgs_module_has_intrinsic`/`cgs_function_has_intrinsic`/`cgs_block_has_intrinsic`/`cgs_function_position`/`cgs_run_index` 改每函数一次索引，exit 仍单列 195 新开测站点的回绿数且既有 36 个全等站点逐字节不变。
 - **`parser.sico:scalar_ir` 的 24 个站点**受 runner 8 MiB stdout 结果上限（`runner/sico-runner/src/lib.rs:3599`）阻挡，与 B2 正交；先量 IR 文本真实大小再单独裁决，**不得直接上调结果上限**。
 - **ADR-0017 Option A（记录化重基线）挂起到 M25 之后**：现在重写冻结 S 的源文本会作废 149/149 census 与逐站 `source_sha256`/`ir_sha256`/`component_sha256`。若 owner 决定不挂起，须先给出「重基线后如何重建逐站证据」的方案。
 
@@ -318,6 +318,7 @@ git diff --check
 - [x] **STEP-0535 的 4 个合成形状**：2 形参 set/return 1215 B、1 形参 1214 B、return/return 1167 B、嵌套 match 1389 B，guest Component 与 Rust 生产输出逐字节等同；`selfhost_compiler` 最新复跑 173/173、runner clippy 和 fmt 通过。
 - [x] **STEP-0534 独立 CI**：精确 SHA `54b6d9758a4709f5e6fb9d6982854704fbcbd285` 的 run `40053245939` 为 completed/success；该证据不外推到 STEP-0535。
 - [x] **P0/P1/P2 装配与尺度片（STEP-0548/0549/0550）**：D1 绿（1 MiB 分片装配 42.5 M fuel / 38 ms）；四个升维折叠改分片 + 一次 join（64 KiB 字面量从 trap 变为字节全等）；闭包上限放开到 256 fn/1 MiB 后 396 站点首次全部有 verdict，回绿 0/364 ⇒ **D2 结构性**、下一步 B2。组件轴仍 32/396，七门不变。**口径提醒**：词表 artifact 同步扩到 340 站点，`sico.list.length[U64]` 缺 7 站点（`general_while_function_ir`）。
+- [x] **B2 值索引片（STEP-0551）**：`selfhost/codegen.sico` 每函数建一次 stride-2 `List[U64]` 值索引（`2k` 槽号 / `2k+1` 类型偏移，poison 语义逐条复刻），`cgs_value_slot`/`cgs_value_ty` 改 O(1)，两个发射根改游标遍历，新增 canonical id 前置门 `cgs_value_ids_refusal`（稀疏/重排/前导零 ⇒ `ERR:E-SH-CG-IR-EMIT`）。95 组 **6,040.99 s** 复算：回绿 **4/364 = 1.10%**（`parser.sico:fixed_literal_const_segment`，全部来自既有 140；P2 新开测 195 个 **0 回绿**），既有 32 全等站点逐字节不变、无退化，组件轴 **36/396**；七门不变、M22 仍 NO-GO。**残差可数**：`cgj_array_item` 仍 88 处（45 处在循环内），加每调用全模块查询 ⇒ 下一刀 **B3**。
 - [x] **IR-only 预算观察**：整份 parser IR 降低已有 wall-time 和限额内通过记录；它只是门 4 的前置观察，不是 `B(S)` 完整自编译预算。
 
 ### 10.11 未完成清单（当前必须继续做的工作）

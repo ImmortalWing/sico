@@ -4014,6 +4014,56 @@ fn sico_codegen_guest_refuses_the_component_emission_outside_the_subset() {
 const ECHO_COMPONENT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n";
 
 #[test]
+fn sico_codegen_guest_refuses_value_ids_outside_the_canonical_dense_sequence() {
+    // STEP-0551: the emitter keys its per-function value index by value id,
+    // which is sound only because canonical IR assigns parameter ids `0..p-1`
+    // and instruction results `p..` in definition order -- the same rule the
+    // Rust verifier enforces. A document whose ids are sparse would make every
+    // lookup read another value's entry, so the emitter refuses it with a typed
+    // identity instead of aliasing another slot; the dense twin of the same
+    // module still emits byte for byte.
+    let dense = match_shape_module();
+    let expected = codegen_oracle::compile_script_program(&dense)
+        .expect("the dense match shape is a supported program");
+    match guest_emission(&injected_ir(&dense)) {
+        GuestEmission::Component(hex) => assert_eq!(
+            decode_hex(hex.as_bytes()),
+            expected,
+            "the dense shape must stay byte for byte equal"
+        ),
+        GuestEmission::Refusal(identity) => {
+            panic!("the dense shape must emit, refused with {identity}")
+        }
+    }
+
+    let mut sparse = match_shape_module();
+    let function = sparse
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function");
+    function
+        .blocks
+        .last_mut()
+        .expect("the match fixture function has blocks")
+        .instructions
+        .push(injected_instruction(
+            10_000,
+            Type::U64,
+            Operation::ConstU64(0),
+        ));
+    match guest_emission(&injected_ir(&sparse)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "a sparse value id must stay a typed refusal"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the sparse-id shape must stay a typed refusal, got {hex}")
+        }
+    }
+}
+
+#[test]
 fn sico_compiler_lowers_the_script_profile_echo_fixture_byte_exactly() {
     // STEP-0488 → STEP-0495: the guest frontend could not lower the
     // Script-profile shape yet (record projection, `ok(...)` variant, record
@@ -11349,6 +11399,55 @@ fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
     }
 }
 
+/// The **ledger path** answer for one source: the guest compiler lowers the
+/// source, then emits the component, under an explicit fuel budget.
+///
+/// STEP-0551: the fuel probes above measure the *injection* fixture, which runs
+/// the emitter twice (`component_refusal_for_ir` and then
+/// `component_hex_for_ir`) and skips the guest frontend.  The frozen site
+/// ledger instead runs the full guest compiler once (`--emit-component-hex`
+/// under the same 800e9 fuel and 120s timeout), so a bracket measured here is
+/// the one comparable to a ledger verdict.
+fn guest_component_with_fuel(source: &str, fuel: u64) -> GuestFuelEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = compile_guest().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: vec!["--emit-component-hex".into()],
+            stdin: source.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            // The ledger's own limit (`run_guest_with_args`), so a point that
+            // traps here traps there too.
+            timeout: std::time::Duration::from_secs(120),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    match outcome.expect("input bounds hold") {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a fuel budget: {:?}", other),
+    }
+}
+
 /// The fuel bracket in which the guest flips from "budget exhausted" to
 /// "component emitted": `low` is a budget that failed and `high` is a budget
 /// that succeeded, so the real consumption lies in `(low, high]`.
@@ -11434,6 +11533,13 @@ fn the_fuel_bracket_brackets_the_threshold_where_the_guest_flips() {
 /// X family separates the IR-walk path from the hex-assembly path: the latter
 /// contributes a linear term here, because the number of concatenations
 /// tracks the number of emitted sections, not the number of instructions.
+///
+/// STEP-0551: the filler is appended to the function's **last** block and its
+/// ids continue from the function's highest id, so the fixture stays canonical
+/// IR at every size.  The guest's emitter keys its value index by id and
+/// refuses a document whose ids are sparse or out of order (they would alias
+/// another value's entry); the earlier fixture injected `10000 + i` into every
+/// block, which only the pre-index text-scanning lookup tolerated.
 fn x_family_ir(n: usize) -> String {
     let mut module = match_shape_module();
     let function = module
@@ -11441,15 +11547,28 @@ fn x_family_ir(n: usize) -> String {
         .iter_mut()
         .find(|function| function.name == "size")
         .expect("the match fixture module has a size function");
-    for block in &mut function.blocks {
-        for index in 0..n {
-            let id = 10_000 + index as u32;
-            block.instructions.push(injected_instruction(
-                id,
-                Type::U64,
-                Operation::ConstU64(index as u64),
-            ));
-        }
+    let next = function
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0)
+        .chain(function.blocks.iter().flat_map(|block| {
+            block
+                .instructions
+                .iter()
+                .map(|instruction| instruction.result.0)
+        }))
+        .max()
+        .map_or(0, |highest| highest + 1);
+    let last = function
+        .blocks
+        .last_mut()
+        .expect("the match fixture function has blocks");
+    for (offset, index) in (0..n).enumerate() {
+        last.instructions.push(injected_instruction(
+            next + offset as u32,
+            Type::U64,
+            Operation::ConstU64(index as u64),
+        ));
     }
     injected_ir(&module)
 }
@@ -11704,4 +11823,172 @@ fn the_fuel_attribution_is_measured_before_any_repair() {
 
     step0544_flush(&directory, &report);
     println!("{report}");
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0551 (M22 B2): the component-emission fuel of a **real** match group.
+//
+// B2 replaces the emitter's per-value rescan with a per-function value index,
+// so the measurement that matters is the emission cost of real closures, not
+// a synthetic instruction ladder.  This probe re-uses the ledger's own closure
+// builder, lowers the closure with the Rust oracle to canonical IR, and then
+// brackets the guest's **component emission** under an explicit fuel budget.
+//
+// It is a development probe (`#[ignore]`): the ledger rerun, not this probe,
+// is the slice's exit evidence.  `SICO_M22_PROBE_GROUPS` selects the groups
+// (`path:function,...`), `SICO_M22_PROBE_FUEL` caps the bracket ceiling.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "a real-closure component-emission fuel probe; run it explicitly"]
+fn the_component_emission_fuel_of_a_real_match_group_is_measured() {
+    let raw = std::env::var("SICO_M22_PROBE_GROUPS").unwrap_or_default();
+    let groups: Vec<(String, String)> = raw
+        .split(',')
+        .filter_map(|part| {
+            let mut fields = part.trim().split(':');
+            let path = fields.next()?;
+            let function = fields.next()?;
+            Some((path.to_owned(), function.to_owned()))
+        })
+        .collect();
+    assert!(
+        !groups.is_empty(),
+        "set SICO_M22_PROBE_GROUPS=path:function,..."
+    );
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(STEP0544_FUEL_CEILING);
+    println!("COMPONENT_FUEL ceiling={ceiling}");
+    for (path, function) in groups {
+        let Some(text) = match_frozen_source(&path) else {
+            panic!("the frozen source of {path} is loaded");
+        };
+        let closure = match match_sico_closure(
+            text,
+            &function,
+            MATCH_CLOSURE_FUNCTION_LIMIT,
+            MATCH_CLOSURE_BYTE_LIMIT,
+        ) {
+            Ok(closure) => closure,
+            Err(reason) => {
+                println!("COMPONENT_FUEL {path}:{function} closure {reason}");
+                continue;
+            }
+        };
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let component_bytes = std::cell::Cell::new(0usize);
+        let started = std::time::Instant::now();
+        let mut emits = |fuel: u64| match guest_emission_with_fuel(&ir, fuel) {
+            GuestFuelEmission::Component(hex) => {
+                component_bytes.set(hex.len() / 2);
+                true
+            }
+            GuestFuelEmission::FuelExhausted => false,
+            GuestFuelEmission::Refusal(identity) => {
+                panic!("the group was refused at {fuel}: {identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                panic!("the group trapped at {fuel}: {reason}")
+            }
+        };
+        let bracket = fuel_bracket(&mut emits, ceiling, 100_000_000);
+        let verdict = match bracket {
+            Some((low, high)) => format!("{low}\t{high}"),
+            None => "exhausted\t-".to_owned(),
+        };
+        println!(
+            "COMPONENT_FUEL {path}:{function} ir_bytes={} component_bytes={} fuel={verdict} search_ms={}",
+            ir.len(),
+            component_bytes.get(),
+            started.elapsed().as_millis()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0551: the same bracket on the **ledger path**.
+//
+// The probe above feeds canonical IR straight to the injection fixture, which
+// (a) skips the guest frontend and (b) runs the emitter twice, because
+// `component_refusal_for_ir` builds the component before `component_hex_for_ir`
+// builds it again.  Neither is what the frozen ledger measures: the ledger runs
+// the full guest compiler once with `--emit-component-hex` under 800e9 fuel and
+// a 120s timeout.  This probe measures that path, so a before/after fuel
+// comparison is like for like.
+//
+// It is a development probe (`#[ignore]`).  `SICO_M22_PROBE_GROUPS` selects the
+// groups (`path:function,...`), `SICO_M22_PROBE_FUEL` caps the bracket ceiling.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "a real-closure ledger-path component fuel probe; run it explicitly"]
+fn the_component_emission_fuel_of_a_real_match_group_through_the_compiler_is_measured() {
+    let raw = std::env::var("SICO_M22_PROBE_GROUPS").unwrap_or_default();
+    let groups: Vec<(String, String)> = raw
+        .split(',')
+        .filter_map(|part| {
+            let mut fields = part.trim().split(':');
+            let path = fields.next()?;
+            let function = fields.next()?;
+            Some((path.to_owned(), function.to_owned()))
+        })
+        .collect();
+    assert!(
+        !groups.is_empty(),
+        "set SICO_M22_PROBE_GROUPS=path:function,..."
+    );
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(STEP0544_FUEL_CEILING);
+    println!("COMPILER_COMPONENT_FUEL ceiling={ceiling}");
+    for (path, function) in groups {
+        let Some(text) = match_frozen_source(&path) else {
+            panic!("the frozen source of {path} is loaded");
+        };
+        let closure = match match_sico_closure(
+            text,
+            &function,
+            MATCH_CLOSURE_FUNCTION_LIMIT,
+            MATCH_CLOSURE_BYTE_LIMIT,
+        ) {
+            Ok(closure) => closure,
+            Err(reason) => {
+                println!("COMPILER_COMPONENT_FUEL {path}:{function} closure {reason}");
+                continue;
+            }
+        };
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+        let component_bytes = std::cell::Cell::new(0usize);
+        let started = std::time::Instant::now();
+        // Doubling only: this probe compares magnitudes, so the first budget
+        // that emits is enough.  A refusal or a trap is terminal -- repeating
+        // it at a larger budget would only burn fuel.
+        let mut budget = 100_000_000u64;
+        let mut low = 0u64;
+        let verdict = loop {
+            match guest_component_with_fuel(&source, budget) {
+                GuestFuelEmission::Component(hex) => {
+                    component_bytes.set(hex.len() / 2);
+                    break format!("{low}\t{budget}");
+                }
+                GuestFuelEmission::FuelExhausted => {
+                    low = budget;
+                }
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "COMPILER_COMPONENT_FUEL {path}:{function} source_bytes={} component_bytes={} fuel={verdict} search_ms={}",
+            source.len(),
+            component_bytes.get(),
+            started.elapsed().as_millis()
+        );
+    }
 }
