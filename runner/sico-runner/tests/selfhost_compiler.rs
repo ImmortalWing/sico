@@ -3409,6 +3409,11 @@ fn codegen_stub(name: &str) -> String {
         "Bool" => "false",
         "Text" => "\"\"",
         "Bytes" => "sico.text.encode(\"\")",
+        // STEP-0551 (B2) added cgs_value_index, whose per-function value
+        // index is the stride-2 List[U64]. A stub only carries the real
+        // signature so the call lowers identically, so an empty list is the
+        // right trivial body.
+        "List[U64]" => "sico.list.empty[U64]()",
         other => panic!("codegen function {name} has an unexpected return type {other}"),
     };
     format!("function {name}({params}) returns {returns}:\n  return {body}\nend function\n")
