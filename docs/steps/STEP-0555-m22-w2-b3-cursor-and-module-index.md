@@ -185,13 +185,31 @@ owner 同意做瓶颈拆账后，用现成 `#[ignore]` 探针 + 静态读码把�
 
 IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性缩放本该只涨 26 倍到 ~3.2e9 就够，实际 800e9 仍不够 ⇒ **超线性（平方）确认**。
 
-### 10.4 根因：发射器的文本累加拼接是平方级
+### 10.4 根因候选：read_local helper 在 N≥2048 是平方（合成 scaling 探针，2026-11-05）
 
-发射器拼组件字节用 `set out = sico.text.concat(out, frag)`（`selfhost/codegen.sico` 457 处，典型如 `cgs_write_local_hex` 循环）。guest 的 `sico.text.concat` 后端实现 `emit_concat`（`crates/sico-codegen-wasm/src/stdlib.rs:147`）每次调用**分配 `len(a)+len(b)` 新缓冲、两次 `memory.copy` 把 a 和 b 整个拷入**。
+§10.4 最初把平方归到"文本累加拼接"，本轮用合成探针实测。新探针 `the_emitter_fuel_scaling_in_read_local_count_is_measured`（`runner/sico-runner/tests/selfhost_compiler.rs`，`#[ignore]`，秒级）生成含 N 个 `read_local` 指令的合成 helper（`let n{i} = n{i-1}` 链），bracket 最小 fuel：
 
-累加式拼接 ⇒ 拼出总长 L 的串共拷 ~L²/2 字节、分配 ~L/2 次 ⇒ **O(L²)**。3-4MB 组件在按操作计的 fuel 下必然耗尽 800e9。这与 §10.3 的平方数据吻合。
+**注意**：`cgs_read_local_hex` 每指令同时做 cell_slot 重扫 + 文本累加（见 §10.4a 混淆告警），所以这条曲线是两个候选的**总和**，未单独裁决主导项。实测数据：
 
-**这不是建索引能解的**：索引省重复扫描（B2/B3 的思路），省不了字符串重拷。B4 若要动这堵墙，方向是**累加缓冲改写**（让 `out` 不再每次重拷，如 rope / 分段 append 到固定缓冲），属 guest 前端层（B2/B3 同层，非跨组件架构），但比 B2/B3 重——要引入新的累积结构，且改 guest_emitter sha ⇒ 词表 + ledger 失效需重测。
+| read_locals (N) | 最小 fuel bracket（中点） | 相对上档倍数 | 增长形态 |
+|---:|---|---:|---|
+| 64 | 200M…400M（300M） | — | 基线 |
+| 128 | 200M…400M（300M） | 1.0× | 平 |
+| 256 | 200M…400M（300M） | 1.0× | 平（线性开销主导） |
+| 512 | 400M…800M（600M） | 2.0× | 线性起步 |
+| 1024 | 800M…1600M（1200M） | 2.0× | 线性 |
+| 2048 | 3200M…6400M（4800M） | **4.0×** | **平方起步** |
+| 4096 | 6400M…12800M（9600M） | **4.0×** | **平方确认** |
+
+判读：N ≤ 256 时每指令线性开销（JSON value_slot 索引查询、const hex 发射）主导，N² 潜伏在下面；N ≥ 2048 时 rescan 成本超越线性地板、**每次翻倍 fuel 烧 4 倍**，O(N²) 确认。这是**每函数内**的平方（rescan 范围 = 当前函数的 JSON 跨度，不是整模块）。诚实边界：真实 parser.sico 函数大多是 10-300 指令，**在平方膝点之下**，所以 331 FuelExhausted 站点的墙**不能只归到 read_local 重扫平方**——单函数平方项在真实 IR 里是小项。§10.3 的「IR 大 26.6× 但 fuel 涨 >660×」主导项仍在 §10.4a 之外（整模块逐函数线性项 × 大常数，或另一未测的平方项），B4 开工前需先测「整函数发射 fuel vs 函数大小」的真实曲线，不能靠外推。
+
+### 10.4a 具体重扫路径（静态读码）+ 混淆告警
+
+- `cgs_read_local_hex`（`selfhost/codegen.sico:3835`）/ `cgs_write_local_hex`（:3805 附近）每指令调 `cgs_cell_slot(bytes, fn, local)`。
+- `cgs_cell_slot`（:2283）每次做：①`cgs_dispatcher_slot(bytes, fn)`（:2199，**重扫整个 run 的 params/blocks/instructions/locals**）；②`cgs_cell_slots(bytes, fn)`（:2168，重扫全部 locals）；③再自己扫 locals 定位 index。
+- B2 已把 `cgs_value_slot`（按 value-id 查 slot，:2108）索引化（`cgs_value_index`:2041，每 run 一次建表），**但 `cgs_cell_slot` 和 `cgs_dispatcher_slot` 未索引化**，每 read_local/write_local 指令都重跑全 run 扫描 ⇒ 这是一个平方源。
+- **混淆告警（本轮诚实边界）**：`cgs_read_local_hex` 在 cell_slot 之外**还做文本累加**（:3856-3857 `set ccrlh_out = sico.text.concat(ccrlh_out, ccrlh_get); set ccrlh_out = sico.text.concat(ccrlh_out, ccrlh_set)`，每 slot 两次 concat、累加到 `ccrlh_out`）。所以探针里的平方**同时含** cell_slot 重扫与文本累加两个候选，本轮探针没能把两者分开。想用 const_int 臂（无 cell_slot、无 per-op concat）做判别，但合成 helper 触发 `unsupported codegen source shape` 拒绝（合成 helper 形状没过发射器 gate），未成功。
+- ⇒ **两个候选都未单独裁决**：①cell_slot JSON 重扫（B2 同类索引化刀）；②文本累加拼接（`emit_concat` 后端重拷）。§10.4 探针证明"合成 read_local helper 在 N≥2048 是平方"，但没证明主导项是哪一个。B4 开工前需先补一个能过 gate 的 const_int 判别臂，或直接做整函数发射 fuel vs 函数大小的真实曲线。
 
 ### 10.5 B4 候选裁决（拆账后）
 
@@ -200,11 +218,11 @@ IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性
 | `sico.list.length[U64]` 词表缺口（7 站点） | over-report（guest 已有内联 `cgs_list_length_hex`:5643）；7 站点本就 fuel-blocked ⇒ 补是死代码，不回绿 |
 | `cgs_data_offset` 索引化（:2896，O(字面量数²)） | 目标组 `general_while_function_ir` 的 IR 里 const_string 计数 = 0，触达不了这批站点；331 站点的 const_string 分布未测 |
 | `cgs_dispatcher_slot` 索引化（:2199） | 只在**每函数**层调 1 次（非每指令），非平方热点，杠杆低于初判 |
-| **文本累加拼接平方（§10.4）** | **头号根因**，覆盖 331 FuelExhausted；修法 = 累加缓冲改写，非建索引 |
+| **read_local helper 平方（§10.4，cell_slot 重扫 ∥ 文本累加，未分主次）** | 合成探针确认 N≥2048 平方，但真实函数在膝点之下；主导项未裁决 |
 | 8 MiB trap / refused-guest / 4 既有红 | 与 fuel 正交，各自独立 |
 
 ### 10.6 B4 若开工的最小刀（未开工，等 owner）
 
-先写**最小复现**量「拼一个 L 字节串实际烧多少 fuel vs L 的曲线」，确认平方（秒级、零风险）；确认后再做累加缓冲改写，用 emitter-only 探针看 `general_while_function_ir` 的 fuel bracket 是否下降（秒级），下降明显才值得烧 2h ledger 测量。
+**先补裁决**：①做一个能过发射器 gate 的 const_int 判别臂（无 cell_slot、无 per-op concat），若它线性而 read_local 平方 ⇒ 主导项是 cell_slot 重扫，B4 = B2 同类索引化刀（`cgs_cell_slot`/`cgs_dispatcher_slot` 建每函数索引表）；②若 const_int 也平方 ⇒ 主导项是文本累加，B4 = 累加缓冲改写。两者都是 guest 前端层（B2/B3 同层），但都会改 guest_emitter sha ⇒ 词表 + ledger 失效需重测。**当前不开工**，因主导项未裁决、真实函数在平方膝点之下，盲改风险 > 收益。
 
-Open objectives: M22 自举 B3（用户 m00001）B3 负结果已归档 + B4 拆账已钉死根因（文本累加平方），B4 改写未开工，等 owner 对累加缓冲改写口径。
+Open objectives: M22 自举 B3（用户 m00001）B3 已完整闭环；B4 拆账钉死「read_local helper 在 N≥2048 平方，两候选（cell_slot 重扫 ∥ 文本累加）未分主次，真实函数在膝点之下」，裁决臂（const_int 判别）未过 gate，B4 改写未开工，等 owner 或补裁决探针。
