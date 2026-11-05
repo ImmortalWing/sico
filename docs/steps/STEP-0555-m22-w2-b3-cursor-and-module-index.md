@@ -100,6 +100,8 @@ MS-363  parser.sico:fixed_operation_operand_value
 
 ## 4. 根因（结构性）
 
+> **§10.1 订正**：本节把 FuelExhausted 归因到「hostcall fuel」，口径不准确——真实是 `consume_fuel(true)` 按**每条 wasm 指令操作**计。B3 否决的结论（游标化净负）仍成立（游标多一次 hostcall ⇒ 多一批指令操作 ⇒ 更耗），但根因表述以 §10 为准。
+
 FuelExhausted 来自 **Wasmtime hostcall fuel**（`runner/sico-runner/src/lib.rs`），不是代码行数或遍历次数。
 
 - **`cgj_array_item`**：**1 个** hostcall（直接索引 `arr[i]`）。
@@ -151,3 +153,58 @@ FuelExhausted 来自 **Wasmtime hostcall fuel**（`runner/sico-runner/src/lib.rs
 
 - `git status`：`M runner/sico-runner/tests/selfhost_compiler.rs`（`codegen_stub` 的 `List[U64]` arm）；`?? docs/steps/STEP-0555-*.md`、`?? tools/_b3_*.py`。
 - 不推送（领先 origin，需 owner 授权）。
+
+## 10. B4 拆账（2026-11-05，秒级探针 + 静态读码，不烧 ledger）
+
+owner 同意做瓶颈拆账后，用现成 `#[ignore]` 探针 + 静态读码把「FuelExhausted 的墙在哪」从假设钉成数据。**结论修正了本 STEP §4/§7 的部分归因。**
+
+### 10.1 fuel 计量口径订正
+
+§4 写「fuel 按 hostcall 计」不准确。真实口径是 **Wasmtime `consume_fuel(true)`**（`runner/sico-runner/src/lib.rs:1438`），按**每条 wasm 指令操作**计（hostcall 只是其中一类）。所以「省 fuel」= 「减少总 wasm 操作数」，不只 hostcall。
+
+### 10.2 墙在发射器（emitter），不在前端解析
+
+用 **emitter-only 注入探针**（`the_component_emission_fuel_of_a_real_match_group_is_measured`，把 canonical IR 直接喂发射器，跳过 guest 前端）测 `parser.sico:general_while_function_ir`：
+
+| ceiling | 结果 |
+|---|---|
+| 512e9 | exhausted |
+| 204.8e9 | exhausted |
+| **800e9（STEP0544_FUEL_CEILING）** | exhausted，search_ms=180197 |
+
+⇒ 跳过前端仍耗尽 800e9，**墙在发射器本身**，不是 parser/frontend。这修正了 §4「FuelExhausted 主要来自 parser 侧」的归因——parser 只负责造出大 IR，烧钱的是发射器把它变成组件。
+
+### 10.3 fuel 随 IR 大小**平方级**放大（决定性数据）
+
+用注入探针对「能出组件的小站点」和「出不来的大站点」各测最小 fuel bracket，对照：
+
+| 站点 | IR 字节 | 组件字节 | 最小 fuel bracket | fuel/IR字节 |
+|---|---:|---:|---|---:|
+| `codegen.sico:cgs_add` | 3,457 | 1,161 | `1.0e9…1.2e9` | ~347k |
+| `parser.sico:fixed_literal_const_segment` | 92,055 | 0（exhausted） | `>800e9`（耗尽） | >8.7M（下限） |
+
+IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性缩放本该只涨 26 倍到 ~3.2e9 就够，实际 800e9 仍不够 ⇒ **超线性（平方）确认**。
+
+### 10.4 根因：发射器的文本累加拼接是平方级
+
+发射器拼组件字节用 `set out = sico.text.concat(out, frag)`（`selfhost/codegen.sico` 457 处，典型如 `cgs_write_local_hex` 循环）。guest 的 `sico.text.concat` 后端实现 `emit_concat`（`crates/sico-codegen-wasm/src/stdlib.rs:147`）每次调用**分配 `len(a)+len(b)` 新缓冲、两次 `memory.copy` 把 a 和 b 整个拷入**。
+
+累加式拼接 ⇒ 拼出总长 L 的串共拷 ~L²/2 字节、分配 ~L/2 次 ⇒ **O(L²)**。3-4MB 组件在按操作计的 fuel 下必然耗尽 800e9。这与 §10.3 的平方数据吻合。
+
+**这不是建索引能解的**：索引省重复扫描（B2/B3 的思路），省不了字符串重拷。B4 若要动这堵墙，方向是**累加缓冲改写**（让 `out` 不再每次重拷，如 rope / 分段 append 到固定缓冲），属 guest 前端层（B2/B3 同层，非跨组件架构），但比 B2/B3 重——要引入新的累积结构，且改 guest_emitter sha ⇒ 词表 + ledger 失效需重测。
+
+### 10.5 B4 候选裁决（拆账后）
+
+| B4 候选 | 裁决 |
+|---|---|
+| `sico.list.length[U64]` 词表缺口（7 站点） | over-report（guest 已有内联 `cgs_list_length_hex`:5643）；7 站点本就 fuel-blocked ⇒ 补是死代码，不回绿 |
+| `cgs_data_offset` 索引化（:2896，O(字面量数²)） | 目标组 `general_while_function_ir` 的 IR 里 const_string 计数 = 0，触达不了这批站点；331 站点的 const_string 分布未测 |
+| `cgs_dispatcher_slot` 索引化（:2199） | 只在**每函数**层调 1 次（非每指令），非平方热点，杠杆低于初判 |
+| **文本累加拼接平方（§10.4）** | **头号根因**，覆盖 331 FuelExhausted；修法 = 累加缓冲改写，非建索引 |
+| 8 MiB trap / refused-guest / 4 既有红 | 与 fuel 正交，各自独立 |
+
+### 10.6 B4 若开工的最小刀（未开工，等 owner）
+
+先写**最小复现**量「拼一个 L 字节串实际烧多少 fuel vs L 的曲线」，确认平方（秒级、零风险）；确认后再做累加缓冲改写，用 emitter-only 探针看 `general_while_function_ir` 的 fuel bracket 是否下降（秒级），下降明显才值得烧 2h ledger 测量。
+
+Open objectives: M22 自举 B3（用户 m00001）B3 负结果已归档 + B4 拆账已钉死根因（文本累加平方），B4 改写未开工，等 owner 对累加缓冲改写口径。
