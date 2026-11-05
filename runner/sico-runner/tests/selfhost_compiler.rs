@@ -11886,6 +11886,53 @@ fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
     // Isolating the two quadratic candidates (cell_slot rescan vs per-op
     // text-concat) from the read_local arm alone remains open; both are
     // confounded inside `cgs_read_local_hex`.
+
+    // Module-level arm: F helper functions in one module.  `cgs_core_code_hex`
+    // emits each function via `cgs_function_at_index(bytes, i)`, and that path
+    // calls `cgj_array_item` which rescans the functions array from the start
+    // every call -- O(F) per function, O(F^2) per module.  Measured: F=16 ->
+    // 2.4e9, 32 -> 9.6e9, 64 -> 1.92e10, 128 -> 7.68e10 (4x per doubling = the
+    // quadratic knee sits between F=64 and F=128), 256 -> exhausted at the
+    // probe's fuel ceiling.  Each helper is tiny (~80B IR, no read_local, no
+    // per-op concat), so this isolates a per-MODULE quadratic.
+    //
+    // Negative result (knife tried and reverted): switching `cgs_core_code_hex`
+    // to cursor traversal (`cgj_array_first`/`cgj_array_next`) so
+    // `cgs_function_body_hex` takes the function node directly preserved the
+    // component byte-for-byte (28/28 codegen_guest) but left the fuel bracket
+    // UNCHANGED at every F -- the array-rescan quadratic is real but contributes
+    // only ~81K wasm ops vs ~128M fixed per-function cost, so it is swamped.
+    // The dominant module-level term is therefore the parser processing F
+    // functions, OR another emitter term that grows with module size; the two
+    // are not yet separated (needs an emitter-only multi-function injection).
+    for funcs in [16usize, 32, 64, 128, 256] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!(
+                "function helper_{f}(data: U64) returns U64:\n  let a0 = data\n  let a1 = a0\n  let a2 = a1\n  return a2\nend function\n"
+            ));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_component_with_fuel(&source, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!("EMITTER_SCALING functions={funcs} fuel={verdict}");
+    }
 }
 
 #[test]

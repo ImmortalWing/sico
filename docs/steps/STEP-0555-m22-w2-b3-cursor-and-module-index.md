@@ -211,6 +211,28 @@ IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性
 - **混淆告警（本轮诚实边界）**：`cgs_read_local_hex` 在 cell_slot 之外**还做文本累加**（:3856-3857 `set ccrlh_out = sico.text.concat(ccrlh_out, ccrlh_get); set ccrlh_out = sico.text.concat(ccrlh_out, ccrlh_set)`，每 slot 两次 concat、累加到 `ccrlh_out`）。所以探针里的平方**同时含** cell_slot 重扫与文本累加两个候选，本轮探针没能把两者分开。想用 const_int 臂（无 cell_slot、无 per-op concat）做判别，但合成 helper 触发 `unsupported codegen source shape` 拒绝（合成 helper 形状没过发射器 gate），未成功。
 - ⇒ **两个候选都未单独裁决**：①cell_slot JSON 重扫（B2 同类索引化刀）；②文本累加拼接（`emit_concat` 后端重拷）。§10.4 探针证明"合成 read_local helper 在 N≥2048 是平方"，但没证明主导项是哪一个。B4 开工前需先补一个能过 gate 的 const_int 判别臂，或直接做整函数发射 fuel vs 函数大小的真实曲线。
 
+### 10.4b 模块级平方：`cgs_function_at_index` → `cgj_array_item`（本轮最强候选，2026-11-05）
+
+**这是本轮的决定性发现**。新探针加了 module-level arm（F 个互不调用的小 helper 函数，每个只有几条 `let` 链、无 read_local、无文本累加），测「发射整模块 vs 函数数 F」的最小 fuel：
+
+| functions (F) | IR 总字节 | 最小 fuel bracket（中点） | 相对上档倍数 | 增长形态 |
+|---:|---:|---|---:|---|
+| 4 | ~320 | 400M…800M（600M） | — | 基线 |
+| 8 | ~640 | 800M…1600M（1200M） | 2.0× | 线性 |
+| 16 | ~1280 | 1600M…3200M（2400M） | 2.0× | 线性 |
+| 32 | ~2560 | 6400M…12800M（9600M） | **4.0×** | **平方起步** |
+| 64 | ~5120 | 12800M…25600M（19200M） | 2.0× | （64→128 才见 4×） |
+| 128 | ~10240 | 51200M…102400M（76800M） | **4.0×** | **平方确认** |
+| 256 | ~20480 | exhausted（>200e9 probe ceiling） | — | 耗尽 |
+
+判读：每个 helper 只有 ~80 字节 IR、无 read_local、无文本累加，**唯一的跨函数共享成本是 `cgs_core_code_hex` 用 `cgs_function_at_index(bytes, i)` 逐函数发射（:4069 附近），而它 → `cgj_array_item`（:）每次从 functions 数组起点重扫到第 i 个 ⇒ 第 i 个函数重扫 O(i)，整模块 O(F²)**。F=128（仅 10KB IR、256 条指令总量）就烧到 7.7e10，F=256（20KB IR）耗尽 200e9 probe ceiling ⇒ 这是纯模块级平方，且**随模块函数数增长**，正好对上「真实 3-4MB IR 模块（数百函数）耗尽 800e9」。
+
+**与 §10.4a 的关系**：§10.4a 是**每函数内**的平方（rescan 范围 = 单函数 JSON 跨度），真实函数在膝点之下；§10.4b 是**模块级**平方（rescan 范围 = 整个 functions 数组），随函数数增长。真实 parser.sico 函数多、模块大 ⇒ §10.4b 是比 §10.4a 更可能的主导项。§10.3「IR 大 26.6× 但 fuel 涨 >660×」由 §10.4b 解释：IR 翻 26 倍 ≈ 函数数也翻几十倍 ⇒ fuel 按 F² 翻几百到上千倍。
+
+**B4 刀（本轮实施并回退，2026-11-05）**：把 `cgs_core_code_hex` 的函数遍历从「`cgs_function_at_index(bytes, i)` for i in 0..count」改成「`cgj_array_first` + `cgj_array_next` 游标遍历」（`tools/_b4_function_cursorize.py`），`cgs_function_body_hex` 改收函数节点 `fn` 而非 index。改动**语义正确**——28/28 `sico_codegen_guest_*` 组件字节等价测试全过，发射组件逐字节不变。但**fuel 完全没降**：module-level arm 重测 F=16/32/64/128/256 → 2400M / 9600M / 19200M / 76800M / exhausted，与改动前逐档相同。⇒ **负结果**：`cgs_function_at_index`→`cgj_array_item` 的数组重扫平方真实存在，但对总 fuel 的贡献是 **~81K wasm ops vs 单函数固定成本 ~128M**，完全被淹没、可忽略。module-level 平方的主导项**不是**数组重扫，另有其源。已回退 codegen.sico（`git checkout HEAD --`），保留 `tools/_b4_function_cursorize.py` 留档。
+
+**module-level 平方的真实主导项候选（未裁决）**：探针 fuel 覆盖「guest 前端解析源 + 构 IR + 发射组件」全程，module-level arm 有 F 个函数 ⇒ 解析器要处理 F 个函数。主导项可能是 ①解析器处理 F 函数的平方成本（非发射器层，本片管不了）；②发射器里另一随模块大小增长的平方项（如 `cgs_module_has_intrinsic` 调 ~10 次 × 每次扫整模块、或 helper body 生成随 count 增长）。两者都未裁决，需 emitter-only 的 module-level 注入探针（注入预建多函数 IR，跳过解析）才能把解析器与发射器分开——本轮未做，属下一步。
+
 ### 10.5 B4 候选裁决（拆账后）
 
 | B4 候选 | 裁决 |
@@ -225,4 +247,8 @@ IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性
 
 **先补裁决**：①做一个能过发射器 gate 的 const_int 判别臂（无 cell_slot、无 per-op concat），若它线性而 read_local 平方 ⇒ 主导项是 cell_slot 重扫，B4 = B2 同类索引化刀（`cgs_cell_slot`/`cgs_dispatcher_slot` 建每函数索引表）；②若 const_int 也平方 ⇒ 主导项是文本累加，B4 = 累加缓冲改写。两者都是 guest 前端层（B2/B3 同层），但都会改 guest_emitter sha ⇒ 词表 + ledger 失效需重测。**当前不开工**，因主导项未裁决、真实函数在平方膝点之下，盲改风险 > 收益。
 
-Open objectives: M22 自举 B3（用户 m00001）B3 已完整闭环；B4 拆账钉死「read_local helper 在 N≥2048 平方，两候选（cell_slot 重扫 ∥ 文本累加）未分主次，真实函数在膝点之下」，裁决臂（const_int 判别）未过 gate，B4 改写未开工，等 owner 或补裁决探针。
+**已实施并回退的一条刀（负结果，2026-11-05）**：把 `cgs_core_code_hex` 从 `cgs_function_at_index(bytes, i)` 索引遍历改成 `cgj_array_first`/`cgj_array_next` 游标遍历（`tools/_b4_function_cursorize.py`），`cgs_function_body_hex` 改收函数节点。改动语义正确（28/28 `sico_codegen_guest_*` 组件字节等价全过），但 **fuel 逐档不变**（F=256 仍 exhausted）⇒ 数组重扫贡献 ~81K ops 被单函数 ~128M 固定成本淹没，**关闭这条候选**。已 `git checkout HEAD -- selfhost/codegen.sico` 回退，脚本留档。
+
+**下一步（B4 门槛，最短裁决路径）**：module-level 平方真实（F=128→7.7e10、F=256 exhausted）但不来自数组重扫 ⇒ 主导项在「解析器处理 F 函数」或「发射器另一随模块增长项」二者之一。下一刀是 **emitter-only module-level 注入探针**（注入预建多函数 IR，跳过解析），把解析器 vs 发射器的 fuel 分账。那一刀之后才能定 B4 改写目标层。
+
+Open objectives: M22 自举 B3（用户 m00001）B3 已完整闭环；B4 拆账本轮新增 module-level scaling 探针 + 实施并回退 `cgs_function_at_index` 游标化刀（负结果，28/28 字节等价但 fuel 不变），排除数组重扫主导，把候选收敛到「解析器 ∥ 发射器另一随模块增长项」，下一步 emitter-only module-level 注入探针分账。
