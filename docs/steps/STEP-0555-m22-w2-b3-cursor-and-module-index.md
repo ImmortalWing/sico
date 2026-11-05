@@ -319,3 +319,25 @@ ratio 微降而非恒定 ⇒ **C（total²）主导**（若纯 C ratio 恒定；
 **下一步（B4 门槛，最短裁决路径）**：module-level 平方真实（F=128→7.7e10、F=256 exhausted）但不来自数组重扫 ⇒ 主导项在「解析器处理 F 函数」或「发射器另一随模块增长项」二者之一。下一刀是 **emitter-only module-level 注入探针**（注入预建多函数 IR，跳过解析），把解析器 vs 发射器的 fuel 分账。那一刀之后才能定 B4 改写目标层。
 
 Open objectives: M22 自举 B3（用户 m00001）B3 已完整闭环；B4 拆账本轮新增 module-level scaling 探针 + 实施并回退 `cgs_function_at_index` 游标化刀（负结果，28/28 字节等价但 fuel 不变），排除数组重扫主导，把候选收敛到「解析器 ∥ 发射器另一随模块增长项」，下一步 emitter-only module-level 注入探针分账。
+
+### 10.7 已实施并回退的第二条刀：D 索引化（负结果，2026-11-05）
+
+**假设**：§10.4a 钉死的 D 真身——`cgs_cell_slot`/`cgs_cell_width` 每条 read/write 指令调，每次 `cgs_dispatcher_slot`(O(I)) + `cgs_cell_slots`(O(L×I)) 重扫全 run，真实大函数 O(K×L×I)。仿 B2 的 `cgs_value_index` 建每函数 `cgs_cell_index` 索引表（存每个 cell 的 remaining + width，slot = dispatcher − remaining），`cgs_cell_slot`/`cgs_cell_width` 改 O(1) 查表，`dispatcher`/`cindex` 随 `vindex` 一起 thread 进 `cgs_op_hex`。
+
+**实施**（`tools/_b4_cell_index.py`）：新增 `cgs_cell_index`/`cgs_cell_slot_from`/`cgs_cell_width_from`/`cgs_cell_flat_width`，thread `dispatcher`+`cindex` 到 op_hex→write_local/read_local。三个前端坑逐个踩过并修正：
+1. read_local 签名顺序错（result0/vindex/dispatcher/cindex 与调用不匹配）→ E2001 类型错，修调用点。
+2. cell_slot 公式错——首版用 `slot = dispatcher − before[i]` 漏了 total，实测差 2（slot 12/13 vs 期望 10/11）；正解 `slot = dispatcher − remaining[i]`（remaining = total − before）。
+3. sico 前端拒绝两个 while 循环声明同名 `let ccix_cell`（`unsupported cell redeclared`）→ 改成 `ccix_cell_a`/`ccix_cell_b` 两个变量名绕开。
+
+**验证**：28/28 `sico_codegen_guest_*` 组件字节等价全过（`--test-threads=1`；注意并发跑会因组件缓存目录共享而假失败，须单线程）。
+
+**测量（决定性负结果）**：3 个真实 FuelExhausted parser 组 @800e9 ceiling 全 exhausted，fuel 逐档不变——
+- `while_call_rhs_packed`: ir=2628480 → component=0, fuel=exhausted, search_ms=189307
+- `gw_compare_packed`: ir=2858155 → component=0, fuel=exhausted, search_ms=220377
+- `chain_condition_packed`: ir=2965022 → component=0, fuel=exhausted, search_ms=201454
+
+**结论**：D 刀消除了 read/write 每指令的 O(I) cell_slot 重扫，字节等价成立，但 **fuel 不变** ⇒ 与 §10.6 游标刀同构，per-function 的 O(K×L×I) rescan 成本被总发射 fuel 的主导项淹没。**关闭 D 候选**（作为 331 主要回绿路）。已 `git checkout HEAD -- selfhost/codegen.sico` 回退，脚本留档。
+
+**候选收敛后的剩余**：D（cell_slot 重扫）与数组游标化都已排除为主回绿路。§10.4c 的 module-level 平方（F=128→7.7e10、F=256 exhausted）来源仍未定位——不在解析器（emit-only 更贵），不在数组重扫，不在 cell_slot 重扫。剩余主导项是 §10.4 假设 A 的**循环内文本累加拼接**（`cgs_read_local_hex`:3859-3860 等 `set X = text.concat(X, 新片)`，全 codegen.sico 416 个该形态站点）。这是下一刀（C 线性装配：`list.append` + 末尾一次 `join`），但同样预期改 sha ⇒ 词表 + ledger 失效需重测。
+
+Open objectives: M22 自举 B3（用户 m00001）B3 已完整闭环；B4 拆账已排除三条刀（数组游标化、cell_slot 索引化 D），主导项收敛到「循环内文本累加拼接（假设 A）」——下一刀 C 线性装配，等本轮或 owner 继续。
