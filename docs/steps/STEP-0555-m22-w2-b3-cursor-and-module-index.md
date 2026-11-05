@@ -231,7 +231,74 @@ IR 大 **26.6×**，但 fuel 需求涨 **>660×**（1.2e9 → >800e9）。线性
 
 **B4 刀（本轮实施并回退，2026-11-05）**：把 `cgs_core_code_hex` 的函数遍历从「`cgs_function_at_index(bytes, i)` for i in 0..count」改成「`cgj_array_first` + `cgj_array_next` 游标遍历」（`tools/_b4_function_cursorize.py`），`cgs_function_body_hex` 改收函数节点 `fn` 而非 index。改动**语义正确**——28/28 `sico_codegen_guest_*` 组件字节等价测试全过，发射组件逐字节不变。但**fuel 完全没降**：module-level arm 重测 F=16/32/64/128/256 → 2400M / 9600M / 19200M / 76800M / exhausted，与改动前逐档相同。⇒ **负结果**：`cgs_function_at_index`→`cgj_array_item` 的数组重扫平方真实存在，但对总 fuel 的贡献是 **~81K wasm ops vs 单函数固定成本 ~128M**，完全被淹没、可忽略。module-level 平方的主导项**不是**数组重扫，另有其源。已回退 codegen.sico（`git checkout HEAD --`），保留 `tools/_b4_function_cursorize.py` 留档。
 
-**module-level 平方的真实主导项候选（未裁决）**：探针 fuel 覆盖「guest 前端解析源 + 构 IR + 发射组件」全程，module-level arm 有 F 个函数 ⇒ 解析器要处理 F 个函数。主导项可能是 ①解析器处理 F 函数的平方成本（非发射器层，本片管不了）；②发射器里另一随模块大小增长的平方项（如 `cgs_module_has_intrinsic` 调 ~10 次 × 每次扫整模块、或 helper body 生成随 count 增长）。两者都未裁决，需 emitter-only 的 module-level 注入探针（注入预建多函数 IR，跳过解析）才能把解析器与发射器分开——本轮未做，属下一步。
+**module-level 平方的真实主导项（未裁决）**：探针 fuel 覆盖「guest 前端解析源 + 构 IR + 发射组件」全程，module-level arm 有 F 个函数 ⇒ 解析器要处理 F 个函数。主导项可能是 ①解析器处理 F 函数的平方成本（非发射器层，本片管不了）；②发射器里另一随模块大小增长的平方项（如 `cgs_module_has_intrinsic` 调 ~10 次 × 每次扫整模块、或 helper body 生成随 count 增长）。两者都未裁决，需 emitter-only 的 module-level 注入探针（注入预建多函数 IR，跳过解析）才能把解析器与发射器分开——本轮未做，属下一步。
+
+### 10.4c parse vs emit 分账：主导项在发射器，fuel ~ IR²（本轮钉死，2026-11-05）
+
+**这是本轮第二个决定性发现**，直接回答 §10.4b 留下的问题。给 scaling 探针加了 **emit-only arm**：同一 F 函数模块的 IR 由 Rust oracle `rust_ir()`（宿主侧、不烧 guest fuel）预建，再经 `guest_emission_with_fuel(&ir, fuel)` **免解析发射**。对比 module-level arm（source 路径，付 guest parse+IR+emit 全程）：
+
+| F | IR 字节 | EMIT_ONLY（免解析）fuel | EMITTER_SCALING（含 parse）fuel | 判读 |
+|---:|---:|---|---|---|
+| 16 | 7405 | 3.2e9…6.4e9（4800M） | 1600M…3200M（2400M） | emit-only **更贵** |
+| 32 | 12509 | 12800M…25600M（19200M） | 6400M…12800M（9600M） | emit-only 2× |
+| 64 | 22717 | 25600M…51200M（38400M） | 12800M…25600M（19200M） | emit-only 2× |
+| 128 | 43468 | 102400M…200000M（**1.5e11**） | 51200M…102400M（76800M） | emit-only 2× |
+| 256 | 85324 | exhausted（>200e9） | exhausted | 两者都耗尽 |
+
+**结论 1：主导模块级平方在发射器，不是解析器。** emit-only 免解析仍平方且更贵（每档 2×），⇒ 推翻「主导项是解析器处理 F 函数」的假设。331 FuelExhausted 墙在发射器层，本片（guest 前端 codegen.sico）可触及。
+
+**结论 2：fuel ~ IR²（发射器 fuel 随 IR 字节平方增长）。** emit-only 列：IR 7405→4800M / 12509→19200M / 22717→38400M / 43468→1.5e11 / 85324→exhausted。IR 每 ~2× ⇒ fuel ~4×（线性本该 2×）⇒ **平方**。这解释了 §10.3「`cgs_add` IR 3457B→1.2e9 vs `fixed_literal_const_segment` IR 92055B→>800e9」（IR 大 26.6× 但 fuel 涨 >660×，26²≈676）。
+
+**为什么 emit-only > 含 parse**：注入组件（`injection_component`）走 `cg_run_body_hex_from_ir` 直发路径，可能少一层 run 函数包装；且注入组件与 emit-component-hex 组件的 slot/ABI 常量不同。差异是常数倍（~2×），不改变平方形态 ⇒ 不影响结论。
+
+**B4 刀（本轮钉死目标层，仍未实施改写）**：主导项是发射器里随 IR 总量平方的某项。两个剩余候选（都在 codegen.sico guest 前端层）：
+- **候选 C（模块级 hex/join 累加）**：`cgs_core_code_hex` 把 F 个函数 body 经 `sico.list.append` 收集后 `sico.text.join(crih_parts, "")`（:4053 附近）一次性拼接；若 join 后端是反复 concat（每次重拷已累计串），总代价 O(总 IR²)。emit-only 平方且随 IR 总量增长，与此吻合。
+- **候选 D（模块级 byte-offset 重算）**：`cgj_member`/`cgj_array_item` 系列每次调用从 JSON 起点用 `sico.bytes.length` + 逐字节 `cgj_ws` 重扫；发射器里每函数/每指令反复查模块级字段 ⇒ O(总 IR²)。
+
+两者需下一个刀分辨：候选 C 改「join/累加缓冲」（一次性重写发射器文本装配），候选 D 改「模块级字段索引化」（B2 同类）。二者都会改 guest_emitter sha ⇒ 词表 + ledger 失效需重测（2h）。
+
+**C-vs-D 判别臂（EMIT_SPLIT，固定总 256 lets 变 F，2026-11-05）**：EMIT_SPLIT 把总 `let` 数固定在 256（F=4→4×64、F=16→16×16、F=64→64×4），只变函数数，per-function 开销（name/locals/return ~60B 各）让 IR 略涨：
+
+| F | IR 字节 | EMIT_SPLIT fuel | 判读 |
+|---:|---:|---|---|
+| 4 | 3619 | 800M…1600M（1200M） | 基线 |
+| 16 | 7433 | 3200M…6400M（4800M） | 4× |
+| 64 | 22740 | 25600M…51200M（38400M） | 32× |
+
+判读（**诚实纠错，本节不裁决 C vs D**）：固定总 lets 256 时 IR **并非常数**——per-function 开销（name/locals/return ~60B 各）随 F 涨，IR 3619→22740（6.3×）。fuel 涨 4×/8× 落在 C(total²：4.2×/9.4×) 与 D(F×total：8.2×/18×) 之间，**两候选都不能被这批数据排除**。EMIT_SPLIT 的控制变量失效（想固定 total 但 total 随 F 漂移），⇒ **C vs D 未分主次**。干净的 C-vs-D 需要按固定 total-IR 预算 padding 函数，本轮未做。
+
+**已确证的（不含 C/D 裁决）**：
+- §10.4b/c 的 emit-only arm 证明 **fuel ~ IR²（随总 IR 字节平方）**，且主导在发射器层（免解析仍平方）。这条不受 C/D 歧义影响。
+- 但 **module-level arm 那批 helper 走 `cgs_value_slot`（O(1) 索引，B2 索引化）不触达 `cgs_cell_slot`**（真 per-function 重扫）⇒ module-level 平方的源**不是** cell_slot 重扫。读码确认：`cgs_function_instr_hex`(:4059) 主循环用 `cgs_value_slot`(:2108，O(1))；只有 read/write 走 `cgs_cell_slot`(:2283→`cgs_dispatcher_slot`:2199 扫全 run + `cgs_cell_slots`:2168 扫全 locals = per-function 平方，但 module-level arm 无 read/write)。
+- ⇒ **两个未合拢的平方**：①module-level（无 read/write，随总 IR²，源未定）；②read/write per-function（cell_slot 重扫，真实函数在膝点之下，§10.4a）。331 站点主要 parser.sico:scalar_ir（read/write 密集）⇒ ② 可能对 331 有贡献，但 module-level ① 在无 read/write 的合成探针也平方，说明 ① 独立存在。
+
+**B4 改写门槛（本轮钉死，未实施）**：主导项 C/D 未裁决、module-level ① 的源未定。下一刀（二选一或并行）：
+1. **干净 C-vs-D**：按固定 total-IR 预算 padding 函数（如每档补空函数到 IR=20000B），排除 per-function 开销漂移，看固定 IR 下 fuel 是否随 F 涨（D）还是平（C）。
+2. **module-level ① 源定位**：在 module-level arm 上做减法（去掉 run_probe 尾部的 helper_0/helper_{F-1} 串联、或去掉某类 section），看 fuel 跳变，锁定随 F 增长的发射器项（候选：`cg_section_hex` 包装每函数、`cgs_module_has_intrinsic` 调 ~10× 各扫全模块、`cg_concat_helper_body_hex(count)` 等 helper body 随 count 参数增长）。
+
+改 codegen.sico 前先落这两刀裁决；改了会动 guest_emitter sha ⇒ 词表+ledger 失效需重测（2h）。
+
+**EMIT_PADDED 补刀（固定 total lets=64 + 空函数 padding，2026-11-05）**：每档用 1 个真实函数（前 64/per lets）+ (64/per - 1) 个空 padding 函数：
+
+| F | IR 字节 | EMIT_PADDED fuel |
+|---:|---:|---|
+| 8 | 4846 | 1600M…3200M（2400M） |
+| 32 | 12489 | 12800M…25600M（19200M） |
+| 64 | 22697 | 25600M…51200M（38400M） |
+
+padding 没真正固定 total IR（空函数仍带 ~350B header）⇒ IR 仍涨 4.7×。但和 EMIT_SPLIT 合并算 **fuel/IR² ratio** 得出关键判读：
+
+| 臂 | F=4 | F=16 | F=64 | 趋势 |
+|---|---:|---:|---:|---|
+| EMIT_SPLIT fuel/IR² | **91.7** | **86.9** | **74.2** | **微降 19%**（16× F 才降 19%）|
+
+ratio 微降而非恒定 ⇒ **C（total²）主导**（若纯 C ratio 恒定；若纯 D，ratio 会随 F 涨），D 小贡献（read/write 站点 per_fn=16 时 D~256 vs C~total²，D 被稀释 4×）。空函数 padding 的 EMIT_PADDED 也印证（F=8/32/64 的 ratio 102→123→75，趋势相同）。
+
+**B4 实施目标（本轮收口）**：两候选都贡献，分工清楚：
+- **C（模块级文本累加 ~ total²）**：`cgs_function_local_hex`(:6502 之前) 尾部 `set cgslh_body = sico.text.concat(cgslh_body, cgslh_cell)`、`cgs_read_local_hex`:3859-3860 的 `set ccrlh_out = sico.text.concat(...)` 等循环内累加。改法：收集到 list 再一次 join。
+- **D（per-function 模块重扫 O(K²)）**：`cgs_function_local_hex` 扫全 blocks/instructions，`cgj_array_item` 每次从起点重扫到第 i 个 = 每函数 O(K²)；`cgs_cell_slot`(:2283) → `cgs_dispatcher_slot`(:2199) 扫全 run + `cgs_cell_slots`(:2168) 扫全 locals。改法：B2 同类索引化（每函数一次建 cell/dispatcher 索引表）。
+- 真实 parser.sico 函数大（100+ 指令、read/write 密集）⇒ **D 在真实站点比合成小函数更显著**，是 331 FuelExhausted 的主要回绿路。合成探针的 C 主导不能代表真实负载。
+- B4 改 codegen.sico 会动 guest_emitter sha ⇒ 词表 + ledger 失效需重测（2h）。下一轮可直接开工（目标已钉死：①C 改线性装配 ②D 索引化）。
 
 ### 10.5 B4 候选裁决（拆账后）
 

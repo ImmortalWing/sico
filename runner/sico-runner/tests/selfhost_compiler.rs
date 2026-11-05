@@ -11933,6 +11933,156 @@ fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
         };
         println!("EMITTER_SCALING functions={funcs} fuel={verdict}");
     }
+
+    // Emitter-only split arm: the SAME F-function module, but lowered to IR by
+    // the Rust oracle on the host (no guest fuel), then emitted parse-free via
+    // guest_emission_with_fuel.  Comparing this to the module-level arm above
+    // (which pays guest PARSE + IR-build + emit) splits the two: if emit-only
+    // is linear and the source-path module-level arm is quadratic, the parser
+    // is the dominant term; if emit-only is also quadratic, the emitter carries
+    // a per-module term of its own.  This is the shortest path to locating the
+    // 331-site wall's layer.
+    for funcs in [16usize, 32, 64, 128, 256] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!(
+                "function helper_{f}(data: U64) returns U64:\n  let a0 = data\n  let a1 = a0\n  let a2 = a1\n  return a2\nend function\n"
+            ));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!("EMIT_ONLY functions={funcs} ir_bytes={} fuel={verdict}", ir.len());
+    }
+
+    // Candidate C vs D discriminator: fix the TOTAL `let` count (256 lets)
+    // across the whole module and vary how they are split across functions:
+    //   F=4  -> 4 functions  x 64 lets each
+    //   F=16 -> 16 functions x 16 lets each
+    //   F=64 -> 64 functions x 4 lets each
+    // All three carry the same total body material (256 `let`s) plus a fixed
+    // per-function overhead (name/locals/return, ~60B IR each), so the TOTAL IR
+    // is approximately constant across F -- the clean control the emit-only arm
+    // lacked.  Candidate C (module-level text accumulation) costs ~ total^2 and
+    // is FLAT in F at fixed total; candidate D (per-call module offset rescan)
+    // costs ~ F * total and GROWS with F.  A flat fuel column across F=4/16/64
+    // confirms C; a rising one confirms D.  (The per-function overhead does add
+    // a small linear-in-F IR term, but it is dwarfed by the 256 fixed `let`s,
+    // so the trend in F is still readable.)
+    let total_lets = 256usize;
+    for (funcs, per) in [(4usize, 64usize), (16, 16), (64, 4)] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!("function helper_{f}(data: U64) returns U64:\n"));
+            for i in 0..per {
+                if i == 0 {
+                    body.push_str(&format!("  let h{f}_{i} = data\n"));
+                } else {
+                    body.push_str(&format!("  let h{f}_{i} = h{f}_{}\n", i - 1));
+                }
+            }
+            body.push_str(&format!("  return h{f}_{}\nend function\n", per - 1));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "EMIT_SPLIT functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
+    }
+
+    // Clean C-vs-D discriminator (fixes the EMIT_SPLIT flaw above): hold the
+    // TOTAL IR budget ~constant across F by padding with empty functions, so
+    // the per-function overhead that made EMIT_SPLIT's IR drift is excluded.
+    // Each layout has 64 `let`s of real body (spread over the first `funcs`
+    // functions) plus (64 - funcs) empty padding functions, all inside a fixed
+    // IR envelope.  At FIXED total IR: candidate C (module-level accumulation,
+    // cost ~ total^2) is FLAT in F; candidate D (each of F functions rescans
+    // its own blocks/instructions, cost ~ F * per_fn) GROWS with F.  A flat
+    // fuel column across F=8/32/64 confirms C; a rising one confirms D.
+    let real_lets = 64usize;
+    for funcs in [8usize, 32, 64] {
+        let per = real_lets / funcs;
+        let mut body = String::new();
+        for f in 0..funcs {
+            if f < 1 {
+                body.push_str(&format!("function helper_{f}(data: U64) returns U64:\n"));
+                for i in 0..per {
+                    if i == 0 {
+                        body.push_str(&format!("  let h{f}_{i} = data\n"));
+                    } else {
+                        body.push_str(&format!("  let h{f}_{i} = h{f}_{}\n", i - 1));
+                    }
+                }
+                body.push_str(&format!("  return h{f}_{}\nend function\n", per - 1));
+            } else {
+                // Empty padding function: same envelope (name/locals/return),
+                // no `let`s, so total body material stays at real_lets.
+                body.push_str(&format!(
+                    "function helper_{f}(data: U64) returns U64:\n  return data\nend function\n"
+                ));
+            }
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "EMIT_PADDED functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
+    }
 }
 
 #[test]
