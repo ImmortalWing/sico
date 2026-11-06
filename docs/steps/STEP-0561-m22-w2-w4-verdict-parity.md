@@ -7,6 +7,8 @@
 | 不翻门 | 门 1/5/6 GO、门 2 PARTIAL、门 3 NO-GO、门 4/7 不得沿用 —— 全部**维持**（无变化） |
 | 证据等级 | `internal-fixture`：本机 Windows x64，debug 测试构建，`sico_runner` 限额不变（fuel 800e9 / timeout 120 s / 内存 2560 MiB） |
 
+> **Addendum（2026-11-06，评审对齐 STEP-0564）**：本片登记的 1 个 `lowered` 声音洞（`missing-field`/`E2010`）**已由 STEP-0558 修复**（缺字段 ⇒ `ERR:E-SH-IR-CONSTRUCT-FIELD`）；STEP-0564 在含该修复的树上全量重测 150 项 = **exact 147 / zero 3（燃料墙）/ lowered 0**，`missing-field.sico` 判为 `refused:ERR:E-SH-IR-CONSTRUCT-FIELD`。本片 146/150 的读数是**修复前时点**口径，保留原文；当前权威读数以 STEP-0564 与工件 `selfhost/corpus-parity-v0.json` 为准。
+
 ## 1. 要回答的问题（W4 拒绝语料 verdict parity 的前端半边）
 
 W4（闭合阶梯，STEP-0514 §3.3.13）要求 **178 条拒绝三元组（verdict, id, span）一致**。本片回答其**verdict 半边**的**前端（check）轴**：

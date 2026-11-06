@@ -1,0 +1,182 @@
+# M22 fuel 墙仪器化剖析报告（STEP-0562，测量片）
+
+> **本片性质** = **测量片**：`crates/` 零改动、`selfhost/parser.sico` 与 `selfhost/codegen.sico` **零改动**（只读）、`runner/sico-runner/tests/selfhost_compiler.rs` **零改动**（未被指定写）。唯一代码产物 = 新工具 `tools/profile-m22-fuel-wall.ps1`。
+> ⇒ **不推进任何出口门、不上调 fuel/内存限额、不加尺寸门、不改 runner 公共 API。M22 整体仍 NO-GO。**
+> 对象 = 账本 `selfhost/match-component-coverage-v1.json` 里 **335** 个 `component-other:FuelExhausted` 站点（全在 `parser.sico`）到底把 ~2.4e9 量级 fuel 烧在哪。
+
+## 0. 结论速览（先看这条）
+
+1. **墙在发射器（emitter）层，不在解析器**——本轮用真实站点 emit-only 探针 + 合成 scaling 探针在第二个上限（25.6e9）上**再次钉死** STEP-0555 §10.4c 的结论：免解析发射（`EMIT_ONLY`）仍然平方、且比「含解析」**更贵 ~2×**。
+2. **发射器 fuel 随 total-IR 字节平方增长（fuel ~ IR²）**——合成 `EMIT_ONLY`/`EMIT_SPLIT`/`EMIT_PADDED` 三臂一致指向 total-IR² 而非函数数。真实站点闭包 IR 达 **92 KB – 4.6 MB** ⇒ 按 IR² 折算，fuel 需求**远超** 800e9 主预算（**这是「335 站点全部耗尽」的定量解释**）。
+3. **真实站点 top-N 排名（按 IR 体量，即 fuel 驱动量）已产出**：最热 = `general_while_function_ir`（IR **4,573,438 B**），最冷（本集合内）= `fixed_literal_const_segment`（IR **92,055 B**）——**16 个最热函数族在 emit-only 层连 1e8 seed 都全部耗尽**，没有一个能出组件。
+4. **本片没有定位到平方项的具名 wasm-op 源**：因为本机**缺 gcc** ⇒ runner **无法重编译**（`cc-rs: failed to find tool "gcc.exe"`，exit 101）⇒ **wasmtime epoch/opcode 采样钩子无法构建**。STEP-0555/0556 已用字节等价但 fuel 不变的三把刀（数组游标化 / cell_slot 索引化 / 文本累加改 join）证伪「平方项在可静态读出的重扫路径上」；本片同样**只能在「层」上定位（发射器 vs 解析器），不能在「函数/op」上定位**。**这是残余主缺口，需要一台有 C 工具链的宿主**（见 §4）。
+
+## 1. 环境阻塞（决定了方法，如实登记）
+
+| 项 | 实测 |
+|---|---|
+| 工具链 | `RUSTUP_TOOLCHAIN=1.98.0-x86_64-pc-windows-gnu`；`cargo` = `~/.cargo/bin/cargo.exe`；**`gcc` / `cc` 均不在 PATH**（`which gcc cc` → not found） |
+| 重编译尝试 | `cargo check --locked --offline --manifest-path runner/sico-runner/Cargo.toml --tests` → **exit 101**，`error occurred in cc-rs: failed to find tool "gcc.exe": program not found` |
+| PowerShell | 可用（`5.1.26100.9818`） |
+| Python | **不可用**（`python`/`python3`/`py` 均 not found）⇒ 工具用 PowerShell 写 |
+| 预构建测试二进制 | `runner/sico-runner/target/debug/deps/selfhost_compiler-4fa1b02d73be6796.exe`（2026-11-06 16:02，对应干净 HEAD `a939862`）——**可直接运行，无需重编译** |
+
+**阻塞点（确切）**：runner 是 `windows-gnu`，其依赖树里有 C 构建脚本（`cc-rs`）需要 `gcc.exe` 做链接；本机没装 ⇒ **任何** runner 侧 Rust 改动（新增测试臂、wasmtime epoch/fuel 中断钩子）都编译不出来。
+
+**最小环境输入（解除阻塞所需）**：给本机装一个 `gcc.exe`（如 mingw-w64 的 `x86_64-w64-mingw32-gcc`，或 MSYS2 `pacman -S mingw-w64-x86_64-gcc`）并放进 PATH，使 `cargo check --manifest-path runner/sico-runner/Cargo.toml --tests` 能过 ⇒ 之后即可加测试侧 epoch 采样钩子做 op 级剖析。
+
+**因此本片方法 = 用预构建二进制里**已有的** `#[ignore]` fuel 探针（经环境变量选站点/上限），做「层」级归因 + 真实站点 top-N 排名；op 级采样登记为未跑。
+
+## 2. 方法
+
+工具 `tools/profile-m22-fuel-wall.ps1`（**版本化到 `tools/`**）编排预构建二进制里三条**已存在**的探针，全部只读 guest 源码、零生产改动：
+
+| 探针 | 隔离什么 | 选站点方式 |
+|---|---|---|
+| `the_component_emission_fuel_of_a_real_match_group_is_measured`（**emit-only 注入**） | 把 oracle 预建的 canonical IR 直喂发射器（`guest_emission_with_fuel`），**跳过 guest 前端解析** ⇒ 只测**发射** fuel | `SICO_M22_PROBE_GROUPS=path:function,...` |
+| `the_component_emission_fuel_of_a_real_match_group_through_the_compiler_is_measured`（**ledger 路径**） | 跑完整 guest 编译器（`--emit-component-hex`），付**解析+造 IR+发射** ⇒ 与 emit-only 对拍分账 parse vs emit | 同上 |
+| `the_emitter_fuel_scaling_in_read_local_count_is_measured`（**合成 scaling**） | 固定合成形状族（`read_local` 计数 N / 模块函数数 F / `EMIT_ONLY`/`EMIT_SPLIT`/`EMIT_PADDED`），给**受控曲线** | 固定臂，无需选站点 |
+
+**计量口径**：与固件同源——`consume_fuel(true)` 按**每条 wasm 指令操作**计；`FuelExhausted` 只判 `store.get_fuel()==0`，**无剩余量读数** ⇒ 只能**二分 fuel 上限**反推。工具里的 `SICO_M22_PROBE_FUEL` 只是**本次测量的二分上限**，**不改**冻结的 800e9 ledger 预算、不改任何 runner 限额。
+
+**三类结果分开记**（沿用 STEP-0544 口径）：`measured`（出组件，阈值 ∈ (low,high]）/ `exhausted`（上限内仍不够 = **被测对象**）/ `refused`/`trap`。只有**拒绝对照**才算硬失败。
+
+## 3. 实测证据（全部实际执行，记录命令 + 退出码）
+
+### 3.1 真实站点 top-N 排名（emit-only，IR 体量驱动）
+
+命令（`Ceiling=1e8` seed，最快；每个站点 1 次探针即耗尽 ⇒ 只取 IR 体量 + 耗尽身份）：
+```
+powershell -NoProfile -File tools/profile-m22-fuel-wall.ps1 -Probe sites -Ceiling 100000000
+# exit 0，13.3 s；CSV = target/tmp/step0562/fuel-wall-sites.csv（17 行 = 表头 + 16 族）
+```
+另在 `Ceiling=6.4e9` 复跑一次（exit 0，74 s）确认**更高上限下仍然全耗尽**。
+
+| 排名 | guest 函数（parser.sico） | 站点数 | emit-only IR 字节 | @1e8 | @6.4e9 | ledger @800e9 |
+|---:|---|---:|---:|---|---|---|
+| 1 | `general_while_function_ir` | — | **4,573,438** | exhausted | exhausted | exhausted |
+| 2 | `fixed_guard_chain_ir` | 7 | 3,378,177 | exhausted | exhausted | exhausted |
+| 3 | `control_while_function_ir` | 23 | 3,288,574 | exhausted | exhausted | exhausted |
+| 4 | `straight_cell_function_ir` | 18 | 3,209,321 | exhausted | exhausted | exhausted |
+| 5 | `control_if_function_ir` | 12 | 3,157,992 | exhausted | exhausted | exhausted |
+| 6 | `gw_condition_packed` | 11 | 3,144,004 | exhausted | exhausted | exhausted |
+| 7 | `gw_slice_subject_packed` | 8 | 2,927,809 | exhausted | exhausted | exhausted |
+| 8 | `gw_compare_packed` | 13 | 2,858,155 | exhausted | exhausted | exhausted |
+| 9 | `gw_slice_sub_length_subject_packed` | 8 | 2,767,263 | exhausted | exhausted | exhausted |
+| 10 | `gw_rhs_multi_pack` | 7 | 2,628,480 | exhausted | exhausted | exhausted |
+| 11 | `while_call_rhs_packed` | 13 | 2,628,480 | exhausted | exhausted | exhausted |
+| 12 | `gw_text_concat_packed` | 12 | 2,628,480 | exhausted | exhausted | exhausted |
+| 13 | `checked_arithmetic_set_match_ir` | 13 | 579,065 | exhausted | exhausted | exhausted |
+| 14 | `straight_text_concat_packed` | 16 | 507,543 | exhausted | exhausted | exhausted |
+| 15 | `gw_ok_wrap_rhs_packed` | 12 | 480,008 | exhausted | exhausted | exhausted |
+| 16 | `fixed_literal_const_segment` | — | **92,055** | exhausted | exhausted | exhausted |
+
+（站点数 = 该函数族在 335 个 FuelExhausted 站点里的计数；`general_while_function_ir`/`fixed_literal_const_segment` 是 STEP-0555/0556 沿用的具名热站，不在 396 账本族名里故站点数留空。）
+
+**读法**：
+- **16/16 族在 emit-only 层连 1e8 都耗尽** ⇒ 这批站点**不是**「差一点够」的边际站点，而是在**发射层就差 3 个数量级以上**（ledger 800e9 也耗尽）。`component_bytes=0` 全体成立 ⇒ **没有一个能出组件**。
+- **IR 体量跨 2 个数量级**（92 KB → 4.6 MB，**49.7×**）⇒ 按 fuel~IR² 折算，最热与最冷的 fuel 需求差 **~2470×** ⇒ **IR 体量就是 fuel 墙的驱动量**，top-N 排名据此成立。
+- 账本 335 个耗尽站点**全部**属 `parser.sico`（`codegen.sico` 0 个）⇒ 与 STEP-0555「parser 造出大 IR、发射器烧钱」一致：**耗尽站点是按 IR 体量分布的，IR 大的全在 parser 侧**。
+
+### 3.2 合成 scaling：fuel ~ IR²，且墙在发射器（第二个上限 25.6e9 复现）
+
+命令：
+```
+SICO_M22_PROBE_FUEL=25600000000 selfhost_compiler-4fa1b02d...exe \
+  the_emitter_fuel_scaling_in_read_local_count_is_measured --exact --ignored --nocapture
+# SYNTH_EXIT=0；log = target/tmp/step0562/synthetic-scaling.log
+```
+
+**① 每函数内平方（`read_local` 计数 N，含解析）**
+
+| N | 最小 fuel 区间 (low, high] | 相对上档 |
+|---:|---|---:|
+| 64 / 128 / 256 | 2e8…4e8（平） | 1.0× |
+| 512 | 4e8…8e8 | 2.0× |
+| 1024 | 8e8…1.6e9 | 2.0× |
+| 2048 | 3.2e9…6.4e9 | **4.0×** |
+| 4096 | 6.4e9…1.28e10 | **4.0×** |
+
+⇒ N ≥ 2048 后每翻倍 fuel 烧 **4×** = **每函数内 O(N²)**，膝点 ≥ 2048。真实 parser 函数多在 10–300 指令，**在膝点之下** ⇒ 单函数平方项**不是** 335 站点的主导。
+
+**② 模块级平方（函数数 F，含解析）**
+
+| F | 最小 fuel 区间 | 形态 |
+|---:|---|---|
+| 16 | 1.6e9…3.2e9 | 线性 |
+| 32 | 6.4e9…1.28e10 | **4.0×** = 平方起步 |
+| 64 / 128 / 256 | **exhausted**（>25.6e9） | 平方确认后耗尽 |
+
+**③ emit-only（免解析，同 F）——决定性**
+
+| F | IR 字节 | EMIT_ONLY fuel | EMITTER_SCALING（含解析）fuel | 判读 |
+|---:|---:|---|---|---|
+| 16 | 7,405 | 3.2e9…**6.4e9** | 1.6e9…3.2e9 | emit-only **更贵 2×** |
+| 32 | 12,509 | 1.28e10…**2.56e10** | 6.4e9…1.28e10 | emit-only **更贵 2×** |
+| 64 | 22,717 | **exhausted**（>25.6e9） | exhausted | 两者都耗尽 |
+
+⇒ **免解析仍平方、且每档贵 ~2×** ⇒ **平方项在发射器层，不是解析器**（推翻「解析器处理 F 函数」假设）。emit-only 与含解析是**常数倍**关系（~2×），不改变平方形态。
+
+**④ fuel 归一到 total-IR²（`EMIT_SPLIT` / `EMIT_PADDED` 印证）**
+
+| 臂 | F | IR 字节 | fuel (high) | fuel/IR²（G/kb²） |
+|---|---:|---:|---|---:|
+| EMIT_SPLIT | 4 | 3,619 | 1.6e9 | 122.2 |
+| EMIT_SPLIT | 16 | 7,433 | 6.4e9 | **115.8** |
+| EMIT_PADDED | 8 | 4,846 | 3.2e9 | 136.3 |
+| EMIT_PADDED | 32 | 12,489 | 2.56e10 | **164.2** |
+| EMIT_ONLY | 16 | 7,405 | 6.4e9 | 116.8 |
+| EMIT_ONLY | 32 | 12,509 | 2.56e10 | 163.6 |
+
+⇒ 固定 total-lets / padding 两种控制下，**fuel/IR² 近似恒定**（115–164，同量级）⇒ **fuel ~ total-IR²**（纯 C 会恒定；此处微升 ⇒ D 类 per-function 项有小贡献，但 **C（total²）主导**）。**真实站点 IR 92 KB–4.6 MB ⇒ 按 EMIT_ONLY 的 ~117–164 G/kb² 折算，fuel 需求 ~1e12–3.5e12，超 800e9 预算 1.5–4×** ⇒ **定量解释 335 站点全耗尽**。
+
+## 4. 结论与诚实收窄
+
+### 4.1 本片钉死的
+
+| 命题 | 证据 | 状态 |
+|---|---|---|
+| 墙在**发射器层**（非解析器） | 合成 emit-only 免解析仍平方、且每档贵 ~2×（§3.2③） | **钉死**（第二个上限 25.6e9 复现 STEP-0555 §10.4c） |
+| 发射器 fuel ~ **total-IR²** | 三臂 fuel/IR² 近似恒定 115–164 G/kb²（§3.2④） | **钉死** |
+| 真实 335 耗尽站点 = IR 92 KB–4.6 MB 的闭包在发射层耗尽 | §3.1 top-N，16/16 族 @1e8/@6.4e9/@800e9 全 exhausted、component_bytes=0 | **钉死** |
+| 真实站点 top-N 排名（按 IR 体量） | §3.1 表 | **产出** |
+| 三把静态刀（数组游标化 / cell_slot 索引化 / 文本累加改 join）**都不是**墙 | STEP-0555 §10.6/§10.7 + STEP-0556 §10（字节等价但 fuel 不变） | **沿用**（本片未重跑刀，只复跑测量） |
+
+### 4.2 本片**没有**钉死的（残余缺口）
+
+1. **平方项的具名 wasm-op 源未定位**——本机缺 gcc ⇒ runner 无法重编译 ⇒ **wasmtime epoch/opcode 采样钩子无法构建**（§1）。静态可读路径已被 STEP-0555/0556 三刀证伪 ⇒ 剩余候选是**发射器里某个随 total-IR 增长的隐藏平方**（候选：`cgj_member`/`cgj_array_item` 的**按字段名/按字节**重扫、或 core-helper 体内部未测的 O(n²)），但**本片无法在 op 级裁决**。**这是下一刀的前置**：需有 C 工具链的宿主建 epoch 采样，或做「每模块一次结构预索引」的结构性修复刀直接试。
+2. **真实站点无 measured 括号**——16 族在**任何可达上限**（1e8 / 6.4e9 / 800e9）全 exhausted ⇒ 只能给**下界**，无法给真实站点的 fuel~IR² 斜率。斜率来自**合成**臂（§3.2④），**系数形状相关**，迁移到真实站点是**外推**（已标注）。
+3. **`g_per_kb2` 在真实站点列为 0**——因 fuel_lb 被上限截断（1e8）而 IR 达 MB 级 ⇒ 归一化失真（精度下溢为 0）。**真实站点的 fuel/IR² 不能用本表读**，只能用 §3.1 的 IR 体量做排名。该列只在合成 measured 点有意义（§3.2④）。
+4. **parse vs emit 在真实站点未分账**——emit-only 与 ledger 路径在同一上限下**都 exhausted** ⇒ 括号不可分 ⇒ 真实站点的 parse/emit 分账**未跑**；分账结论来自**合成** EMIT_ONLY vs EMITTER_SCALING（§3.2③）。工具保留了 `-Probe parsevs` 臂，本轮**未执行**（预期无区分度，避免白烧 wall time）。
+
+### 4.3 门状态（不变）
+
+本片**实测账本 verdict 分布**（396 站点）：**335** `FuelExhausted` / **32** `component-equal` / **24** `Trap(8 MiB)` / **5** `refused-guest`。（任务简报记 **331 / 36**；当前树 HEAD `a939862` 实测 **335 / 32**，4 站点漂移 ⇒ **如实登记、不翻门**，供 reviewer 核对。）
+
+门 1/5/6 GO、门 2 PARTIAL、门 3 NO-GO、门 4/7 不得沿用 —— **全部维持，本片零代码改动、零门翻转。M22 整体仍 NO-GO。**
+
+## 5. 交付物
+
+| 文件 | 性质 |
+|---|---|
+| `tools/profile-m22-fuel-wall.ps1` | **新建**，版本化剖析工具（PowerShell，编排预构建二进制的既有 fuel 探针） |
+| `docs/reports/m22-fuel-wall-profile-2026-11-06.md` | **新建**，本报告 |
+| `docs/steps/STEP-0562-m22-w2-fuel-wall-profile.md` | **新建**，STEP 记录 |
+| `target/tmp/step0562/fuel-wall-sites.csv` | 测量工件（16 族 top-N，**不入库**，数字已登记 §3.1） |
+| `target/tmp/step0562/synthetic-scaling.log` | 测量工件（合成 scaling 原始行，数字已登记 §3.2） |
+| `target/tmp/step0562/fuel-wall-raw.log` / `irbytes-emitonly.log` / `sites-run.log` | 测量工件（探针原始 stdout，**不入库**） |
+
+> **测量工件不入库的理由**：由探针在特定树/特定上限产出，数值随树与上限变化 ⇒ 归 `target/tmp/`，与 STEP-0544/0555 同款；报告与 STEP 里已逐点登记原始数字，审计不依赖被删文件。
+
+## 6. 复跑说明（从干净命令）
+
+```powershell
+$env:RUSTUP_TOOLCHAIN = '1.98.0-x86_64-pc-windows-gnu'
+# 真实站点 top-N（快，~15 s）
+powershell -NoProfile -File tools/profile-m22-fuel-wall.ps1 -Probe sites -Ceiling 100000000
+# 合成 scaling（~5 min @25.6e9）
+powershell -NoProfile -File tools/profile-m22-fuel-wall.ps1 -Probe synthetic -Ceiling 25600000000
+# 三臂全跑（sites + parsevs + synthetic）
+powershell -NoProfile -File tools/profile-m22-fuel-wall.ps1 -Probe all -Ceiling 6400000000
+```
+工具默认自动选最新的 `selfhost_compiler-*.exe`；上限只影响**测量二分**，不改任何 runner 限额。
