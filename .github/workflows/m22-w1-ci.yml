@@ -1,9 +1,29 @@
-name: M22 W1 independent CI
+# Independent CI for the M22 compiler self-host track.
+#
+# Naming note (STEP-0566, 2026-11-06): the filename `m22-w1-ci.yml` and the
+# job id `windows-gnu` are historical (the W1 worktree line, branch
+# `codex/m22-w1-ci`). That branch has been deleted on the GitHub remote, so a
+# push trigger pinned to it could never fire again. The active M22 line is now
+# `codex/m22-w2` (worktree `D:/SorftWare/sico-m22-bootstrap`), so the push
+# trigger set below names that branch. The filename is kept unchanged on
+# purpose: docs/AGENTS.md, docs/plans/M22-compiler-self-host.md and the STEP
+# records all refer to `m22-w1-ci.yml` by name, and a rename would break that
+# traceability for zero behavioural gain. Renaming is an owner decision, not a
+# step-0566 change.
+#
+# Trigger decision (STEP-0566): push on `codex/m22-w2` only; `workflow_dispatch`
+# kept for manual runs on any ref. `dev` is deliberately NOT in the push set:
+# M22 plan decision D14 rules that M22's completion criteria do not include a
+# merge with `origin/dev` and forbid rebasing/merging it, so a `dev` push is not
+# M22 evidence; adding it would spend ~1-2 h of windows-2025 runner minutes per
+# unrelated `dev` push and would attribute `dev`-tree failures (unrelated WIP,
+# other milestones' in-flight work) to the M22 track.
+name: M22 independent CI (W2 line)
 
 on:
   push:
     branches:
-      - codex/m22-w1-ci
+      - codex/m22-w2
   workflow_dispatch:
 
 jobs:

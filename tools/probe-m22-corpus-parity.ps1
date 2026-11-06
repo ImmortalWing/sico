@@ -1,43 +1,56 @@
 <#
 .SYNOPSIS
-M22 W4 rejection-corpus parity probe (STEP-0561).
+M22 W4 rejection-corpus parity probe with diagnostic-id mapping contract (STEP-0564).
 
 .DESCRIPTION
-Checks the GUEST frontend's verdict against the RUST oracle's frozen rejection
-verdict for the M22 frozen rejection corpus.  For every corpus entry the Rust
-oracle refused (rust_check = "refused"), the guest self-host compiler must also
-refuse the same source: the guest is run as `sico run selfhost/compiler.sico`
-with the source on stdin, and the outcome is classified as:
+Extends the STEP-0561 verdict-parity probe.  For every frozen corpus entry the
+Rust oracle refused at the check stage (rust_check = "refused"), the guest
+self-host compiler is run (`sico run selfhost/compiler.sico`, source on stdin)
+and its refusal identity is compared against the Rust refusal.
 
-  REFUSED <code>   the guest refused with a typed identity (ERR:...)
-  LOWERED          the guest produced canonical IR (it accepted what Rust refused)
-  FAILED <snippet> any other outcome (trap, fuel, unexpected output)
+Per entry the probe records:
+  guest_verdict   REFUSED:<ERR:E-SH-IR-*> | LOWERED | FAILED:<snippet>
+  rust_verdict    REFUSED:<frozen diagnostic id>   (from selfhost/corpus-v0.json)
+  mapped_id       the registered guest equivalence class, or "unmapped"
+  parity          exact | structural | zero
 
-The parity verdict is `match` when the guest refuses (any ERR: code) and the
-Rust also refused; `mismatch` when the guest lowered or failed.
+Parity levels (mapping contract in selfhost/corpus-parity-map-v1.json):
+  exact       guest refused AND the (rust id -> guest code) pair is registered
+  structural  guest refused but the pair is NOT registered (verdict-only parity)
+  zero        guest did NOT refuse (lowered = soundness hole, failed = fuel wall)
 
-The check records, per item, the path, the Rust diagnostic id set (frozen), the
-guest's refusal code (or "lowered"/"failed"), and the parity verdict.  It writes
-`selfhost/corpus-parity-v0.json` (frozen-format, deterministic serialization)
-and prints a summary.  `-Limit` runs only the first N refusal entries (for a
-fast development subset); `-Json` prints the machine-readable record.
+SPAN AXIS: the Rust oracle emits full spans (`check --json`), but the frozen
+corpus diagnostic ids carry no span and the guest emits a bare ERR:E-SH-IR-*
+code with no span.  True (verdict, id, span) triple parity is therefore NOT
+reachable; the probe reports the span axis as a residual gap and does not
+assert span equality.  `-RustSpans` additionally re-runs `sico check --json`
+per entry to capture the live Rust span as corroborating evidence only (it is
+not compared, because there is no guest span to compare against).
 
-Exit codes: 0 = all parity verdicts match, 1 = at least one mismatch.
+The probe writes its per-entry parity report to `selfhost/corpus-parity-v0.json`
+(extended with mapped_id / parity level / rust_verdict; deterministic
+serialization) and reads the mapping contract from
+`selfhost/corpus-parity-map-v1.json`.  It prints a summary.  `-Limit N` runs
+only the first N refusal entries.
+Exit codes: 0 = no `zero` parity (no soundness hole / no new fuel wall beyond
+the 3 registered ones), 1 = at least one `zero` parity.
 
 Usage:
-  pwsh -File tools/probe-m22-corpus-parity.ps1
-  pwsh -File tools/probe-m22-corpus-parity.ps1 -Limit 12
-  pwsh -File tools/probe-m22-corpus-parity.ps1 -Json
+  powershell -NoProfile -File tools/probe-m22-corpus-parity.ps1
+  powershell -NoProfile -File tools/probe-m22-corpus-parity.ps1 -Limit 12
+  powershell -NoProfile -File tools/probe-m22-corpus-parity.ps1 -Json
+  powershell -NoProfile -File tools/probe-m22-corpus-parity.ps1 -RustSpans -Limit 4
 #>
 [CmdletBinding()]
 param(
     [int]$Limit = 0,
-    [switch]$Json
+    [switch]$Json,
+    [switch]$RustSpans
 )
 
-# The guest writes its refusal identity to stderr; a native stderr line must
-# be captured as text (2>&1 | Out-String) and not abort the loop, so the
-# preference stays Continue (the same choice as probe-m22-frontend-frontier.ps1).
+# The guest writes its refusal identity to stderr; a native stderr line must be
+# captured as text (2>&1 | Out-String) and not abort the loop, so the preference
+# stays Continue (same choice as probe-m22-frontend-frontier.ps1).
 $ErrorActionPreference = 'Continue'
 Set-StrictMode -Version Latest
 
@@ -45,24 +58,58 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $cli = Join-Path $repoRoot 'target\debug\sico.exe'
 $runner = Join-Path $repoRoot 'runner\sico-runner\target\debug\sico-runner.exe'
 $corpusPath = Join-Path $repoRoot 'selfhost\corpus-v0.json'
+$mapPath = Join-Path $repoRoot 'selfhost\corpus-parity-map-v1.json'
 $outputPath = Join-Path $repoRoot 'selfhost\corpus-parity-v0.json'
 
-if (-not (Test-Path -LiteralPath $cli)) {
-    Write-Error "sico CLI not found at $cli (build with: cargo build -p sico-cli)"
-    exit 1
-}
-if (-not (Test-Path -LiteralPath $runner)) {
-    Write-Error "sico-runner not found at $runner (build with: cargo build --manifest-path runner/sico-runner/Cargo.toml --bins)"
-    exit 1
-}
-if (-not (Test-Path -LiteralPath $corpusPath)) {
-    Write-Error "frozen corpus not found at $corpusPath (run tools/update-m22-corpus.ps1)"
-    exit 1
+foreach ($required in @($cli, $runner, $corpusPath, $mapPath)) {
+    if (-not (Test-Path -LiteralPath $required)) {
+        Write-Error "required input not found: $required"
+        exit 1
+    }
 }
 
 $env:SICO_RUNNER = $runner
 
 $corpus = Get-Content -LiteralPath $corpusPath -Raw | ConvertFrom-Json
+$mapRaw = Get-Content -LiteralPath $mapPath -Raw | ConvertFrom-Json
+
+# --- mapping-artifact validation (typed rejection, no silent approximation) ---
+if ($mapRaw.schema -ne 'sico.m22.corpus-parity-map.v1') {
+    Write-Error "unexpected mapping schema '$($mapRaw.schema)' (expected sico.m22.corpus-parity-map.v1)"
+    exit 1
+}
+if ([int]$mapRaw.version -ne 1) {
+    Write-Error "unsupported mapping version $($mapRaw.version) (expected 1)"
+    exit 1
+}
+$mapEntries = @($mapRaw.mappings)
+if ($mapEntries.Count -eq 0) {
+    Write-Error "mapping artifact registers no equivalence classes"
+    exit 1
+}
+# rust id -> set of registered guest codes
+$rustToGuest = @{}
+$pairSeen = @{}
+foreach ($m in $mapEntries) {
+    if ([string]::IsNullOrWhiteSpace($m.rust_code) -or [string]::IsNullOrWhiteSpace($m.guest_code)) {
+        Write-Error "mapping entry has empty rust_code/guest_code"
+        exit 1
+    }
+    if ($m.grain -ne 'refined' -and $m.grain -ne 'coarse') {
+        Write-Error "mapping grain '$($m.grain)' is not refined|coarse"
+        exit 1
+    }
+    $pairKey = "$($m.rust_code)|$($m.guest_code)"
+    if ($pairSeen.ContainsKey($pairKey)) {
+        Write-Error "duplicate mapping pair $pairKey"
+        exit 1
+    }
+    $pairSeen[$pairKey] = $true
+    if (-not $rustToGuest.ContainsKey($m.rust_code)) {
+        $rustToGuest[$m.rust_code] = @{}
+    }
+    $rustToGuest[$m.rust_code][$m.guest_code] = $true
+}
 
 # The refusal entries are the ones the Rust oracle refused at the check stage.
 $refusals = @($corpus.entries | Where-Object { $_.rust_check -eq 'refused' })
@@ -71,10 +118,8 @@ if ($Limit -gt 0) {
 }
 
 # Frozen-format serialization: deterministic, pretty-printed, key-order
-# preserving, and array-preserving.  The result is assigned to $jsonText (not
-# $json) because $json is case-insensitively the script's [switch]$Json
-# parameter; assigning a string there would raise a String->SwitchParameter
-# conversion error.
+# preserving, and array-preserving.  Assigned to $jsonText because $json is
+# case-insensitively this script's [switch]$Json parameter.
 function ConvertTo-CanonicalJsonString {
     param([string]$Text)
     $builder = [System.Text.StringBuilder]::new($Text.Length + 2)
@@ -130,14 +175,50 @@ function ConvertTo-CanonicalJson {
     throw "unsupported manifest value type: $($Value.GetType().FullName)"
 }
 
+# Capture the live Rust span for one entry via `sico check --json`.  Returns a
+# compact evidence object; this is corroboration only (no guest span exists to
+# compare against), so any failure here degrades to span_evidence="unavailable"
+# rather than failing the whole probe.
+function Get-RustSpanEvidence {
+    param([string]$RelativePath)
+    $json = Join-Path $env:TEMP ("sico-span-" + [System.Guid]::NewGuid().ToString('N') + ".json")
+    try {
+        $full = Join-Path $repoRoot $RelativePath
+        $out = & $cli check --json $full 2>$null
+        $exit = $LASTEXITCODE
+        [System.IO.File]::WriteAllText($json, ($out -join "`n"), [System.Text.UTF8Encoding]::new($false))
+        if ($exit -eq 0) { return @{ span_evidence = 'rust-accepted-no-span' } }
+        $parsed = Get-Content -LiteralPath $json -Raw | ConvertFrom-Json
+        $diags = @($parsed.diagnostics)
+        if ($diags.Count -eq 0) { return @{ span_evidence = 'rust-refused-no-diagnostic' } }
+        $first = $diags[0]
+        return [ordered]@{
+            span_evidence = 'rust-only'
+            rust_code = $first.code
+            rust_key = $first.key
+            rust_span = ("{0}:{1}:{2}" -f $first.range.start.line, $first.range.start.column, $first.range.start.byte)
+            rust_diagnostic_count = $diags.Count
+            note = 'live `sico check --json`; guest emits no span, so no span comparison is performed'
+        }
+    } catch {
+        return @{ span_evidence = 'unavailable' }
+    } finally {
+        if (Test-Path -LiteralPath $json) { Remove-Item -LiteralPath $json -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 $records = @()
-$mismatchCount = 0
+$exactCount = 0
+$structuralCount = 0
+$zeroCount = 0
+$unmappedRustIds = @{}
 foreach ($entry in $refusals) {
     $path = Join-Path $repoRoot $entry.path
     if (-not (Test-Path -LiteralPath $path)) {
         Write-Output ("MISSING path={0}" -f $entry.path)
         continue
     }
+    $rustIds = @($entry.diagnostic_ids)
     $source = [System.IO.File]::ReadAllText($path)
     $source = $source.Replace("`r`n", "`n")
     $raw = ($source | & $cli run (Join-Path $repoRoot 'selfhost\compiler.sico') 2>&1 | Out-String)
@@ -148,28 +229,64 @@ foreach ($entry in $refusals) {
         $end = $code.IndexOf('"')
         if ($end -gt 0) { $code = $code.Substring(0, $end) }
         $code = $code.TrimEnd('\', '"', ' ')
-        $guestVerdict = "refused:$code"
-        $parity = 'match'
+        $guestVerdict = "REFUSED:$code"
+
+        # mapping lookup: does any registered class for these rust ids emit this guest code?
+        $mapped = 'unmapped'
+        foreach ($rid in $rustIds) {
+            if ($rustToGuest.ContainsKey($rid) -and $rustToGuest[$rid].ContainsKey($code)) {
+                $mapped = $code
+                break
+            }
+        }
+        if ($mapped -eq 'unmapped') {
+            foreach ($rid in $rustIds) { $unmappedRustIds[$rid] = $true }
+            $parity = 'structural'
+            $structuralCount++
+        } else {
+            $parity = 'exact'
+            $exactCount++
+        }
     } elseif ($flat -match '"schema":"sico\.ir\.v0"') {
-        $guestVerdict = 'lowered'
-        $parity = 'mismatch'
+        $guestVerdict = 'LOWERED'
+        $parity = 'zero'
+        $zeroCount++
     } else {
-        $guestVerdict = 'failed:' + $flat.Substring(0, [Math]::Min(80, $flat.Length))
-        $parity = 'mismatch'
+        $guestVerdict = 'FAILED:' + $flat.Substring(0, [Math]::Min(80, $flat.Length))
+        $parity = 'zero'
+        $zeroCount++
     }
-    if ($parity -eq 'mismatch') { $mismatchCount++ }
-    $records += [ordered]@{
+
+    $record = [ordered]@{
         path = $entry.path
-        rust_diagnostic_ids = @($entry.diagnostic_ids)
+        rust_verdict = "REFUSED:" + ($rustIds -join ',')
         guest_verdict = $guestVerdict
+        mapped_id = $mapped
         parity = $parity
     }
+    if ($RustSpans) {
+        $record.span = Get-RustSpanEvidence -RelativePath $entry.path
+    }
+    $records += $record
 }
 
 $manifest = [ordered]@{
     schema = 'sico.m22.corpus-parity.v0'
+    mapped_by = [ordered]@{
+        schema = $mapRaw.schema
+        version = [int]$mapRaw.version
+    }
     checked_count = $records.Count
-    mismatch_count = $mismatchCount
+    exact_parity_count = $exactCount
+    structural_parity_count = $structuralCount
+    zero_parity_count = $zeroCount
+    mapped_id_coverage = [ordered]@{
+        registered_classes = $mapEntries.Count
+        refined = @($mapEntries | Where-Object { $_.grain -eq 'refined' }).Count
+        coarse = @($mapEntries | Where-Object { $_.grain -eq 'coarse' }).Count
+    }
+    span_axis = 'not-compared: guest emits no span (see selfhost/corpus-parity-map-v1.json .span_axis)'
+    unmapped_rust_ids = @($unmappedRustIds.Keys | Sort-Object)
     entries = $records
 }
 $jsonText = (ConvertTo-CanonicalJson $manifest) + "`n"
@@ -179,14 +296,23 @@ if (-not $Json) {
 }
 
 foreach ($record in $records) {
-    $status = if ($record.parity -eq 'match') { 'OK  ' } else { 'MISMATCH' }
-    Write-Output ("{0} {1,-58} rust={2,-10} guest={3}" -f $status, $record.path, ($record.rust_diagnostic_ids -join ','), $record.guest_verdict)
+    $status = switch ($record.parity) {
+        'exact' { 'EXACT   ' }
+        'structural' { 'STRUCT  ' }
+        default { 'ZERO    ' }
+    }
+    Write-Output ("{0} {1,-58} rust={2,-16} guest={3,-34} mapped={4}" -f `
+        $status, $record.path, $record.rust_verdict, $record.guest_verdict, $record.mapped_id)
 }
-Write-Output ("CORPUS_PARITY checked={0} mismatch={1}" -f $records.Count, $mismatchCount)
+Write-Output ("CORPUS_PARITY checked={0} exact={1} structural={2} zero={3}" -f `
+    $records.Count, $exactCount, $structuralCount, $zeroCount)
+Write-Output ("MAPPING registered_classes={0} (refined={1} coarse={2}) unmapped_rust_ids=[{3}]" -f `
+    $mapEntries.Count, $manifest.mapped_id_coverage.refined, $manifest.mapped_id_coverage.coarse, `
+    (($manifest.unmapped_rust_ids) -join ','))
 if ($Json) {
     Write-Output $jsonText
 }
-if ($mismatchCount -eq 0) {
+if ($zeroCount -eq 0) {
     exit 0
 }
 exit 1
