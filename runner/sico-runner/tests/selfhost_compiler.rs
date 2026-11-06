@@ -12012,7 +12012,10 @@ fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
             }
             budget = budget.saturating_mul(2).min(ceiling);
         };
-        println!("EMIT_ONLY functions={funcs} ir_bytes={} fuel={verdict}", ir.len());
+        println!(
+            "EMIT_ONLY functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
     }
 
     // Candidate C vs D discriminator: fix the TOTAL `let` count (256 lets)
