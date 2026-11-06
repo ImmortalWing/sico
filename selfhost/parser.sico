@@ -11212,12 +11212,14 @@ function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parame
   let cl_next_result = result_id
   let cl_instructions = ""
   let cl_emitted = U64.literal(0)
+  let cl_provided = sico.text.split_lines("")
   let cl_seg_start = next_index(cl_open_idx, expr_end)
   let cl_segment_ok = true
   while U64.less_than(cl_seg_start, cl_close_idx):
     let cl_comma = construct_field_comma(words, cl_seg_start, cl_close_idx)
     let cl_seg_end = cl_comma
     let cl_field_name = word_at(words, cl_seg_start)
+    set cl_provided = sico.list.append(cl_provided, cl_field_name)
     let cl_colon_idx = next_index(cl_seg_start, cl_seg_end)
     let cl_value_first = next_index(cl_colon_idx, cl_seg_end)
     if is_word(word_at(words, cl_colon_idx), ":"):
@@ -11291,6 +11293,12 @@ function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parame
     end if
   end while
   if cl_segment_ok:
+    if record_declared(words, cl_record_name):
+      let cl_missing = record_missing_field_name(words, cl_record_name, cl_provided)
+      if U64.less_than(U64.literal(0), sico.text.length(cl_missing)):
+        return "ERR:E-SH-IR-CONSTRUCT-FIELD"
+      end if
+    end if
     set cl_fields_json = sico.text.concat(cl_fields_json, "]")
     let cl_name_offset = word_span_offset(words, src, anchor_offset, anchor_idx, expr_first)
     let cl_close_offset = word_span_offset(words, src, anchor_offset, anchor_idx, expr_end)
@@ -11350,6 +11358,90 @@ function payload_type_json(words: List[Text], value_first: U64, value_end: U64) 
     end if
   end if
   return "ERR:E-SH-IR-VARIANT-PAYLOAD"
+end function
+
+// The first declared field of the named config that is absent from the
+// provided field-name list, or "" when every declared field is provided (or
+// the config has no declared fields, or is not declared). This keeps config
+// construction fail-closed against the Rust oracle's "missing field"
+// diagnostic: an item that omits a declared field must be refused, not
+// lowered.
+function record_missing_field_name(words: List[Text], record_name: Text, provided: List[Text]) returns Text:
+  let rmfn_words_len = sico.list.length(words)
+  let rmfn_i = U64.literal(0)
+  let rmfn_prev = ""
+  while U64.less_than(rmfn_i, rmfn_words_len):
+    let rmfn_token = word_at(words, rmfn_i)
+    let rmfn_line_start = false
+    if is_word(rmfn_prev, ""):
+      set rmfn_line_start = true
+    end if
+    if is_word(rmfn_prev, "<nl>"):
+      set rmfn_line_start = true
+    end if
+    if is_word(rmfn_token, "record"):
+      if rmfn_line_start:
+        let rmfn_name_idx = next_index(rmfn_i, rmfn_words_len)
+        if U64.less_than(rmfn_name_idx, rmfn_words_len):
+          if is_word(word_at(words, rmfn_name_idx), record_name):
+            let rmfn_j = next_index(rmfn_name_idx, rmfn_words_len)
+            if is_word(word_at(words, rmfn_j), ":"):
+              set rmfn_j = next_index(rmfn_j, rmfn_words_len)
+            end if
+            let rmfn_done = false
+            while U64.less_than(rmfn_j, rmfn_words_len):
+              if rmfn_done:
+                break
+              end if
+              let rmfn_fw = word_at(words, rmfn_j)
+              if is_word(rmfn_fw, "end"):
+                let rmfn_end_next = word_at(words, next_index(rmfn_j, rmfn_words_len))
+                if is_word(rmfn_end_next, "record"):
+                  set rmfn_done = true
+                  break
+                end if
+              end if
+              let rmfn_fname_idx = rmfn_j
+              let rmfn_is_field = false
+              if is_word(rmfn_fw, "field"):
+                set rmfn_fname_idx = next_index(rmfn_j, rmfn_words_len)
+                set rmfn_is_field = true
+              end if
+              let rmfn_colon_idx = next_index(rmfn_fname_idx, rmfn_words_len)
+              if is_word(word_at(words, rmfn_colon_idx), ":"):
+                set rmfn_is_field = true
+              end if
+              if rmfn_is_field:
+                let rmfn_fname = word_at(words, rmfn_fname_idx)
+                let rmfn_found = false
+                let rmfn_k = U64.literal(0)
+                let rmfn_plen = sico.list.length(provided)
+                while U64.less_than(rmfn_k, rmfn_plen):
+                  if is_word(word_at(provided, rmfn_k), rmfn_fname):
+                    set rmfn_found = true
+                    break
+                  end if
+                  set rmfn_k = next_index(rmfn_k, rmfn_plen)
+                end while
+                if rmfn_found:
+                  let rmfn_type_start = next_index(rmfn_colon_idx, rmfn_words_len)
+                  set rmfn_j = line_end(words, rmfn_type_start)
+                else:
+                  return rmfn_fname
+                end if
+              else:
+                set rmfn_j = next_index(rmfn_j, rmfn_words_len)
+              end if
+            end while
+            return ""
+          end if
+        end if
+      end if
+    end if
+    set rmfn_prev = rmfn_token
+    set rmfn_i = next_index(rmfn_i, rmfn_words_len)
+  end while
+  return ""
 end function
 
 function record_construct_function_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, parameter_count: U64) returns Text:

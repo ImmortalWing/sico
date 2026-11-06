@@ -3503,7 +3503,8 @@ fn sico_compiler_lowers_the_step0507_codegen_functions_byte_exactly() {
         let source = codegen_function_source(name);
         let expected = rust_ir(&source);
         let RunOutcome::Output(output) = run_guest(&source) else {
-            panic!("codegen function {name} must compile through the guest frontend")
+            let diag = run_guest(&source);
+            panic!("codegen function {name} must compile through the guest frontend: {diag:?}")
         };
         assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
         assert_bytes_equal(&output.stdout, expected.as_bytes());
@@ -11195,6 +11196,16 @@ fn text_join_shape_module() -> Module {
     ))
 }
 
+/// STEP-0560: the `sico.list.length[U64]` shape: the element count of a
+/// numeric list.  The call is the seventh and last collection helper of the
+/// emission vocabulary; the six STEP-0542 shapes are pinned in
+/// `the_emitter_vocabulary_c_covers_the_collection_helper_shapes`.
+fn list_length_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64]) returns U64:\n  return sico.list.length[U64](items)\nend function",
+    ))
+}
+
 /// The same call with its argument removed: the intrinsic's own arity gate
 /// must stay a typed refusal on both sides.
 fn list_get_u64_without_argument_module() -> Module {
@@ -11321,6 +11332,38 @@ fn the_emitter_vocabulary_c_covers_the_collection_helper_shapes() {
                     "the guest must refuse the list.get[U64] shape with the {label} fault, got {hex}"
                 )
             }
+        }
+    }
+}
+
+/// STEP-0560: the seventh collection helper of the emission vocabulary,
+/// `sico.list.length[U64]`.  The guest's component must be byte for byte the
+/// Rust backend's production component, and both sides must pass the real
+/// `wasmparser::Validator`.
+#[test]
+fn the_emitter_vocabulary_c_covers_the_list_length_u64_shape() {
+    let module = list_length_u64_shape_module();
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the oracle must emit the list.length[U64] shape");
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the oracle component must pass the real Wasm validator");
+    match guest_emission(&injected_ir(&module)) {
+        GuestEmission::Component(hex) => {
+            assert_eq!(hex.len() % 2, 0, "the guest hex must be whole bytes");
+            assert_eq!(
+                hex.len() / 2,
+                expected.len(),
+                "the guest component size must match the oracle's"
+            );
+            let actual = decode_hex(hex.as_bytes());
+            assert_bytes_equal(&actual, &expected);
+            wasmparser::Validator::new()
+                .validate_all(&actual)
+                .expect("the guest component must be valid");
+        }
+        GuestEmission::Refusal(identity) => {
+            panic!("the guest must emit, refused with {identity}")
         }
     }
 }
