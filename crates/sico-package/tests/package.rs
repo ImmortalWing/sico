@@ -423,9 +423,38 @@ fn script_input() -> sico_package::BuildScriptInput {
         semantics: "sico.ir.v0".to_owned(),
         wit_sha256: "a".repeat(64),
         adapter_sha256: "b".repeat(64),
-        limits: RuntimeLimits {
-            body_bytes: 8 * 1024 * 1024,
-            ..RuntimeLimits::default()
-        },
+        // STEP-0497: a Script package must grant at least the guest linear
+        // memory its Component declares, otherwise the launch cannot
+        // instantiate the guest memory at all.
+        limits: sico_package::script_profile_limits(),
     }
+}
+
+/// STEP-0497: a Script package whose memory limit is below the declared
+/// guest memory is rejected at build time, not carried into a launch that
+/// can only fail as an opaque instantiation trap.
+#[test]
+fn script_v1_package_rejects_a_memory_limit_below_the_declared_guest_memory() {
+    let mut input = script_input();
+    input.limits.memory_bytes = sico_package::SCRIPT_MEMORY_BYTES - 1;
+    assert!(matches!(
+        build_script_v1(input),
+        Err(PackageError::Manifest(_))
+    ));
+    let mut too_small = script_input();
+    too_small.limits.memory_bytes = 64 * 1024 * 1024;
+    assert!(matches!(
+        build_script_v1(too_small),
+        Err(PackageError::Manifest(_))
+    ));
+}
+
+/// STEP-0497: the Script profile's package limits grant exactly the declared
+/// guest memory, so the effective host ceiling cannot fall below it by
+/// accident.
+#[test]
+fn script_profile_limits_cover_the_declared_guest_memory() {
+    let limits = sico_package::script_profile_limits();
+    assert_eq!(limits.memory_bytes, sico_package::SCRIPT_MEMORY_BYTES);
+    assert_eq!(limits.body_bytes, 8 * 1024 * 1024);
 }

@@ -1297,7 +1297,7 @@ M10–M12 是在 production domain/identity/credentials、third-party pilots、l
 
 进入条件：M14 GO，且每个 pilot 所需的平台里程碑已 GO。退出条件：应用不修改 compiler/Runtime/Host core 即可开发、测试、打包、授权、运行和更新；内部 fixture、洁净室 consumer、外部 pilot 和 production evidence 严格分级。
 
-M14–M18 的详细门槛见 [`docs/plans/`](docs/plans/README.md)。规划阶段不预占 STEP 编号；每个里程碑的第一项实现工作必须先冻结 RFC/ADR、威胁模型和可复现退出语料。
+M14–M26 的详细门槛见 [`docs/plans/`](docs/plans/README.md)。规划阶段不预占 STEP 编号；每个里程碑的第一项实现工作必须先冻结 RFC/ADR、威胁模型和可复现退出语料。
 
 ### M19–M25：生产工程、平台广度、DX、自举与产品退出
 

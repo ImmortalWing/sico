@@ -1,0 +1,9 @@
+// case: REC-002
+// expect: reject(EMPTY_RECORD)
+
+record Empty:
+end record
+
+function main() returns Int:
+  return 0
+end function

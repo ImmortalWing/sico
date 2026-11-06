@@ -1,0 +1,7 @@
+enum FormatError
+  InvalidInput
+end
+
+interface Formatter
+  fn format(input: Text) -> Result<Text, FormatError>
+end

@@ -53,6 +53,10 @@ pub(crate) fn helper_signature(
         | "sico.bytes.equal" => (i32s(4), i32s(1)),
         "sico.u64.to_text" | "sico.i64.to_text" => (vec![ValType::I64], i32s(2)),
 
+        // STEP-0484 arena treadmill (RFC-0029 amendment): owned-arena cores.
+        "sico.arena.enter_scratch" | "sico.arena.exit_scratch" => (vec![], vec![ValType::I64]),
+        "sico.arena.push_chunk" => (i32s(4), i32s(2)),
+
         // RFC-0045 stdlib batch 2 (STEP-0174).
         "sico.text.compare" => (i32s(4), vec![ValType::I64]),
         "sico.text.char_loc" => (i32s(3), i32s(2)),
@@ -132,6 +136,9 @@ pub(crate) fn emit_helper(
         "sico.text.char_loc" => emit_char_loc(),
         "sico.text.format" => emit_format(alloc),
         "sico.list.sort" => emit_list_sort(alloc, helpers),
+        "sico.arena.enter_scratch" => emit_arena_enter_scratch(),
+        "sico.arena.exit_scratch" => emit_arena_exit_scratch(),
+        "sico.arena.push_chunk" => emit_arena_push_chunk(),
         _ => unreachable!("helpers exist for every helper name"),
     }
 }
@@ -148,6 +155,91 @@ fn emit_concat(alloc: u32) -> Function {
         Instruction::LocalGet(2), Instruction::LocalGet(3),
         Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
         Instruction::LocalGet(4), Instruction::LocalGet(5), Instruction::End,
+    );
+    body
+}
+
+// STEP-0484 arena treadmill (RFC-0029 amendment). The owned-arena core
+// carries three globals: 0 = perm bump (legacy behavior, ceiling = global 1),
+// 1 = scratch floor (init ARENA_LIMIT), 2 = mode (init 0 = perm). These
+// helpers are refused in transport modules by `build_script_core`.
+
+/// `enter_scratch()`: mode := 1 (idempotent). Returns 0.
+fn emit_arena_enter_scratch() -> Function {
+    let mut body = Function::new(vec![]);
+    ops!(body;
+        Instruction::I32Const(1), Instruction::GlobalSet(2),
+        Instruction::I64Const(0), Instruction::End,
+    );
+    body
+}
+
+/// `exit_scratch()`: mode := 0. Returns 0.
+fn emit_arena_exit_scratch() -> Function {
+    let mut body = Function::new(vec![]);
+    ops!(body;
+        Instruction::I32Const(0), Instruction::GlobalSet(2),
+        Instruction::I64Const(0), Instruction::End,
+    );
+    body
+}
+
+/// One treadmill lap: keep `chunk` in the perm zone, append its `(ptr, len)`
+/// to a fresh private-header table holding `chunks_len + 1` elements, then
+/// reset the scratch floor to `ARENA_LIMIT` (reclaiming every scratch
+/// allocation made since the previous lap). Traps with the registered
+/// arena-exhaustion `unreachable` when the perm bump would cross the live
+/// scratch floor. Params: `(chunks_ptr, chunks_len, chunk_ptr, chunk_len)`;
+/// locals: kept(4), aligned(5), `end`(6), `new_count`(7), table(8), visible(9).
+fn emit_arena_push_chunk() -> Function {
+    let mut body = Function::new(vec![(6, ValType::I32)]);
+    ops!(body;
+        // kept = perm_alloc(align8(chunk_len)); copy chunk bytes into it.
+        Instruction::GlobalGet(0), Instruction::I32Const(7), Instruction::I32Add,
+        Instruction::I32Const(-8), Instruction::I32And, Instruction::LocalSet(5),
+        Instruction::LocalGet(5), Instruction::LocalGet(3), Instruction::I32Add,
+        Instruction::LocalTee(6), Instruction::LocalGet(5),
+        Instruction::I32LtU, Instruction::If(BlockType::Empty), Instruction::Unreachable,
+        Instruction::End,
+        Instruction::LocalGet(6), Instruction::GlobalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty), Instruction::Unreachable, Instruction::End,
+        Instruction::LocalGet(6), Instruction::GlobalSet(0),
+        Instruction::LocalGet(5), Instruction::LocalSet(4),
+        Instruction::LocalGet(4), Instruction::LocalGet(2), Instruction::LocalGet(3),
+        Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        // table = perm_alloc(16 + (chunks_len + 1) * 8) with SICO/LIST header.
+        Instruction::LocalGet(1), Instruction::I32Const(1), Instruction::I32Add,
+        Instruction::LocalSet(7),
+        Instruction::GlobalGet(0), Instruction::I32Const(7), Instruction::I32Add,
+        Instruction::I32Const(-8), Instruction::I32And, Instruction::LocalSet(5),
+        Instruction::LocalGet(5), Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::LocalGet(7), Instruction::I32Const(3), Instruction::I32Shl,
+        Instruction::I32Add, Instruction::LocalTee(6),
+        Instruction::LocalGet(5), Instruction::I32LtU,
+        Instruction::If(BlockType::Empty), Instruction::Unreachable, Instruction::End,
+        Instruction::LocalGet(6), Instruction::GlobalGet(1), Instruction::I32GtU,
+        Instruction::If(BlockType::Empty), Instruction::Unreachable, Instruction::End,
+        Instruction::LocalGet(6), Instruction::GlobalSet(0),
+        Instruction::LocalGet(5), Instruction::LocalSet(8),
+        Instruction::LocalGet(8), Instruction::I32Const(0x5349_434f), Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(8), Instruction::LocalGet(7), Instruction::I32Store(mem(4, 2)),
+        Instruction::LocalGet(8), Instruction::LocalGet(7), Instruction::I32Store(mem(8, 2)),
+        Instruction::LocalGet(8), Instruction::I32Const(0x4c49_5354), Instruction::I32Store(mem(12, 2)),
+        // visible = table + 16; copy chunks_len elements, then append kept.
+        Instruction::LocalGet(8), Instruction::I32Const(16), Instruction::I32Add,
+        Instruction::LocalTee(9),
+        Instruction::LocalGet(0), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+        Instruction::LocalGet(9), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::LocalGet(4),
+        Instruction::I32Store(mem(0, 2)),
+        Instruction::LocalGet(9), Instruction::LocalGet(1), Instruction::I32Const(3),
+        Instruction::I32Shl, Instruction::I32Add, Instruction::LocalGet(3),
+        Instruction::I32Store(mem(4, 2)),
+        // Reclaim every scratch allocation; stay in the current mode.
+        Instruction::I32Const(i32::try_from(crate::canonical::ARENA_LIMIT).unwrap_or(i32::MAX)),
+        Instruction::GlobalSet(1),
+        Instruction::LocalGet(9), Instruction::LocalGet(7), Instruction::End,
     );
     body
 }

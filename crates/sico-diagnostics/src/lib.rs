@@ -60,6 +60,20 @@ pub fn action_hint(code: &str) -> Option<ActionHint> {
             "E1016",
             "declare the interface as `interface <name> version <n>:`",
         ),
+        // M23 language v1 batch 3 (STEP-0328/0329): the new refusal classes
+        // land with their hints per the same incremental rollout.
+        "E2025" => (
+            "E2025",
+            "evaluate the operand into a binding first, or rewrite the condition as `b < a`",
+        ),
+        "E2026" => (
+            "E2026",
+            "keep exactly one expression on the arm line and move any other statement out",
+        ),
+        "E2027" => (
+            "E2027",
+            "add an `else:` arm carrying its own expression before `end if`",
+        ),
         _ => return None,
     };
     Some(ActionHint {
@@ -424,5 +438,16 @@ mod hint_tests {
     fn unknown_codes_have_no_hint() {
         assert!(action_hint("E9999").is_none());
         assert!(action_hint("E1017").is_none());
+    }
+
+    #[test]
+    fn m23_refusal_codes_carry_action_hints() {
+        // M23 exit gate 4 (STEP-0328/0329): every new batch-3 refusal class
+        // lands with an action hint in the same release as its code.
+        for code in ["E2025", "E2026", "E2027"] {
+            let hint = action_hint(code).unwrap_or_else(|| panic!("{code} missing action hint"));
+            assert_eq!(hint.code, code);
+            assert!(!hint.hint.is_empty());
+        }
     }
 }

@@ -542,6 +542,14 @@ fn explain_reports_action_hints_for_stable_codes() {
     assert_eq!(output.status.code(), Some(0));
     assert!(stdout(&output).contains("end function"));
 
+    // M23 (STEP-0328/0329): the batch-3 refusal classes carry hints too.
+    let output = run(["explain", "E2025"], None);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("b < a"));
+    let output = run(["explain", "E2027"], None);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(stdout(&output).contains("else:"));
+
     let output = run(["explain", "E9999"], None);
     assert_eq!(output.status.code(), Some(1));
     assert!(stderr(&output).contains("no action hint registered"));

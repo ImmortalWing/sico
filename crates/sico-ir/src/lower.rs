@@ -689,27 +689,7 @@ fn lower_function(
         .lines
         .iter()
         .position(|line| line.kind == LineKind::If);
-    let has_general_control = declaration.lines.iter().skip(1).any(|line| {
-        matches!(
-            line.kind,
-            LineKind::While
-                | LineKind::For
-                | LineKind::Break
-                | LineKind::Continue
-                | LineKind::Set
-                | LineKind::Else
-        )
-    }) || declaration.lines.iter().skip(1).any(|line| {
-        // RFC-0046 D2: `let x = e?` desugars to the match/return shape
-        // (control flow even in an otherwise straight body). The keyword
-        // `try expr` stays on the straight path (Try op via the expression
-        // builder) so the STEP-0148 frozen shapes are unchanged.
-        line.kind == LineKind::Let
-            && line
-                .tokens
-                .last()
-                .is_some_and(|token| token.kind == TokenKind::QuestionMark)
-    });
+    let has_general_control = body_needs_general_cfg(declaration);
     let blocks = if let Some(index) = if_index {
         if is_revision_if_shape(declaration, index) {
             // RFC-0044: the frozen revision-guard path declines non-Revision
@@ -754,6 +734,36 @@ fn lower_function(
     ))
 }
 
+/// Whether a function body needs the general structured CFG: loop/branch
+/// keywords and reassignment, a D2 propagating let (`let x = e?` desugars
+/// to the match/return shape even in an otherwise straight body — the
+/// keyword `try expr` stays on the straight path so the STEP-0148 frozen
+/// shapes are unchanged), or a let-bound block form (RFC-0049, STEP-0329:
+/// cell + branch writes + join read always carries control flow).
+fn body_needs_general_cfg(declaration: &Declaration) -> bool {
+    declaration.lines.iter().skip(1).any(|line| {
+        matches!(
+            line.kind,
+            LineKind::While
+                | LineKind::For
+                | LineKind::Break
+                | LineKind::Continue
+                | LineKind::Set
+                | LineKind::Else
+        )
+    }) || declaration.lines.iter().skip(1).any(|line| {
+        line.kind == LineKind::Let
+            && line
+                .tokens
+                .last()
+                .is_some_and(|token| token.kind == TokenKind::QuestionMark)
+    }) || declaration
+        .lines
+        .iter()
+        .skip(1)
+        .any(|line| line.kind == LineKind::Let && is_let_bound_block_header(&line.tokens))
+}
+
 /// True when the function matches the frozen revision-guard shape exactly
 /// (metadata/expressions prefix, one top-level `==` if, single-return
 /// branches), keeping it on the specialized `RevisionCheck` path.
@@ -769,6 +779,11 @@ fn is_revision_if_shape(declaration: &Declaration, if_index: usize) -> bool {
     let if_line = &declaration.lines[if_index];
     let condition_tokens = &if_line.tokens[1..if_line.tokens.len().saturating_sub(1)];
     if top_level_position(condition_tokens, TokenKind::EqualEqual).is_none() {
+        return false;
+    }
+    // RFC-0048 (STEP-0328): a condition with a batch-3 shape (`&&` or a
+    // non-`==` comparison) leaves the specialized path to the general CFG.
+    if batch3_condition_surface(condition_tokens) {
         return false;
     }
     let Some(then_line) = declaration.lines.get(if_index + 1) else {
@@ -941,6 +956,17 @@ impl GeneralLowering<'_, '_> {
             let line = &lines[index];
             match line.kind {
                 LineKind::Let => {
+                    // RFC-0049 (STEP-0329): the let-bound if/match forms
+                    // desugar through the same cell + branch writes + join
+                    // read machinery as the manual pattern they replace.
+                    if is_let_bound_block_header(&line.tokens) {
+                        index = if line.tokens[3].kind == TokenKind::If {
+                            self.lower_let_bound_if(lines, index, end)?
+                        } else {
+                            self.lower_let_bound_match(lines, index, end)?
+                        };
+                        continue;
+                    }
                     self.ensure_current(line.range);
                     let equal = position(&line.tokens, TokenKind::Equal)
                         .ok_or_else(|| unsupported_error("let without value", line.range))?;
@@ -1128,6 +1154,42 @@ impl GeneralLowering<'_, '_> {
                     let depth = line.depth;
                     let condition_tokens =
                         strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
+                    if batch3_condition_surface(condition_tokens) {
+                        // RFC-0048 (STEP-0328): comparisons and `&&` in loop
+                        // headers route through the shared branch desugar
+                        // (the census demand: range-scan `while i < n`
+                        // headers). This widens today's build refusal for
+                        // infix operators in while conditions into an accept.
+                        let header = self.new_block(line.range);
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(header).expect("block bound"),
+                        )));
+                        self.set_current(header);
+                        let body_entry = self.new_block(line.range);
+                        let after = self.new_block(line.range);
+                        self.lower_condition_branch(
+                            condition_tokens,
+                            line.range,
+                            body_entry,
+                            after,
+                        )?;
+                        self.set_current(body_entry);
+                        self.loop_stack.push(LoopFrame { header, after });
+                        self.nested += 1;
+                        let close =
+                            find_region_close(lines, index + 1, end, depth, false, line.range)?;
+                        let snapshot = self.builder.bindings.clone();
+                        self.run(lines, index + 1, close.end_index)?;
+                        self.builder.bindings = snapshot;
+                        self.nested -= 1;
+                        self.loop_stack.pop();
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(header).expect("block bound"),
+                        )));
+                        self.set_current(after);
+                        index = close.end_index;
+                        continue;
+                    }
                     let header = self.new_block(line.range);
                     self.seal_current(Terminator::Jump(BlockId(
                         u32::try_from(header).expect("block bound"),
@@ -1504,8 +1566,13 @@ impl GeneralLowering<'_, '_> {
                     let depth = line.depth;
                     let condition_tokens =
                         strip_outer_parens(&line.tokens[1..line.tokens.len().saturating_sub(1)]);
-                    if let Some(position) =
-                        top_level_position(condition_tokens, TokenKind::EqualEqual)
+                    // RFC-0048 (STEP-0328): a condition carrying any batch-3
+                    // shape (top-level `&&` or a non-`==` comparison) yields
+                    // to the shared branch desugar below; bare RFC-0044
+                    // equality keeps its frozen byte-exact path.
+                    if !batch3_condition_surface(condition_tokens)
+                        && let Some(position) =
+                            top_level_position(condition_tokens, TokenKind::EqualEqual)
                     {
                         // RFC-0044 (language v1 batch 1): infix equality on
                         // two same-width fixed operands lowers to the
@@ -1527,7 +1594,7 @@ impl GeneralLowering<'_, '_> {
                         )?;
                         if left_ty != right_ty || !matches!(left_ty, Type::I64 | Type::U64) {
                             return unsupported(
-                                "infix equality condition operand types",
+                                "infix comparison condition operand types",
                                 line.range,
                             );
                         }
@@ -1548,6 +1615,51 @@ impl GeneralLowering<'_, '_> {
                             then_block: BlockId(u32::try_from(then_block).expect("block bound")),
                             else_block: BlockId(u32::try_from(else_block).expect("block bound")),
                         });
+                        let close =
+                            find_region_close(lines, index + 1, end, depth, true, line.range)?;
+                        self.nested += 1;
+                        let snapshot = self.builder.bindings.clone();
+                        self.set_current(then_block);
+                        self.run(
+                            lines,
+                            index + 1,
+                            close.else_index.unwrap_or(close.end_index),
+                        )?;
+                        self.seal_current(Terminator::Jump(BlockId(
+                            u32::try_from(join).expect("block bound"),
+                        )));
+                        if let Some(else_index) = close.else_index {
+                            let arm_snapshot = self.builder.bindings.clone();
+                            self.set_current(else_block);
+                            self.run(lines, else_index + 1, close.end_index)?;
+                            self.builder.bindings = arm_snapshot;
+                            self.seal_current(Terminator::Jump(BlockId(
+                                u32::try_from(join).expect("block bound"),
+                            )));
+                        } else {
+                            self.blocks[else_block].terminator = Some(Terminator::Jump(BlockId(
+                                u32::try_from(join).expect("block bound"),
+                            )));
+                        }
+                        self.builder.bindings = snapshot;
+                        self.nested -= 1;
+                        self.set_current(join);
+                        index = close.end_index;
+                        continue;
+                    }
+                    if batch3_condition_surface(condition_tokens) {
+                        // RFC-0048 (STEP-0328): batch-3 comparisons and `&&`
+                        // route through the shared branch desugar.
+                        self.ensure_current(line.range);
+                        let then_block = self.new_block(line.range);
+                        let else_block = self.new_block(line.range);
+                        let join = self.new_block(line.range);
+                        self.lower_condition_branch(
+                            condition_tokens,
+                            line.range,
+                            then_block,
+                            else_block,
+                        )?;
                         let close =
                             find_region_close(lines, index + 1, end, depth, true, line.range)?;
                         self.nested += 1;
@@ -1882,6 +1994,487 @@ impl GeneralLowering<'_, '_> {
             index += 1;
         }
         Ok(())
+    }
+
+    /// RFC-0048 (STEP-0328): lowers a condition as a `Branch` routed to
+    /// `then_target`/`else_target`, sealing the current block (and any
+    /// short-circuit mid blocks) with the terminator.
+    ///
+    /// `&&` becomes nested branches — the right condition is evaluated only
+    /// when the left held, so skipped fuel/traps are defined behavior, and
+    /// left-to-right order is preserved (RFC-0048 §3). Each `&&` operand
+    /// must itself be a comparison/equality condition (or a nested `&&`);
+    /// anything else is the build-channel refusal RFC-0048 §7 records. A
+    /// top-level comparison lowers through the two existing fixed-width
+    /// operations per the §3 desugar table; every other condition shape
+    /// falls back to the pre-batch-3 Bool-expression surface.
+    fn lower_condition_branch(
+        &mut self,
+        tokens: &[HirToken],
+        range: TextRange,
+        then_target: usize,
+        else_target: usize,
+    ) -> Result<(), CoreLowerError> {
+        let tokens = strip_outer_parens(tokens);
+        if let Some(index) = top_level_position(tokens, TokenKind::AmpAmp) {
+            let left = &tokens[..index];
+            let right = &tokens[index + 1..];
+            for side in [left, right] {
+                if top_level_position(side, TokenKind::AmpAmp).is_none()
+                    && top_level_comparison(side).is_none()
+                {
+                    return unsupported(
+                        "&& operand is not a comparison condition (RFC-0048 §3)",
+                        range,
+                    );
+                }
+            }
+            let mid = self.new_block(range);
+            self.lower_condition_branch(left, range, mid, else_target)?;
+            self.set_current(mid);
+            self.lower_condition_branch(right, range, then_target, else_target)?;
+            return Ok(());
+        }
+        if let Some((position, kind)) = top_level_comparison(tokens) {
+            return self.lower_comparison_branch(
+                tokens,
+                position,
+                kind,
+                range,
+                then_target,
+                else_target,
+            );
+        }
+        let current = self.current.expect("current");
+        let (condition, condition_ty) =
+            self.builder
+                .expression(tokens, None, &mut self.blocks[current].instructions)?;
+        if condition_ty != Type::Bool {
+            return unsupported("condition is not Bool", range);
+        }
+        self.seal_current(Terminator::Branch {
+            condition,
+            then_block: BlockId(u32::try_from(then_target).expect("block bound")),
+            else_block: BlockId(u32::try_from(else_target).expect("block bound")),
+        });
+        Ok(())
+    }
+
+    /// RFC-0048 §3 (STEP-0328): one top-level comparison on two identical
+    /// fixed-width operands, lowered through `EqualFixed`/`LessFixed` with
+    /// branch inversion (`!=`, `<=`, `>=`) and operand swap (`>`, `<=`).
+    /// No Boolean-negation operation exists or is added.
+    fn lower_comparison_branch(
+        &mut self,
+        tokens: &[HirToken],
+        position: usize,
+        kind: TokenKind,
+        range: TextRange,
+        then_target: usize,
+        else_target: usize,
+    ) -> Result<(), CoreLowerError> {
+        // Chained comparisons (`a < b < c`) stay refused in v0 (RFC-0048 §10).
+        if top_level_comparison(&tokens[..position]).is_some()
+            || top_level_comparison(&tokens[position + 1..]).is_some()
+        {
+            return unsupported("chained comparison", range);
+        }
+        let left_tokens = strip_outer_parens(&tokens[..position]);
+        let right_tokens = strip_outer_parens(&tokens[position + 1..]);
+        // Swap-form operators evaluate their source-left operand second, so
+        // v0 restricts their operands to atoms and evaluates them in the
+        // desugar's `b < a` order — the swap stays unobservable (RFC-0048 §3).
+        let (first_tokens, second_tokens) = match kind {
+            TokenKind::GreaterThan | TokenKind::LessEqual => {
+                for side in [left_tokens, right_tokens] {
+                    if !is_atom_operand_tokens(side) {
+                        return unsupported(
+                            "swap-form comparison operand is not an atom; evaluate it into a binding first or rewrite as `b < a` (E2025)",
+                            range,
+                        );
+                    }
+                }
+                (right_tokens, left_tokens)
+            }
+            _ => (left_tokens, right_tokens),
+        };
+        let current = self.current.expect("current");
+        let (first_value, first_ty) =
+            self.builder
+                .expression(first_tokens, None, &mut self.blocks[current].instructions)?;
+        let (second_value, second_ty) =
+            self.builder
+                .expression(second_tokens, None, &mut self.blocks[current].instructions)?;
+        if first_ty != second_ty || !matches!(first_ty, Type::I64 | Type::U64) {
+            return unsupported("infix comparison condition operand types", range);
+        }
+        let (operation, inverted) = match kind {
+            TokenKind::EqualEqual | TokenKind::BangEqual => (
+                Operation::EqualFixed {
+                    left: first_value,
+                    right: second_value,
+                },
+                kind == TokenKind::BangEqual,
+            ),
+            _ => (
+                Operation::LessFixed {
+                    left: first_value,
+                    right: second_value,
+                },
+                matches!(kind, TokenKind::LessEqual | TokenKind::GreaterEqual),
+            ),
+        };
+        let condition = self.builder.emit(
+            Type::Bool,
+            operation,
+            range,
+            &mut self.blocks[current].instructions,
+        );
+        let (then_block, else_block) = if inverted {
+            (else_target, then_target)
+        } else {
+            (then_target, else_target)
+        };
+        self.seal_current(Terminator::Branch {
+            condition,
+            then_block: BlockId(u32::try_from(then_block).expect("block bound")),
+            else_block: BlockId(u32::try_from(else_block).expect("block bound")),
+        });
+        Ok(())
+    }
+
+    /// RFC-0049 (STEP-0329): `let x = if cond: <expr> else: <expr> end if`
+    /// desugars to a fresh cell + one unconditional write per branch + the
+    /// join read. Only the taken arm evaluates; both arms must unify to one
+    /// type; the binding is inserted only after both arms so neither arm can
+    /// read the cell. Returns the index after the region's `end`.
+    fn lower_let_bound_if(
+        &mut self,
+        lines: &[Line],
+        index: usize,
+        end: usize,
+    ) -> Result<usize, CoreLowerError> {
+        let line = &lines[index];
+        let depth = line.depth;
+        let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+        if name.is_empty() || self.builder.cells.contains_key(name) {
+            return unsupported("cell redeclared", line.range);
+        }
+        let condition_tokens = strip_outer_parens(&line.tokens[4..line.tokens.len() - 1]);
+        let close = find_region_close(lines, index + 1, end, depth, true, line.range)?;
+        let Some(else_index) = close.else_index else {
+            return unsupported("let-bound if requires else (E2027)", line.range);
+        };
+        let then_line = single_arm_expression(lines, index + 1, else_index, line.range)?;
+        let else_line = single_arm_expression(lines, else_index + 1, close.end_index, line.range)?;
+        self.ensure_current(line.range);
+        let then_block = self.new_block(line.range);
+        let else_block = self.new_block(line.range);
+        let join = self.new_block(line.range);
+        self.lower_condition_branch(condition_tokens, line.range, then_block, else_block)?;
+        self.set_current(then_block);
+        let (value, ty) = self.builder.expression(
+            &then_line.tokens,
+            None,
+            &mut self.blocks[then_block].instructions,
+        )?;
+        let local = u32::try_from(self.builder.locals.len())
+            .map_err(|_| unsupported_error("local limit", line.range))?;
+        self.builder.locals.push(Local {
+            name: name.to_owned(),
+            ty: ty.clone(),
+            range: source_range(then_line.range),
+        });
+        self.builder.emit(
+            Type::Unit,
+            Operation::WriteLocal { local, value },
+            then_line.range,
+            &mut self.blocks[then_block].instructions,
+        );
+        self.seal_current(Terminator::Jump(BlockId(
+            u32::try_from(join).expect("block bound"),
+        )));
+        self.set_current(else_block);
+        let (else_value, else_ty) = self.builder.expression(
+            &else_line.tokens,
+            None,
+            &mut self.blocks[else_block].instructions,
+        )?;
+        if else_ty != ty {
+            return unsupported("let-bound arm types differ", else_line.range);
+        }
+        self.builder.emit(
+            Type::Unit,
+            Operation::WriteLocal {
+                local,
+                value: else_value,
+            },
+            else_line.range,
+            &mut self.blocks[else_block].instructions,
+        );
+        self.seal_current(Terminator::Jump(BlockId(
+            u32::try_from(join).expect("block bound"),
+        )));
+        self.builder.cells.insert(name.to_owned(), (local, ty));
+        self.set_current(join);
+        Ok(close.end_index + 1)
+    }
+
+    /// RFC-0049 (STEP-0329): `let x = match subject: case p: <expr> … end
+    /// match` — the statement match's arm machinery with single-expression
+    /// arms writing the join cell. Payload bindings spill exactly as the
+    /// statement match spills them; only the taken arm evaluates.
+    #[allow(clippy::too_many_lines)]
+    fn lower_let_bound_match(
+        &mut self,
+        lines: &[Line],
+        index: usize,
+        end: usize,
+    ) -> Result<usize, CoreLowerError> {
+        let line = &lines[index];
+        let depth = line.depth;
+        let name = line.tokens.get(1).map_or("", |token| token.text.as_str());
+        if name.is_empty() || self.builder.cells.contains_key(name) {
+            return unsupported("cell redeclared", line.range);
+        }
+        let subject_tokens = strip_outer_parens(&line.tokens[4..line.tokens.len() - 1]);
+        self.ensure_current(line.range);
+        let entry = self.current.expect("current");
+        let expression_parts = split_top_level(subject_tokens, TokenKind::Comma);
+        let mut values = Vec::new();
+        let mut value_types = Vec::new();
+        for expression in expression_parts {
+            let (value, ty) =
+                self.builder
+                    .expression(expression, None, &mut self.blocks[entry].instructions)?;
+            values.push(value);
+            value_types.push(ty);
+        }
+        let mut arm_ranges = Vec::new();
+        let mut cursor = index + 1;
+        while cursor < end {
+            let arm_line = &lines[cursor];
+            if arm_line.depth == depth && arm_line.kind == LineKind::End {
+                break;
+            }
+            if !(arm_line.depth == depth + 1 && arm_line.kind == LineKind::MatchArm) {
+                return unsupported("let-bound match arm body", arm_line.range);
+            }
+            let mut body_end = cursor + 1;
+            while body_end < end {
+                let body_line = &lines[body_end];
+                if body_line.depth == depth && body_line.kind == LineKind::End {
+                    break;
+                }
+                if body_line.depth == depth + 1 && body_line.kind == LineKind::MatchArm {
+                    break;
+                }
+                if body_line.depth <= depth {
+                    return unsupported("let-bound match arm body", body_line.range);
+                }
+                body_end += 1;
+            }
+            arm_ranges.push((cursor, body_end));
+            cursor = body_end;
+        }
+        if arm_ranges.is_empty() {
+            return unsupported("empty match", line.range);
+        }
+        for (arm_index, body_end) in &arm_ranges {
+            if *body_end != arm_index + 2 || lines[arm_index + 1].kind != LineKind::Expression {
+                return unsupported(
+                    "let-bound match arm must be exactly one expression statement (E2026)",
+                    lines[*arm_index].range,
+                );
+            }
+        }
+        let binds_payload = arm_ranges.iter().any(|(arm_index, _)| {
+            let arm_line = &lines[*arm_index];
+            let pattern_tokens = strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1]);
+            let patterns: Vec<_> = split_top_level(pattern_tokens, TokenKind::Comma)
+                .into_iter()
+                .map(parse_pattern)
+                .collect();
+            patterns.len() == 1
+                && matches!(
+                    &patterns[0],
+                    Pattern::Variant { name, payload }
+                        if matches!(name.as_str(), "ok" | "error")
+                            && matches!(payload.as_slice(), [Pattern::Binding(_)])
+                )
+        });
+        let needs_spill = binds_payload
+            && values
+                .first()
+                .is_some_and(|value| value.0 >= self.builder.parameter_count);
+        let spill_cell = if needs_spill {
+            let Some(subject_type) = value_types.first().cloned() else {
+                return unsupported("match payload binding", line.range);
+            };
+            let name = format!("#match{}", self.builder.locals.len());
+            let local = u32::try_from(self.builder.locals.len())
+                .map_err(|_| unsupported_error("local limit", line.range))?;
+            self.builder.locals.push(Local {
+                name,
+                ty: subject_type.clone(),
+                range: source_range(line.range),
+            });
+            let value = values.first().copied().expect("match subject");
+            self.builder.emit(
+                Type::Unit,
+                Operation::WriteLocal { local, value },
+                line.range,
+                &mut self.blocks[entry].instructions,
+            );
+            Some(local)
+        } else {
+            None
+        };
+        let join = self.new_block(line.range);
+        let mut arms = Vec::new();
+        let mut cell_local: Option<u32> = None;
+        let mut cell_ty: Option<Type> = None;
+        for (arm_index, _) in arm_ranges {
+            let arm_line = &lines[arm_index];
+            let arm_body = &lines[arm_index + 1];
+            let pattern_tokens = strip_outer_parens(&arm_line.tokens[1..arm_line.tokens.len() - 1]);
+            let patterns: Vec<_> = split_top_level(pattern_tokens, TokenKind::Comma)
+                .into_iter()
+                .map(parse_pattern)
+                .collect();
+            let mut payload_binding = None;
+            let mut payload_variant = String::new();
+            for pattern in &patterns {
+                let single_result_binding = match pattern {
+                    Pattern::Variant { name, payload }
+                        if matches!(name.as_str(), "ok" | "error") =>
+                    {
+                        payload_variant.clone_from(name);
+                        match payload.as_slice() {
+                            [Pattern::Binding(binding)] => Some(binding.clone()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                match single_result_binding {
+                    Some(binding) if patterns.len() == 1 && payload_binding.is_none() => {
+                        payload_binding = Some(binding);
+                    }
+                    _ if pattern_binds(pattern) => {
+                        return unsupported("match payload binding", arm_line.range);
+                    }
+                    _ => {}
+                }
+            }
+            let arm_block = self.new_block(arm_line.range);
+            arms.push(MatchArm {
+                patterns,
+                target: BlockId(u32::try_from(arm_block).expect("block bound")),
+                range: source_range(arm_line.range),
+            });
+            self.set_current(arm_block);
+            let arm_snapshot = self.builder.bindings.clone();
+            if let Some(binding) = payload_binding {
+                let Some(Type::Result { ok, error }) = value_types.first() else {
+                    return unsupported("match payload binding on non-Result", arm_line.range);
+                };
+                let base = if let Some(local) = spill_cell {
+                    let Some(subject_type) = value_types.first().cloned() else {
+                        return unsupported("match payload binding", arm_line.range);
+                    };
+                    self.builder.emit(
+                        subject_type,
+                        Operation::ReadLocal { local },
+                        arm_line.range,
+                        &mut self.blocks[arm_block].instructions,
+                    )
+                } else {
+                    let Some(base) = values.first().copied() else {
+                        return unsupported("match payload binding", arm_line.range);
+                    };
+                    if base.0 >= self.builder.parameter_count {
+                        return unsupported("match payload binding", arm_line.range);
+                    }
+                    base
+                };
+                let payload_type = if payload_variant == "ok" {
+                    (**ok).clone()
+                } else {
+                    (**error).clone()
+                };
+                let payload = self.builder.emit(
+                    payload_type.clone(),
+                    Operation::Project {
+                        base,
+                        field: payload_variant,
+                    },
+                    arm_line.range,
+                    &mut self.blocks[arm_block].instructions,
+                );
+                let cell_name = format!("#match{binding}");
+                let local = u32::try_from(self.builder.locals.len())
+                    .map_err(|_| unsupported_error("local limit", arm_line.range))?;
+                self.builder.locals.push(Local {
+                    name: cell_name,
+                    ty: payload_type.clone(),
+                    range: source_range(arm_line.range),
+                });
+                self.builder
+                    .cells
+                    .insert(binding, (local, payload_type.clone()));
+                self.builder.emit(
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local,
+                        value: payload,
+                    },
+                    arm_line.range,
+                    &mut self.blocks[arm_block].instructions,
+                );
+            }
+            let (arm_value, arm_ty) = self.builder.expression(
+                &arm_body.tokens,
+                None,
+                &mut self.blocks[arm_block].instructions,
+            )?;
+            let local = if let (Some(local), Some(expected)) = (&cell_local, &cell_ty) {
+                if *expected != arm_ty {
+                    return unsupported("let-bound arm types differ", arm_body.range);
+                }
+                *local
+            } else {
+                let local = u32::try_from(self.builder.locals.len())
+                    .map_err(|_| unsupported_error("local limit", arm_body.range))?;
+                self.builder.locals.push(Local {
+                    name: name.to_owned(),
+                    ty: arm_ty.clone(),
+                    range: source_range(arm_body.range),
+                });
+                cell_local = Some(local);
+                cell_ty = Some(arm_ty.clone());
+                local
+            };
+            self.builder.emit(
+                Type::Unit,
+                Operation::WriteLocal {
+                    local,
+                    value: arm_value,
+                },
+                arm_body.range,
+                &mut self.blocks[arm_block].instructions,
+            );
+            self.builder.bindings = arm_snapshot;
+            self.seal_current(Terminator::Jump(BlockId(
+                u32::try_from(join).expect("block bound"),
+            )));
+        }
+        self.blocks[entry].terminator = Some(Terminator::Match { values, arms });
+        if let (Some(local), Some(ty)) = (cell_local, cell_ty) {
+            self.builder.cells.insert(name.to_owned(), (local, ty));
+        }
+        self.set_current(join);
+        Ok(cursor + 1)
     }
 
     /// RFC-0046 D2: `let x = expr?` in the general CFG. The source Result
@@ -2626,6 +3219,12 @@ impl FunctionBuilder<'_> {
                 output,
             );
             return Ok((value, ty));
+        }
+        // RFC-0048 (STEP-0328): `&&` is only a condition-position operator;
+        // in a value position it is the named build-channel refusal the RFC
+        // §7 records, never a Boolean value.
+        if top_level_position(tokens, TokenKind::AmpAmp).is_some() {
+            return unsupported("&& outside a condition position", token_range(tokens));
         }
         if let Some(index) = top_level_position(tokens, TokenKind::Plus) {
             let (left, _) = self.expression(&tokens[..index], Some(&Type::Int), output)?;
@@ -3546,6 +4145,110 @@ fn top_level_position(tokens: &[HirToken], kind: TokenKind) -> Option<usize> {
         }
     }
     None
+}
+
+/// RFC-0048 (STEP-0328): the frozen batch-3 comparison surface, `==` kept
+/// alongside the new operators so `&&` conjoins and swap desugars can route
+/// through the shared comparison lowering.
+const BATCH3_COMPARISON_KINDS: &[TokenKind] = &[
+    TokenKind::EqualEqual,
+    TokenKind::LessEqual,
+    TokenKind::LessThan,
+    TokenKind::GreaterThan,
+    TokenKind::GreaterEqual,
+    TokenKind::BangEqual,
+];
+
+/// RFC-0049 (STEP-0329): whether a `let` line opens one of the two
+/// let-bound block forms. Detection is positional — `let`, name, `=`,
+/// `if`/`match`, … trailing `:` — so no other `let` line qualifies.
+fn is_let_bound_block_header(tokens: &[HirToken]) -> bool {
+    tokens.len() >= 5
+        && tokens
+            .last()
+            .is_some_and(|token| token.kind == TokenKind::Colon)
+        && tokens
+            .get(3)
+            .is_some_and(|token| matches!(token.kind, TokenKind::If | TokenKind::Match))
+}
+
+/// RFC-0049 §3 (STEP-0329): a let-bound arm body is exactly one expression
+/// statement — no `return`, no `set`, no nested blocks, no multi-statement
+/// arms (E2026 at check; the named build refusal here).
+fn single_arm_expression(
+    lines: &[Line],
+    start: usize,
+    end: usize,
+    region_range: TextRange,
+) -> Result<&Line, CoreLowerError> {
+    if end != start + 1 {
+        return unsupported(
+            "let-bound arm must be exactly one expression statement (E2026)",
+            region_range,
+        );
+    }
+    let line = &lines[start];
+    if line.kind != LineKind::Expression {
+        return unsupported(
+            "let-bound arm must be exactly one expression statement (E2026)",
+            line.range,
+        );
+    }
+    Ok(line)
+}
+
+/// Earliest top-level comparison operator in the token slice, if any.
+fn top_level_comparison(tokens: &[HirToken]) -> Option<(usize, TokenKind)> {
+    let mut best: Option<(usize, TokenKind)> = None;
+    for kind in BATCH3_COMPARISON_KINDS {
+        if let Some(position) = top_level_position(tokens, *kind) {
+            best = match best {
+                Some((existing, _)) if existing <= position => best,
+                _ => Some((position, *kind)),
+            };
+        }
+    }
+    best
+}
+
+/// RFC-0048 (STEP-0328): whether a condition carries a batch-3 shape — a
+/// top-level `&&`, or a comparison beyond bare RFC-0044 equality (which
+/// keeps its frozen byte-exact path).
+fn batch3_condition_surface(tokens: &[HirToken]) -> bool {
+    top_level_position(tokens, TokenKind::AmpAmp).is_some()
+        || BATCH3_COMPARISON_KINDS
+            .iter()
+            .filter(|kind| **kind != TokenKind::EqualEqual)
+            .any(|kind| top_level_position(tokens, *kind).is_some())
+}
+
+/// RFC-0048 §3 atom surface (build-side mirror of the E2025 check rule):
+/// integer/string/bool literals, identifier bindings, and field-access
+/// chains rooted at an identifier or literal; paren-wrapped atoms stay
+/// atoms.
+fn is_atom_operand_tokens(tokens: &[HirToken]) -> bool {
+    let tokens = strip_outer_parens(tokens);
+    if tokens.len() == 1 {
+        return matches!(
+            tokens[0].kind,
+            TokenKind::Integer
+                | TokenKind::String
+                | TokenKind::True
+                | TokenKind::False
+                | TokenKind::Identifier
+        );
+    }
+    if tokens.len() >= 3 && tokens.len() % 2 == 1 {
+        let rooted = matches!(
+            tokens[0].kind,
+            TokenKind::Identifier | TokenKind::Integer | TokenKind::String
+        );
+        let chain = tokens[1..]
+            .chunks(2)
+            .all(|pair| pair[0].kind == TokenKind::Dot && pair[1].kind == TokenKind::Identifier);
+        return rooted && chain;
+    }
+    false
 }
 
 fn top_level_call_open(tokens: &[HirToken]) -> Option<usize> {

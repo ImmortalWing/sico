@@ -3,7 +3,10 @@
 //! reserializes them byte-exactly.
 
 use sico_codegen_wasm as codegen_oracle;
-use sico_ir::{Module, canonical_json, lower_core, verify};
+use sico_ir::{
+    Block, BlockId, Function, Instruction, Local, MatchArm, Module, Operation, Parameter, Pattern,
+    SourceRange, Terminator, Type, ValueId, canonical_json, lower_core, verify,
+};
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
 };
@@ -18,16 +21,18 @@ const COMPILER_SOURCE: &str = include_str!("../../../selfhost/compiler.sico");
 const COMPILER_LEXER_SOURCE: &str = include_str!("../../../selfhost/compiler_lexer.sico");
 const COMPILER_PARSER_SOURCE: &str = include_str!("../../../selfhost/compiler_parser.sico");
 const PARSER_SOURCE: &str = include_str!("../../../selfhost/parser.sico");
+const CODEGEN_SOURCE: &str = include_str!("../../../selfhost/codegen.sico");
 const FORMATTER_SOURCE: &str = include_str!("../../../selfhost/formatter.sico");
 const IDENTITY_SOURCE: &str =
     "function identity(value: Int) returns Int:\n  return value\nend function\n";
 
-fn compiler_sources() -> [(&'static str, &'static str); 4] {
+fn compiler_sources() -> [(&'static str, &'static str); 5] {
     [
         ("compiler.sico", COMPILER_SOURCE),
         ("compiler_lexer.sico", COMPILER_LEXER_SOURCE),
         ("compiler_parser.sico", COMPILER_PARSER_SOURCE),
         ("parser.sico", PARSER_SOURCE),
+        ("codegen.sico", CODEGEN_SOURCE),
     ]
 }
 
@@ -59,6 +64,126 @@ fn rust_ir(text: &str) -> String {
     canonical_json(&module).expect("Rust oracle emits canonical IR")
 }
 
+/// STEP-0496: the same module the guest reads, kept as structure so the
+/// Rust-side plan can be derived from the IR itself and not from its text.
+fn rust_module(text: &str) -> Module {
+    let source = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", text)
+        .expect("fixture source is bounded");
+    lower_core(&source).expect("Rust oracle lowers fixture")
+}
+
+/// STEP-0496: the canonical text form of one IR type, spelled exactly as the
+/// guest spells it. The guest and this function must agree byte for byte.
+fn plan_type_text(ty: &Type) -> Result<String, &'static str> {
+    Ok(match ty {
+        Type::Unit => "unit".to_owned(),
+        Type::Bool => "bool".to_owned(),
+        Type::Int => "int".to_owned(),
+        Type::I64 => "i64".to_owned(),
+        Type::U64 => "u64".to_owned(),
+        Type::Float64 => "float64".to_owned(),
+        Type::String => "string".to_owned(),
+        Type::Bytes => "bytes".to_owned(),
+        Type::List(inner) => format!("list({})", plan_type_text(inner)?),
+        Type::Named(name) => format!("named({name})"),
+        Type::Result { ok, error } => {
+            format!("result({},{})", plan_type_text(ok)?, plan_type_text(error)?)
+        }
+        _ => return Err("ERR:E-SH-CG-IR-TYPE"),
+    })
+}
+
+/// STEP-0496: the comma-separated value ids of an operand list.
+fn plan_id_list(ids: &[ValueId]) -> String {
+    ids.iter()
+        .map(|id| id.0.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// STEP-0496: the canonical text form of one IR operation, spelled exactly as
+/// the guest spells it.
+fn plan_op_text(op: &Operation) -> Result<String, &'static str> {
+    Ok(match op {
+        Operation::Copy(value) => format!("copy {}", value.0),
+        Operation::ConstInt(text) => format!(
+            "const_int {}",
+            serde_json::to_string(text).expect("a string always serializes")
+        ),
+        Operation::ConstI64(value) => format!("const_i64 {value}"),
+        Operation::ConstU64(value) => format!("const_u64 {value}"),
+        Operation::ConstBool(value) => format!("const_bool {value}"),
+        Operation::ConstString(text) => format!(
+            "const_string {}",
+            serde_json::to_string(text).expect("a string always serializes")
+        ),
+        Operation::ConstBytes(bytes) => format!(
+            "const_bytes {}",
+            serde_json::to_string(bytes).expect("bytes always serialize")
+        ),
+        Operation::Call {
+            function,
+            arguments,
+        } => {
+            format!("call {} args=[{}]", function.0, plan_id_list(arguments))
+        }
+        Operation::Intrinsic { name, arguments } => {
+            format!("intrinsic {name} args=[{}]", plan_id_list(arguments))
+        }
+        Operation::Project { base, field } => format!("project base={} field={field}", base.0),
+        Operation::Construct { name, fields } => {
+            let rendered = fields
+                .iter()
+                .map(|field| format!("{}={}", field.name, field.value.0))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("construct name={name} fields=[{rendered}]")
+        }
+        Operation::Variant { name, payload } => {
+            format!("variant name={name} payload=[{}]", plan_id_list(payload))
+        }
+        _ => return Err("ERR:E-SH-CG-IR-OP"),
+    })
+}
+
+/// STEP-0496: the run emission plan, derived from the module structure. The
+/// guest derives the same text from the canonical IR JSON it scanned; the two
+/// must agree byte for byte.
+fn plan_text(module: &Module) -> Result<String, &'static str> {
+    let Some(run) = module.functions.iter().find(|f| f.name == "run") else {
+        return Err("ERR:E-SH-CG-IR-PLAN");
+    };
+    let mut out = String::new();
+    for parameter in &run.parameters {
+        let ty = plan_type_text(&parameter.ty)?;
+        out.push_str(&format!(
+            "param {} {} {}\n",
+            parameter.id.0, parameter.name, ty
+        ));
+    }
+    for block in &run.blocks {
+        for instruction in &block.instructions {
+            let ty = plan_type_text(&instruction.ty)?;
+            let op = plan_op_text(&instruction.operation)?;
+            out.push_str(&format!("inst {} {}\n", instruction.result.0, ty));
+            out.push_str(&format!("op {op}\n"));
+        }
+        match &block.terminator {
+            Terminator::Return(Some(value)) => {
+                out.push_str(&format!("term return {}\n", value.0));
+            }
+            _ => return Err("ERR:E-SH-CG-IR-TERMINATOR"),
+        }
+    }
+    for (name, fields) in &module.records {
+        for field in fields {
+            let ty = plan_type_text(&field.ty)?;
+            out.push_str(&format!("record {} {} {}\n", name, field.name, ty));
+        }
+    }
+    Ok(out)
+}
+
 fn compile_guest() -> &'static [u8] {
     static COMPONENT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     COMPONENT.get_or_init(|| cached_component("compiler.sico", &compiler_sources()))
@@ -83,10 +208,23 @@ fn run_guest_with_args(input: &str, arguments: Vec<String>) -> RunOutcome {
             stdin: input.as_bytes().to_vec(),
         },
         &RunnerLimits {
-            fuel: 5_000_000_000,
-            timeout: std::time::Duration::from_secs(30),
-            memory_bytes: 512 * 1024 * 1024,
-            ..RunnerLimits::default()
+            // STEP-0383: the transformed parser.sico walks deeper before
+            // the typed frontier (CALL-ARGUMENT -> GWPACK-OTHER), so the
+            // full-source guard needs a raised fuel budget. STEP-0388: the
+            // known-bad-shape sweep pushed the walk past 40B; 120B reaches
+            // the same CALL-SHAPE typed refusal (~4s). STEP-0434: the
+            // topological reorder + nested-call hoists pushed the walk past
+            // 120B; 400B reaches the current typed refusal.
+            fuel: 800_000_000_000,
+            timeout: std::time::Duration::from_secs(120),
+            memory_bytes: 2560 * 1024 * 1024,
+            // STEP-0477: the walk now clears every typed door up to the
+            // hostcall transport budget (stdin*64+64MiB); the deep
+            // general_while body copies more source bytes through hostcalls
+            // than that cap admits. Raise the transport budget so the
+            // frontier stays a typed refusal, not a transport trap. The
+            // STEP-0365 treadmill family stays registered.
+            hostcall_fuel: 8 << 30,
         },
         &CancelToken::new(),
     );
@@ -159,7 +297,7 @@ fn compiler_entry_uses_lossless_module_lexer_on_its_own_sources() {
     let limits = RunnerLimits {
         fuel: 1_000_000_000,
         timeout: std::time::Duration::from_secs(30),
-        memory_bytes: 512 * 1024 * 1024,
+        memory_bytes: 2560 * 1024 * 1024,
         ..RunnerLimits::default()
     };
 
@@ -1512,8 +1650,14 @@ fn sico_compiler_lowers_nested_slice_match_subject_byte_exactly() {
 
 #[test]
 fn sico_compiler_lowers_parser_is_ident_byte_prefix_byte_exactly() {
+    // STEP-0432: parser.sico is now topologically ordered (callees precede
+    // callers; the guest frontend refuses forward-referenced user-function
+    // calls). `lex_words` therefore sits at the bottom of the module and is
+    // no longer a small-prefix anchor. Pin the prefix through the function
+    // right after `is_ident_byte` instead; the expected IR is derived from
+    // the same source, so the byte-exact property is unchanged.
     let through = PARSER_SOURCE
-        .find("function lex_words")
+        .find("function record_named_type")
         .expect("parser keeps the is_ident_byte prefix");
     let offset = PARSER_SOURCE.len() - PARSER_SOURCE.split_once('\n').unwrap().1.len();
     let source = &PARSER_SOURCE[offset..through];
@@ -1775,6 +1919,706 @@ fn sico_compiler_lowers_parser_rearranged_function_subsets_byte_exactly() {
     };
     assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
     assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // STEP-0327: five more parser functions flip with the same callee
+    // prefix — decimal_at_most additionally exercises the widened
+    // bytes.at cell-cursor emission (cursor argument id fix).
+    for name in [
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "decimal_at_most",
+        "return_expression_end",
+    ] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0338: the guard-chain machine gains host-call lets (gw_rhs_packed
+    // reuse), cell/host-call guard operands (chain_condition_packed with the
+    // bytes.at literal-cursor form verified against the oracle) and locals
+    // emission — is_digit_token and is_string_token flip byte-exactly.
+    // is_ident_byte flips through the control_if-declined general-while
+    // retry. All three use only intrinsics, so no callee prefix is needed.
+    for name in ["is_digit_token", "is_string_token", "is_ident_byte"] {
+        let source = format!("{}\n", parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the widened guard chain")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0339: full-function census over the widened machines — seven more
+    // parser functions flip with the line_end callee prefix, and two more
+    // (function_declaration_index/ordinal) with the extended eleven-function
+    // prefix that includes the pass-2 flips.
+    for name in [
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+    ] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census_source = line_end_source.clone();
+    for callee in [
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+    ] {
+        census_source.push_str(&parser_function_text(callee));
+        census_source.push('\n');
+    }
+    for name in ["function_declaration_index", "function_declaration_ordinal"] {
+        let mut source = census_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0340: sico.text.starts_with conditions in the general-while
+    // machine (gw_starts_with_condition_packed: receiver param/cell/call via
+    // gw_rhs_packed, string-literal argument, intrinsic bool condition) —
+    // the most common guard shape in parser.sico (185 sites). Five more
+    // functions flip: is_punct_byte and type_json with the fourteen-function
+    // census prefix, declared_return_kind with the fifteen-function prefix,
+    // and binding_parameter_kind/parameter_kind_by_id with the
+    // twenty-eight-function all-flipped prefix.
+    let mut census14 = census_source.clone();
+    for callee in [
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+    ] {
+        census14.push_str(&parser_function_text(callee));
+        census14.push('\n');
+    }
+    for name in ["is_punct_byte", "type_json"] {
+        let mut source = census14.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census15 = census14.clone();
+    census15.push_str(&parser_function_text("scalar_type_kind"));
+    census15.push('\n');
+    let mut source = census15.clone();
+    source.push_str(&parser_function_text("declared_return_kind"));
+    source.push('\n');
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("declared_return_kind must compile through existing families")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let mut census28 = census15.clone();
+    for callee in [
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "type_json",
+        "declared_return_kind",
+    ] {
+        census28.push_str(&parser_function_text(callee));
+        census28.push('\n');
+    }
+    for name in ["binding_parameter_kind", "parameter_kind_by_id"] {
+        let mut source = census28.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0341: the general-while machine's match state becomes a stack
+    // (gmt_stack/gmt_depth push on nested open, pop on end match) and the
+    // match>1-without-while ladder gate routes to the general machine
+    // instead of refusing CONTROL. count_params (list.get match with a
+    // nested checked_sub match inside an if-then, inside a while) flips
+    // byte-exactly with the line_end callee prefix.
+    {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text("count_params"));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("count_params must compile through the match-stack machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0342: the deferred-join emission no longer reuses gmt_len as its
+    // scan variable (gdefer_scan instead), so the match-stack length survives
+    // deferred-block assembly. find_body_end and count_until_end_function —
+    // while + match with an if/else whose BOTH arms return inside the match
+    // arm, the post-dominated return join — flip byte-exactly with the same
+    // line_end callee prefix.
+    for name in ["find_body_end", "count_until_end_function"] {
+        let mut source = line_end_source.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the match-stack machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0343: two stack bookkeeping repairs in the general machine —
+    // the while-frame stack and the match stack are physically truncated on
+    // pop (previously only their length counters shrank, so a sibling
+    // while/match re-push read a stale frame slot). expression_shape_depth
+    // (two sequential top-level whiles + recursive self-call in a concat
+    // argument), expression_shape and return_shapes flip byte-exactly with
+    // the seven-function callee prefix; the chain composes cumulatively
+    // (expression_shape wraps depth, return_shapes calls expression_shape).
+    let mut shape_source = line_end_source.clone();
+    for callee in ["is_string_token", "is_digit_token", "matching_close"] {
+        shape_source.push_str(&parser_function_text(callee));
+        shape_source.push('\n');
+    }
+    for name in [
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+    ] {
+        shape_source.push_str(&parser_function_text(name));
+        shape_source.push('\n');
+        let expected = rust_ir(&shape_source);
+        let RunOutcome::Output(output) = run_guest(&shape_source) else {
+            panic!("parser chain through {name} must compile through the general machine")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0344: straight machines accept sico.text.concat right-hand sides
+    // via the shared straight_text_concat_packed helper (nested concat, a
+    // sico.u64.to_text argument, string literals, params, and locals in ssa
+    // or cell mode), wired into straight_environment let/return positions
+    // and straight_cell set/return positions. fn_entry (eight counter lets
+    // + seven concat sets with nested to_text + concat return) flips on the
+    // cumulative STEP-0343 chain; the two instruction-json helpers flip
+    // standalone.
+    let mut fn_entry_source = shape_source.clone();
+    fn_entry_source.push_str(&parser_function_text("count_until_end_function"));
+    fn_entry_source.push('\n');
+    fn_entry_source.push_str(&parser_function_text("fn_entry"));
+    fn_entry_source.push('\n');
+    let expected = rust_ir(&fn_entry_source);
+    let RunOutcome::Output(output) = run_guest(&fn_entry_source) else {
+        panic!("fn_entry must compile through the straight machines")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    for name in [
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
+    ] {
+        let source = format!("{}\n", parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("helper {name} must compile standalone")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+
+    // STEP-0345: gw_condition_packed routes I64/U64 receivers through
+    // chain_condition_packed first (host-call left operands — bytes.at /
+    // text.length / bytes.length — already byte-proven there) and falls
+    // back to gw_compare_packed on SKIP. is_canonical_magnitude flips with
+    // the four-function line_end prefix; the census over the forty-function
+    // flipped prefix adds constant_argument_kind, fixed_literal_argument
+    // and comma_count on pass one, and fixed_operation_operand_width on
+    // pass two over the pass-one flips (census compositions frozen
+    // exactly).
+    let mut magnitude_source = line_end_source.clone();
+    magnitude_source.push_str(&parser_function_text("is_canonical_magnitude"));
+    magnitude_source.push('\n');
+    let expected = rust_ir(&magnitude_source);
+    let RunOutcome::Output(output) = run_guest(&magnitude_source) else {
+        panic!("is_canonical_magnitude must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let mut census40 = String::new();
+    for callee in [
+        "is_word",
+        "word_at",
+        "next_index",
+        "line_end",
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+        "scalar_type_kind",
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "type_json",
+        "declared_return_kind",
+        "binding_parameter_kind",
+        "parameter_kind_by_id",
+        "count_params",
+        "find_body_end",
+        "count_until_end_function",
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+        "fn_entry",
+        "is_canonical_magnitude",
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
+    ] {
+        census40.push_str(&parser_function_text(callee));
+        census40.push('\n');
+    }
+    for name in [
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
+    ] {
+        let mut source = census40.clone();
+        source.push_str(&parser_function_text(name));
+        source.push('\n');
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let mut census44 = census40.clone();
+    for callee in [
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
+    ] {
+        census44.push_str(&parser_function_text(callee));
+        census44.push('\n');
+    }
+    let mut source = census44;
+    source.push_str(&parser_function_text("fixed_operation_operand_width"));
+    source.push('\n');
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("fixed_operation_operand_width must compile through existing families")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // STEP-0346: chain_condition_packed (the general machine's chained
+    // comparison condition path) accepts nested sico.bytes.at call operands —
+    // the left operand dispatches to the parameter-source packer when the
+    // first argument is a bytes parameter (previously cell-only, refusing
+    // CALL-ARGUMENT), and the right operand accepts a nested bytes.at call in
+    // addition to parameter/cell/literal. Five functions flip on a cumulative
+    // callee chain: has_return_at, parameter_name_start and find_text_from
+    // (the bisected shapes; find_text_from exercises both operands as nested
+    // calls) plus return_expression_start and local_binding_index for free
+    // from the census fixpoint.
+    let mut call_operand_source = String::new();
+    for callee in ["is_word", "word_at", "next_index", "is_ident_byte"] {
+        call_operand_source.push_str(&parser_function_text(callee));
+        call_operand_source.push('\n');
+    }
+    for name in [
+        "has_return_at",
+        "parameter_name_start",
+        "find_text_from",
+        "return_expression_start",
+        "local_binding_index",
+    ] {
+        call_operand_source.push_str(&parser_function_text(name));
+        call_operand_source.push('\n');
+        let expected = rust_ir(&call_operand_source);
+        let RunOutcome::Output(output) = run_guest(&call_operand_source) else {
+            panic!("parser chain through {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Minimal regression guard: the bytes-parameter left operand of an
+    // I64.equal condition inside a while body, the exact bisected shape.
+    let probe = format!(
+        "{}function probe(src: Bytes, from_i: U64) returns Bool:\n  let n = sico.bytes.length(src)\n  let i = from_i\n  while U64.less_than(i, n):\n    if I64.equal(sico.bytes.at(src, i, I64.literal(0)), I64.literal(114)):\n      return true\n    end if\n    set i = next_index(i, n)\n  end while\n  return false\nend function\n",
+        call_operand_source
+    );
+    let expected = rust_ir(&probe);
+    let RunOutcome::Output(output) = run_guest(&probe) else {
+        panic!("bytes-parameter compare operand must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_slice_plain_subjects_and_utf8_decode_args_byte_exactly() {
+    // STEP-0347: the general machine's bytes.slice match subject accepts a
+    // plain third argument — a u64 cell and an X.literal(N) const span
+    // (previously only sub(bytes.length(...)) and two-argument user calls,
+    // refusing CALL-TARGET) — and the text.concat argument grammar accepts a
+    // nested sico.bytes.utf8_decode call (gw_intrinsic_call_packed reuse,
+    // mirroring the trim branch). json_string_token's remaining frontier is
+    // the after-region match/if (STATEMENT), a separate CFG slice.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    // Slice match subject with a plain cell third argument, ok-arm binding
+    // feeding utf8_decode in a concat — the json_string_token in-loop shape.
+    let g2 = format!(
+        "{base}function probe2(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let start = U64.literal(0)\n  let len = U64.literal(1)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, start, len):\n      case ok(seg):\n        set out = sico.text.concat(out, sico.bytes.utf8_decode(seg))\n      case error(_):\n        set out = \"e\"\n    end match\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g2);
+    let RunOutcome::Output(output) = run_guest(&g2) else {
+        panic!("slice plain-cell subject must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Slice match subject with an X.literal(N) third argument — const_u64
+    // span emission via fixed_literal_const_instruction.
+    let g3 = format!(
+        "{base}function probe3(src: Bytes) returns Text:\n  let out = \"\"\n  let i = U64.literal(0)\n  let n = sico.bytes.length(src)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, i, U64.literal(2)):\n      case ok(seg):\n        set out = sico.bytes.utf8_decode(seg)\n      case error(_):\n        set out = \"e\"\n    end match\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g3);
+    let RunOutcome::Output(output) = run_guest(&g3) else {
+        panic!("slice literal-arg3 subject must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // text.concat argument grammar accepting a nested utf8_decode call.
+    let g1 = format!(
+        "{base}function probe1(token: Text) returns Text:\n  let bytes = sico.text.encode(token)\n  let n = sico.bytes.length(bytes)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set out = sico.text.concat(out, sico.bytes.utf8_decode(bytes))\n    set i = next_index(i, n)\n  end while\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&g1);
+    let RunOutcome::Output(output) = run_guest(&g1) else {
+        panic!("concat utf8_decode argument must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_after_region_match_and_if_byte_exactly() {
+    // STEP-0348: the general machine accepts match and if statements in the
+    // after region (the block following a closed while) — the region gates in
+    // gw_match_open_pack and the if handler were conservative refusals; the
+    // block assembly is region-agnostic (case arms reuse the current region
+    // string, end-match seals the join, end-if restores to join). The
+    // json_string_token tail (match, then if-wrapped match) was the last gate;
+    // the exact frozen text now flips byte-exactly.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    // match directly in the after region.
+    let a1 = format!(
+        "{base}function probe1(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set out = sico.text.concat(out, \"x\")\n    set i = next_index(i, n)\n  end while\n  match sico.bytes.slice(src, i, U64.literal(1)):\n    case ok(seg):\n      set out = sico.bytes.utf8_decode(seg)\n    case error(_):\n      set out = \"e\"\n  end match\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a1);
+    let RunOutcome::Output(output) = run_guest(&a1) else {
+        panic!("match in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // if/else directly in the after region.
+    let a2 = format!(
+        "{base}function probe2(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set i = next_index(i, n)\n  end while\n  if U64.equal(i, n):\n    set out = \"done\"\n  else:\n    set out = \"mid\"\n  end if\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a2);
+    let RunOutcome::Output(output) = run_guest(&a2) else {
+        panic!("if in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // if + nested match in the after region — the json_string_token tail shape.
+    let a3 = format!(
+        "{base}function probe3(src: Bytes) returns Text:\n  let n = sico.bytes.length(src)\n  let out = \"\"\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set i = next_index(i, n)\n  end while\n  match sico.bytes.slice(src, i, U64.literal(1)):\n    case ok(seg):\n      set out = sico.bytes.utf8_decode(seg)\n    case error(_):\n      set out = \"e\"\n  end match\n  let tail_len = U64.literal(0)\n  match U64.checked_sub(n, i):\n    case ok(length):\n      set tail_len = length\n    case error(_):\n      set tail_len = U64.literal(0)\n  end match\n  if U64.less_than(U64.literal(0), tail_len):\n    match sico.bytes.slice(src, i, tail_len):\n      case ok(tail):\n        set out = sico.text.concat(out, sico.bytes.utf8_decode(tail))\n      case error(_):\n        set out = \"t\"\n    end match\n  end if\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&a3);
+    let RunOutcome::Output(output) = run_guest(&a3) else {
+        panic!("if+match in the after region must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The target: exact frozen json_string_token text (tail match + tail if).
+    let jsrc = format!("{base}{}", parser_function_text("json_string_token"));
+    let expected = rust_ir(&jsrc);
+    let RunOutcome::Output(output) = run_guest(&jsrc) else {
+        panic!("json_string_token must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_text_list_binary_nested_args_byte_exactly() {
+    // STEP-0349: gw_text_list_binary_packed (sico.text.join / sico.list.append
+    // packer) accepts multi-token second arguments — the arity gate required a
+    // single atom and both argument spans passed their start offset as the
+    // range end, emitting zero-width ranges for nested calls. The widened
+    // gate requires at least one token; argument range ends now come from the
+    // last token of each argument (the STEP-0347 slice-argument pattern).
+    // lex_words flips byte-exactly (List[Text] appends with nested
+    // utf8_decode-of-slice calls inside match ok arms and nested if/else).
+    let base = format!(
+        "{}\n{}\n{}\n{}\n",
+        parser_function_text("next_index"),
+        parser_function_text("valid_escape_byte"),
+        parser_function_text("is_ident_byte"),
+        parser_function_text("is_punct_byte"),
+    );
+    // List[Text] append with a string literal, in a while body.
+    let l1 = format!(
+        "{base}function probe1(src: Bytes) returns List[Text]:\n  let n = sico.bytes.length(src)\n  let words = sico.text.split_lines(\"\")\n  let i = U64.literal(0)\n  while U64.less_than(i, n):\n    set words = sico.list.append(words, \"<nl>\")\n    set i = next_index(i, n)\n  end while\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l1);
+    let RunOutcome::Output(output) = run_guest(&l1) else {
+        panic!("List[Text] append with a literal must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Call in return position (split_lines with a literal).
+    let l2 = format!(
+        "{base}function probe2(src: Bytes) returns List[Text]:\n  let words = sico.text.split_lines(\"\")\n  if U64.equal(sico.bytes.length(src), U64.literal(0)):\n    return sico.text.split_lines(\"ERR-x\")\n  end if\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l2);
+    let RunOutcome::Output(output) = run_guest(&l2) else {
+        panic!("split_lines in return position must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // Append with a nested utf8_decode-of-slice call, match ok arm in a while
+    // body — the lex_words inner shape.
+    let l3 = format!(
+        "{base}function probe3(src: Bytes) returns List[Text]:\n  let words = sico.text.split_lines(\"\")\n  let i = U64.literal(0)\n  let n = sico.bytes.length(src)\n  while U64.less_than(i, n):\n    match sico.bytes.slice(src, i, U64.literal(1)):\n      case ok(seg):\n        set words = sico.list.append(words, sico.bytes.utf8_decode(seg))\n      case error(_):\n        set words = sico.text.split_lines(\"ERR-slice\")\n    end match\n    set i = next_index(i, n)\n  end while\n  return words\nend function\n"
+    );
+    let expected = rust_ir(&l3);
+    let RunOutcome::Output(output) = run_guest(&l3) else {
+        panic!("append with a nested call must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The target: exact frozen lex_words text (the module lexer).
+    let lsrc = format!("{base}{}", parser_function_text("lex_words"));
+    let expected = rust_ir(&lsrc);
+    let RunOutcome::Output(output) = run_guest(&lsrc) else {
+        panic!("lex_words must compile through the general machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_straight_concat_user_call_args_byte_exactly() {
+    // STEP-0350: straight_text_concat_packed's argument grammar accepts a
+    // single-argument user call (type_json(kind)) — param, cell-mode
+    // read_local, ssa-mode value-forward and string-literal arguments, with
+    // the call emitted through call_instruction_json at the callee's ordinal.
+    // Three JSON-constructor functions flip. Frozen compositions avoid the
+    // pre-existing sequential-lowering trap (see the STEP for the frontier).
+    let tj = format!("{}\n", parser_function_text("type_json"));
+    for name in [
+        "read_local_instruction_json",
+        "call_instruction_json",
+        "intrinsic_instruction_json",
+    ] {
+        let source = format!("{}{}\n", tj, parser_function_text(name));
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through existing families")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Minimal regression guard: the bisected shape — concat with a user call
+    // taking a Text param, in a set statement (scc machine).
+    let rl = parser_function_text("read_local_instruction_json");
+    let guard = format!(
+        "{tj}{rl}function probe_guard(kind: Text) returns Text:\n  let out = \"\"\n  set out = sico.text.concat(\"a:\", type_json(kind))\n  return out\nend function\n"
+    );
+    let expected = rust_ir(&guard);
+    let RunOutcome::Output(output) = run_guest(&guard) else {
+        panic!("concat with a user-call argument must compile through the cell machine")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_guest_arena_accommodates_full_parser_selfhost_input() {
+    // STEP-0351 → STEP-0454: the script profile's guest linear-memory ceiling
+    // rose 64 MiB (1,024 pages) → 128 MiB (2,048) → 256 MiB (4,096) → 512 MiB
+    // (8,192) → 2 GiB (33,792 pages) — RFC-0029 budget-table amendments
+    // (STEP-0351/0402/0421/0454). The self-host compiler's own lowering
+    // workspace (monotonic bump-arena allocations across a whole-module
+    // lowering, never reset between functions) exhausted the ceiling mid-run,
+    // surfacing as a bare wasm `unreachable` in the generated realloc instead
+    // of a typed refusal. STEP-0484 added the per-function arena treadmill, so
+    // the ceiling is now a backstop rather than the working budget. Guards:
+    // (1) the previously-trapping 53-function composition lowers byte-exactly;
+    // (2) the FULL parser.sico text lowers through every function to a clean
+    // exit 0 byte-exact result against the Rust oracle — never a trap, never a
+    // typed refusal.
+    let mut composition = String::new();
+    for name in [
+        "type_json",
+        "read_local_instruction_json",
+        "is_word",
+        "word_at",
+        "next_index",
+        "line_end",
+        "is_declaration_start",
+        "literal_value_index",
+        "list_aware_parameter_index",
+        "is_intrinsic_path",
+        "record_scalar_kind",
+        "record_close_bracket",
+        "record_map_comma",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_ident_byte",
+        "scalar_type_kind",
+        "is_punct_byte",
+        "is_digit_token",
+        "is_string_token",
+        "valid_escape_byte",
+        "matching_close",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "parameter_type_word",
+        "script_result_return_json",
+        "fixed_op_name",
+        "return_expression_end",
+        "declared_return_kind",
+        "binding_parameter_kind",
+        "parameter_kind_by_id",
+        "count_params",
+        "find_body_end",
+        "count_until_end_function",
+        "expression_shape_depth",
+        "expression_shape",
+        "return_shapes",
+        "fn_entry",
+        "is_canonical_magnitude",
+        "scalar_const_instruction_json",
+        "write_local_instruction_json",
+        "constant_argument_kind",
+        "fixed_literal_argument",
+        "comma_count",
+        "fixed_operation_operand_width",
+        "has_return_at",
+        "parameter_name_start",
+        "find_text_from",
+        "return_expression_start",
+        "local_binding_index",
+        "json_string_token",
+        "lex_words",
+    ] {
+        composition.push_str(&parser_function_text(name));
+        composition.push('\n');
+    }
+    let fixture = format!(
+        "{}{}\n",
+        composition,
+        parser_function_text("call_instruction_json")
+    );
+    let expected = rust_ir(&fixture);
+    let RunOutcome::Output(output) = run_guest(&fixture) else {
+        panic!("the 53-function composition must lower without exhausting the arena")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // The full self-host parser source: every function walks the ladder; the
+    // first not-yet-supported shape must fail as a typed refusal. The whole
+    // module walks all 127 functions, so this guard runs with a raised fuel
+    // and time budget instead of the shared run_guest defaults.
+    let source = format!("{PARSER_SOURCE}\n");
+    // STEP-0495: the canonical IR of the whole module (~8.6 MB) no longer
+    // fits one Script v0 channel (RFC-0029 freezes a channel at 8 MiB), so
+    // the default single-channel path now ends in the deterministic transport
+    // refusal instead of a lowering failure. The byte-exact comparison
+    // therefore runs over the `--emit-ir-split` driver mode, which halves the
+    // IR across the two channels; concatenating stdout and stderr restores
+    // the exact module IR.
+    let outcome = run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()]);
+    // STEP-0484 TREADMILL INVERSION: per-function arena reuse (RFC-0029
+    // amendment) cleared the STEP-0365 memory wall. The self-host walk now
+    // arms the scratch zone once, reclaims every function's garbage via
+    // `sico.arena.push_chunk`, and joins the kept chunks once at the end —
+    // peak memory is perm(live set) + max(per-function scratch) instead of
+    // the monotonic sum. The pin inverts: the full source MUST lower to a
+    // clean exit 0 byte-exact against the Rust oracle (any trap or typed
+    // refusal fails), closing the M22 S6 full-source lowering gate.
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "full parser.sico walk must lower cleanly after the STEP-0484 treadmill, not trap or refuse: {outcome:?}"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let expected = rust_ir(&source);
+    let mut assembled = output.stdout.clone();
+    assembled.extend_from_slice(&output.stderr);
+    assert_bytes_equal(&assembled, expected.as_bytes());
 }
 
 #[test]
@@ -1784,7 +2628,7 @@ fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
     // exact frozen function text against the Rust oracle.
     for name in ["same", "add", "sub"] {
         let start = COMPILER_PARSER_SOURCE
-            .find(&format!("function {name}"))
+            .find(&format!("function {name}("))
             .expect("compiler_parser keeps the function");
         let end = COMPILER_PARSER_SOURCE[start..]
             .find("\nend function\n")
@@ -1803,7 +2647,7 @@ fn sico_compiler_lowers_compiler_parser_function_subsets_byte_exactly() {
 
 fn parser_function_text(name: &str) -> String {
     let start = PARSER_SOURCE
-        .find(&format!("function {name}"))
+        .find(&format!("function {name}("))
         .expect("parser keeps the function");
     let end = PARSER_SOURCE[start..]
         .find("\nend function\n")
@@ -1819,7 +2663,9 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
     // and `checked_sub` match subjects inside statement regions (if/else
     // branches and loop bodies' nested regions), with parameter, cell and
     // literal operands — previously only `sico.map.get`/`sico.bytes.slice`
-    // subjects were lowered and these refused CALL-TARGET.
+    // subjects were lowered and these refused CALL-TARGET. STEP-0353
+    // widens the family with `checked_mul`/`checked_div` (same operand
+    // shapes and Result kind; gw_decimal_value's shape).
     let base = format!(
         "{}\n{}\n{}\n{}\n",
         parser_function_text("is_word"),
@@ -1836,6 +2682,11 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
         // the ok arm — the matching_close shape.
         format!(
             "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(2)\n  let w = word_at(words, i)\n  if is_word(w, \")\"):\n    match U64.checked_sub(depth, i):\n      case ok(next):\n        set depth = next\n        if U64.equal(depth, U64.literal(0)):\n          return i\n        end if\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        ),
+        // STEP-0353: checked_mul joins the family (gw_decimal_value shape) —
+        // cell * literal with the early return in the error arm.
+        format!(
+            "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let acc = U64.literal(1)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_mul(acc, U64.literal(10)):\n      case ok(next):\n        set acc = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return acc\nend function\n"
         ),
         // matching_close itself, exact frozen text with its callees.
         format!("{}{}", base, parser_function_text("matching_close")),
@@ -1860,8 +2711,10 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
             message: "ERR:E-SH-IR-CALL-TYPE".into()
         }
     );
+    // STEP-0353: checked_mul/div are in-family now; keep the out-of-family
+    // guard on an operation that stays refused (bit_and).
     let bad_op = format!(
-        "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.checked_mul(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
+        "{base}function probe(words: List[Text], i: U64, end_idx: U64) returns U64:\n  let depth = U64.literal(0)\n  let w = word_at(words, i)\n  if is_word(w, \"(\"):\n    match U64.bit_and(depth, U64.literal(1)):\n      case ok(next):\n        set depth = next\n      case error(_):\n        return end_idx\n    end match\n  end if\n  return depth\nend function\n"
     );
     assert_eq!(
         run_guest(&bad_op),
@@ -1874,6 +2727,92 @@ fn sico_compiler_lowers_gw_checked_arithmetic_match_subjects_byte_exactly() {
     let expected = rust_ir(good);
     let RunOutcome::Output(recovered) = run_guest(good) else {
         panic!("valid gw subject must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_get_match_subjects_byte_exactly() {
+    // STEP-0325: the general-while machine accepts `sico.list.get(<param
+    // list>, <index>)` match subjects inside statement regions — the fourth
+    // in-body subject family — and the result temp local carries the
+    // string-ok result type (new result-string kind; result-i64 added for
+    // the checked-arithmetic subjects).
+    let base = format!(
+        "{}\n{}\n{}\n{}\n",
+        parser_function_text("is_word"),
+        parser_function_text("word_at"),
+        parser_function_text("next_index"),
+        parser_function_text("line_end"),
+    );
+    let good = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  if U64.less_than(i, n):\n    match sico.list.get(words, i):\n      case ok(w):\n        if is_word(w, \"end\"):\n          return i\n        end if\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw list.get match subject must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // Declared bounds: a list-cell operand (not a parameter) and an
+    // out-of-family member stay typed-refused, then recovery.
+    let list_cell = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  let copy = words\n  if U64.less_than(i, n):\n    match sico.list.get(copy, i):\n      case ok(w):\n        return i\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&list_cell),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let wrong_member = format!(
+        "{base}function probe(words: List[Text], i: U64, n: U64) returns U64:\n  if U64.less_than(i, n):\n    match sico.list.set(words, i):\n      case ok(w):\n        return i\n      case error(_):\n        return n\n    end match\n  end if\n  return n\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&wrong_member),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("valid list.get subject must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_host_call_lets_byte_exactly() {
+    // STEP-0326: `sico.text.encode`/`sico.bytes.length` let/set RHS and
+    // `sico.bytes.at` with a parameter cursor inside general-while
+    // functions, byte-exact against the Rust oracle. The bytes.at packer's
+    // return format gains an explicit count line (consumers updated).
+    let cases = [
+        "function probe(w: Text, i: U64) returns U64:\n  let b = sico.text.encode(w)\n  let n = U64.literal(0)\n  while U64.less_than(i, n):\n    set n = sico.bytes.length(b)\n  end while\n  return n\nend function\n",
+        "function probe(b: Bytes, i: U64, m: U64) returns I64:\n  let x = I64.literal(0)\n  while U64.less_than(i, m):\n    set x = sico.bytes.at(b, i, I64.literal(0))\n  end while\n  return x\nend function\n",
+    ];
+    for source in cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("gw host-call let/set must compile: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Typed refusal: a non-u64 cursor parameter stays refused, then recovery.
+    let bad_cursor = "function probe(b: Bytes, i: I64, m: U64) returns I64:\n  let x = I64.literal(0)\n  while U64.less_than(m, U64.literal(1)):\n    set x = sico.bytes.at(b, i, I64.literal(0))\n  end while\n  return x\nend function\n";
+    assert_eq!(
+        run_guest(bad_cursor),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let expected = rust_ir(cases[0]);
+    let RunOutcome::Output(recovered) = run_guest(cases[0]) else {
+        panic!("valid host-call lets must compile after typed refusal")
     };
     assert_bytes_equal(&recovered.stdout, expected.as_bytes());
 }
@@ -2055,4 +2994,9294 @@ fn sico_compiler_encodes_declared_scalar_core_wasm_families_byte_exactly() {
     .unwrap();
     let expected = codegen_oracle::compile(&lower_core(&source_file).unwrap()).unwrap();
     assert_eq!(decode_hex(&recovered.stdout), expected);
+}
+
+#[test]
+fn sico_codegen_guest_emits_component_bytes_byte_exactly() {
+    // STEP-0487 (STEP-0486 S5 codegen wave): the guest emits the full script
+    // Component bytes for the frozen minimal echo fixture through the new
+    // `--emit-component-hex` driver mode, byte-equal to the Rust backend
+    // (RFC-0011 deterministic emission, sico_codegen_wasm::compile_script_
+    // program as the direct oracle). The skeleton covers the fixed component
+    // scaffolding plus the frozen echo run body; every other source shape
+    // must fail closed with the typed "unsupported codegen source shape"
+    // refusal (ADR-0016 decision 6: no silent fallback).
+    let expected = {
+        let source_file = SourceFile::from_text(
+            SourceId::new(0),
+            "echo.sico",
+            ECHO_COMPONENT_FIXTURE_SOURCE.to_owned(),
+        )
+        .unwrap();
+        let module = lower_core(&source_file).unwrap();
+        codegen_oracle::compile_script_program(&module).unwrap()
+    };
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("component codegen fixture must succeed through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted component bytes must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted component must pass the real Wasm validator");
+
+    // Any source outside the frozen minimal shape must fail closed, and the
+    // compiler must stay usable for ordinary lowering afterwards.
+    assert_eq!(
+        run_guest_with_args(IDENTITY_SOURCE, vec!["--emit-component-hex".into()],),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "unsupported codegen source shape".into(),
+        },
+        "unsupported component codegen shape must fail closed"
+    );
+    let RunOutcome::Output(recovered) = run_guest(IDENTITY_SOURCE) else {
+        panic!("ordinary lowering must work after the typed refusal")
+    };
+    assert_eq!(recovered.exit_code, 0);
+    assert_bytes_equal(&recovered.stdout, rust_ir(IDENTITY_SOURCE).as_bytes());
+}
+
+/// The Script-profile reference form with a different exit code: the same
+/// shape, one different constant. The Rust backend emits a different
+/// Component for it, so a guest that replayed a frozen run body would emit
+/// the wrong bytes.
+const ECHO_COMPONENT_FIXTURE_SOURCE_EXIT7: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+/// The Script-profile reference form whose `run` returns the `error` arm:
+/// same entry signature as the reference form, but the payload is a
+/// `ScriptError` instead of a `ScriptOutput`. The Rust backend really emits
+/// a Component for it, so the `ScriptError` result-area offsets have a
+/// measured truth instead of a frozen derivation.
+const SCRIPT_ERROR_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"boom\"))\nend function\n";
+
+#[test]
+fn oracle_error_arm_result_area_truth_is_pinned() {
+    // STEP-0505: the `error` arm's measured truth, read out of the Rust
+    // backend's production output (the Component `compile_script_program`
+    // really emits for a `run` that returns `error(...)`, opened with
+    // wasmparser). Until this slice the `ScriptError` result-area offsets
+    // were only a frozen derivation; here they are measured.
+    //
+    // The result-area return splits at the same unambiguous marker as the
+    // `ok` arm: `i32.const 32` (the 32-byte result area) followed by
+    // `call 1` (the allocator). The marker occurs exactly once.
+    const ERR_LOCALS: &str = "017f017f017f017f017f017f017f017f017f017f017f017e017f017f017f017f027f";
+    const ERR_FULL_BODY: &str = "4100211302400340201341004604404100210441002105410421062004210720052108200621094101210a4100210b4100210c4100210d4100210e4200210f2007211020082111200921124120100121142014200a3a0000201420103a0008201210012115201520112012fc0a00002014201536020c2014201236021020140f0b000b0b000b";
+    const ERR_RESULT_SEGMENT: &str = "4120100121142014200a3a0000201420103a0008201210012115201520112012fc0a00002014201536020c2014201236021020140f0b000b0b000b";
+
+    // The fixture really emits: the backend does not refuse the `error` arm,
+    // so the offsets below are a measurement and not a derivation.
+    let module = rust_module(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let component = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the backend emits the Script-profile Component for the error arm");
+    wasmparser::Validator::new()
+        .validate_all(&component)
+        .expect("the error-arm Component passes the real Wasm validator");
+
+    // The local declaration differs from the `ok` arm: the error payload
+    // needs fewer slots (16 groups / 17 slots, one i64) than the output
+    // payload (20 groups / 21 slots, three i64).
+    assert_eq!(
+        oracle_run_locals_hex(SCRIPT_ERROR_FIXTURE_SOURCE),
+        ERR_LOCALS,
+        "the error arm's local declaration section"
+    );
+
+    let hex = oracle_run_body_code_hex(SCRIPT_ERROR_FIXTURE_SOURCE);
+    assert_eq!(hex, ERR_FULL_BODY, "the error arm's run body");
+    assert_eq!(
+        hex.matches("41201001").count(),
+        1,
+        "the result-area marker is unique in the error arm"
+    );
+    let cut = hex
+        .find("41201001")
+        .expect("the result-area marker is present");
+    assert_eq!(
+        &hex[cut..],
+        ERR_RESULT_SEGMENT,
+        "the ScriptError result-area return and the dispatcher epilogue"
+    );
+
+    // The measured `ScriptError` result-area offsets, in the order the
+    // backend emits them: the discriminant byte at 0, `code` at 8 as a
+    // single byte, `message` as a list at 12 (pointer) and 16 (length).
+    // The `i32.store8` at offset 8 and the two `i32.store` at 12 and 16 are
+    // the bytes the guest has to reproduce.
+    for (offset, store) in [
+        ("3a0008", "i32.store8 at offset 8 (ScriptError.code)"),
+        (
+            "36020c",
+            "i32.store at offset 12 (ScriptError.message pointer)",
+        ),
+        (
+            "360210",
+            "i32.store at offset 16 (ScriptError.message length)",
+        ),
+    ] {
+        assert!(
+            ERR_RESULT_SEGMENT.contains(offset),
+            "the measured error arm must contain {store}"
+        );
+    }
+    // The error arm stores no i64 field, so it carries no `i64.store`; the
+    // `ok` arm's `exit_code` is what produced the `37 03 18` there.
+    assert!(
+        !ERR_RESULT_SEGMENT.contains("3703"),
+        "the error arm stores no 64-bit result field"
+    );
+    // The tail is the same six-byte dispatcher epilogue as the `ok` arm.
+    assert!(
+        ERR_RESULT_SEGMENT.ends_with("0b000b0b000b"),
+        "the six-byte dispatcher epilogue"
+    );
+    assert_eq!(
+        ERR_RESULT_SEGMENT.len() / 2,
+        59,
+        "the measured error-arm result segment is 59 bytes"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_enum_case_operand_as_a_variant_byte_exactly() {
+    // STEP-0506, frontend knife: an enum case is an operand in its own
+    // right. The Rust frontend lowers `Enum.Case` into an empty-payload
+    // `variant` op whose type is the enum -- it looks at the variant before
+    // it looks at field projections -- and the guest frontend must agree byte
+    // for byte: the operation, the type, the result id and the source range.
+    //
+    // The `error`-arm fixture is the shape that needs it: `ScriptError.code`
+    // is an enum case, so without this lowering the whole construct was
+    // refused with `ERR:E-SH-IR-CONSTRUCT-VALUE` and the guest could not
+    // reach the codegen at all.
+    let expected = rust_ir(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let outcome = run_guest(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("the error-arm fixture must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_error_arm_component_byte_exactly() {
+    // STEP-0506, codegen knife: the `error` arm is a second Script-profile
+    // shape, and the guest's component emission has to follow the IR into
+    // the second arm instead of stopping at the `ok` one.
+    //
+    // Three rules are new here, and all three are measured from the Rust
+    // backend's production output (STEP-0505):
+    //   * the one-of member is an empty-payload `variant` op whose
+    //     discriminant is the frozen `script-error-code` tag;
+    //   * the `error` payload is right-aligned: the inactive `ok` region is
+    //     zero-filled and the error payload sits after it;
+    //   * the `ScriptError.code` field is a one-byte discriminant in the
+    //     result area (`i32.store8` at 8), while `message` is a list at 12
+    //     and 16.
+    //
+    // The exit criterion of this slice is the whole component, byte for
+    // byte against the backend -- the local declaration section (17 groups
+    // / 18 slots), the run body and the result-area return.
+    let module = rust_module(SCRIPT_ERROR_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the error arm");
+    let RunOutcome::Output(output) = run_guest_with_args(
+        SCRIPT_ERROR_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the error-arm component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted error-arm component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted error-arm component must pass the real Wasm validator");
+}
+
+const MULTI_FUNCTION_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+/// The same shape with a **multi-slot** helper parameter: a `Text` flattens
+/// to two Wasm slots, so the derived core type carries two valtypes and the
+/// flat group hex carries two groups.
+const MULTI_SLOT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(text: Text) returns Text:\n  return text\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_codegen_guest_emits_the_multi_function_component_byte_exactly() {
+    // STEP-0507, codegen knife: a module with more than one function. The
+    // backend emits every module function into the core module, in the
+    // module's function order, and then the three frozen arena helpers, so the
+    // type section, the function table, the export indices and the code bodies
+    // all follow the module's function count.
+    //
+    // The rules are measured from the Rust backend's production output
+    // (STEP-0507 §1):
+    //   * the type section lists the module functions first and the three
+    //     frozen helper types last; `run` keeps the frozen Script ABI type
+    //     while every other function's type is derived from the flat parameter
+    //     and result types;
+    //   * the function table carries one entry per module function plus the
+    //     three helpers, and a core function's type index is its own index;
+    //   * the four exports keep their names while their function indices
+    //     follow the module function count;
+    //   * a module function other than `run` returns its flat value directly
+    //     (one `local.get` per slot, then `return`) instead of through the
+    //     Script result area;
+    //   * the local declaration rule is the backend's own: the parameters are
+    //     not declared, every instruction result slot is its own group, and
+    //     the dispatcher and the Script scratch pair follow.
+    //
+    // The exit criterion of this slice is the whole component, byte for byte
+    // against the backend.
+    //
+    // Two fixtures: one helper with a single-slot parameter and one with a
+    // multi-slot parameter, so the derived core type covers one and two flat
+    // groups.
+    for (label, source) in [
+        ("single-slot helper", MULTI_FUNCTION_FIXTURE_SOURCE),
+        ("multi-slot helper", MULTI_SLOT_FIXTURE_SOURCE),
+    ] {
+        let module = rust_module(source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the multi-function module",
+        );
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the multi-function component must be emitted through the guest")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted multi-function component ({label}) must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted multi-function component must pass the real Wasm validator");
+    }
+}
+
+/// The Script-profile ABI records every component fixture repeats: the same
+/// prelude the frozen echo fixture opens with, so a generated fixture is the
+/// reference form plus one function of its own.
+const S5_ABI_PRELUDE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\n";
+
+/// The reference form plus one ordinary function that carries a string
+/// literal of `bytes` bytes. The data segment holds every string literal of
+/// the program, so inflating this literal inflates the data section without
+/// touching the frozen `run` shape.
+fn large_literal_source(bytes: usize) -> String {
+    let literal = "a".repeat(bytes);
+    format!(
+        "{S5_ABI_PRELUDE}function label(value: Text) returns Text:\n  let text = \"{literal}\"\n  return text\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n"
+    )
+}
+
+#[test]
+fn sico_codegen_guest_emits_a_large_literal_component_byte_exactly() {
+    // STEP-0549 (P1 assembly rewrite): the guest assembles the component out
+    // of one fragment list per section and one `text.join` at the boundary
+    // instead of a left fold of `text.concat`, so the cost per emitted byte is
+    // linear in the output. The fixture ladder is the data section's own
+    // scale: STEP-0544 measured a 24,576 B literal trapping the left fold, so
+    // the ladder has to reach past it and stay byte-equal to the backend.
+    for bytes in [16 * 1024usize, 64 * 1024, 256 * 1024] {
+        let source = large_literal_source(bytes);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        let started = std::time::Instant::now();
+        let output = match run_guest_with_args(source.as_str(), vec!["--emit-component-hex".into()])
+        {
+            RunOutcome::Output(output) => output,
+            other => panic!(
+                "the {bytes} B literal component must be emitted through the guest: {other:?}"
+            ),
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted component for a {bytes} B literal must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted large-literal component must pass the real Wasm validator");
+        eprintln!(
+            "literal_bytes={bytes} component_bytes={} elapsed_ms={}",
+            actual.len(),
+            started.elapsed().as_millis()
+        );
+    }
+}
+
+const CALL_IN_FIELD_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: helper(I64.literal(7))))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_call_in_a_construct_field_byte_exactly() {
+    // STEP-0508: a call in a construct field value position. The call's
+    // arguments are lowered into their own instructions first -- each one
+    // takes a result id -- and the call itself takes the next id; the field
+    // references the call's id.
+    //
+    // The rules are measured from the Rust backend's production output
+    // (STEP-0508 §1):
+    //   * the call's `function` is the callee's declaration id (1-based);
+    //   * the call's `arguments` are the argument value ids;
+    //   * the call's `ty` is the callee's declared return type;
+    //   * the call's `range` runs from the callee's name to the closing
+    //     parenthesis.
+    let expected = rust_ir(CALL_IN_FIELD_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(CALL_IN_FIELD_FIXTURE_SOURCE) else {
+        panic!("the call-in-a-field fixture must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+fn codegen_function_text(name: &str) -> String {
+    let start = CODEGEN_SOURCE
+        .find(&format!("function {name}("))
+        .expect("codegen keeps the function");
+    let end = CODEGEN_SOURCE[start..]
+        .find("\nend function\n")
+        .expect("function ends")
+        + start
+        + "\nend function\n".len();
+    CODEGEN_SOURCE[start..end].to_owned()
+}
+
+/// Every function name `codegen.sico` declares.
+fn codegen_function_names() -> Vec<&'static str> {
+    CODEGEN_SOURCE
+        .lines()
+        .filter_map(|line| line.strip_prefix("function "))
+        .filter_map(|rest| rest.split('(').next())
+        .map(|name| name.trim())
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect()
+}
+
+/// The parameter list and the return type of a `codegen.sico` function.
+fn codegen_signature(name: &str) -> (String, String) {
+    let head = codegen_function_text(name)
+        .lines()
+        .next()
+        .expect("the function has a signature line")
+        .to_owned();
+    let open = head.find('(').expect("the signature has parameters");
+    let close = head
+        .rfind(')')
+        .expect("the signature closes its parameters");
+    let params = head[open + 1..close].trim().to_owned();
+    let returns = head[close + 1..]
+        .trim()
+        .trim_start_matches("returns ")
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_owned();
+    (params, returns)
+}
+
+/// A stub for one `codegen.sico` function: the real signature, a trivial body.
+/// The signature is what the call lowering reads, so a call to a stub lowers
+/// exactly like a call to the real function.
+fn codegen_stub(name: &str) -> String {
+    let (params, returns) = codegen_signature(name);
+    let body = match returns.as_str() {
+        "U64" => "U64.literal(0)",
+        "I64" => "I64.literal(0)",
+        "Bool" => "false",
+        "Text" => "\"\"",
+        "Bytes" => "sico.text.encode(\"\")",
+        // STEP-0551 (B2) added cgs_value_index, whose per-function value
+        // index is the stride-2 List[U64]. A stub only carries the real
+        // signature so the call lowers identically, so an empty list is the
+        // right trivial body.
+        "List[U64]" => "sico.list.empty[U64]()",
+        other => panic!("codegen function {name} has an unexpected return type {other}"),
+    };
+    format!("function {name}({params}) returns {returns}:\n  return {body}\nend function\n")
+}
+
+/// The `codegen.sico` functions the text calls, in first-call order.
+fn codegen_callees(text: &str, own: &str) -> Vec<String> {
+    let names = codegen_function_names();
+    let chars: Vec<char> = text.chars().collect();
+    let mut callees: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if !chars[index].is_ascii_alphabetic() && chars[index] != '_' {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < chars.len() && (chars[index].is_ascii_alphanumeric() || chars[index] == '_') {
+            index += 1;
+        }
+        let word: String = chars[start..index].iter().collect();
+        let member = start > 0 && chars[start - 1] == '.';
+        let mut after = index;
+        while after < chars.len() && chars[after] == ' ' {
+            after += 1;
+        }
+        let called = after < chars.len() && chars[after] == '(';
+        if called
+            && !member
+            && word != own
+            && names.contains(&word.as_str())
+            && !callees.contains(&word)
+        {
+            callees.push(word);
+        }
+    }
+    callees
+}
+
+/// The source that lowers one `codegen.sico` function in isolation: a stub for
+/// every callee it declares, then the function itself.
+fn codegen_function_source(name: &str) -> String {
+    let text = codegen_function_text(name);
+    let mut source = String::new();
+    for callee in codegen_callees(&text, name) {
+        source.push_str(&codegen_stub(&callee));
+    }
+    source.push_str(&text);
+    source
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0507_codegen_functions_byte_exactly() {
+    // STEP-0507: the guest's own new codegen code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Every function this slice added or reshaped is lowered through the guest
+    // and compared against the Rust frontend's canonical IR, byte for byte.
+    //
+    // The shape rules this slice had to respect (measured, not guessed): a
+    // user call may not sit directly in a return expression, a call argument
+    // may not be another call, and a host call may not take a host call as its
+    // argument -- every one of them goes through a cell first.
+    for name in [
+        "cgs_alloc_index",
+        "cgs_alloc_call_hex",
+        "cgs_function_at_index",
+        "cgs_function_count",
+        "cgs_run_index",
+        "cgs_flat_valtypes",
+        "cgs_core_type_hex",
+        "cgs_core_types_hex",
+        "cgs_core_funcs_hex",
+        "cgs_core_exports_hex",
+        "cgs_flat_return_hex",
+        "cgs_function_body_hex",
+        "cgs_core_code_hex",
+        "cgs_result_list_hex",
+        "cgs_result_field_hex",
+        "cgs_result_error_field_hex",
+        "cgs_result_return_hex",
+        "cg_core_globals_hex",
+        "cg_run_body_hex_from_ir",
+        "cgs_local_hex",
+        "cgs_run_instr_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            let diag = run_guest(&source);
+            panic!("codegen function {name} must compile through the guest frontend: {diag:?}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0526_codegen_functions_byte_exactly() {
+    // STEP-0526, G-d2: the guest's own branch emission code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its own
+    // code.
+    //
+    // This slice reshaped `cgs_function_instr_hex` (the per-block terminator
+    // and the per-block `end`), reshaped `cgs_function_body_hex` and
+    // `cgs_run_body_hex` (the dispatcher tail), replaced
+    // `cgs_function_return_hex` with the per-value `cgs_flat_return_hex` and
+    // added `cgs_branch_hex`, `cgs_jump_hex`, `cgs_block_terminator_hex` and
+    // `cgs_equal_fixed_hex`.
+    //
+    // The measured shape rules are the ones from STEP-0507: a user call may not
+    // sit directly in a return expression, a call argument may not be another
+    // call, and a host call may not take a host call as its argument -- every
+    // one of them goes through a cell first.  The branch emitters stay inside
+    // them: they only read the IR and concatenate hex.
+    for name in [
+        "cgs_function_instr_hex",
+        "cgs_flat_return_hex",
+        "cgs_branch_hex",
+        "cgs_jump_hex",
+        "cgs_block_terminator_hex",
+        "cgs_equal_fixed_hex",
+        "cgs_function_body_hex",
+        "cgs_run_body_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0509_codegen_functions_byte_exactly() {
+    // STEP-0509, codegen knife: the guest's own new emission code has to stay
+    // inside the self-hosting shape frontier, exactly like the STEP-0507
+    // slice established for its own functions: the guest frontend must lower
+    // the guest's own emitter, otherwise the bootstrap could never consume its
+    // own code.
+    //
+    // The shape rules are the measured ones from STEP-0507: a user call may not
+    // sit directly in a return expression, a call argument may not be another
+    // call, and a host call may not take a host call as its argument -- every
+    // one of them goes through a cell first.
+    for name in ["cgs_function_position", "cgs_call_hex", "cgs_op_hex"] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_call_in_a_field_component_byte_exactly() {
+    // STEP-0509, codegen knife: a call in a construct field value position
+    // reaches the component emitter. The whole component must equal the Rust
+    // backend's own production output byte for byte.
+    //
+    // The rules are measured from the backend's production output
+    // (STEP-0509 §1):
+    //   * the call's target is the Wasm function index the module's own
+    //     function list gives for the call's declaration id (the callee is
+    //     the first declared function, so the index is 0);
+    //   * the arguments' flat slots are pushed first, the call follows, and
+    //     the result's slots are stored afterwards;
+    //   * the local declaration section follows the backend's own rule, so
+    //     the two new instruction results add one i64 group each.
+    let module = rust_module(CALL_IN_FIELD_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the call fixture");
+    let RunOutcome::Output(output) = run_guest_with_args(
+        CALL_IN_FIELD_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the call-in-a-field component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted call-in-a-field component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted call-in-a-field component must pass the real Wasm validator");
+}
+
+/// STEP-0510: the same call shape, but in a **return expression** position --
+/// `helper2` returns the result of `helper(...)`, and `run` calls `helper2` in
+/// a construct field. The guest lowers this shape byte-exactly; it was never
+/// covered by a pin, and the STEP-0508 / STEP-0509 records described it as
+/// refused (they were wrong -- see the STEP-0510 record).
+const CALL_IN_RETURN_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction helper(value: I64) returns I64:\n  return value\nend function\n\nfunction helper2(value: I64) returns I64:\n  return helper(I64.literal(3))\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: helper2(I64.literal(7))))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_call_in_a_return_position_byte_exactly() {
+    // STEP-0510: a user call in a return expression position. The measured
+    // rules (STEP-0510 §1) are the ones the STEP-0508 record established for
+    // the construct field position, and they hold here unchanged:
+    //   * the call's `function` is the callee's declaration id (1-based);
+    //   * the call's `arguments` are the argument value ids;
+    //   * the call's `ty` is the callee's declared return type;
+    //   * the call's `range` runs from the callee's name to the closing
+    //     parenthesis;
+    //   * the enclosing function's terminator returns the **call's** value id.
+    let expected = rust_ir(CALL_IN_RETURN_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(CALL_IN_RETURN_FIXTURE_SOURCE) else {
+        panic!("the call-in-a-return fixture must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_call_in_a_return_component_byte_exactly() {
+    // STEP-0510: the same shape reaches the component emitter. The call in
+    // the return position lands in the **callee's** own core function body
+    // (`helper2`), while the `run` body only carries the call to `helper2`.
+    // The whole component must equal the Rust backend's production output
+    // byte for byte.
+    let module = rust_module(CALL_IN_RETURN_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module).expect(
+        "the Rust backend emits the Script-profile Component for the call-in-a-return fixture",
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        CALL_IN_RETURN_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the call-in-a-return component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted call-in-a-return component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted call-in-a-return component must pass the real Wasm validator");
+}
+
+/// STEP-0511: the measured truth for a **host call (`sico.*`) in a straight-line
+/// function body** -- the shape STEP-0510 §4.6 located as the open gap after
+/// the frontend frontier was mapped shape by shape.
+///
+/// The `size` helper is a straight-line body (no `let`, no `set`, no `if`, no
+/// `while`) whose return expression *is* a host call; `run` is the reference
+/// Script-profile form.
+const HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction size(data: Bytes) returns U64:\n  return sico.bytes.length(data)\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn oracle_host_call_in_a_straight_line_body_truth_is_pinned() {
+    // STEP-0511, truth slice. Everything here is read from the **production
+    // output**, not from a design document:
+    //
+    //   * the Rust backend really emits a Component for this fixture, and the
+    //     component is 1025 B;
+    //   * the canonical IR shape of the host call is one `intrinsic`
+    //     operation whose `arguments` are the argument **value ids** and
+    //     whose `ty` is the intrinsic's result kind;
+    //   * the guest frontend refused the shape at the STEP-0511 measurement
+    //     time, with a **typed** identity (fail-closed, no silent fallback);
+    //     STEP-0512 landed the frontend knife, so the guest half below is now
+    //     the byte-exact comparison this pin promised -- the original refusal
+    //     identity stays in the STEP-0511 record for traceability.
+    //
+    // This pin is the oracle for the implementation slice: when the guest
+    // learns the shape, this pin's guest half flips to a byte-exact
+    // comparison and the component size stays 1025 B.
+    let module = rust_module(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let component = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        component.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&component)
+        .expect("the measured host-call component must pass the real Wasm validator");
+
+    let ir = canonical_json(&module).expect("canonical IR");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "a host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+
+    // STEP-0512: the promised flip -- the guest half is now the byte-exact
+    // comparison against the Rust frontend's canonical IR.
+    let expected = rust_ir(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a straight-line body after STEP-0512")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+/// STEP-0512: the two shapes next to the supported one, kept as **typed
+/// refusals**. The knife claims exactly one shape -- a one-argument
+/// `sico.bytes.length` over a `Bytes` parameter, in a body whose only
+/// statement is the return -- so neither of these may be silently widened
+/// into something the guest lowers.
+const HOST_CALL_SHAPE_PRELUDE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\n";
+const HOST_CALL_SHAPE_RUN: &str = "function run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_host_call_in_a_straight_line_body_byte_exactly() {
+    // STEP-0512, frontend knife: a host call (`sico.bytes.length`) as the whole
+    // return expression of a straight-line function body now lowers to the
+    // canonical intrinsic operation -- **byte for byte equal** to the Rust
+    // frontend's own canonical IR, not merely shape-equal.
+    //
+    // The landing point is the dedicated `direct_host_call_return_ir` route
+    // in the guest frontend, wired into the route ladder ahead of the
+    // general return analysis. The route claims one shape and returns SKIP
+    // for everything else, so no existing refusal identity changes.
+    let expected = rust_ir(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    assert_eq!(
+        expected.len(),
+        2215,
+        "the measured canonical IR size of the host-call fixture is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a straight-line body after STEP-0512")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+}
+
+#[test]
+fn sico_compiler_keeps_the_neighbouring_host_call_shapes_typed_refused() {
+    // STEP-0512 / STEP-0515: the knife is one shape, not a widening of the
+    // host-call surface. The shapes the STEP-0511 truth slice measured next to
+    // the supported one stay typed refusals:
+    //
+    //   * the three-argument `sico.bytes.at` -- a different intrinsic, a
+    //     different arity, a literal argument;
+    //   * a `let` binding whose `return` names something else -- the binding
+    //     the Rust frontend propagates is the one the `return` names;
+    //   * a `let` binding followed by a second statement -- the propagated
+    //     straight-line binding is one statement, not two;
+    //   * a `let` binding of a different intrinsic (`sico.text.length`);
+    //   * a `let` binding of the three-argument `sico.bytes.at`.
+    //
+    // STEP-0515 claimed the one-argument `sico.bytes.length` in a `let`
+    // binding -- the shape this pin refused at STEP-0512 -- so that case
+    // moved to the STEP-0515 pins below. Every shape the knife does *not*
+    // claim keeps the identity the STEP-0511 measurement recorded
+    // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    //
+    // STEP-0529 moved ONE identity, and only one: `let-other-intrinsic` is
+    // the `sico.text.length` family, which the T2 frontend knife now claims.
+    // The knife type-checks the argument, so this shape -- a `Bytes` argument
+    // to a `Text` intrinsic -- is refused with the **argument-type** identity
+    // `ERR:E-SH-IR-CALL-TYPE` instead of the generic `ERR:E-SH-IR-EXPRESSION`.
+    // It is still a refusal: nothing was widened, the diagnosis only became
+    // the one the oracle gives (see
+    // `the_text_length_argument_type_is_refused_by_the_rust_frontend_itself`).
+    let three_argument = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  return sico.bytes.at(data, index, I64.literal(0))\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_other_name = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return other\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_two_statements = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  let m = n\n  return m\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_other_intrinsic = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function size(data: Bytes) returns U64:\n  let n = sico.text.length(data)\n  return n\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    let let_three_argument = format!(
+        "{HOST_CALL_SHAPE_PRELUDE}function byte_at(data: Bytes, index: U64) returns I64:\n  let n = sico.bytes.at(data, index, I64.literal(0))\n  return n\nend function\n\n{HOST_CALL_SHAPE_RUN}"
+    );
+    for (label, source, expected) in [
+        ("three-argument", three_argument, "ERR:E-SH-IR-EXPRESSION"),
+        ("let-other-name", let_other_name, "ERR:E-SH-IR-EXPRESSION"),
+        (
+            "let-two-statements",
+            let_two_statements,
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+        (
+            "let-other-intrinsic",
+            let_other_intrinsic,
+            "ERR:E-SH-IR-CALL-TYPE",
+        ),
+        (
+            "let-three-argument",
+            let_three_argument,
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+    ] {
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} host-call shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, expected, "{label}");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0512_parser_function_byte_exactly() {
+    // STEP-0512: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 slices established
+    // for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_host_call_return_ir`
+    // in parser.sico, emitted in file order (the guest frontend refuses
+    // forward-referenced user-function calls).
+    let base = [
+        "next_index",
+        "word_at",
+        "is_word",
+        "is_ident_byte",
+        "record_named_type",
+        "type_json",
+        "line_end",
+        "intrinsic_instruction_json",
+        "find_text_from",
+        "binding_parameter_index",
+        "matching_close",
+        "is_intrinsic_path",
+        "scalar_type_kind",
+        "binding_parameter_kind",
+        "gw_find_code_text",
+        "return_expression_end",
+        "parameter_name_start",
+        "parameters_ir",
+        "has_return_at",
+        "return_expression_start",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("direct_host_call_return_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_host_call_return_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_host_call_component_byte_exactly() {
+    // STEP-0513, codegen knife: the `intrinsic` operand reaches the component
+    // emitter. The **whole** component must equal the Rust backend's own
+    // production output byte for byte.
+    //
+    // The rules are measured from the backend's production output (the oracle
+    // component's code section, parsed):
+    //   * `sico.bytes.length` over a `Bytes` argument is
+    //     `local.get <length>` / `i64.extend_i32_u` / `local.set <result>`;
+    //   * the length slot is the **second** slot of the argument's
+    //     (pointer, length) pair -- the first flat slot of the `Bytes`
+    //     parameter is the pointer;
+    //   * the result slot is the instruction's own flat slot, which the
+    //     guest's existing slot derivation already places (the parameter
+    //     pair first, then the instruction results in IR order).
+    let module = rust_module(HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the host-call component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted host-call component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted host-call component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0513_codegen_function_byte_exactly() {
+    // STEP-0513: the guest's own new emission code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its
+    // own code. Exactly like the STEP-0507 / STEP-0509 slices established
+    // for the functions they added.
+    let source = codegen_function_source("cgs_intrinsic_hex");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("codegen function cgs_intrinsic_hex must compile through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_derived_component_bytes_byte_exactly() {
+    // STEP-0504: the guest's component emission is no longer a replay of a
+    // frozen run body. The run body is derived from the ingested IR -- the
+    // local declaration section (STEP-0499) followed by the code bytes
+    // (STEP-0502/STEP-0503) -- and the frozen constant is gone from the guest
+    // source.
+    //
+    // The proof that the emission follows the IR instead of replaying a
+    // constant: a second reference form that differs only in one constant
+    // must produce a *different* component, and both must equal the Rust
+    // backend's own production output byte for byte.
+    let mut guest_components = Vec::new();
+    for source in [
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        ECHO_COMPONENT_FIXTURE_SOURCE_EXIT7,
+    ] {
+        let source_file =
+            SourceFile::from_text(SourceId::new(0), "echo.sico", source.to_owned()).unwrap();
+        let module = lower_core(&source_file).unwrap();
+        let expected = codegen_oracle::compile_script_program(&module).unwrap();
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("component codegen must succeed through the guest")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "guest-emitted component bytes must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("guest-emitted component must pass the real Wasm validator");
+        guest_components.push(actual);
+    }
+    // The two reference forms differ in one constant, so their components
+    // must differ: a replayed frozen body would have produced identical bytes.
+    assert_ne!(
+        guest_components[0], guest_components[1],
+        "the component emission must follow the IR, not a frozen constant"
+    );
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_component_emission_outside_the_subset() {
+    // STEP-0504: the component emission is fail-closed (ADR-0016 decision 6).
+    // STEP-0507 widened the supported subset from "exactly one function" to
+    // "every module function the derivation covers", so the remaining refusals
+    // are the shapes the derivation does not cover: a source outside the
+    // Script profile, and a module function that returns a checked result
+    // (the packed checked-result return is not implemented yet).
+    let checked_result_helper = format!(
+        "{ECHO_COMPONENT_FIXTURE_SOURCE}\nfunction helper(value: I64) returns Result[I64, ScriptError]:\n  return ok(value)\nend function\n"
+    );
+    for source in [IDENTITY_SOURCE, checked_result_helper.as_str()] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-component-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "a shape outside the component subset must stay a typed refusal: {source}"
+        );
+    }
+}
+
+const ECHO_COMPONENT_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\n  case ResourceLimit\n  case DomainError\n  case Cancelled\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n";
+
+#[test]
+fn sico_codegen_guest_refuses_value_ids_outside_the_canonical_dense_sequence() {
+    // STEP-0551: the emitter keys its per-function value index by value id,
+    // which is sound only because canonical IR assigns parameter ids `0..p-1`
+    // and instruction results `p..` in definition order -- the same rule the
+    // Rust verifier enforces. A document whose ids are sparse would make every
+    // lookup read another value's entry, so the emitter refuses it with a typed
+    // identity instead of aliasing another slot; the dense twin of the same
+    // module still emits byte for byte.
+    let dense = match_shape_module();
+    let expected = codegen_oracle::compile_script_program(&dense)
+        .expect("the dense match shape is a supported program");
+    match guest_emission(&injected_ir(&dense)) {
+        GuestEmission::Component(hex) => assert_eq!(
+            decode_hex(hex.as_bytes()),
+            expected,
+            "the dense shape must stay byte for byte equal"
+        ),
+        GuestEmission::Refusal(identity) => {
+            panic!("the dense shape must emit, refused with {identity}")
+        }
+    }
+
+    let mut sparse = match_shape_module();
+    let function = sparse
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function");
+    function
+        .blocks
+        .last_mut()
+        .expect("the match fixture function has blocks")
+        .instructions
+        .push(injected_instruction(
+            10_000,
+            Type::U64,
+            Operation::ConstU64(0),
+        ));
+    match guest_emission(&injected_ir(&sparse)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "a sparse value id must stay a typed refusal"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the sparse-id shape must stay a typed refusal, got {hex}")
+        }
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_script_profile_echo_fixture_byte_exactly() {
+    // STEP-0488 → STEP-0495: the guest frontend could not lower the
+    // Script-profile shape yet (record projection, `ok(...)` variant, record
+    // construct); the pin was "typed refusal, stable". STEP-0491 (projection),
+    // STEP-0493 (named return type), STEP-0494 (record construct) and STEP-0495
+    // (`ok(...)` / `error(...)` variant) closed all three gaps, so the frontier
+    // pin is re-pinned from "typed refusal" to "byte-exact lowering against the
+    // Rust oracle" — the IR-driven component emitter consumes exactly this IR.
+    // The reproducible frontier probe is tools/probe-m22-frontend-frontier.ps1.
+    let expected = rust_ir(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest(ECHO_COMPONENT_FIXTURE_SOURCE) else {
+        panic!("the script-profile shape must lower through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_script_input_field_projection_byte_exactly() {
+    // STEP-0491: the guest frontend lowers a declared-record field
+    // projection of a named parameter (`input.stdin` where `input` is typed
+    // `ScriptInput`) into the canonical `project` operation. The Rust
+    // lowerer emits the field projection as `Operation::Project` with the
+    // range of the "." + field-name token pair; the guest must agree
+    // byte-for-byte, and the record declaration must still reach the
+    // `records` table.
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nfunction probe(input: ScriptInput) returns Bytes:\n  return input.stdin\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "the ScriptInput field projection must lower through the guest frontend: {outcome:?}"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_any_declared_record_field_projection_byte_exactly() {
+    // STEP-0492: STEP-0491 landed the projection with the base parameter
+    // typed `ScriptInput` only. The Script profile needs one instance of
+    // that, but the lowering must not carry a hardcoded record name: any
+    // declared record parameter projects its own declared field, with the
+    // parameter type reported as the declared record name.
+    let source = "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\nfunction probe(out: ScriptOutput) returns Bytes:\n  return out.stdout\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!(
+            "a declared-record field projection must lower through the guest frontend: {outcome:?}"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_record_field_projections_with_a_typed_identity() {
+    // STEP-0491: the projection lowering is fail-closed. A projection whose
+    // record is not declared, or whose field does not exist in the declared
+    // record, must stay a typed refusal (no silent partial lowering and no
+    // invented field), because the Rust oracle refuses both as well.
+    let record =
+        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\n";
+    for (source, message) in [
+        (
+            "function probe(input: ScriptInput) returns Bytes:\n  return input.stdin\nend function\n",
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+        (
+            "function probe(input: ScriptInput) returns Bytes:\n  return input.missing\nend function\n",
+            "ERR:E-SH-IR-EXPRESSION",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved record field projection must stay a typed refusal"
+        );
+    }
+    // The same unknown field stays refused when the record IS declared.
+    assert_eq!(
+        run_guest(&format!(
+            "{record}function probe(input: ScriptInput) returns Bytes:\n  return input.missing\nend function\n"
+        )),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-EXPRESSION".into(),
+        },
+        "an unknown field of a declared record must stay a typed refusal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_named_record_return_type_pass_through_byte_exactly() {
+    // STEP-0493: a declared record may be the declared return type. The Rust
+    // oracle reports it as a named type and lowers a pass-through of the named
+    // parameter into an empty instruction list whose terminator returns the
+    // parameter id. The guest frontend must agree byte-for-byte. The named
+    // return type travels through the type-JSON channel (`{"kind":"named",...}`)
+    // and never through the scalar kind channel, which stays reserved for
+    // scalar kinds — the scalar channel has 19 call sites that treat a kind as
+    // a bare scalar and would otherwise splice a JSON blob into an IR field.
+    let source = "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\nfunction probe(out: ScriptOutput) returns ScriptOutput:\n  return out\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("a named record return type must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_named_record_return_types_with_a_typed_identity() {
+    // STEP-0493: the named return type stays fail-closed. A record that is
+    // never declared must not be treated as a named type, a named return type
+    // whose body carries statements the guest cannot account for must stay a
+    // typed refusal (before STEP-0493 that shape emitted a malformed IR with
+    // an empty return kind), and a named return type must not weaken the
+    // return/parameter type checks.
+    let declared =
+        "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\nend record\n\n";
+    for (source, message) in [
+        (
+            "function probe(out: ScriptOutput) returns ScriptOutput:\n  return out\nend function\n"
+                .to_string(),
+            "ERR:E-SH-IR-PARAMETER-TYPE",
+        ),
+        (
+            "function probe(out: ScriptOutput) returns ScriptOutput:\n  return I64.literal(1)\nend function\n"
+                .to_string(),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  set x = x\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+        (
+            format!(
+                "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  let x = U64.literal(0)\n  while U64.less_than(x, U64.literal(1)):\n    set x = x\n  end while\n  return out\nend function\n"
+            ),
+            "ERR:E-SH-IR-RETURN-TYPE",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(&source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unsupported named record return type must stay a typed refusal: {}",
+            source
+        );
+    }
+    // The declared record keeps the pass-through lowerable, and the return
+    // type check still applies to a named return type.
+    assert_eq!(
+        run_guest(&format!(
+            "{declared}function probe(out: ScriptOutput) returns ScriptOutput:\n  return I64.literal(1)\nend function\n"
+        )),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-TYPE-MISMATCH".into(),
+        },
+        "a named return type must not weaken the return type check"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_record_construct_byte_exactly() {
+    // STEP-0494: a declared record may be constructed. The Rust oracle lowers
+    // `ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code:
+    // I64.literal(0))` by lowering every field value into its own
+    // instruction first (results 1..3) and then emitting the `construct`
+    // operation that references those ids (result 4). The guest frontend must
+    // agree byte-for-byte, including the result-id ledger and the construct
+    // range (the constructor name through the closing parenthesis).
+    let source = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nfunction probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0))\nend function\n";
+    let expected = rust_ir(source);
+    let outcome = run_guest(source);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("a record construct must lower through the guest frontend: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_record_constructs_with_a_typed_identity() {
+    // STEP-0494: the construct lowering is fail-closed. A field the declared
+    // record does not have must not be invented, a field value the guest
+    // cannot lower must stay a typed refusal (the Rust oracle lowers a wider
+    // value grammar, so this is a narrowing), and a construct whose record
+    // does not match the declared return type must stay refused.
+    let records = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\n";
+    for (source, message) in [
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(missing: input.stdin)\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-FIELD",
+        ),
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: sico.text.encode(\"x\"))\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-VALUE",
+        ),
+        (
+            format!(
+                "{records}function probe(input: ScriptInput) returns ScriptOutput:\n  return ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0), extra: input.stdin)\nend function\n"
+            ),
+            "ERR:E-SH-IR-CONSTRUCT-FIELD",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(&source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved record construct must stay a typed refusal: {}",
+            source
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_result_variant_byte_exactly() {
+    // STEP-0495: `ok(...)` and `error(...)` are the built-in Result variants.
+    // The Rust oracle lowers the payload into its own instruction(s) first and
+    // then emits the `variant` operation that references those ids; the guest
+    // frontend must agree byte-for-byte, including the result-id ledger, the
+    // variant range (the variant name through the closing parenthesis) and the
+    // declared `Result[ok, error]` return type.
+    let cases = [
+        // A scalar payload: one `const_i64` then the `ok` variant.
+        "function probe() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // The same shape behind an enum declaration: the error arm is a named
+        // type, so the enum cases must not leak into the arm type JSON.
+        "enum NumericError:\n  case Invalid\nend enum\n\nfunction probe() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // A record payload on the `error` arm: the fields lower first, the
+        // construct comes next, the variant references the construct result.
+        "record ScriptError:\n  field code: I64\n  field message: Text\nend record\n\nfunction probe() returns Result[I64, ScriptError]:\n  return error(ScriptError(code: I64.literal(2), message: \"bad\"))\nend function\n",
+        // The Script profile shape: a projected field, a literal, a construct
+        // and the `ok` variant.
+        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\nend function\n",
+    ];
+    for source in cases {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("a result variant must lower through the guest frontend: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_refuses_unresolved_result_variants_with_a_typed_identity() {
+    // STEP-0495: the variant lowering is fail-closed. A payload whose type does
+    // not match the declared arm must not be lowered, a payload shape the guest
+    // cannot lower must stay a typed refusal, and `ok(...)` without a declared
+    // `Result` return type must stay an unresolved call target.
+    for (source, message) in [
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return ok(\"text\")\nend function\n",
+            "ERR:E-SH-IR-VARIANT-TYPE",
+        ),
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return error(I64.literal(1))\nend function\n",
+            "ERR:E-SH-IR-VARIANT-TYPE",
+        ),
+        (
+            "function probe() returns Result[I64, NumericError]:\n  return ok(sico.text.encode(\"x\"))\nend function\n",
+            "ERR:E-SH-IR-VARIANT-PAYLOAD",
+        ),
+        (
+            "function probe() returns I64:\n  return ok(I64.literal(1))\nend function\n",
+            "ERR:E-SH-IR-CALL-TARGET",
+        ),
+    ] {
+        assert_eq!(
+            run_guest(source),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "an unresolved result variant must stay a typed refusal: {}",
+            source
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_extracts_the_run_emission_plan_byte_exactly() {
+    // STEP-0496: the guest ingests the canonical IR JSON and derives the `run`
+    // emission plan from it; the Rust oracle derives the same plan from the
+    // same module. The two texts must agree byte for byte — otherwise the
+    // guest is reading a different IR than the oracle emits, and every later
+    // emission slice would be built on a wrong premise.
+    //
+    // The fixtures cover the supported subset end to end: a projected field, a
+    // literal, a record construct, a result variant (scalar and record
+    // payload), a string literal payload, and a call.
+    let cases = [
+        // The Script profile shape: project, const_i64, construct, variant.
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        // A scalar variant payload.
+        "enum NumericError:\n  case Invalid\nend enum\n\nfunction run() returns Result[I64, NumericError]:\n  return ok(I64.literal(1))\nend function\n",
+        // A record variant payload: const_i64, const_string, construct, variant.
+        "record ScriptError:\n  field code: I64\n  field message: Text\nend record\n\nfunction run() returns Result[I64, ScriptError]:\n  return error(ScriptError(code: I64.literal(2), message: \"bad\"))\nend function\n",
+        // A call to a sibling function.
+        "function helper() returns I64:\n  return I64.literal(1)\nend function\n\nfunction run() returns I64:\n  return helper()\nend function\n",
+    ];
+    for source in cases {
+        let expected =
+            plan_text(&rust_module(source)).expect("the Rust oracle plans the run function");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(source, vec!["--emit-ir-plan".to_owned()])
+        else {
+            panic!("the run plan must be extracted from the canonical IR: {source}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+/// The local declaration bytes the Rust backend actually emits for the
+/// Script-profile `run` function, in the same hexadecimal shape the guest
+/// emits: one `count`/`valtype` group per slot.
+fn oracle_run_locals_hex(source: &str) -> String {
+    let module = rust_module(source);
+    let bytes = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the oracle emits the Script-profile Component");
+    let mut run_index = None;
+    let mut bodies: Vec<Vec<(u32, u8)>> = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes).flatten() {
+        match payload {
+            wasmparser::Payload::ExportSection(reader) => {
+                for export in reader.into_iter().flatten() {
+                    if export.name == "run" && matches!(export.kind, wasmparser::ExternalKind::Func)
+                    {
+                        run_index = Some(export.index);
+                    }
+                }
+            }
+            wasmparser::Payload::CodeSectionEntry(body) => {
+                let mut groups = Vec::new();
+                let locals = body
+                    .get_locals_reader()
+                    .expect("the code body carries its local declarations");
+                for local in locals.into_iter() {
+                    let (count, ty) = local.expect("the local declaration group parses");
+                    let byte = match ty {
+                        wasmparser::ValType::I32 => 0x7f_u8,
+                        wasmparser::ValType::I64 => 0x7e_u8,
+                        other => {
+                            panic!("the Script profile declares only i32 and i64 locals: {other:?}")
+                        }
+                    };
+                    groups.push((count, byte));
+                }
+                bodies.push(groups);
+            }
+            _ => {}
+        }
+    }
+    let index = run_index.expect("the core module exports run");
+    bodies[index as usize]
+        .iter()
+        .map(|(count, byte)| format!("{count:02x}{byte:02x}"))
+        .collect()
+}
+
+/// The `run` function's code bytes -- after the local declarations -- exactly
+/// as the Rust backend emits them, in hexadecimal.
+///
+/// STEP-0501: the run-body emission truth. The oracle side reads the emitted
+/// Component (production output, not a re-implementation), so the measured
+/// table is the backend's own emission.
+fn oracle_run_body_code_hex(source: &str) -> String {
+    let module = rust_module(source);
+    let bytes = sico_codegen_wasm::compile_script_program(&module)
+        .expect("the oracle emits the Script-profile Component");
+    let mut run_index = None;
+    let mut bodies: Vec<String> = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(&bytes).flatten() {
+        match payload {
+            wasmparser::Payload::ExportSection(reader) => {
+                for export in reader.into_iter().flatten() {
+                    if export.name == "run" && matches!(export.kind, wasmparser::ExternalKind::Func)
+                    {
+                        run_index = Some(export.index);
+                    }
+                }
+            }
+            wasmparser::Payload::CodeSectionEntry(body) => {
+                let mut reader = body
+                    .get_binary_reader_for_operators()
+                    .expect("the code body carries its operators");
+                let remaining = reader.range().end - reader.original_position();
+                let code = reader
+                    .read_bytes(remaining)
+                    .expect("the code body is bounded");
+                bodies.push(code.iter().map(|byte| format!("{byte:02x}")).collect());
+            }
+            _ => {}
+        }
+    }
+    let index = run_index.expect("the core module exports run");
+    bodies[index as usize].clone()
+}
+
+/// The instruction segment of the `run` body: everything before the Script
+/// result-area return.
+///
+/// STEP-0501: the terminator starts with `i32.const <result area size>`
+/// followed by `call <allocator>`. The marker occurs exactly once in the
+/// reference shape, so the cut is unambiguous and reproducible.
+fn oracle_run_instruction_segment_hex(source: &str) -> String {
+    const RESULT_AREA_MARKER: &str = "41201001";
+    let hex = oracle_run_body_code_hex(source);
+    let cut = hex
+        .find(RESULT_AREA_MARKER)
+        .expect("the Script result-area marker is present");
+    hex[..cut].to_owned()
+}
+
+/// The Script result-area return and the dispatcher epilogue: everything from
+/// the terminator to the end of the `run` body.
+///
+/// STEP-0503: the same unambiguous marker as the instruction segment; the
+/// result segment is what follows it.
+fn oracle_run_result_segment_hex(source: &str) -> String {
+    const RESULT_AREA_MARKER: &str = "41201001";
+    let hex = oracle_run_body_code_hex(source);
+    let cut = hex
+        .find(RESULT_AREA_MARKER)
+        .expect("the Script result-area marker is present");
+    hex[cut..].to_owned()
+}
+
+#[test]
+fn oracle_run_body_emission_table_is_pinned() {
+    // STEP-0501: the run-body emission truth, measured from the Rust
+    // backend's production output (the Component `compile_script_program`
+    // really emits, opened with wasmparser). This is the target the
+    // guest-side emission has to reproduce byte for byte.
+    //
+    // The body splits at the Script result-area return: the terminator
+    // begins with `i32.const 32` (the 32-byte result area) followed by
+    // `call 1` (the allocator). The marker occurs exactly once in the
+    // reference shape, so the cut is unambiguous.
+    const FULL_BODY: &str = "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d21134100211441002115410021164120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b";
+    const INSTRUCTION_SEGMENT: &str = "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d2113410021144100211541002116";
+    const TERMINATOR_AND_EPILOGUE: &str = "4120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b";
+
+    let hex = oracle_run_body_code_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    assert_eq!(hex, FULL_BODY, "the run body the backend actually emits");
+    assert_eq!(
+        hex.matches("41201001").count(),
+        1,
+        "the result-area marker is unique in the reference shape"
+    );
+    let cut = hex
+        .find("41201001")
+        .expect("the result-area marker is present");
+    assert_eq!(&hex[..cut], INSTRUCTION_SEGMENT, "the instruction segment");
+    assert_eq!(
+        &hex[cut..],
+        TERMINATOR_AND_EPILOGUE,
+        "the Script result-area return and the dispatcher epilogue"
+    );
+    // The guest-side target for the next slice: the same segment, read from
+    // the same production output.
+    assert_eq!(
+        oracle_run_instruction_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE),
+        INSTRUCTION_SEGMENT
+    );
+}
+
+#[test]
+fn sico_compiler_emits_the_run_local_declaration_plan_byte_exactly() {
+    // STEP-0499: the guest recomputes the local declaration plan of the
+    // Script-profile `run` function from the ingested IR — one group per
+    // instruction slot in IR order, then the dispatcher slot and the Script
+    // scratch pair — and the plan must be byte-identical to the local
+    // declaration section the Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot
+    // assignment matches the backend's own emission rather than a parallel
+    // model of it.
+    let expected = oracle_run_locals_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-locals-hex".to_owned()],
+    ) else {
+        panic!("the local declaration plan must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The Script-profile shape is pinned: four parameter slots are not local
+    // declarations, the nineteen instruction slots are, then the dispatcher
+    // and the scratch pair.
+    assert_eq!(expected.len(), 84, "21 local declaration groups");
+    assert!(
+        expected.ends_with("017f027f"),
+        "dispatcher then scratch pair"
+    );
+}
+
+#[test]
+fn sico_compiler_emits_the_run_instruction_segment_byte_exactly() {
+    // STEP-0502: the guest derives the instruction segment of the `run` body
+    // -- the dispatcher shell, the per-block dispatch heads and the block
+    // instructions, up to (but not including) the Script result-area return --
+    // from the ingested IR, and the bytes must be identical to the segment the
+    // Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot assignment
+    // and instruction emission match the backend's own emission rather than a
+    // parallel model of it.
+    let expected = oracle_run_instruction_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-run-instr-hex".to_owned()],
+    ) else {
+        panic!("the instruction segment must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The reference shape is pinned: the segment is 91 bytes, it opens with
+    // the dispatcher shell and the block dispatch head, and it ends with the
+    // zeroing of the inactive arm.
+    assert_eq!(expected.len(), 182, "91 bytes of instruction segment");
+    assert!(
+        expected.starts_with("410021170240034020174100460440"),
+        "dispatcher shell then the block dispatch head"
+    );
+    assert!(
+        expected.ends_with("4100211541002116"),
+        "the inactive arm is zeroed last"
+    );
+    assert_eq!(
+        expected,
+        "4100211702400340201741004604402002210420032105200221062003210742002108200421092005210a2006210b2007210c2008210d4100210e2009210f200a2110200b2111200c2112200d2113410021144100211541002116"
+    );
+}
+
+#[test]
+fn sico_compiler_refuses_the_run_instruction_segment_outside_the_subset() {
+    // STEP-0502: the emission subset is the one the reference Script shape
+    // uses. Anything else fails closed with a typed identity instead of an
+    // approximation.
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(IDENTITY_SOURCE, vec!["--emit-run-instr-hex".to_owned()])
+    else {
+        panic!("a source without a Script-profile run function must fail closed")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-CG-IR-PLAN");
+}
+
+#[test]
+fn sico_compiler_emits_the_run_body_byte_exactly() {
+    // STEP-0503: the guest derives the whole `run` body -- the instruction
+    // segment, the Script result-area return and the dispatcher epilogue --
+    // from the ingested IR, and the bytes must be identical to the body the
+    // Rust backend actually emits.
+    //
+    // The oracle side reads the emitted Component (production output, not a
+    // re-implementation), so the comparison proves the guest's slot
+    // assignment and emission match the backend's own emission rather than a
+    // parallel model of it.
+    let expected = oracle_run_body_code_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    let RunOutcome::Output(output) = run_guest_with_args(
+        ECHO_COMPONENT_FIXTURE_SOURCE,
+        vec!["--emit-run-body-hex".to_owned()],
+    ) else {
+        panic!("the run body must be derived from the canonical IR")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    // The reference shape is pinned: the body is 180 bytes, it opens with the
+    // dispatcher shell and it ends with the dispatcher's epilogue.
+    assert_eq!(expected.len(), 360, "180 bytes of run body");
+    assert!(
+        expected.starts_with("410021170240034020174100460440"),
+        "dispatcher shell then the block dispatch head"
+    );
+    assert!(
+        expected.ends_with("0b000b0b000b"),
+        "the dispatcher epilogue closes the run body"
+    );
+    // The result-area return and the epilogue are the STEP-0503 slice on their
+    // own: the 89 bytes behind the unambiguous `i32.const 32` + `call 1`
+    // marker.
+    let result_segment = oracle_run_result_segment_hex(ECHO_COMPONENT_FIXTURE_SOURCE);
+    assert_eq!(
+        result_segment.len(),
+        178,
+        "89 bytes of result-area return and epilogue"
+    );
+    assert_eq!(
+        result_segment,
+        "4120100121182018200e3a00002010100121192019200f2010fc0a0000201820193602082018201036020c201210012119201920112012fc0a000020182019360210201820123602142018201337031820180f0b000b0b000b"
+    );
+}
+
+#[test]
+fn sico_compiler_refuses_the_run_body_outside_the_subset() {
+    // STEP-0503: the result-area return is fail-closed (ADR-0016 decision 6).
+    // A module without a Script-profile `run` and a `run` whose result is not
+    // an `ok` variant of a `ScriptOutput` construct must each surface as their
+    // own typed identity -- never as an approximation of the result area.
+    for (source, message) in [
+        // No `run` function in the module.
+        (IDENTITY_SOURCE, "ERR:E-SH-CG-IR-PLAN"),
+        // A `run` that returns a scalar is not the Script result shape, so
+        // there is no result area to lower.
+        (
+            "function run() returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-EMIT",
+        ),
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-run-body-hex".to_owned()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "a shape outside the result-area subset must stay a typed refusal: {source}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_refuses_ir_shapes_outside_the_run_plan_subset() {
+    // STEP-0496: the plan extraction is fail-closed (ADR-0016 decision 6).
+    // A module without a `run` function, an operation outside the supported
+    // subset, a type outside the supported subset and a terminator other than
+    // `return` must each surface as their own typed identity — never as an
+    // approximation of the plan.
+    for (source, message) in [
+        // No `run` function in the module.
+        (
+            "function probe() returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-PLAN",
+        ),
+        // A local cell lowers to `write_local`/`read_local`, which the plan
+        // subset does not cover.
+        (
+            "function run() returns I64:\n  let value = I64.literal(1)\n  set value = I64.literal(2)\n  return value\nend function\n",
+            "ERR:E-SH-CG-IR-OP",
+        ),
+        // A map parameter type is outside the plan type subset.
+        (
+            "function run(input: Map[Text, Text]) returns I64:\n  return I64.literal(0)\nend function\n",
+            "ERR:E-SH-CG-IR-TYPE",
+        ),
+        // A branching body ends in a branch terminator, not `return`.
+        (
+            "function run(flag: Bool) returns I64:\n  if flag:\n    return I64.literal(1)\n  end if\n  return I64.literal(2)\nend function\n",
+            "ERR:E-SH-CG-IR-TERMINATOR",
+        ),
+    ] {
+        assert_eq!(
+            run_guest_with_args(source, vec!["--emit-ir-plan".to_owned()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: message.into(),
+            },
+            "a shape outside the plan subset must stay a typed refusal: {source}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_emits_the_module_ir_split_across_both_channels_byte_exactly() {
+    // STEP-0495: the canonical IR of the whole `selfhost/parser.sico` module
+    // grew past the frozen Script v0 channel budget (RFC-0029 caps one
+    // channel at 8 MiB), so the single-channel default path can no longer
+    // carry it. The `--emit-ir-split` driver mode halves the IR across the
+    // two channels; concatenating stdout and stderr must restore the exact
+    // module IR, and the split point must sit at the byte midpoint.
+    let source = format!("{PARSER_SOURCE}\n");
+    let expected = rust_ir(&source);
+    let outcome = run_guest_with_args(&source, vec!["--emit-ir-split".to_owned()]);
+    let RunOutcome::Output(output) = outcome else {
+        panic!("the split driver mode must return the module IR across both channels: {outcome:?}")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let mut assembled = output.stdout.clone();
+    assembled.extend_from_slice(&output.stderr);
+    assert_bytes_equal(&assembled, expected.as_bytes());
+    assert_eq!(
+        output.stdout.len(),
+        expected.len() / 2,
+        "the split must sit at the byte midpoint"
+    );
+    // The split mode stays fail-closed: a lowering refusal must surface as
+    // the same typed identity the default path reports.
+    assert_eq!(
+        run_guest_with_args(
+            "function probe() returns I64:\n  return missing_call()\nend function\n",
+            vec!["--emit-ir-split".to_owned()],
+        ),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into(),
+        },
+        "the split driver mode must not hide a typed lowering refusal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_gw_tail_match_both_arms_return_byte_exactly() {
+    // STEP-0354: the general-while machine lowers a match whose both arms
+    // return when it sits at the function tail: the oracle keeps the join
+    // block but gives it an `unreachable` terminator (probe diagnostics), so
+    // the machine registers the join in a new unreachable table and accepts
+    // the terminated tail at the epilogue. Dead code after the same match
+    // instead lands in the join block with a normal terminator (oracle
+    // verified), which the machine already lowered — both shapes frozen.
+    let base = format!("{}\n", parser_function_text("next_index"));
+    let tail = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.checked_add(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\n"
+    );
+    let dead_code = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.checked_add(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\n  return U64.literal(1)\nend function\n"
+    );
+    let instr_count = format!("{}{}", base, parser_function_text("gw_instr_count"));
+    for source in [&tail, &dead_code, &instr_count] {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("gw tail match with both arms returning must compile")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // Declared bounds: an out-of-family match subject stays typed-refused,
+    // then recovery.
+    let bad_op = format!(
+        "{base}function probe(n: U64) returns U64:\n  let i = n\n  while U64.less_than(U64.literal(0), i):\n    set i = U64.literal(0)\n  end while\n  match U64.bit_and(i, U64.literal(1)):\n    case ok(t):\n      return t\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\n"
+    );
+    assert_eq!(
+        run_guest(&bad_op),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let good = &tail;
+    let expected = rust_ir(good);
+    let RunOutcome::Output(recovered) = run_guest(good) else {
+        panic!("valid gw tail match must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_list_get_generic_u64_match_byte_exactly() {
+    // STEP-0355: the list.get match-only machine accepts the generic subject
+    // `sico.list.get[U64](values, idx)` on a three-parameter
+    // `(values: List[U64], idx: U64, fallback: U64) returns U64` shape
+    // (u64_list_at itself) — the intrinsic name carries the `[U64]` generic,
+    // the result ok type and return type are u64, and the error arm returns
+    // the third parameter. Out-of-family generic types, a U64 element without
+    // the generic, and a string-literal fallback on the U64 shape stay
+    // typed-refused.
+    let good = parser_function_text("u64_list_at");
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("u64_list_at must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let bad_generic = good.replace("get[U64]", "get[I64]");
+    assert_eq!(
+        run_guest(&bad_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    // A U64 element without the explicit generic reaches the return-kind
+    // gate first (typed-refusal identity recorded as-is).
+    let no_generic = good.replace("get[U64]", "get");
+    assert_eq!(
+        run_guest(&no_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-TYPE-MISMATCH".into()
+        }
+    );
+    let literal_fallback = good.replace("return fallback", "return \"0\"");
+    assert_eq!(
+        run_guest(&literal_fallback),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("u64_list_at must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_condition_generic_list_length_byte_exactly() {
+    // STEP-0356: the general-while compare machine accepts the generic
+    // `sico.list.length[U64](<param>)` as a condition operand (right side of
+    // a while-header / if-condition compare) — gw_unreachable_terminator's
+    // header shape — emitting the intrinsic name with the `[U64]` generic,
+    // and accepts user calls on the right compare operand (gw_deferred_tail_json's
+    // if shape in accessible declaration order). Out-of-family generic types
+    // and a bare non-generic `sico.list.length` operand stay typed-refused.
+    let base = format!(
+        "{}\n{}\n",
+        parser_function_text("u64_list_at"),
+        parser_function_text("next_index"),
+    );
+    let good = format!(
+        "{}{}",
+        base,
+        parser_function_text("gw_unreachable_terminator")
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw_unreachable_terminator must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    let bad_generic = good.replace("length[U64]", "length[Text]");
+    assert_eq!(
+        run_guest(&bad_generic),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    // STEP-0382: the bare non-generic `sico.list.length(<list>)` operand
+    // now lowers (this branch widened it), replacing the former
+    // GWCOND-EXPRESSION refusal. This U64-list context is oracle-invalid
+    // for the bare form, so the positive here is compile-only; the
+    // byte-exact coverage of the bare form lives in the List[Text]
+    // operand_nonparam_kind fixture below.
+    let no_generic = good.replace("length[U64]", "length");
+    let RunOutcome::Output(plain_output) = run_guest(&no_generic) else {
+        panic!("bare sico.list.length operand must compile after STEP-0382")
+    };
+    assert_eq!(plain_output.exit_code, 0, "{:?}", plain_output.stderr);
+    let extra_arg = no_generic.replace("length(gunreach)", "length(gunreach, gunreach)");
+    assert_eq!(
+        run_guest(&extra_arg),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&good) else {
+        panic!("gw_unreachable_terminator must compile after typed refusals")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_compare_user_call_right_operand_byte_exactly() {
+    // STEP-0357: the general-while compare machine accepts a user call on the
+    // RIGHT compare operand (`U64.less_than(n, u64_list_at(rs, b, ...))`) —
+    // gw_deferred_tail_json's if-condition shape. STEP-0356 landed the branch
+    // without closing the gcp_r_done gate, so the shared width tail re-ran on
+    // the call shape and refused EXPRESSION; this fixture pins the fixed
+    // behavior byte-exactly.
+    let source = format!(
+        "{}\n{}\n{}",
+        parser_function_text("u64_list_at"),
+        parser_function_text("next_index"),
+        "function probe(rs: List[U64], a: U64, b: U64) returns U64:\n  let n = U64.literal(0)\n  while U64.less_than(n, a):\n    if U64.less_than(n, u64_list_at(rs, b, U64.literal(0))):\n      set n = next_index(n, n)\n    end if\n  end while\n  return n\nend function\n",
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("user call on the right compare operand must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A trailing extra argument keeps the shape refused (arity identity
+    // propagated from the call packer).
+    let malformed = source.replace(
+        "u64_list_at(rs, b, U64.literal(0))",
+        "u64_list_at(rs, b, U64.literal(0), b)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARITY".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid right-operand call must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_concat_to_text_and_span_fixes_byte_exactly() {
+    // STEP-0361: the general-while machine accepts `sico.u64.to_text(<cell>)`
+    // as a concat argument (gw_text_concat_packed widened; the parser family
+    // emits every JSON chain through it), and two latent span defects are
+    // fixed: (A) the statement keyword search no longer hits substrings in
+    // function names containing "let" (gcursor now starts after the
+    // declaration colon), and (B) every function-end search uses
+    // gw_find_code_text, which skips `//` comments and string literals —
+    // machine bodies literally contain `find_text_from(src, "end function",
+    // fn_start)` source text. This probe exercises all three at once: its
+    // name contains "let", its body contains an "end function" string
+    // literal, and it lowers a to_text concat argument byte-exactly.
+    let source = format!(
+        "{}
+{}",
+        parser_function_text("next_index"),
+        "function probe_let_span(words: List[Text], lim: U64) returns Text:
+  let marker = \"end function\"
+  let acc = \"\"
+  let i = U64.literal(0)
+  while U64.less_than(i, lim):
+    set acc = sico.text.concat(acc, sico.u64.to_text(i))
+    set i = next_index(i, lim)
+  end while
+  return acc
+end function
+",
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("probe_let_span must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A to_text concat argument with an extra operand stays refused, then
+    // recovery.
+    let malformed = source.replace("sico.u64.to_text(i)", "sico.u64.to_text(i, i)");
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid probe must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_find_code_text_byte_exactly() {
+    // STEP-0363: gw_find_code_text — the string-literal/comment-aware search
+    // that every function-end computation depends on — lowers itself through
+    // the general-while machine (escape parity tracked by a previous-index
+    // cell so no backward walk is needed). Its flip unblocks the
+    // straight_let / list_get_match_ir / chained_let closures, which are
+    // frozen via straight_let below.
+    let base = format!(
+        "{}\n{}\n{}",
+        parser_function_text("find_text_from"),
+        parser_function_text("next_index"),
+        parser_function_text("gw_find_code_text"),
+    );
+    let straight_callees = [
+        "is_word",
+        "word_at",
+        "line_end",
+        "matching_close",
+        "count_params",
+        "is_canonical_magnitude",
+        "decimal_at_most",
+        "parameter_name_start",
+        "scalar_type_kind",
+        "is_ident_byte",
+        "record_named_type",
+        "parameters_ir",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "word_span_offset",
+        "fixed_literal_argument",
+        "fixed_op_name",
+        "fixed_operation_operand_width",
+        "fixed_operation_operand_atom_idx",
+        "fixed_operation_operand_check",
+        "fixed_operation_operand_value",
+        "fixed_operation_literal_count",
+        "fixed_operation_literal_instructions",
+        "return_expression_end",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let good = format!(
+        "{}\n{}\n{}",
+        base,
+        straight_callees,
+        parser_function_text("straight_let_function_ir")
+    );
+    let expected = rust_ir(&good);
+    let RunOutcome::Output(output) = run_guest(&good) else {
+        panic!("gw_find_code_text closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let RunOutcome::Output(base_out) = run_guest(&base) else {
+        panic!("gw_find_code_text base closure must compile")
+    };
+    assert_bytes_equal(&base_out.stdout, rust_ir(&base).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_entry_region_match_byte_exactly() {
+    // STEP-0370: the general-while machine accepts a checked-arithmetic
+    // match in the function entry region (before any while) — the gate in
+    // gw_match_open_pack refused entry-region matches with STATEMENT, which
+    // blocked every source function that validates an argument before its
+    // first loop (the parser family does this pervasively). Both placements
+    // are frozen byte-exact: match-then-while (probe_t3) and
+    // while-then-match (probe_t4).
+    let entry_first = "function probe_t3(v: U64, lim: U64) returns U64:\n  let x = v\n  match U64.checked_add(v, U64.literal(1)):\n    case ok(n):\n      set x = n\n    case error(_):\n      set x = v\n  end match\n  let i = U64.literal(0)\n  while U64.less_than(i, lim):\n    set i = i\n  end while\n  return x\nend function\n";
+    let loop_first = "function probe_t4(v: U64, lim: U64) returns U64:\n  let x = v\n  let i = U64.literal(0)\n  while U64.less_than(i, lim):\n    set i = i\n  end while\n  match U64.checked_add(v, U64.literal(1)):\n    case ok(n):\n      set x = n\n    case error(_):\n      set x = v\n  end match\n  return x\nend function\n";
+    for source in [entry_first, loop_first] {
+        let expected = rust_ir(source);
+        let RunOutcome::Output(output) = run_guest(source) else {
+            panic!("entry-region match probe must compile")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // An out-of-family entry match subject stays typed-refused, then
+    // recovery.
+    let malformed = entry_first.replace(
+        "U64.checked_add(v, U64.literal(1))",
+        "U64.bit_and(v, U64.literal(1))",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TARGET".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(entry_first) else {
+        panic!("valid entry match must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, rust_ir(entry_first).as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_compare_non_generic_list_length_byte_exactly() {
+    // STEP-0382: the general-while compare machine accepts the non-generic
+    // `sico.list.length(<list>)` as a condition operand (the generic
+    // `sico.list.length[U64]` form landed in STEP-0356; the bare form is
+    // what operand-style guards actually use). This unblocked the whole
+    // EXPRESSION refusal cluster — operand_nonparam_kind is frozen here as
+    // the cluster's canary.
+    let base = [
+        "decimal_at_most",
+        "fixed_literal_argument",
+        "is_canonical_magnitude",
+        "is_word",
+        "local_binding_index",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("operand_nonparam_kind"),
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("operand_nonparam_kind closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // A trailing operand that is neither a list, parameter, cell, nor
+    // literal stays typed-refused, then recovery.
+    let malformed = source.replace(
+        "sico.list.length(cell_names)",
+        "sico.list.length(cell_names, cell_names)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&source) else {
+        panic!("valid operand closure must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_sort_and_text_join_byte_exactly() {
+    // STEP-0384: the general-while RHS packer learns `sico.list.sort(<cell>)`
+    // (new gw_list_sort_rhs_packed: read_local + intrinsic, oracle-range
+    // exact) and `sico.text.join(<list>, <text>)` (routed to the existing
+    // two-arg binary packer). A nested user-call set RHS was split into two
+    // straight sets in records_table_json instead of another machine branch.
+    // This unblocked the records_table_json census flip (GWPACK-OTHER -> FLIP).
+    let helper = parser_function_text("next_index");
+    let sort_src = format!(
+        "{helper}
+{}",
+        "function t_sort_cells(entries_in: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let entries = sico.text.split_lines(\"\")
+  while U64.less_than(i, n):
+    set entries = sico.list.sort(entries)
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected_sort = rust_ir(&sort_src);
+    let RunOutcome::Output(sort_out) = run_guest(&sort_src) else {
+        panic!("gw sort RHS shape must compile")
+    };
+    assert_eq!(sort_out.exit_code, 0, "{:?}", sort_out.stderr);
+    assert_bytes_equal(&sort_out.stdout, expected_sort.as_bytes());
+
+    let join_src = format!(
+        "{helper}
+{}",
+        "function t_join_cells(entries_in: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let entries = sico.text.split_lines(\"\")
+  let body = \"\"
+  while U64.less_than(i, n):
+    set body = sico.text.join(entries, \",\")
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected_join = rust_ir(&join_src);
+    let RunOutcome::Output(join_out) = run_guest(&join_src) else {
+        panic!("gw join RHS shape must compile")
+    };
+    assert_eq!(join_out.exit_code, 0, "{:?}", join_out.stderr);
+    assert_bytes_equal(&join_out.stdout, expected_join.as_bytes());
+
+    // Guard: sort with a trailing argument stays typed-refused, then recovery.
+    let malformed = sort_src.replace(
+        "sico.list.sort(entries)",
+        "sico.list.sort(entries, entries)",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-SHAPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&sort_src) else {
+        panic!("valid sort shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected_sort.as_bytes());
+
+    // The census flip itself: records_table_json closure byte-exact.
+    let base = [
+        "is_ident_byte",
+        "is_word",
+        "line_end",
+        "next_index",
+        "record_close_bracket",
+        "record_map_comma",
+        "record_named_type",
+        "record_scalar_kind",
+        "record_type_json",
+        "type_json",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("records_table_json")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("records_table_json closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_text_length_rhs_byte_exactly() {
+    // STEP-0385: the general-while RHS packer routes `sico.text.length`
+    // through gw_intrinsic_call_packed (parameter and cell operands; the
+    // call/literal argument forms are hoisted to cells at the two
+    // straight_environment_literal_count / fixed_literal_argument sites).
+    // This unblocked the straight_environment_literal_count census flip
+    // (GWPACK-OTHER -> FLIP) and cascaded most of the GWPACK-OTHER cluster
+    // to their next real gate.
+    let helper = parser_function_text("next_index");
+    let len_src = format!(
+        "{helper}
+{}",
+        "function t_len_cells(words: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let acc = \"\"
+  let m = U64.literal(0)
+  while U64.less_than(i, n):
+    let w = word_at(words, i)
+    set acc = sico.text.concat(acc, w)
+    set m = sico.text.length(acc)
+    set i = next_index(i, n)
+  end while
+  return acc
+end function
+"
+    );
+    let word_at = parser_function_text("word_at");
+    let len_src = format!(
+        "{word_at}
+{len_src}"
+    );
+    let expected_len = rust_ir(&len_src);
+    let RunOutcome::Output(len_out) = run_guest(&len_src) else {
+        panic!("gw text.length cell shape must compile")
+    };
+    assert_eq!(len_out.exit_code, 0, "{:?}", len_out.stderr);
+    assert_bytes_equal(&len_out.stdout, expected_len.as_bytes());
+
+    // Guard: a call argument (not hoisted) stays typed-refused, then recovery.
+    //
+    // STEP-0532 changed the **identity** of this refusal, not its kind: the
+    // guest now recognises the shape ("the argument is a nested call") and
+    // then refuses the nested call's own argument -- the local cell `i` --
+    // with `ERR:E-SH-IR-CALL-ARGUMENT`, where before it refused the whole
+    // shape with `ERR:E-SH-IR-CALL-SHAPE`.  It is still a typed refusal and
+    // never a silent widening; the nested call's argument forms (a parameter
+    // or a literal) do lower, and that is what the T2-g2 knife added.
+    let malformed = len_src.replace(
+        "set m = sico.text.length(acc)",
+        "set m = sico.text.length(word_at(words, i))",
+    );
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-ARGUMENT".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&len_src) else {
+        panic!("valid text.length shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected_len.as_bytes());
+
+    // The census flip itself: straight_environment_literal_count closure
+    // byte-exact.
+    let base = [
+        "binding_parameter_index",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "fixed_literal_argument",
+        "fixed_operation_operand_atom_idx",
+        "fixed_operation_operand_width",
+        "is_canonical_magnitude",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("straight_environment_literal_count")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("straight_environment_literal_count closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_argument_instruction_count_closure_byte_exactly() {
+    // STEP-0386: CALL-SHAPE cluster source reshaping — nested user calls
+    // hoisted out of `to_text(..)` concat arguments (gw_deferred_tail_json),
+    // a `to_text(U64.literal(..))` const argument hoisted to a cell
+    // (nested_intrinsic_return_ir), and `text.length(user_call(..))` /
+    // nested `next_index(matching_close(..))` sets split into let+set pairs
+    // (argument_instruction_count family, including the
+    // bytes.length-in-gw-set dispatch for gw_intrinsic_call_packed's own
+    // body). Seven census closures flipped with zero regressions.
+    let base = [
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "binding_parameter_index",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "matching_close",
+        "next_index",
+        "word_at",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join(
+        "
+",
+    );
+    let source = format!(
+        "{}
+{}",
+        base,
+        parser_function_text("argument_instruction_count")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("argument_instruction_count closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_intrinsic_call_packed_closure_byte_exactly() {
+    // STEP-0387: RETURN-COUNT cluster root = gw_intrinsic_call_packed's own
+    // body - the if/else "both arms return" shape is restructured to a
+    // single trailing return (R3 single-return discipline), unblocking
+    // the whole RETURN-COUNT census cluster.
+    let base = [
+        "binding_parameter_index",
+        "find_text_from",
+        "intrinsic_instruction_json",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "read_local_instruction_json",
+        "type_json",
+        "u64_list_at",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("gw_intrinsic_call_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("gw_intrinsic_call_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_argument_instructions_closure_byte_exactly() {
+    // STEP-0388 canary flip: argument_instructions closure byte-exact
+    // after the known-bad-shape library sweep.
+    let base = [
+        "argument_instruction_count",
+        "argument_values",
+        "argument_values_at",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "scalar_type_kind",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("argument_instructions")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("argument_instructions closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_empty_rhs_byte_exactly() {
+    // STEP-0389: the general-while RHS packer learns `sico.list.empty[U64]()`
+    // (new gw_list_empty_rhs_packed, mirroring the gw_map_empty_rhs_packed
+    // zero-argument pattern; offsets are word-position based, not
+    // character-based - the first cut used +1 and every guard tripped
+    // CALL-SHAPE). The shape initializes cell_locals in 41 parser.sico
+    // sites, so this unblocked the user_call_expression_json census flip.
+    let helper = parser_function_text("next_index");
+    let src_fixture = format!(
+        "{helper}
+{}",
+        "function t_empty_cells(words: List[Text], n: U64) returns Text:
+  let i = U64.literal(0)
+  let values = sico.list.empty[U64]()
+  while U64.less_than(i, n):
+    set i = next_index(i, n)
+  end while
+  return \"ok\"
+end function
+"
+    );
+    let expected = rust_ir(&src_fixture);
+    let RunOutcome::Output(output) = run_guest(&src_fixture) else {
+        panic!("gw list.empty shape must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+
+    // Guard: a wrong element type stays typed-refused, then recovery.
+    let malformed = src_fixture.replace("sico.list.empty[U64]()", "sico.list.empty[Text]()");
+    assert_eq!(
+        run_guest(&malformed),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "ERR:E-SH-IR-CALL-TYPE".into()
+        }
+    );
+    let RunOutcome::Output(recovered) = run_guest(&src_fixture) else {
+        panic!("valid list.empty shape must compile after typed refusal")
+    };
+    assert_bytes_equal(&recovered.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_straight_text_concat_packed_closure_byte_exactly() {
+    // STEP-0394: straight_text_concat_packed census flip - a nested
+    // `next_index(matching_close(..))` set and a `to_text(gw_decimal_value(..))`
+    // concat argument hoisted to cells. wcr RETURN-COUNT hunting paused
+    // (truncation bisection confounded by routing changes).
+    //
+    // STEP-0524 changed the shape of this closure: the shared operand lowerer
+    // now calls `stc_call_operand_packed` for a call operand with several
+    // arguments.  The hand-maintained list could not survive that change (the
+    // Rust oracle reported `unresolved call target stc_call_operand_packed`),
+    // so the closure is computed from the file now -- the same fix the
+    // STEP-0523 slice applied to the sibling list.
+    let source = parser_closure_source("straight_text_concat_packed");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("straight_text_concat_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_gw_list_sort_rhs_packed_closure_byte_exactly() {
+    // STEP-0395: gw_list_sort_rhs_packed's own closure compiles - the
+    // straight-context token-end computation must stay in the
+    // `match checked_add(.., bytes.length(encode(word_at(..))))` subject
+    // form (the straight machine rejects both hoisted-cell and let-bound
+    // bytes.length operands; only the match-subject shape is modeled).
+    let base = [
+        "find_text_from",
+        "intrinsic_instruction_json",
+        "is_word",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "read_local_instruction_json",
+        "type_json",
+        "u64_list_at",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("gw_list_sort_rhs_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("gw_list_sort_rhs_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_checked_arithmetic_match_ir_closure_byte_exactly() {
+    // STEP-0396: the match-subject token-end folding (69 sites library-wide:
+    // `let __enc = encode(ARG)` + `set __h = bytes.length(__enc)` +
+    // `match checked_add(off, __h)` folded into a single match subject)
+    // flipped checked_arithmetic_match_ir; checked_arithmetic_set_match_ir
+    // progresses into the registered casm wasm-trap defect class (0365).
+    let base = [
+        "argument_instruction_count",
+        "argument_instructions",
+        "argument_region_instruction_count",
+        "argument_segment_kind",
+        "argument_values",
+        "argument_values_at",
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "gw_find_code_text",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "parameter_name_start",
+        "is_ident_byte",
+        "record_named_type",
+        "parameters_ir",
+        "scalar_type_kind",
+        "word_at",
+        "word_span_offset",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("checked_arithmetic_match_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("checked_arithmetic_match_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_while_call_rhs_packed_closure_byte_exactly() {
+    // STEP-0400: the function-level giant-if flattening (guard + top-level
+    // body) plus the while_call_rhs_empty_args helper extraction unblocked
+    // the whole RETURN-COUNT machine cluster - 19 closures flipped at once,
+    // most cascading into the registered STEP-0365 wasm-trap defect class.
+    // wcr is frozen here as the cluster's canary.
+    let base = [
+        "binding_parameter_index",
+        "binding_parameter_kind",
+        "call_instruction_json",
+        "constant_argument_kind",
+        "comma_count",
+        "count_params",
+        "decimal_at_most",
+        "declared_return_kind",
+        "find_text_from",
+        "fixed_literal_argument",
+        "fixed_literal_operand_json",
+        "fixed_literal_const_segment",
+        "fixed_operation_operand_width",
+        "function_declaration_index",
+        "function_declaration_ordinal",
+        "gw_call_chain_packed",
+        "gw_instr_count",
+        "gw_ut_chain_packed",
+        "intrinsic_instruction_json",
+        "is_canonical_magnitude",
+        "is_declaration_start",
+        "is_intrinsic_path",
+        "is_string_token",
+        "is_word",
+        "json_string_token",
+        "line_end",
+        "local_binding_index",
+        "matching_close",
+        "next_index",
+        "parameter_kind_by_id",
+        "read_local_instruction_json",
+        "scalar_const_instruction_json",
+        "scalar_type_kind",
+        "type_json",
+        "u64_list_at",
+        "while_call_rhs_empty_args",
+        "word_at",
+        "word_span_offset",
+        "fixed_literal_const_instruction",
+        "fixed_op_name",
+        "fixed_operation_instruction_json",
+        "fixed_operation_operand_atom_idx",
+        "gw_decimal_value",
+        "gw_intrinsic_call_packed",
+        "gw_list_append_u64_rhs_packed",
+        "gw_list_empty_rhs_packed",
+        "gw_list_sort_rhs_packed",
+        "gw_map_empty_rhs_packed",
+        "gw_map_put_rhs_packed",
+        "gw_ok_wrap_rhs_packed",
+        "gw_rhs_at_dispatch",
+        "gw_rhs_at_param_arm",
+        "gw_rhs_error_arm",
+        "gw_rhs_multi_pack",
+        "gw_rhs_ok_arm",
+        "gw_rhs_packed",
+        "gw_rhs_single_pack",
+        "gw_rhs_split_lines_emit",
+        "gw_rhs_utf8_decode_arm",
+        "gw_text_concat_packed",
+        "gw_text_list_binary_packed",
+        "gw_text_trim_user_call_packed",
+        "gw_u64_less_than_value_packed",
+        "gwf_l_operand",
+        "gwf_r_operand",
+        "operand_cell_or_literal_json",
+        "operand_nonparam_kind",
+        "parameter_type_word",
+        "script_result_return_json",
+        "while_bytes_at_local_src_packed",
+        "while_bytes_at_rhs_packed",
+        "argument_instruction_count",
+        "argument_instructions",
+        "argument_region_instruction_count",
+        "argument_values_at",
+        "environment_call_arguments",
+        "nested_text_call_packed",
+        "stc_call_operand_packed",
+        "straight_text_concat_packed",
+        "user_call_expression_json",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("while_call_rhs_packed")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("while_call_rhs_packed closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+/// STEP-0515: the same Script-profile fixture, but the host call sits in a
+/// `let` binding instead of the return position. The canonical IR is the
+/// **same shape** as the return-position fixture -- one `intrinsic`, result 1,
+/// the terminator returning 1 -- with only the source range shifted, because
+/// the Rust frontend propagates a straight-line `let` binding into the SSA
+/// value instead of creating a local.
+const HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return n\nend function\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(7)))\nend function\n";
+
+#[test]
+fn sico_compiler_lowers_the_host_call_in_a_let_binding_byte_exactly() {
+    // STEP-0515, frontend knife: a host call (`sico.bytes.length`) in a `let`
+    // binding of a straight-line body now lowers to the canonical intrinsic
+    // operation -- **byte for byte equal** to the Rust frontend's own canonical
+    // IR, not merely shape-equal.
+    //
+    // The truth is the Rust frontend's production output (STEP-0511, the
+    // `host-c` artifact): the `let` binding is propagated into the SSA value,
+    // so the canonical IR is the *same shape* as the return-position fixture --
+    // one `intrinsic`, result 1, the terminator returning 1, **no local** --
+    // with only the source range shifted (369..392 instead of 361..384).
+    //
+    // The landing point is the dedicated `direct_host_call_let_ir` route in the
+    // guest frontend, wired into the route ladder ahead of the general
+    // statement analysis. The route claims one shape and returns SKIP for
+    // everything else, so no existing refusal identity changes.
+    let expected = rust_ir(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE);
+    assert_eq!(
+        expected.len(),
+        2215,
+        "the measured canonical IR size of the let-binding fixture is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE) else {
+        panic!("the guest must lower a host call in a let binding after STEP-0515")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the host call lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.bytes.length\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0]"),
+        "the intrinsic arguments are the argument value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"range\":{\"start\":369,\"end\":392}"),
+        "the intrinsic range is the call expression span: {ir}"
+    );
+    assert!(
+        !ir.contains("\"op\":\"write_local\"") && !ir.contains("\"locals\""),
+        "the let binding is propagated into the SSA value, not lowered into a local: {ir}"
+    );
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_host_call_let_binding_component_byte_exactly() {
+    // STEP-0515, codegen side: the let-binding fixture lowers to the same
+    // intrinsic shape, so the whole component must equal the Rust backend's
+    // own production output byte for byte -- 1025 B, measured in STEP-0511.
+    let module = rust_module(HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the let-binding fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured let-binding component size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        HOST_CALL_IN_LET_BINDING_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the let-binding component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted let-binding component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted let-binding component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0515_parser_function_byte_exactly() {
+    // STEP-0515: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 / STEP-0512 slices
+    // established for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_host_call_let_ir`
+    // in parser.sico, emitted in file order (the guest frontend refuses
+    // forward-referenced user-function calls).
+    let base = [
+        "next_index",
+        "word_at",
+        "is_word",
+        "is_ident_byte",
+        "record_named_type",
+        "type_json",
+        "line_end",
+        "intrinsic_instruction_json",
+        "find_text_from",
+        "word_span_offset",
+        "binding_parameter_index",
+        "matching_close",
+        "is_intrinsic_path",
+        "scalar_type_kind",
+        "binding_parameter_kind",
+        "gw_find_code_text",
+        "return_expression_end",
+        "parameter_name_start",
+        "parameters_ir",
+    ]
+    .iter()
+    .map(|name| parser_function_text(name))
+    .collect::<Vec<_>>()
+    .join("\n");
+    let source = format!(
+        "{}\n{}",
+        base,
+        parser_function_text("direct_host_call_let_ir")
+    );
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_host_call_let_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0517: the T1 family truth -- `sico.text.concat` over two `Text`
+// arguments.
+//
+// STEP-0516 closed the *scale* question for the W2 wave. STEP-0517 measures
+// the first *family* the W2 wave has to close: `sico.text.concat`, the call
+// the M22 plan ranks first by call-site count in S.
+//
+// Every number below is measured from the Rust frontend's canonical IR and
+// the Rust backend's own production component -- never designed.
+// ---------------------------------------------------------------------------
+
+/// The Script-profile prelude and the `run` entry, shared with the host-call
+/// fixtures above so the two families stay comparable.
+fn text_concat_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_in_a_let_binding_byte_exactly() {
+    // STEP-0517, T1 truth (frontend side): the `sico.text.concat` call in a
+    // `let` binding is **already** lowered by the guest frontend -- byte for
+    // byte equal to the Rust frontend's canonical IR, not merely shape-equal.
+    //
+    // The canonical shape is one `intrinsic` operation named
+    // `sico.text.concat` whose two arguments are the two argument value ids:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    //
+    // The `let` binding is propagated into the SSA value (no `write_local`,
+    // no `locals`), exactly like the STEP-0515 host-call fixture. Both
+    // already-lowered shapes are pinned here: the arguments as parameters and
+    // the arguments as local cells.
+    for (label, body) in [
+        (
+            "parameters",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+        ),
+        (
+            "cells",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  let y = b\n  let c = sico.text.concat(x, y)\n  return c\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            2295,
+            "the measured T1 canonical IR size is pinned ({label})"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest must lower a text concat in a let binding ({label})")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"op\":\"intrinsic\""),
+            "the text concat lowers to one intrinsic operation ({label}): {ir}"
+        );
+        assert!(
+            ir.contains("\"name\":\"sico.text.concat\""),
+            "the intrinsic keeps its dotted name ({label}): {ir}"
+        );
+        assert!(
+            ir.contains("\"arguments\":[0,1]"),
+            "the intrinsic arguments are the two argument value ids ({label}): {ir}"
+        );
+        assert!(
+            !ir.contains("\"op\":\"write_local\"") && !ir.contains("\"locals\""),
+            "the let binding is propagated into the SSA value, not lowered into a local ({label}): {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_in_a_return_position_byte_exactly() {
+    // STEP-0517, T1 truth: the return-expression position is **not** a
+    // missing capability -- it is a *gated* one.
+    //
+    // The same `return sico.text.concat(a, b)` lowers **byte for byte** as soon
+    // as the function body carries one more statement (a `let` or a `set`).
+    // The Rust frontend drops the dead binding and keeps the intrinsic in the
+    // return position:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    //   ... "terminator":{"kind":"return","data":2}
+    //
+    // The gate lives in the guest's route ladder: the `straight_cell_*` family
+    // is only entered when the body has a statement besides the return
+    // (`body_statement_count = max(let_count, set_count) > 0`). A body whose
+    // only statement is the return never reaches the route that already
+    // implements this shape, and falls through to the scalar-return analysis,
+    // which refuses it with `ERR:E-SH-IR-EXPRESSION`.
+    //
+    // This is the measured cut point for the W2 frontend knife: the shape
+    // works, the *reachability* is what is missing.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, b)\nend function",
+    );
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2295,
+        "the measured T1 return-position canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!(
+            "the guest must lower a text concat in a return position when the body has a statement"
+        )
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the text concat lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.text.concat\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0,1]"),
+        "the intrinsic arguments are the two argument value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"terminator\":{\"kind\":\"return\",\"data\":2}"),
+        "the intrinsic result is the returned value: {ir}"
+    );
+}
+
+#[test]
+fn oracle_text_concat_component_truth_is_pinned() {
+    // STEP-0517, T1 truth (codegen side): the frontend lowers the shape, but
+    // at the STEP-0517 measurement time the **component** emitter did not. The
+    // Rust backend's own production output for the same source is 1094 bytes;
+    // the guest emitter refused with the typed "unsupported codegen source
+    // shape".
+    //
+    // That refusal was the fail-closed behaviour ADR-0016 decision 6 demands:
+    // the emitter supported `sico.bytes.length` only (STEP-0513), so
+    // `sico.text.concat` was outside the subset and was never approximated.
+    //
+    // STEP-0519 landed the W2 codegen knife, so the guest half below is now
+    // the byte-exact comparison this pin promised -- the original refusal
+    // identity stays in the STEP-0517 record for traceability.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the T1 fixture");
+    assert_eq!(
+        expected.len(),
+        1094,
+        "the measured T1 component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured T1 component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the text-concat component must be emitted through the guest after STEP-0519")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted text-concat component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted text-concat component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0518_parser_function_byte_exactly() {
+    // STEP-0518: the guest's own new frontend route has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own new code, otherwise the bootstrap could never consume its
+    // own source. Exactly like the STEP-0507 / STEP-0509 / STEP-0512 / STEP-0515
+    // slices established for the functions they added.
+    //
+    // The closure is the transitive callee set of `direct_text_concat_return_ir`
+    // in parser.sico, emitted in file order. It is the STEP-0512 closure of
+    // the sibling route (`direct_host_call_return_ir`) -- the new route calls
+    // the same helpers -- plus the route itself, which sits after them.
+    //
+    // STEP-0523 reshaped the route: the operand lowering moved into
+    // `straight_text_concat_packed` (the helper the `let`-binding routes
+    // already use), so the closure grew by that helper and its own callees.
+    // The closure is now computed from the file instead of being kept by
+    // hand, so it cannot drift out of date when the route changes again.
+    let source = parser_closure_source("direct_text_concat_return_ir");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("direct_text_concat_return_ir closure must compile")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_as_the_whole_expression_byte_exactly() {
+    // STEP-0518, T1 frontend knife: the `sico.text.concat` call as the **whole
+    // expression** of a straight-line body -- the shape the STEP-0517 truth
+    // slice measured as still refused -- now lowers to the canonical
+    // intrinsic operation, **byte for byte equal** to the Rust frontend's own
+    // canonical IR.
+    //
+    // The STEP-0517 slice measured the real cause: the guest already had a
+    // working, byte-exact return-position route (`straight_cell_function_ir`
+    // and `straight_environment_function_ir`), but the route ladder only
+    // entered that family when the body carried a statement besides the
+    // return (`body_statement_count = max(let_count, set_count) > 0`). A body
+    // whose only statement is the return never reached it.
+    //
+    // The landing point is the dedicated `direct_text_concat_return_ir` route
+    // in the guest frontend, wired into the route ladder ahead of the general
+    // statement analysis. The route claims one shape and returns SKIP for
+    // everything else, so no existing refusal identity changes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, b)\nend function",
+    );
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2295,
+        "the measured T1 whole-expression canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest must lower a text concat as the whole expression after STEP-0518")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"intrinsic\""),
+        "the text concat lowers to one intrinsic operation: {ir}"
+    );
+    assert!(
+        ir.contains("\"name\":\"sico.text.concat\""),
+        "the intrinsic keeps its dotted name: {ir}"
+    );
+    assert!(
+        ir.contains("\"arguments\":[0,1]"),
+        "the intrinsic arguments are the two parameter value ids: {ir}"
+    );
+    assert!(
+        ir.contains("\"terminator\":{\"kind\":\"return\",\"data\":2}"),
+        "the intrinsic result is the returned value: {ir}"
+    );
+    assert!(
+        ir.contains("\"range\":{\"start\":374,\"end\":396}"),
+        "the intrinsic range is the call expression span: {ir}"
+    );
+}
+
+#[test]
+fn sico_compiler_keeps_the_unclosed_text_concat_shapes_typed_refused() {
+    // STEP-0517 / STEP-0518: the knife is one shape, not a widening of the
+    // `sico.text.concat` surface. The shapes the STEP-0517 truth slice
+    // measured next to the supported one stay typed refusals.
+    //
+    // STEP-0518 claimed the two-parameter shape whose whole expression is the
+    // call -- the shape this pin refused at STEP-0517 -- so that case moved
+    // to the STEP-0518 pin above. Every shape the knife does *not* claim
+    // keeps the identity the STEP-0517 measurement recorded
+    // (`ERR:E-SH-IR-EXPRESSION`): fail-closed, no silent reinterpretation.
+    //
+    // STEP-0523 widened the single-`return` route: the three shapes this pin
+    // used to refuse -- two literal operands, a nested host call in operand
+    // position, and a mixed operand pair -- are now **claimed** (they are
+    // pinned byte for byte by the T1 family truth table and by
+    // `sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly`).
+    // STEP-0524 widened the call operand again: a call operand may now carry
+    // **several** arguments, and an argument may be a parameter, a local, a
+    // string literal or a `U64.literal(n)` constant.  The shape this pin used
+    // to refuse -- a user call with two arguments -- is now **claimed** (it is
+    // pinned byte for byte by the T1 family truth table and by
+    // `sico_codegen_guest_lowers_the_gf_multi_argument_call_operand_byte_exactly`).
+    // The shapes that are still unclaimed are the ones below, and they keep
+    // the same fail-closed identity.
+    for (label, body) in [
+        (
+            "user-call-with-an-i64-literal-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(a, I64.literal(-1)), \"20\")\nend function\nfunction helper(x: Text, y: I64) returns Text:\n  return \"z\"\nend function",
+        ),
+        (
+            "wrong-operand-kind",
+            "function join(a: U64) returns Text:\n  return sico.text.concat(a, a)\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} text-concat shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+    }
+}
+
+#[test]
+fn the_text_concat_arity_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0517, T1 truth: the arity boundary of `sico.text.concat` is
+    // enforced by the **semantic layer**, not by the IR layer -- the Rust
+    // frontend itself refuses one argument and three arguments with
+    // `stdlib intrinsic arity`.
+    //
+    // That matters for the W2 wave: the guest frontend must not invent its
+    // own arity check, and the guest's refusal on these shapes is not a
+    // guest-specific gap.
+    for (label, body) in [
+        (
+            "one-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a)\nend function",
+        ),
+        (
+            "three-arguments",
+            "function join(a: Text, b: Text, c: Text) returns Text:\n  return sico.text.concat(a, b, c)\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let source_file = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source)
+            .expect("the fixture source is bounded");
+        let error = match lower_core(&source_file) {
+            Ok(_) => panic!("the Rust frontend must refuse the {label} arity"),
+            Err(error) => format!("{error:?}"),
+        };
+        assert!(
+            error.contains("stdlib intrinsic arity"),
+            "the {label} arity must be refused by the semantic layer: {error}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0519: the W2 family's T1 codegen knife -- the `sico.text.concat`
+// intrinsic reaches the component emitter.
+//
+// The rules are measured from the backend's production output (the oracle
+// component's type, function, export and code sections, parsed in STEP-0519):
+//   * the call site pushes the two operands' four flat slots (pointer and
+//     length each), calls the helper, then stores the result length and the
+//     result pointer;
+//   * the helper is a core function of its own: its core function index is
+//     the module function count plus the three arena helpers, its type is
+//     the four-parameter / two-result function type, and its body is the
+//     backend's own `emit_concat` shape (the total length, the arena
+//     allocation, the two linear copies);
+//   * the type, function and code sections carry one extra entry for the
+//     helper -- and only when the module really uses the intrinsic, so a
+//     module without it keeps the three-entry shape.
+// ---------------------------------------------------------------------------
+
+/// The T1 fixture with a third module function, so the helper's core function
+/// index is not the two-function value.
+fn text_concat_three_function_fixture() -> String {
+    format!(
+        "{HOST_CALL_SHAPE_PRELUDE}{}\n{}\n{HOST_CALL_SHAPE_RUN}",
+        "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+        "function size(data: Bytes) returns U64:\n  let n = sico.bytes.length(data)\n  return n\nend function"
+    )
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_text_concat_helper_index_from_the_module_function_count() {
+    // STEP-0519: the concat helper's core function index is **derived**, not
+    // hard-coded: it is the module function count plus the three arena
+    // helpers. A module with a third function must move the helper -- and
+    // the type, function and code section entries with it -- and the whole
+    // component must still equal the Rust backend's own production output
+    // byte for byte.
+    let source = text_concat_three_function_fixture();
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the T1 fixture");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the three-function text-concat component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted three-function component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted three-function component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_keeps_the_modules_without_the_concat_helper_unchanged() {
+    // STEP-0519: the helper's section entries are **conditional**. A module
+    // that does not use `sico.text.concat` must keep the three-entry shape
+    // (three arena helper types, three arena helper functions, three arena
+    // helper bodies) -- the extra type, function and code entry belong to the
+    // concat helper alone.
+    //
+    // The host-call fixture is the reference: it uses `sico.bytes.length`,
+    // which the backend emits inline and which therefore registers no helper.
+    let source = HOST_CALL_IN_STRAIGHT_LINE_FIXTURE_SOURCE;
+    let module = rust_module(source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the host-call fixture");
+    assert_eq!(
+        expected.len(),
+        1025,
+        "the measured host-call component size is pinned"
+    );
+    let RunOutcome::Output(output) =
+        run_guest_with_args(source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the host-call component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "a module without the concat helper must keep the three-entry shape"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
+    // STEP-0519: the guest's own new emission code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its
+    // own code. Exactly like the STEP-0507 / STEP-0509 / STEP-0513 slices
+    // established for the functions they added.
+    //
+    // The four scan functions and the `sico.text.concat` branch are new; the
+    // three section functions and the intrinsic emitter were reshaped.
+    //
+    // STEP-0538 (emitter vocabulary A-1) reshaped the scan functions once
+    // more: the three `sico.text.concat` specific scans and the three
+    // `sico.text.length` specific scans became **one** generic scan that
+    // takes the intrinsic name as a parameter
+    // (`cgs_instruction_is_intrinsic` / `cgs_block_has_intrinsic` /
+    // `cgs_function_has_intrinsic` / `cgs_module_has_intrinsic`), so the
+    // `sico.bytes.utf8_decode` core helper could join the same scan. The
+    // frozen `cg_utf8_validate_helper_body_hex` is new in the same slice.
+    //
+    // STEP-0539 (emitter vocabulary A-2) adds the two four-slot numeric
+    // intrinsics: the shared numeric-error arm, the two intrinsic emitters
+    // and the `local.tee` byte helper they need.
+    //
+    // STEP-0540 (emitter vocabulary B-1) adds the first **core helper** of
+    // the vocabulary: the frozen `sico.bytes.equal` helper body, the generic
+    // helper index that numbers the helpers in the backend's own
+    // alphabetical order, and the intrinsic emitter that calls it.
+    //
+    // The same slice also put the emitter's own type dispatch under the
+    // frontier: `cgs_flat_hex` and `cgs_value_ty` are the two functions the
+    // dispatch runs through, and neither was pinned before.  Pinning them
+    // keeps the frontier honest -- the guest frontend has to be able to lower
+    // the emitter's own code, not just the helpers this slice added.
+    for name in [
+        "cgs_function_count",
+        "cgs_instruction_is_intrinsic",
+        "cgs_block_has_intrinsic",
+        "cgs_function_has_intrinsic",
+        "cgs_module_has_intrinsic",
+        "cg_concat_helper_body_hex",
+        "cg_utf8_validate_helper_body_hex",
+        "cgs_intrinsic_hex",
+        "cgs_core_types_hex",
+        "cgs_core_funcs_hex",
+        "cgs_core_code_hex",
+        "cgs_local_tee_hex",
+        "cgs_numeric_error_hex",
+        "cgs_list_get_hex",
+        "cgs_bytes_slice_hex",
+        "cg_bytes_equal_helper_body_hex",
+        "cgs_helper_index",
+        "cgs_bytes_equal_hex",
+        "cgs_flat_hex",
+        "cgs_value_ty",
+        "cg_starts_with_helper_body_hex",
+        "cg_u64_to_text_helper_body_hex",
+        // STEP-0542 (emitter vocabulary C): the six collection helper bodies and
+        // the generic collection call emitter (plus its two argument gates).
+        "cg_list_append_helper_body_hex",
+        "cg_list_append_scalar_helper_body_hex",
+        "cg_collection_empty_helper_body_hex",
+        "cg_list_get_scalar_helper_body_hex",
+        "cg_text_join_helper_body_hex",
+        "cg_split_lines_helper_body_hex",
+        "cgs_collection_arg_is",
+        "cgs_collection_arg_is_list_of",
+        "cgs_collection_call_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let outcome = run_guest(&source);
+        let RunOutcome::Output(output) = outcome else {
+            panic!("codegen function {name} must compile through the guest frontend: {outcome:?}")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0520: the W2 family's **local cell** support in the guest codegen.
+//
+// The gap STEP-0519 left open is measured, not guessed: a `let` binding that
+// is later **assigned** is lowered by the Rust frontend into a *cell* -- the
+// function carries `locals`, and the binding becomes two `write_local`
+// operations whose result type is `unit`. The backend's own layout then puts
+// the cells after the instruction results and before the dispatcher slot, and
+// emits a cell write as a slot-by-slot copy.
+//
+// The reference shape (the first one that needs a cell at all):
+//
+//   function join(a: Text, b: Text) returns Text:
+//     let x = a
+//     set x = b
+//     return sico.text.concat(a, b)
+//   end function
+//
+// Its canonical IR is 2630 bytes and its production Component is 1114 bytes;
+// both numbers are measured from the Rust frontend and the Rust backend.
+// ---------------------------------------------------------------------------
+
+/// The first shape that needs the guest codegen's local cell support: a
+/// `let` binding that is later assigned, so the frontend materialises it as a
+/// cell with two unit-typed `write_local` operations.
+fn text_concat_cell_fixture() -> String {
+    text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(a, b)\nend function",
+    )
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_concat_with_an_assigned_cell_byte_exactly() {
+    // STEP-0520, frontend half: the assigned-binding shape lowers to the
+    // canonical IR **byte for byte** -- the cell is materialised exactly the
+    // way the Rust frontend materialises it.
+    //
+    // The canonical shape is a function with a `locals` array, two
+    // `write_local` operations whose result type is `unit`, and the intrinsic
+    // that reads the two parameters:
+    //
+    //   {"op":"write_local","data":{"local":0,"value":0}}   ty: unit
+    //   {"op":"write_local","data":{"local":0,"value":1}}   ty: unit
+    //   {"op":"intrinsic","data":{"name":"sico.text.concat","arguments":[0,1]}}
+    let source = text_concat_cell_fixture();
+    let expected = rust_ir(&source);
+    assert_eq!(
+        expected.len(),
+        2630,
+        "the measured local-cell canonical IR size is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest must lower the assigned-binding text concat shape")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+    let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+    assert!(
+        ir.contains("\"op\":\"write_local\""),
+        "the assigned binding lowers into a cell write: {ir}"
+    );
+    assert!(
+        ir.contains("\"locals\":["),
+        "the function carries the cell declaration: {ir}"
+    );
+    assert!(
+        ir.contains("\"ty\":{\"kind\":\"unit\"}"),
+        "a cell write carries no value, so its result type is unit: {ir}"
+    );
+    assert_eq!(
+        ir.matches("\"op\":\"write_local\"").count(),
+        2,
+        "the assigned binding is written twice, once per assignment: {ir}"
+    );
+    assert!(
+        ir.contains("\"locals\":[{\"name\":\"x\",\"ty\":{\"kind\":\"string\"}"),
+        "the cell keeps the declared binding and its type: {ir}"
+    );
+}
+
+#[test]
+fn oracle_local_cell_component_truth_is_pinned() {
+    // STEP-0520, codegen half: the guest's Component emitter now covers the
+    // local-cell shape, and the Component is **byte for byte** the Rust
+    // backend's own production output.
+    //
+    // The measured truth (the oracle's production Component for the same
+    // source) is 1114 bytes; the guest must emit exactly those bytes, and
+    // both sides must pass the real Wasm validator.
+    let source = text_concat_cell_fixture();
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the cell fixture");
+    assert_eq!(
+        expected.len(),
+        1114,
+        "the measured local-cell component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured local-cell component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the local-cell component must be emitted through the guest after STEP-0520")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted local-cell component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted local-cell component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_local_cell_reads_byte_exactly() {
+    // STEP-0520, cell **read** half: the guest codegen emits the cell read as
+    // well as the cell write. The measured shape writes the cell twice and
+    // then reads it back twice:
+    //
+    //   let x = a
+    //   set x = b
+    //   return sico.text.concat(x, x)
+    //
+    // Its canonical IR carries two `write_local` and two `read_local`
+    // operations (2868 bytes) and its production Component is 1138 bytes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(x, x)\nend function",
+    );
+    let ir = rust_ir(&source);
+    assert_eq!(
+        ir.matches("\"op\":\"read_local\"").count(),
+        2,
+        "the cell is read twice: {ir}"
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the cell-read fixture");
+    assert_eq!(
+        expected.len(),
+        1138,
+        "the measured local-cell-read component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured local-cell-read component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the local-cell-read component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted local-cell-read component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted local-cell-read component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_i64_local_cell_byte_exactly() {
+    // STEP-0520, cell **type** half: the cell support is not Text-only. A cell
+    // whose declared type is a 64-bit integer is one flat slot, and the
+    // backend's own layout gives it the same width the guest derives.
+    //
+    // The measured truth: canonical IR 2837 bytes, production Component 1116
+    // bytes.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let n = I64.literal(7)\n  set n = I64.literal(8)\n  return sico.text.concat(a, b)\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the i64-cell fixture");
+    assert_eq!(
+        expected.len(),
+        1116,
+        "the measured i64-cell component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured i64-cell component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the i64-cell component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the guest-emitted i64-cell component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("the guest-emitted i64-cell component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_local_cell_types_outside_the_reached_subset() {
+    // STEP-0520, fail-closed half (ADR-0016 decision 6): a cell whose type is
+    // outside the reached subset stays a **typed refusal** -- the guest never
+    // emits approximate bytes for it.
+    //
+    // The measured boundary: the guest frontend lowers a `Bytes` cell and a
+    // `List[Text]` cell neither (the frontend refuses them with
+    // `ERR:E-SH-IR-EXPRESSION`), and the component emission refuses them with
+    // the typed "unsupported codegen source shape".
+    //
+    // The codegen's own cell subset is wider than that (bool, i64, u64, string
+    // and bytes cells all have a declared flat layout); the narrower boundary
+    // here is the **frontend's**, and this pin holds that boundary where it is
+    // measured -- at the refusal, not at an approximation.
+    for (label, body) in [
+        (
+            "bytes-cell",
+            "function join(input: ScriptInput, b: Text) returns Text:\n  let x = input.stdin\n  set x = input.stdin\n  return b\nend function",
+        ),
+        (
+            "list-cell",
+            "function join(input: ScriptInput, b: Text) returns Text:\n  let x = input.arguments\n  set x = input.arguments\n  return b\nend function",
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        assert_eq!(
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()]),
+            RunOutcome::Domain {
+                code: "invalid-input".into(),
+                message: "unsupported codegen source shape".into(),
+            },
+            "the {label} shape must not emit approximate component bytes"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly() {
+    // STEP-0520: the guest's own new cell support has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 slices
+    // established for the functions they added.
+    //
+    // Eight functions are new (the unit-type test, the cell flat layout, the
+    // cell type/width/slot helpers and the two cell operation emitters) and
+    // four are reshaped (the local declaration, the value slot, the dispatcher
+    // slot and the operation router).
+    for name in [
+        "cgs_is_unit_ty",
+        "cgs_cell_flat_hex",
+        "cgs_cell_ty",
+        "cgs_cell_width",
+        "cgs_cell_slots",
+        "cgs_cell_slot",
+        "cgs_write_local_hex",
+        "cgs_read_local_hex",
+        "cgs_function_local_hex",
+        "cgs_value_slot",
+        "cgs_dispatcher_slot",
+        "cgs_op_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0521: the T1 family truth table and the support-surface registration.
+//
+// Every slice so far pinned one shape of the `sico.text.concat` family. The
+// family itself was never measured as a table, so "what does the guest
+// support" was an accumulation of per-slice claims. The table below measures
+// thirty-six shapes on four axes -- the Rust frontend's canonical IR, the Rust
+// backend's production component, the guest frontend's verdict and the guest
+// emitter's verdict -- and pins the result.
+//
+// The pins keep the refusals honest: a shape the guest does not support must
+// stay a typed refusal on both sides, never an approximate component.
+// ---------------------------------------------------------------------------
+
+/// The guest's measured verdict on one family shape.
+#[derive(Debug, Eq, PartialEq)]
+enum GuestVerdict {
+    /// The guest lowers the shape byte for byte and emits the component byte
+    /// for byte.
+    Exact,
+    /// The guest frontend refuses the shape with the typed identity.
+    FrontendRefused,
+}
+
+#[test]
+fn sico_codegen_guest_pins_the_t1_family_truth_table() {
+    // STEP-0521: the family truth table of `sico.text.concat`.
+    //
+    // Each row is measured from the Rust frontend and the Rust backend (never
+    // designed); the guest side is asserted against the same truth -- byte
+    // for byte where the guest supports the shape, and by its typed refusal
+    // identity where it does not.
+    //
+    // The rows that are refused are the point of the table: they are the
+    // shapes the support-surface registration has to carry (D15), and they
+    // are the shapes that keep the family from closing.
+    let rows: [(&str, &str, usize, usize, GuestVerdict); 36] = [
+        (
+            "let-binding-parameters",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, b)\n  return c\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "let-binding-cells",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  let y = b\n  let c = sico.text.concat(x, y)\n  return c\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "return-position-with-a-statement",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, b)\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "return-position-only",
+            "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, b)\nend function",
+            2295,
+            1094,
+            GuestVerdict::Exact,
+        ),
+        (
+            "assigned-cell-write",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(a, b)\nend function",
+            2630,
+            1114,
+            GuestVerdict::Exact,
+        ),
+        (
+            "assigned-cell-read",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  set x = b\n  return sico.text.concat(x, x)\nend function",
+            2868,
+            1138,
+            GuestVerdict::Exact,
+        ),
+        (
+            "i64-cell",
+            "function join(a: Text, b: Text) returns Text:\n  let n = I64.literal(7)\n  set n = I64.literal(8)\n  return sico.text.concat(a, b)\nend function",
+            2837,
+            1116,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-operands",
+            "function join() returns Text:\n  return sico.text.concat(\"a\", \"b\")\nend function",
+            2372,
+            1124,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-pair",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "nested-host-call",
+            "function join(a: Text, b: Text) returns Text:\n  return sico.text.concat(a, sico.text.concat(b, a))\nend function",
+            2447,
+            1112,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-operands-with-a-statement",
+            "function join() returns Text:\n  let x = \"x\"\n  return sico.text.concat(\"a\", \"b\")\nend function",
+            2485,
+            1137,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-pair-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "nested-host-call-with-a-statement",
+            "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, sico.text.concat(b, a))\nend function",
+            2447,
+            1112,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-plain-literal-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"x\")\nend function",
+            2333,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-pair-with-a-tab",
+            "function join() returns Text:\n  let x = \"x\"\n  return sico.text.concat(\"a\", \"\\t\")\nend function",
+            2486,
+            1137,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-newline-literal-with-a-statement",
+            "function join(a: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"\\n\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "mixed-operand-tab-literal-without-a-statement",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(a, \"\\t\")\nend function",
+            2334,
+            1113,
+            GuestVerdict::Exact,
+        ),
+        (
+            "literal-in-a-later-function-only",
+            "function first(a: Text) returns Text:\n  return a\nend function\nfunction second(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"B\")\n  return c\nend function",
+            2721,
+            1155,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-second",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-first",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(helper(slot), \"20\")\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-nested",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", sico.text.concat(helper(slot), \"x\"))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            3152,
+            1208,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-chain",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return sico.text.concat(\"21\", helper2(x))\nend function\nfunction helper2(y: U64) returns Text:\n  return \"z\"\nend function",
+            3594,
+            1260,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-arguments",
+            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
+            3036,
+            1185,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-arguments-with-a-u64-literal",
+            "function join(items: List[Text]) returns Text:\n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(\".\", at(items, U64.literal(2))))\nend function\nfunction at(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            3513,
+            1229,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-three-arguments",
+            "function join(a: Text, b: U64, c: Text) returns Text:\n  return sico.text.concat(helper3(a, b, c), \"20\")\nend function\nfunction helper3(x: Text, y: U64, z: Text) returns Text:\n  return \"z\"\nend function",
+            3189,
+            1193,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-two-literal-arguments",
+            "function join() returns Text:\n  return sico.text.concat(helper2(\"a\", \"b\"), \"20\")\nend function\nfunction helper2(x: Text, y: Text) returns Text:\n  return \"z\"\nend function",
+            3120,
+            1211,
+            GuestVerdict::Exact,
+        ),
+        (
+            "user-call-operand-an-i64-literal-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(a, I64.literal(-1)), \"20\")\nend function\nfunction helper(x: Text, y: I64) returns Text:\n  return \"z\"\nend function",
+            3070,
+            1190,
+            GuestVerdict::FrontendRefused,
+        ),
+        (
+            // STEP-0524 measured this shape as a refusal and STEP-0525 closed
+            // it: the nested call is lowered by `stc_call_operand_packed`
+            // itself, so the value ids compose (the nested call takes the ids
+            // of its own arguments first and then its own result id).
+            "user-call-operand-nested-call-argument",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner(a), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner(v: Text) returns Text:\n  return \"w\"\nend function",
+            3635,
+            1267,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call takes no arguments at all (9 of the 22 S sites)
+            "user-call-operand-zero-argument-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(zero(), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction zero() returns Text:\n  return \"w\"\nend function",
+            3559,
+            1261,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call takes three arguments, one of them a literal
+            "user-call-operand-three-argument-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner3(a, \"b\", U64.literal(2)), \"c\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner3(v: Text, w: Text, n: U64) returns Text:\n  return \"w\"\nend function",
+            4005,
+            1296,
+            GuestVerdict::Exact,
+        ),
+        (
+            // the nested call returns a U64 (7 of the 22 S sites)
+            "user-call-operand-nested-call-returns-u64",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(count(a), \"b\"), \"20\")\nend function\nfunction helper(n: U64, y: Text) returns Text:\n  return \"z\"\nend function\nfunction count(v: Text) returns U64:\n  return U64.literal(1)\nend function",
+            3618,
+            1250,
+            GuestVerdict::Exact,
+        ),
+        (
+            // two levels: the nested call's own argument is a call as well
+            "user-call-operand-two-level-nested-call",
+            "function join(a: Text) returns Text:\n  return sico.text.concat(helper(inner(inner(a)), \"b\"), \"20\")\nend function\nfunction helper(x: Text, y: Text) returns Text:\n  return \"z\"\nend function\nfunction inner(v: Text) returns Text:\n  return \"w\"\nend function",
+            3767,
+            1281,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0523 measured this shape as a component refusal and
+            // STEP-0526 closed it: the emitter emits the per-block terminator,
+            // so the branch, the jump and the two returns all reach the
+            // backend's own bytes.
+            "concat-inside-an-if-block",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"a\", a)\n  end if\n  return \"\"\nend function",
+            3119,
+            1198,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: an `if` with an `else` arm -- the arm the control
+            // flow cannot reach is an `unreachable` terminator
+            "branch-with-an-else-arm",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return a\n  else:\n    return \"\"\n  end if\nend function",
+            2853,
+            1100,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: a `while` loop -- the back edge is a `jump` terminator
+            "branch-in-a-while-loop",
+            "function join(a: Text) returns Text:\n  let n = U64.literal(0)\n  while U64.equal(n, U64.literal(2)):\n    set n = U64.literal(1)\n  end while\n  return a\nend function",
+            3293,
+            1116,
+            GuestVerdict::Exact,
+        ),
+        (
+            // STEP-0526: two `if` blocks in one body -- six blocks, two
+            // branches and two jumps
+            "two-branches-in-one-body",
+            "function join(a: Text) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return a\n  end if\n  if U64.equal(U64.literal(2), U64.literal(2)):\n    return a\n  end if\n  return \"\"\nend function",
+            3530,
+            1178,
+            GuestVerdict::Exact,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes, verdict) in rows {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the family fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        match verdict {
+            GuestVerdict::FrontendRefused => {
+                let RunOutcome::Domain { code, message } = run_guest(&source) else {
+                    panic!("the guest must refuse the {label} shape with a typed identity")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+                let RunOutcome::Domain { code, message } =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must not emit a component for the {label} shape")
+                };
+                assert_eq!(code, "invalid-input", "{label}");
+                assert_eq!(message, "unsupported codegen source shape", "{label}");
+            }
+            GuestVerdict::Exact => {
+                let RunOutcome::Output(output) = run_guest(&source) else {
+                    panic!("the guest must lower the {label} shape")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+                let RunOutcome::Output(output) =
+                    run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+                else {
+                    panic!("the guest must emit the {label} component")
+                };
+                assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+                let actual = decode_hex(&output.stdout);
+                assert_eq!(
+                    actual, expected_component,
+                    "the guest-emitted {label} component must equal the Rust backend exactly"
+                );
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .expect("the guest-emitted component must pass the real Wasm validator");
+            }
+        }
+    }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_branching_run_function() {
+    // STEP-0526: the emitter learned the branch and the jump terminator, but
+    // the Script `run` returns through the result area, which is a
+    // single-block shape: a `run` whose body branches still has no result
+    // area to return through.
+    //
+    // The frontend lowers the shape byte for byte -- it is the **emission**
+    // that refuses it, with the typed identity.  That is the same state the
+    // removed `CodegenRefused` verdict carried, so it is pinned here instead
+    // of on a truth-table row (a truth-table row cannot bring its own `run`).
+    let source = "function run(flag: Bool) returns I64:\n  if flag:\n    return I64.literal(1)\n  end if\n  return I64.literal(2)\nend function\n";
+    let expected_ir = rust_ir(source);
+    assert_eq!(
+        expected_ir.len(),
+        930,
+        "the measured canonical IR size of the branching run is pinned"
+    );
+    let RunOutcome::Output(output) = run_guest(source) else {
+        panic!("the guest frontend must lower the branching run")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest must refuse the branching run component with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "unsupported codegen source shape");
+}
+
+#[test]
+fn sico_codegen_guest_derives_the_module_wide_data_offsets() {
+    // STEP-0521: the static data segment is a **module-wide** property -- the
+    // backend collects every string literal of the program, in function order,
+    // into one segment, and a literal that repeats an earlier one shares that
+    // earlier offset.
+    //
+    // The guest used to derive the offset from the *current* function's
+    // instructions only. A module whose earlier function also holds a literal
+    // therefore got a too-small offset, and the guest emitted a component of
+    // the **same length as the oracle but with a different byte** -- the data
+    // pointer. That is a silent divergence, the one outcome the fail-closed
+    // discipline forbids, so it is pinned here on the corrected behaviour.
+    //
+    // The repeated-literal shape is the second half of the same correction:
+    // the backend keeps the first occurrence's bytes, so the repeated literal
+    // resolves to that first offset instead of refusing the program.
+    for (label, body, component_bytes) in [
+        (
+            "two-functions-one-literal-each",
+            "function first(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"A\")\n  return c\nend function\nfunction second(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"B\")\n  return c\nend function",
+            1188,
+        ),
+        (
+            "repeated-literal-in-one-function",
+            "function join(a: Text, b: Text) returns Text:\n  let c = sico.text.concat(a, \"A\")\n  let d = sico.text.concat(b, \"A\")\n  return d\nend function",
+            1145,
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the data fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0521_codegen_functions_byte_exactly() {
+    // STEP-0521: the guest's own reshaped data-segment code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest's own emitter, otherwise the bootstrap could never consume its own
+    // code. Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 /
+    // STEP-0520 slices established for the functions they added or reshaped.
+    //
+    // Both functions were reshaped in this slice: `cgs_data_offset` walks the
+    // whole module instead of one function, and `cgs_const_string_hex` lost
+    // its nested host call. The nested host call is what kept them outside
+    // the frontier before (`ERR:E-SH-IR-CALL-SHAPE`): splitting it into two
+    // statements -- the shape STEP-0515 already used for the same reason --
+    // brought both of them back in.
+    for name in ["cgs_data_offset", "cgs_const_string_hex"] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+/// STEP-0522: the core module a Script-profile Component wraps.
+fn component_core_module(component: &[u8]) -> Vec<u8> {
+    for payload in wasmparser::Parser::new(0).parse_all(component) {
+        if let wasmparser::Payload::ModuleSection {
+            unchecked_range, ..
+        } = payload.expect("the component parses")
+        {
+            return component[unchecked_range.start..unchecked_range.end].to_vec();
+        }
+    }
+    panic!("the Component must wrap one core module");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_escaped_literal_component_byte_exactly() {
+    // STEP-0522, G-b: a string literal that carries a JSON escape.
+    //
+    // The backend's static data segment holds the literal's **decoded** bytes:
+    // the source escape `\t` is one TAB byte, not the two characters `\t`. The
+    // guest used to refuse every literal with a backslash
+    // (`ERR:E-SH-CG-IR-EMIT`), because it decoded no escapes at all -- so a
+    // program with an escaped literal could not be compiled by the guest at
+    // all, and the 952 escaped-literal call sites of the frozen source set S
+    // were a hard block (G-b).
+    //
+    // The guest resolves the escapes now: its IR keeps the literal in the JSON
+    // form, the backend's segment keeps the decoded bytes, so the whole
+    // component matches the Rust backend byte for byte.
+    //
+    // The empty literal (G-e) is the second half of the same correction: it
+    // carries no bytes, so it points at the offset the next literal starts at
+    // and its length is zero -- the backend's `script_data` gives it the same
+    // treatment, so the segment and the pointer agree.
+    for (label, body, component_bytes) in [
+        (
+            "tab-and-newline",
+            r#"function first(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "tab\there")
+  return c
+end function
+function second(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "nl\nhere")
+  return c
+end function"#,
+            1201,
+        ),
+        (
+            "quote-backslash-carriage-return",
+            r#"function quoted(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "say \"hi\"")
+  return c
+end function
+function slashed(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "c:\\dir")
+  return c
+end function
+function carriage(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "one\rtwo")
+  return c
+end function"#,
+            1279,
+        ),
+        (
+            "nul-escape",
+            r#"function nul(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "nul\0byte")
+  return c
+end function"#,
+            1122,
+        ),
+        (
+            "empty-literal",
+            r#"function empty(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "")
+  return c
+end function
+function tail(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "tail")
+  return c
+end function"#,
+            1190,
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest-emitted component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_codegen_guest_derives_the_decoded_literal_bytes() {
+    // STEP-0522: the static data segment carries the literal's **decoded**
+    // bytes. This is the truth the guest has to reproduce, and it is measured
+    // from the Rust backend's production output: the backend's `script_data`
+    // collects `value.as_bytes()` -- the decoded string -- and keys the data
+    // offsets by those bytes.
+    //
+    // The bytes are not designed: `\t` is one TAB byte (09), `\n` one LF byte
+    // (0a), `\r` one CR byte (0d), `\0` one NUL byte (00), `\"` one quote byte
+    // (22) and `\\` one backslash byte (5c). The guest used to spell the
+    // literal out in the IR's JSON form and refused to decode it, so the
+    // segment it derived would have carried the two characters `\t` instead of
+    // the one byte the backend puts there.
+    for (label, body, decoded) in [
+        (
+            "tab",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\tb")
+  return c
+end function"#,
+            &b"a\x09b"[..],
+        ),
+        (
+            "newline",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\nb")
+  return c
+end function"#,
+            &b"a\x0ab"[..],
+        ),
+        (
+            "carriage-return",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\rb")
+  return c
+end function"#,
+            &b"a\x0db"[..],
+        ),
+        (
+            "nul",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\0b")
+  return c
+end function"#,
+            &b"a\x00b"[..],
+        ),
+        (
+            "quote",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\"b")
+  return c
+end function"#,
+            &b"a\"b"[..],
+        ),
+        (
+            "backslash",
+            r#"function join(a: Text, b: Text) returns Text:
+  let c = sico.text.concat(a, "a\\b")
+  return c
+end function"#,
+            &b"a\\b"[..],
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the literal fixture");
+        let core = component_core_module(&expected);
+        assert!(
+            core.windows(decoded.len()).any(|window| window == decoded),
+            "the backend's static data segment carries the decoded literal bytes ({label})"
+        );
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        let guest_core = component_core_module(&actual);
+        assert!(
+            guest_core
+                .windows(decoded.len())
+                .any(|window| window == decoded),
+            "the guest's static data segment carries the decoded literal bytes ({label})"
+        );
+        assert_eq!(
+            actual, expected,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+}
+
+#[test]
+fn sico_codegen_guest_refuses_the_unknown_escape_with_a_typed_identity() {
+    // STEP-0522: the decoder accepts exactly the escapes the IR producer can
+    // write -- `\"`, `\\`, `\n`, `\r`, `\t` and `\u0000` (the JSON escape the
+    // producer writes for the source `\0`). An escape it does not accept is
+    // never an approximate byte: the fail-closed discipline.
+    //
+    // Measured: **both** frontends refuse the unknown escape -- the Rust lexer
+    // reports `UnknownStringEscape`, and the guest's own lexer reports
+    // `ERR:E-SH-IR-STRING-ESCAPE`. The guest decoder's own refusal
+    // (`ERR:E-SH-CG-IR-EMIT`) is therefore a second line of defence that the
+    // frontend never lets through; the shape never reaches the Rust backend.
+    let source = text_concat_fixture(
+        "function join(a: Text, b: Text) returns Text:\n  let x = a\n  return sico.text.concat(a, \"a\\qb\")\nend function",
+    );
+    let fixture = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", &source)
+        .expect("fixture source is bounded");
+    assert!(
+        lower_core(&fixture).is_err(),
+        "the Rust frontend refuses the unknown escape at the lexer level"
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the unknown escape with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-STRING-ESCAPE");
+    let RunOutcome::Domain { code, message } =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest must refuse the unknown escape with a typed identity")
+    };
+    assert_eq!(code, "invalid-input");
+    // The component path wraps the frontend's refusal in the compiler's own
+    // identity, exactly like every other refused shape.
+    assert_eq!(message, "unsupported codegen source shape");
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0522_codegen_functions_byte_exactly() {
+    // STEP-0522, G-b: the guest's own literal code has to stay inside the
+    // self-hosting shape frontier -- the guest frontend must lower the guest's
+    // own emitter, otherwise the bootstrap could never consume its own code.
+    // Exactly like the STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 /
+    // STEP-0520 / STEP-0521 slices established for the functions they added or
+    // reshaped.
+    //
+    // The literal code is where the frontier was tightest: `cgs_literal_text`
+    // -- the function that refused every escaped literal -- reported
+    // `ERR:E-SH-IR-CALL-ARITY` and stayed **outside** the frontier. The
+    // replacement works in the byte domain (the literal's identity is its
+    // decoded bytes, spelled as hex byte pairs), so it needs no text-shaped
+    // host call at all, and all eight functions of this slice lower.
+    for name in [
+        "cgs_is_const_string",
+        "cgs_literal_hex",
+        "cgj_string_hex",
+        "cgj_escape_hex",
+        "cgs_hex_bytes",
+        "cgs_data_offset",
+        "cgs_const_string_hex",
+        "cgs_data_hex",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+/// Every function name `parser.sico` declares.
+fn parser_function_names() -> Vec<&'static str> {
+    PARSER_SOURCE
+        .lines()
+        .filter_map(|line| line.strip_prefix("function "))
+        .filter_map(|rest| rest.split('(').next())
+        .map(|name| name.trim())
+        .filter(|name| {
+            !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+        .collect()
+}
+
+/// The parameter list and the return type of a `parser.sico` function.
+fn parser_signature(name: &str) -> (String, String) {
+    let head = parser_function_text(name)
+        .lines()
+        .next()
+        .expect("the function has a signature line")
+        .to_owned();
+    let open = head.find('(').expect("the signature has parameters");
+    let close = head
+        .rfind(')')
+        .expect("the signature closes its parameters");
+    let params = head[open + 1..close].trim().to_owned();
+    let returns = head[close + 1..]
+        .trim()
+        .trim_start_matches("returns ")
+        .trim()
+        .trim_end_matches(':')
+        .trim()
+        .to_owned();
+    (params, returns)
+}
+
+/// A stub for one `parser.sico` function: the real signature, a trivial body.
+fn parser_stub(name: &str) -> String {
+    let (params, returns) = parser_signature(name);
+    let body = match returns.as_str() {
+        "U64" => "U64.literal(0)",
+        "I64" => "I64.literal(0)",
+        "Bool" => "false",
+        "Text" => "\"\"",
+        "Bytes" => "sico.text.encode(\"\")",
+        other => panic!("parser function {name} has an unexpected return type {other}"),
+    };
+    format!("function {name}({params}) returns {returns}:\n  return {body}\nend function\n")
+}
+
+/// The `parser.sico` functions the text calls, in first-call order.
+fn parser_callees(text: &str, own: &str) -> Vec<String> {
+    let names = parser_function_names();
+    let chars: Vec<char> = text.chars().collect();
+    let mut callees: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if !chars[index].is_ascii_alphabetic() && chars[index] != '_' {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < chars.len() && (chars[index].is_ascii_alphanumeric() || chars[index] == '_') {
+            index += 1;
+        }
+        let word: String = chars[start..index].iter().collect();
+        let member = start > 0 && chars[start - 1] == '.';
+        let mut after = index;
+        while after < chars.len() && chars[after] == ' ' {
+            after += 1;
+        }
+        let called = after < chars.len() && chars[after] == '(';
+        if called
+            && !member
+            && word != own
+            && names.contains(&word.as_str())
+            && !callees.contains(&word)
+        {
+            callees.push(word);
+        }
+    }
+    callees
+}
+
+/// A `parser.sico` function with a stub for every function it calls.
+fn parser_function_source(name: &str) -> String {
+    let text = parser_function_text(name);
+    let mut source = String::new();
+    for callee in parser_callees(&text, name) {
+        source.push_str(&parser_stub(&callee));
+    }
+    source.push_str(&text);
+    source
+}
+
+/// The transitive callee closure of one `parser.sico` function, emitted in
+/// **file order** and with the real function texts.
+///
+/// STEP-0518 kept this list by hand. STEP-0523 reshaped the route it
+/// describes -- the route now calls `straight_text_concat_packed` and
+/// `gw_decimal_value` -- so a hand-maintained list drifts out of the closure
+/// the moment the route changes. The closure is computed from the file
+/// instead, which is what the list always meant.
+fn parser_closure_source(name: &str) -> String {
+    let mut wanted: Vec<String> = Vec::new();
+    let mut queue: Vec<String> = vec![name.to_owned()];
+    while let Some(current) = queue.pop() {
+        if wanted.contains(&current) {
+            continue;
+        }
+        let text = parser_function_text(&current);
+        for callee in parser_callees(&text, &current) {
+            if !wanted.contains(&callee) {
+                queue.push(callee);
+            }
+        }
+        wanted.push(current);
+    }
+    let mut ordered: Vec<(usize, String)> = wanted
+        .iter()
+        .map(|item| {
+            (
+                PARSER_SOURCE
+                    .find(&format!("function {item}("))
+                    .expect("the closure member is in the file"),
+                item.clone(),
+            )
+        })
+        .collect();
+    ordered.sort();
+    ordered
+        .iter()
+        .map(|(_, item)| parser_function_text(item))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn sico_codegen_guest_lowers_the_gd_single_return_shapes_byte_exactly() {
+    // STEP-0523, G-d: a function body whose **only** statement is a single
+    // `return` whose expression is a `sico.text.concat` call.
+    //
+    // The route that owns that shape (`direct_text_concat_return_ir`) used to
+    // accept **two `Text` parameters only**.  Every other operand shape -- a
+    // literal, a nested concat, a call to another function -- was refused with
+    // `ERR:E-SH-IR-EXPRESSION`, even though the Rust backend lowers all of
+    // them.  The frozen set S contains six such call sites, so the gap was a
+    // hard blocker for the family (D10: no downgrade).
+    //
+    // The shapes below are the ones S actually contains, spelled out:
+    //   * `cg_post_body_hex`  -- a literal beside a **nested** concat whose
+    //     first operand is a call to another function,
+    //   * `cgs_local_get_hex` -- a literal beside a call to another function,
+    //   * `cgs_zero_hex`      -- the same call inside an `if` block,
+    //   * `declaration_name`  -- a call with **two** arguments inside an `if`
+    //     block, and a nested concat beside it.
+    //
+    // The first two are the ones this slice closed.  The last two -- the S
+    // call sites whose concat sits inside an `if` block -- were refused by
+    // the **component emission** (the frontend lowered them byte for byte),
+    // because the guest's emitter only knew a single straight-line block.
+    // STEP-0526 gave the emitter the branch and the jump terminator, so they
+    // moved into their own test that asserts the byte equality.
+    let closed: [(&str, &str, usize, usize); 2] = [
+        (
+            "s-post-body-hex",
+            "function join(arena_base: U64) returns Text:\n  return sico.text.concat(\"00\", sico.text.concat(helper(arena_base), \"240041ffffffff072401410024020b\"))\nend function\nfunction helper(base: U64) returns Text:\n  return \"z\"\nend function",
+            3190,
+            1237,
+        ),
+        (
+            "s-local-get-hex",
+            "function join(slot: U64) returns Text:\n  return sico.text.concat(\"20\", helper(slot))\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            2887,
+            1177,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes) in closed {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-d fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_gd_branch_shapes_byte_exactly() {
+    // STEP-0526, G-d2: the two S call sites whose `sico.text.concat` sits
+    // inside an `if` block -- `cgs_zero_hex` and `declaration_name`.
+    //
+    // STEP-0523 measured them and pinned their **component refusal**: the
+    // frontend lowered them byte for byte, but the guest's emitter only knew
+    // a single straight-line block, so any `if` block hit the wall.  That was
+    // a branch gap in the emitter, not a T1 family gap.
+    //
+    // The emitter now writes the per-block terminator -- the branch, the jump
+    // and the two returns -- so both shapes reach the backend's own bytes.
+    for (label, body, ir_bytes, component_bytes) in [
+        (
+            "s-zero-hex",
+            "function join(kind: Text, slot: U64) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(\"4100\", helper(slot))\n  end if\n  return \"\"\nend function\nfunction helper(x: U64) returns Text:\n  return \"z\"\nend function",
+            3753,
+            1266,
+        ),
+        (
+            "s-declaration-name",
+            "function join(kind: Text, items: List[Text]) returns Text:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return sico.text.concat(helper(items, U64.literal(1)), sico.text.concat(\".\", helper(items, U64.literal(2))))\n  end if\n  return \"\"\nend function\nfunction helper(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            4387,
+            1316,
+        ),
+    ] {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-d fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&decode_hex(&output.stdout))
+            .expect("the guest-emitted component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0523_parser_functions_byte_exactly() {
+    // STEP-0523, G-d: the route that owns the single-`return` concat shape
+    // (`direct_text_concat_return_ir`) was reshaped, and the guest frontend
+    // has to keep lowering it -- otherwise the bootstrap could never consume
+    // its own frontend code.  This is the same self-hosting shape frontier the
+    // STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 / STEP-0520 / STEP-0521 /
+    // STEP-0522 slices established for the functions they added or reshaped.
+    //
+    // The reshape moved the operand lowering into `straight_text_concat_packed`
+    // -- the helper the `let`-binding routes already use -- so the route no
+    // longer carries its own copy of the operand rules.  The frontier did not
+    // move: the route lowers, and so does the helper it now calls.
+    for name in [
+        "direct_text_concat_return_ir",
+        "straight_text_concat_packed",
+    ] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_codegen_guest_lowers_the_gf_multi_argument_call_operand_byte_exactly() {
+    // STEP-0524, G-f: a `sico.text.concat` operand may be a call to another
+    // function with **several** arguments.  The shared operand lowerer used to
+    // accept exactly one argument, so the S call site
+    // `sico.text.concat(at(items, U64.literal(1)), ...)` was refused with
+    // `ERR:E-SH-IR-EXPRESSION` even though the Rust backend lowers it.
+    //
+    // The shapes below are the ones the support-surface register names:
+    //   * the **S shape** -- two arguments, the second one a `U64.literal(1)`
+    //     constant, beside a nested concat,
+    //   * two plain parameters,
+    //   * three arguments,
+    //   * two string literals.
+    //
+    // Every one of them lowers byte for byte, and the emitted component is
+    // byte for byte equal to the Rust backend's production output.
+    let rows: [(&str, &str, usize, usize); 4] = [
+        (
+            "s-real-two-argument-call",
+            "function join(items: List[Text]) returns Text:\n  return sico.text.concat(at(items, U64.literal(1)), sico.text.concat(\".\", at(items, U64.literal(2))))\nend function\nfunction at(items: List[Text], index: U64) returns Text:\n  return \"z\"\nend function",
+            3513,
+            1229,
+        ),
+        (
+            "two-parameters",
+            "function join(a: Text, b: U64) returns Text:\n  return sico.text.concat(helper(a, b), \"20\")\nend function\nfunction helper(x: Text, y: U64) returns Text:\n  return \"z\"\nend function",
+            3036,
+            1185,
+        ),
+        (
+            "three-arguments",
+            "function join(a: Text, b: U64, c: Text) returns Text:\n  return sico.text.concat(helper3(a, b, c), \"20\")\nend function\nfunction helper3(x: Text, y: U64, z: Text) returns Text:\n  return \"z\"\nend function",
+            3189,
+            1193,
+        ),
+        (
+            "two-literal-arguments",
+            "function join() returns Text:\n  return sico.text.concat(helper2(\"a\", \"b\"), \"20\")\nend function\nfunction helper2(x: Text, y: Text) returns Text:\n  return \"z\"\nend function",
+            3120,
+            1211,
+        ),
+    ];
+    for (label, body, ir_bytes, component_bytes) in rows {
+        let source = text_concat_fixture(body);
+        let module = rust_module(&source);
+        let expected_ir = rust_ir(&source);
+        assert_eq!(
+            expected_ir.len(),
+            ir_bytes,
+            "the measured canonical IR size is pinned ({label})"
+        );
+        let expected_component = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the G-f fixture");
+        assert_eq!(
+            expected_component.len(),
+            component_bytes,
+            "the measured component size is pinned ({label})"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected_component)
+            .expect("the measured component must pass the real Wasm validator");
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected_ir.as_bytes());
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest must emit the {label} component")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_eq!(
+            decode_hex(&output.stdout),
+            expected_component,
+            "the guest-emitted {label} component must equal the Rust backend exactly"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0525_parser_functions_byte_exactly() {
+    // STEP-0525, G-f2: a call operand whose argument is itself a call.  The
+    // nested call is lowered by `stc_call_operand_packed` itself -- the branch
+    // lives inside the shared operand lowerer, not in a function of its own,
+    // because the guest frontend refuses to lower a function whose body
+    // carries the nested-call shape on its own.  The guest frontend has to
+    // keep lowering the reshaped lowerer -- otherwise the bootstrap could
+    // never consume its own frontend code.
+    //
+    // The frontier did not move: the lowerer lowers, and so does the route
+    // that calls it.
+    for name in ["stc_call_operand_packed", "straight_text_concat_packed"] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0524_parser_functions_byte_exactly() {
+    // STEP-0524, G-f: the shared operand lowerer gained a second path for a
+    // call operand with several arguments.  The guest frontend has to keep
+    // lowering that function -- otherwise the bootstrap could never consume
+    // its own frontend code.  This is the same self-hosting shape frontier the
+    // STEP-0507 / STEP-0509 / STEP-0513 / STEP-0519 / STEP-0520 / STEP-0521 /
+    // STEP-0522 / STEP-0523 slices established for the functions they added or
+    // reshaped.
+    //
+    // The frontier did not move: the new function lowers, and so does the
+    // shared lowerer that calls it.
+    for name in ["stc_call_operand_packed", "straight_text_concat_packed"] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+// ---------------------------------------------------------------------------
+// STEP-0528: the T2 family truth -- `sico.text.length` over one `Text` argument.
+//
+// STEP-0527 closed the T1 family (`sico.text.concat`). STEP-0528 measures the
+// next family by call-site count in S: `sico.text.length`.
+//
+// Every number below is measured from the Rust frontend's canonical IR and the
+// Rust backend's own production component -- never designed.
+// ---------------------------------------------------------------------------
+
+/// The Script-profile prelude and the `run` entry, shared with the T1 family
+/// fixtures so the two families stay comparable.
+fn text_length_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_length_in_a_condition_position_byte_exactly() {
+    // STEP-0528, T2 truth (frontend side): the `sico.text.length` call is
+    // **already** lowered by the guest frontend in the positions the S call
+    // sites use -- the `if` condition, the `while` condition and a statement
+    // inside a branch block -- byte for byte equal to the Rust frontend's
+    // canonical IR, not merely shape-equal.
+    //
+    // The canonical shape is one `intrinsic` operation named
+    // `sico.text.length` whose single argument is the argument value id:
+    //
+    //   {"op":"intrinsic","data":{"name":"sico.text.length","arguments":[0]}}
+    //
+    // The route that reaches these positions is the generic host-call route
+    // (`gw_intrinsic_call_packed`, `selfhost/parser.sico:7001`); the straight
+    // cell route family (`straight_cell_function_ir`) recognizes
+    // `sico.text.concat` only, which is why the statement positions below
+    // stay refusals.
+    for (label, body, ir_bytes) in [
+        (
+            "if-condition",
+            "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            2991,
+        ),
+        (
+            "while-condition",
+            "function size(t: Text) returns U64:\n  let i = U64.literal(0)\n  while U64.less_than(i, sico.text.length(t)):\n    set i = U64.literal(1)\n  end while\n  return i\nend function",
+            3446,
+        ),
+        (
+            "inside-an-if-block",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    set n = sico.text.length(t)\n  end if\n  return n\nend function",
+            3437,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"name\":\"sico.text.length\""),
+            "the intrinsic keeps its dotted name: {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_text_length_in_a_statement_position_byte_exactly() {
+    // STEP-0529, T2 frontend knife: the statement positions now lower byte for
+    // byte against the Rust frontend's canonical IR.
+    //
+    // STEP-0528 measured the split and located its cause: the condition
+    // positions already lowered, the statement positions did not, and the
+    // reason was a **route split** -- the generic host-call route already knew
+    // `sico.text.length`, while the two straight-line route families knew
+    // `sico.text.concat` only.  The knife teaches both families the shape; it
+    // invents no new machine.
+    //
+    // The two route families differ in how a binding is represented, and the
+    // oracle's straight-line lowering is what decides the bytes:
+    //
+    //   * `straight_environment_function_ir` mirrors the oracle's
+    //     `lower_straight_line`: a `let` binding is a plain value, so no local
+    //     is created and the call result is forwarded to the return;
+    //   * `straight_cell_function_ir` mirrors `lower_general`: every `let`
+    //     becomes a cell, so a `set` writes and reads local 0.
+    for (label, body, ir_bytes) in [
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            2212,
+        ),
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t)\n  return n\nend function",
+            2212,
+        ),
+        (
+            "return-position-with-a-literal",
+            "function size() returns U64:\n  return sico.text.length(\"ab\")\nend function",
+            2252,
+        ),
+        (
+            "let-binding-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = sico.text.length(x)\n  return n\nend function",
+            2212,
+        ),
+        (
+            "set-position",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
+            2765,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+        let ir = String::from_utf8(output.stdout).expect("the guest IR is utf-8");
+        assert!(
+            ir.contains("\"name\":\"sico.text.length\""),
+            "the intrinsic keeps its dotted name: {ir}"
+        );
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_nested_text_length_arguments_byte_exactly() {
+    // STEP-0529 recorded the two remaining shapes of the family -- the
+    // argument is itself a call -- as typed refusals; STEP-0532 closed that
+    // gap (T2-g2), so both shapes lower now, byte for byte equal to the
+    // Rust frontend's canonical IR.
+    //
+    // They are the S shapes `sico.text.length(sico.bytes.utf8_decode(src))`
+    // and `sico.text.length(positive_sleb_hex(initial))` in a `let` binding.
+    for (label, body, ir_bytes) in [
+        (
+            "let-binding-with-a-user-call",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
+            2656,
+        ),
+        (
+            "let-binding-with-a-host-call",
+            "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+            2369,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn the_text_length_arity_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0528, T2 truth: the arity boundary of `sico.text.length` is
+    // enforced by the **semantic layer**, not by the IR layer -- the Rust
+    // frontend itself refuses zero arguments and two arguments with
+    // `stdlib intrinsic arity`.
+    //
+    // The guest frontend must not invent its own arity check, and the guest's
+    // refusal on these shapes is not a guest-specific gap.
+    for (label, body) in [
+        (
+            "no-argument",
+            "function size() returns U64:\n  let n = sico.text.length()\n  return n\nend function",
+        ),
+        (
+            "two-arguments",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t, t)\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let source_file = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source)
+            .expect("the fixture source is bounded");
+        let error = match lower_core(&source_file) {
+            Ok(_) => panic!("the Rust frontend must refuse the {label} arity"),
+            Err(error) => format!("{error:?}"),
+        };
+        assert!(
+            error.contains("stdlib intrinsic arity"),
+            "the {label} arity must be refused by the semantic layer: {error}"
+        );
+    }
+}
+
+#[test]
+fn the_text_length_argument_type_is_refused_by_the_rust_frontend_itself() {
+    // STEP-0529, T2 frontend knife: the **argument-type** boundary of
+    // `sico.text.length` is enforced by the semantic layer -- the Rust
+    // frontend lowers the call and then reports `E2001 TYPE_MISMATCH`
+    // ("expected Text, found Bytes").
+    //
+    // The guest frontend refuses the same shape one layer earlier, with the
+    // typed identity `ERR:E-SH-IR-CALL-TYPE`: its route type-checks the
+    // argument before it emits an intrinsic.  The two refusals live in
+    // different layers and are recorded separately -- the guest's is a
+    // frontend refusal, the oracle's is a semantic refusal -- but they name
+    // the same defect, so the guest must not silently widen the shape.
+    let body = "function size(data: Bytes) returns U64:\n  let n = sico.text.length(data)\n  return n\nend function";
+    let source = text_length_fixture(body);
+    let source_file =
+        SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source.clone())
+            .expect("the fixture source is bounded");
+    let error = match lower_core(&source_file) {
+        Ok(_) => panic!("the Rust frontend must refuse the Bytes argument"),
+        Err(error) => format!("{error:?}"),
+    };
+    assert!(
+        error.contains("E2001"),
+        "the argument type is refused by the semantic layer: {error}"
+    );
+    assert!(
+        error.contains("TYPE_MISMATCH"),
+        "the refusal is a type mismatch: {error}"
+    );
+    assert!(
+        error.contains("expected Text"),
+        "the refusal names the expected type: {error}"
+    );
+    assert!(
+        error.contains("found Bytes"),
+        "the refusal names the found type: {error}"
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the Bytes argument")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-CALL-TYPE");
+}
+
+#[test]
+fn the_t2_g2_nested_call_shapes_lower_byte_exactly() {
+    // STEP-0532, T2-g2 implementation knife: the argument of
+    // `sico.text.length` may now be a call itself.  The guest frontend
+    // lowers every one of the shapes byte for byte equal to the Rust
+    // frontend's canonical IR -- the identity STEP-0531 measured and
+    // pinned (`the_t2_g2_target_ir_is_the_nested_call_shape`) is now the
+    // identity the guest produces.
+    //
+    // The rule the shapes share (measured, not designed): the nested call is
+    // one instruction whose result id comes **before** the outer call's
+    // result id (post-order allocation), and the outer `sico.text.length`
+    // takes that id as its only argument.
+    for (label, body, ir_bytes) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            2477,
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            2656,
+        ),
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            2369,
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            2783,
+        ),
+        (
+            "s-site-let-binding",
+            "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
+            2374,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} nested-call shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} nested-call shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn the_t2_g2_component_layer_covers_the_nested_shapes_the_emitter_knows() {
+    // STEP-0532: the component layer of the nested-call shapes follows the
+    // frontend.  Where the guest **emitter** knows the inner operator the
+    // whole component is byte for byte the Rust backend's production
+    // component; where it does not, the emitter refuses with its own typed
+    // identity -- and that refusal belongs to the **inner operator's** family
+    // (`sico.bytes.utf8_decode` is T11), not to this one.
+    //
+    // The two layers are recorded separately on purpose: a frontend that
+    // lowers a shape the emitter cannot encode is not a frontend gap.
+    //
+    // The `let`-binding positions are covered as well: the nested user call
+    // in a `let` binding is byte for byte the same component (1145 B) as the
+    // return position, and the nested `sico.bytes.utf8_decode` in a `let`
+    // binding is refused by the emitter for the same reason as the return
+    // position.
+    for (label, body, component_bytes) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            1183,
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            1145,
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            1162,
+        ),
+        (
+            "let-binding-nested-user-call",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(helper(t))\n  return n\nend function\nfunction helper(x: Text) returns Text:\n  return x\nend function",
+            1145,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the nested fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} nested-call component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+    // STEP-0538 (emitter vocabulary A-1): the `sico.bytes.utf8_decode` shapes
+    // used to be refused by the emitter, which did not know that intrinsic.
+    // The emitter knows it now, so the three shapes move from the refusal
+    // group into the byte-exact group above: the component is byte for byte
+    // the Rust backend's production component.
+    for (label, body, component_bytes) in [
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            1570,
+        ),
+        (
+            "s-site-let-binding",
+            "function lex_words(src: Bytes) returns U64:\n  let byte_len = sico.text.length(sico.bytes.utf8_decode(src))\n  return byte_len\nend function",
+            1570,
+        ),
+        (
+            "let-binding-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  let n = sico.text.length(sico.bytes.utf8_decode(src))\n  return n\nend function",
+            1570,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the utf8_decode fixture",
+        );
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} utf8_decode component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn the_t2_g2_s_site_refusals_belong_to_other_families() {
+    // STEP-0532: the two **real** S call sites of the family live in
+    // functions that stay refused -- but not because of the nested-call
+    // argument this slice closed.  The pin records the measured identities
+    // and the control shapes that attribute them.
+    //
+    // S site 2 (`compiler.sico`: `positive_sleb_length`) is refused by the
+    // fixed-operator operand path, which does not accept a `sico.*` operand
+    // **at all** -- the control shape below carries a plain (non-nested)
+    // length operand and is refused the same way.
+    //
+    // STEP-0536 (M-g1) removed the match route's parameter-count gate, which
+    // used to refuse this one-parameter function *first* and hide the deeper
+    // identity behind it.  The refusal is unchanged -- it is still a typed
+    // refusal -- but the identity is now the deeper one, and it is now the
+    // **same** identity the two-parameter control shapes report.
+    //
+    // S site 1 (`compiler.sico`: `lex_words`) is refused by the
+    // `sico.list.append` shape it carries (`sico.list.append(<local>,
+    // <nested call>)`, which is T7), not by the length call.
+    //
+    // Both refusals are therefore **outside** this family: they must not be
+    // counted as `sico.text.length` gaps, and they must not be read as
+    // "the family is closed" either.
+    let match_probe = |parameters: &str, length_operand: &str| {
+        format!(
+            "function probe({parameters}) returns U64:\n  match U64.checked_div(sico.text.length({length_operand}), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function\n"
+        )
+    };
+    for (label, body, identity) in [
+        (
+            "one-parameter-nested-match",
+            match_probe("initial: U64", "positive_sleb_hex(initial)"),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            "two-parameter-plain-match",
+            match_probe("initial: U64, text: Text", "text"),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            "two-parameter-nested-match",
+            match_probe("initial: U64, other: U64", "positive_sleb_hex(initial)"),
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+    ] {
+        let source = text_length_fixture(&body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // The same shape without the match route lowers -- so the nested-call
+    // argument itself is not what the match route refuses.
+    let source = text_length_fixture(
+        "function probe(initial: U64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function\n",
+    );
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the guest frontend must lower the nested-call argument shape")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, rust_ir(&source).as_bytes());
+}
+
+#[test]
+fn the_t2_cell_matrix_lowers_byte_exactly() {
+    // STEP-0533, T2 family closure slice X: the D15 truth table measured **one
+    // representative per position**, but the S call sites pair a position with
+    // an argument form and with an enclosing operator.  The census (measured,
+    // 332 call sites) has eight cells, and five of them had **no** byte-exact
+    // pin: the argument being a local cell rather than a parameter.
+    //
+    // This pin covers the cells that lower, so the family's coverage is a
+    // measured table instead of an assumption.  Every byte count is the Rust
+    // frontend's own canonical IR length, measured from production output.
+    for (label, body, ir_bytes) in [
+        (
+            "set-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = sico.text.length(x)\n  return n\nend function",
+            3080,
+        ),
+        (
+            "if-condition-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            3317,
+        ),
+        (
+            "if-condition-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3754,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3753,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right-of-an-equal",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            3754,
+        ),
+        (
+            "return-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  return sico.text.length(x)\nend function",
+            2212,
+        ),
+        (
+            "return-position-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = U64.literal(1)\n  return sico.text.length(x)\nend function",
+            3069,
+        ),
+        (
+            "real-s-function-append-shape",
+            "function append_shape(shape: Text, kind: Text, name: Text) returns Text:\n  let entry = sico.text.concat(kind, sico.text.concat(\":\", name))\n  if U64.equal(sico.text.length(shape), U64.literal(0)):\n    return entry\n  end if\n  return sico.text.concat(shape, sico.text.concat(\",\", entry))\nend function",
+            4245,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} text-length shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn the_t2_cell_matrix_component_layer_covers_what_the_emitter_knows() {
+    // STEP-0533: the component layer of the T2 cells follows the frontend for
+    // the shapes whose **enclosing operator** the emitter knows, and refuses
+    // the others with its own typed identity.  The refusals belong to the
+    // operator family -- the control shapes below carry the same operators
+    // **without** a length call and are refused the same way.
+    //
+    // The emitter knows `U64.equal` conditions; it does not know
+    // `U64.less_than` ones.  That is a separate family (S has 990
+    // `U64.less_than` call sites), not a gap of this one.
+    for (label, body, component_bytes) in [
+        (
+            "set-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = sico.text.length(x)\n  return n\nend function",
+            1137,
+        ),
+        (
+            "if-condition-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1192,
+        ),
+        (
+            "if-condition-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(sico.text.length(x), U64.literal(2)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
+        ),
+        (
+            "if-condition-with-the-length-on-the-right-of-an-equal",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
+        ),
+        (
+            "return-position-with-a-local",
+            "function size(t: Text) returns U64:\n  let x = t\n  return sico.text.length(x)\nend function",
+            1091,
+        ),
+        (
+            "return-position-with-a-local-in-a-cell-function",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  set n = U64.literal(1)\n  return sico.text.length(x)\nend function",
+            1137,
+        ),
+        (
+            "real-s-function-append-shape",
+            "function append_shape(shape: Text, kind: Text, name: Text) returns Text:\n  let entry = sico.text.concat(kind, sico.text.concat(\":\", name))\n  if U64.equal(sico.text.length(shape), U64.literal(0)):\n    return entry\n  end if\n  return sico.text.concat(shape, sico.text.concat(\",\", entry))\nend function",
+            1360,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the cell fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} cell component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+    // STEP-0538 (emitter vocabulary A-1): the `U64.less_than` condition cells
+    // used to be refused by the emitter, which did not know the `less_fixed`
+    // operation.  The emitter knows it now, so the two cells move from the
+    // refusal group into the byte-exact group: the component is byte for byte
+    // the Rust backend's production component.
+    for (label, body, component_bytes) in [
+        (
+            "if-condition-with-the-length-on-the-right",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), sico.text.length(x)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1211,
+        ),
+        (
+            "control-without-a-length-call",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.literal(0)\n  if U64.less_than(U64.literal(0), U64.literal(5)):\n    set n = U64.literal(1)\n  end if\n  return n\nend function",
+            1132,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module).expect(
+            "the Rust backend emits the Script-profile Component for the less_than fixture",
+        );
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} less_than component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn the_t2_g3_operator_operand_gap_is_measured_and_attributed() {
+    // STEP-0533: the census found one T2 cell the family does **not** cover:
+    // the length call is an **operand of another operator**
+    // (`U64.shr(sico.text.length(x), U64.literal(1))`).  Seven S call sites
+    // sit in that cell (four in a `let`, one in a `return`, two in a `match`
+    // head).
+    //
+    // The oracle lowers all of them; the guest frontend refuses them with two
+    // typed identities -- `ERR:E-SH-IR-CALL-ARITY` in a statement position and
+    // `ERR:E-SH-IR-CALL-ARGUMENT` in a match head.  The control shapes below
+    // attribute the refusal: the same operator over non-length operands lowers
+    // byte for byte, so the gap is the **length call as an operand**, not the
+    // operator itself.
+    //
+    // The component layer refuses these shapes too, and so it refuses the
+    // control shape as well: the emitter knows neither `U64.shr` nor
+    // `U64.checked_div`.  Two independent gaps, recorded separately.
+    for (label, body, identity, ir_bytes) in [
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(sico.text.length(x), U64.literal(1))\n  return n\nend function",
+            "ERR:E-SH-IR-CALL-ARITY",
+            2437,
+        ),
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  let x = t\n  return U64.shr(sico.text.length(x), U64.literal(2))\nend function",
+            "ERR:E-SH-IR-CALL-ARITY",
+            2437,
+        ),
+        (
+            "match-head",
+            "function size(a: Text, b: Text) returns U64:\n  match U64.checked_div(sico.text.length(a), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+            3806,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} operator-operand shape is pinned"
+        );
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} operator-operand shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // Controls: the same operators over non-length operands lower byte for
+    // byte, so the refusal is the length call as an operand.
+    for (label, body, ir_bytes) in [
+        (
+            "control-shr",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(U64.literal(4), U64.literal(1))\n  return n\nend function",
+            2395,
+        ),
+        (
+            "control-match-route",
+            "function size(a: Text, b: Text) returns U64:\n  match U64.checked_div(U64.literal(4), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            3764,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} control shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} control shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The component layer refuses the operator-operand shapes **and** their
+    // controls: the emitter knows neither `U64.shr` nor `U64.checked_div`.
+    for (label, body) in [
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(sico.text.length(x), U64.literal(1))\n  return n\nend function",
+        ),
+        (
+            "control-shr",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = U64.shr(U64.literal(4), U64.literal(1))\n  return n\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must refuse the {label} shift shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "unsupported codegen source shape", "{label}");
+    }
+}
+
+#[test]
+fn the_t2_match_head_sites_keep_their_measured_refusal_identities() {
+    // STEP-0533: the two S call sites that sit in a `match` head
+    // (`compiler.sico`: `hex_text_bytes`, `positive_sleb_length`) carry two
+    // refusals, and the census separates them.
+    //
+    // The real functions have **one** parameter.  While the match route's
+    // parameter-count gate was in place it refused them first
+    // (`ERR:E-SH-IR-MATCH-SHAPE`) and hid the deeper identity.  STEP-0536
+    // (M-g1) removed that gate, so both sites now report the operator-operand
+    // path's identity (`ERR:E-SH-IR-CALL-ARGUMENT`) -- the same identity the
+    // two-parameter control shape reports, which is the T2-g3 gap -- not the
+    // match route.
+    for (label, body, identity) in [
+        (
+            "real-s-function-hex-text-bytes",
+            "function hex_text_bytes(text: Text) returns U64:\n  match U64.checked_div(sico.text.length(text), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+        (
+            "real-s-function-positive-sleb-length",
+            "function positive_sleb_length(initial: U64) returns U64:\n  match U64.checked_div(sico.text.length(positive_sleb_hex(initial)), U64.literal(2)):\n    case ok(length):\n      return length\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\nfunction positive_sleb_hex(value: U64) returns Text:\n  return \"z\"\nend function",
+            "ERR:E-SH-IR-CALL-ARGUMENT",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the {label} shape must stay a typed refusal")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+}
+
+fn match_fixture(body: &str) -> String {
+    format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+}
+
+#[test]
+fn the_match_construct_truth_is_measured_and_pinned() {
+    // STEP-0534: the `match` construct is the largest uncovered shape in the
+    // frozen source set S (519 statements, measured by the STEP-0534 census).
+    // The guest frontend lowers three of the shape cells byte for byte and
+    // refuses the others with typed identities; the guest **emitter** refuses
+    // every match shape, because it has no match support at all.
+    //
+    // These are the measured numbers the next knife has to move.  Every byte
+    // count is the Rust frontend's own canonical IR length, measured from
+    // production output.
+    for (label, body, ir_bytes) in [
+        (
+            "checked-add-in-a-two-parameter-function",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4511,
+        ),
+        (
+            "checked-add-in-a-one-parameter-function",
+            "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4438,
+        ),
+        (
+            "checked-add-in-a-three-parameter-function",
+            "function size(a: U64, b: U64, c: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            4585,
+        ),
+        (
+            "checked-add-in-a-twelve-parameter-function",
+            "function size(a: U64, b: U64, c: U64, d: U64, e: U64, f: U64, g: U64, h: U64, i: U64, j: U64, k: U64, l: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            5247,
+        ),
+        (
+            "list-get-generic",
+            "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+            3615,
+        ),
+        (
+            "list-get-typed-in-a-three-parameter-function",
+            "function size(values: List[U64], idx: U64, fallback: U64) returns U64:\n  match sico.list.get[U64](values, idx):\n    case ok(value):\n      return value\n    case error(_):\n      return fallback\n  end match\nend function",
+            3577,
+        ),
+        (
+            "nested-match",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      match U64.checked_sub(total, b):\n        case ok(inner):\n          set out = inner\n        case error(_):\n          return U64.literal(0)\n      end match\n    case error(_):\n      return U64.literal(1)\n  end match\n  return out\nend function",
+            6342,
+        ),
+        (
+            "two-return-cases",
+            "function size(a: U64, b: U64) returns U64:\n  match U64.checked_add(a, b):\n    case ok(total):\n      return total\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            3547,
+        ),
+    ] {
+        let source = match_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} match shape is pinned"
+        );
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} match shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The refusals, each with its own measured identity.  STEP-0536 (M-g1)
+    // removed the match route's parameter-count gate, so the three-parameter
+    // and the twelve-parameter shapes moved from this list to the lowered list
+    // above -- the gate was the only thing that refused them.  The operator
+    // whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a second, different gate; a
+    // head no match route claims at all falls through to the general route
+    // (`ERR:E-SH-IR-STATEMENT`).
+    for (label, body, identity, ir_bytes) in [
+        (
+            "checked-sub",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_sub(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "checked-div",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_div(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "checked-mul",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_mul(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-CALL-TARGET",
+            4511,
+        ),
+        (
+            "bytes-slice",
+            "function size(data: Bytes, start: U64, length: U64) returns Bytes:\n  let out = data\n  match sico.bytes.slice(data, start, length):\n    case ok(piece):\n      set out = piece\n    case error(_):\n      set out = data\n  end match\n  return out\nend function",
+            "ERR:E-SH-IR-STATEMENT",
+            4555,
+        ),
+    ] {
+        let source = match_fixture(body);
+        let expected = rust_ir(&source);
+        assert_eq!(
+            expected.len(),
+            ir_bytes,
+            "the measured canonical IR size of the {label} match shape is pinned"
+        );
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} match shape")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, identity, "{label}");
+    }
+    // STEP-0535 moved the component layer: the `U64.checked_add` shapes (the
+    // two-parameter, the one-parameter, the two-`return` and the nested one)
+    // now emit a component that is byte for byte equal to the production
+    // backend's -- see
+    // `sico_codegen_guest_emits_the_match_component_bytes_byte_exactly`.
+    //
+    // STEP-0539 (emitter vocabulary A-2) moved the `sico.list.get` head: the
+    // emitter carries that intrinsic's call site now, so the shape is no
+    // longer a typed refusal but a component that is byte for byte the
+    // production backend's.
+    let source = match_fixture(
+        "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the list.get fixture");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the guest emitter must emit the list.get match component")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_eq!(
+        decode_hex(&output.stdout),
+        expected,
+        "the list.get match head component must be byte for byte equal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_checked_arithmetic_match_at_any_parameter_count_byte_exactly() {
+    // STEP-0536, M-g1: the checked-arithmetic `match` route used to refuse any
+    // function whose parameter count was not 1 or 2 -- the gate that blocked
+    // 354 of the 519 `match` statements in the frozen source set S (measured by
+    // the STEP-0534 census; reproduced on the real site `codegen.sico:cg_next`).
+    //
+    // The gate was a guard whose result was never read: the route already
+    // resolved its operands through the binding parameter index and already
+    // compared the operand index against the parameter count, so the count was
+    // never a shape constraint.  Removing it lets the route lower the shape at
+    // any arity.
+    //
+    // The bytes must stay byte for byte equal to the Rust frontend's canonical
+    // IR: the value ids, the SSA order and the ranges must not move.  The
+    // pinned byte counts are the Rust frontend's own measured output.
+    for (label, arity, ir_bytes) in [
+        ("one-parameter", 1usize, 4438),
+        ("two-parameter", 2, 4511),
+        ("three-parameter", 3, 4585),
+        ("four-parameter", 4, 0),
+        ("nine-parameter", 9, 0),
+        ("twelve-parameter", 12, 5247),
+        ("seventeen-parameter", 17, 0),
+    ] {
+        // The parameter names follow the STEP-0534 truth fixtures (`a`, `b`,
+        // `c`, ...) so the pinned byte counts stay comparable: the canonical IR
+        // carries source ranges, so a rename would move them.
+        let params = (0..arity)
+            .map(|index| {
+                let name = (b'a' + index as u8) as char;
+                format!("{name}: U64")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        // A one-parameter function has no second operand, so the head reads the
+        // same parameter twice -- the shape the STEP-0534 truth test measured.
+        let second = if arity >= 2 { "b" } else { "a" };
+        let body = format!(
+            "function size({params}) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, {second}):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function"
+        );
+        let source = match_fixture(&body);
+        let expected = rust_ir(&source);
+        if ir_bytes != 0 {
+            assert_eq!(
+                expected.len(),
+                ir_bytes,
+                "the measured canonical IR size of the {label} match shape is pinned"
+            );
+        }
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("the guest frontend must lower the {label} match shape")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    // The operator whitelist is a **different** gate: a head the assignment-body
+    // route does not claim stays a typed refusal, and the identity must stay
+    // stable.  The arity gate used to shadow it, so the same head in a
+    // one-parameter function used to report the arity identity; it now
+    // reports the whitelist identity.
+    let source = match_fixture(
+        "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_div(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+    );
+    let RunOutcome::Domain { code, message } = run_guest(&source) else {
+        panic!("the guest frontend must refuse the checked_div match shape")
+    };
+    assert_eq!(code, "invalid-input");
+    assert_eq!(message, "ERR:E-SH-IR-CALL-TARGET");
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_match_component_bytes_byte_exactly() {
+    // STEP-0535, M-g4a: the guest emitter\'s `match` path, the checked
+    // arithmetic it reads and the Result arm projection it writes -- the first
+    // `match` shapes whose **component** bytes are byte for byte equal to the
+    // production backend\'s.
+    //
+    // The backend\'s `compile_terminator` (the `Terminator::Match` branch),
+    // its `emit_checked_fixed` and the Result arm field maps of
+    // `apply_result_fields` define the byte shape; the guest reproduces them,
+    // so the two components must be identical byte for byte.
+    for (label, body, bytes) in [
+        (
+            "checked-add-in-a-two-parameter-function",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            1215,
+        ),
+        (
+            "checked-add-in-a-one-parameter-function",
+            "function size(a: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, a):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+            1214,
+        ),
+        (
+            "checked-add-in-a-two-parameter-function-return-return",
+            "function size(a: U64, b: U64) returns U64:\n  match U64.checked_add(a, b):\n    case ok(total):\n      return total\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+            1167,
+        ),
+        (
+            "nested-match",
+            "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      match U64.checked_sub(total, b):\n        case ok(inner):\n          set out = inner\n        case error(_):\n          return U64.literal(0)\n      end match\n    case error(_):\n      return U64.literal(1)\n  end match\n  return out\nend function",
+            1389,
+        ),
+    ] {
+        let source = match_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the match fixture");
+        assert_eq!(
+            expected.len(),
+            bytes,
+            "the measured {label} component size is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the measured match component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the {label} component must be emitted through the guest")
+        };
+        assert_eq!(output.exit_code, 0, "{label}: {:?}", output.stderr);
+        let actual = decode_hex(&output.stdout);
+        assert_eq!(
+            actual, expected,
+            "{label}: the guest\'s match component must be byte for byte equal"
+        );
+    }
+    // STEP-0539 (emitter vocabulary A-2) moved the `sico.list.get` head: the
+    // emitter carries that intrinsic's call site now, so the shape leaves the
+    // refusal group and joins the byte-exact group above.  The component is
+    // byte for byte the production backend's, the error arm included.
+    let source = match_fixture(
+        "function size(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"\"\n  end match\nend function",
+    );
+    let module = rust_module(&source);
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the Rust backend emits the Script-profile Component for the list.get fixture");
+    assert_eq!(
+        expected.len(),
+        1246,
+        "the measured list.get match head component size is pinned"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the measured list.get component must pass the real Wasm validator");
+    let RunOutcome::Output(output) =
+        run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+    else {
+        panic!("the list.get match head component must be emitted through the guest")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "the list.get match head component must be byte for byte equal"
+    );
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0535_codegen_functions_byte_exactly() {
+    // STEP-0535, M-g4a: the guest\'s own new emitter code has to stay inside
+    // the self-hosting shape frontier -- the guest frontend must lower the
+    // guest\'s own emitter, otherwise the bootstrap could never consume its
+    // own code.
+    for name in [
+        "cgs_i32_const_neg_one_hex",
+        "cgs_match_payload_ok",
+        "cgs_match_pattern_hex",
+        "cgs_match_condition_hex",
+        "cgs_match_hex",
+        "cgs_checked_fixed_hex",
+        "cgs_project_result_hex",
+        "cgs_result_arm_ty",
+        "component_hex_for_ir",
+        "component_refusal_for_ir",
+    ] {
+        let source = codegen_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("codegen function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+}
+
+#[test]
+fn sico_compiler_lowers_the_step0532_parser_functions_byte_exactly() {
+    // STEP-0532, T2-g2: the guest frontend has to keep lowering the
+    // functions this slice added or reshaped -- otherwise the bootstrap
+    // could never consume its own frontend code.  This is the same
+    // self-hosting shape frontier the STEP-0507 / 0509 / 0513 / 0519 / 0520
+    // / 0521 / 0522 / 0523 / 0524 / 0525 slices established.
+    //
+    // The new lowerer `nested_text_call_packed` lowers on its own (with its
+    // callees stubbed) and with its real callee closure, and so do the two
+    // routes it is wired into.
+    for name in [
+        "nested_text_call_packed",
+        "straight_text_length_packed",
+        "gw_rhs_packed",
+    ] {
+        let source = parser_function_source(name);
+        let expected = rust_ir(&source);
+        let RunOutcome::Output(output) = run_guest(&source) else {
+            panic!("parser function {name} must compile through the guest frontend")
+        };
+        assert_eq!(output.exit_code, 0, "{name}: {:?}", output.stderr);
+        assert_bytes_equal(&output.stdout, expected.as_bytes());
+    }
+    let source = parser_closure_source("nested_text_call_packed");
+    let expected = rust_ir(&source);
+    let RunOutcome::Output(output) = run_guest(&source) else {
+        panic!("the nested-call lowerer closure must compile through the guest frontend")
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    assert_bytes_equal(&output.stdout, expected.as_bytes());
+}
+
+#[test]
+fn the_t2_g2_target_ir_is_the_nested_call_shape() {
+    // STEP-0531: the target the T2-g2 knife has to produce, measured from the
+    // Rust frontend's own canonical IR -- never designed.
+    //
+    // The rule, in one line: the nested call is **one** instruction, its
+    // result id comes **before** the outer call's result id (post-order
+    // allocation), and the outer `sico.text.length` takes that id as its only
+    // argument.
+    for (label, body, expected) in [
+        (
+            "nested-host-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(sico.text.concat(t, \"x\"))\nend function",
+            vec![
+                (1, "const_string \"x\""),
+                (2, "intrinsic sico.text.concat args=[0,1]"),
+                (3, "intrinsic sico.text.length args=[2]"),
+            ],
+        ),
+        (
+            "nested-user-call",
+            "function size(t: Text) returns U64:\n  return sico.text.length(helper(t))\nend function\nfunction helper(v: Text) returns Text:\n  return v\nend function",
+            vec![
+                (1, "call 2 args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+        (
+            "s-site-utf8-decode",
+            "function size(src: Bytes) returns U64:\n  return sico.text.length(sico.bytes.utf8_decode(src))\nend function",
+            vec![
+                (1, "intrinsic sico.bytes.utf8_decode args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+        (
+            "s-site-user-call",
+            "function size(initial: I64) returns U64:\n  return sico.text.length(positive_sleb_hex(initial))\nend function\nfunction positive_sleb_hex(value: I64) returns Text:\n  return \"z\"\nend function",
+            vec![
+                (1, "call 2 args=[0]"),
+                (2, "intrinsic sico.text.length args=[1]"),
+            ],
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let function = &module.functions[0];
+        let instructions: Vec<(u32, String)> = function.blocks[0]
+            .instructions
+            .iter()
+            .map(|instruction| {
+                (
+                    instruction.result.0,
+                    plan_op_text(&instruction.operation)
+                        .expect("the measured operation is inside the plan subset"),
+                )
+            })
+            .collect();
+        assert_eq!(
+            instructions.len(),
+            expected.len(),
+            "{label} instruction count"
+        );
+        for (index, (result, text)) in expected.iter().enumerate() {
+            assert_eq!(
+                instructions[index].0, *result,
+                "{label} instruction {index} result id"
+            );
+            assert_eq!(
+                instructions[index].1, *text,
+                "{label} instruction {index} operation"
+            );
+        }
+    }
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_text_length_component_byte_exactly() {
+    // STEP-0530, T2 codegen knife: the guest **emitter** knows the
+    // `sico.text.length` operator now, and the component it emits is byte for
+    // byte the Rust backend's own production component -- not merely a
+    // component that passes the validator.
+    //
+    // The measured truth (never designed, all of it read out of the oracle's
+    // production component):
+    //
+    //   * the helper's core function index is `function_count + 3`, plus one
+    //     more when the module also carries `sico.text.concat` -- the two
+    //     builtin helpers are ordered by their dotted names, so
+    //     `sico.text.concat` is always the first and `sico.text.length` the
+    //     second;
+    //   * the helper's type is `(i32, i32) -> i32` and its body is the locals
+    //     declaration `01 02 7f` (one group of two i32) followed by 51 B of
+    //     code that counts the bytes that are not continuation bytes, so the
+    //     result is the number of UTF-8 code points;
+    //   * the call site is `local.get <ptr>; local.get <len>; call <helper>;
+    //     i64.extend_i32_u (0xad); local.set <result>`.
+    for (label, body, component_bytes) in [
+        (
+            "if-condition",
+            "function size(t: Text) returns U64:\n  if U64.equal(sico.text.length(t), U64.literal(2)):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1167,
+        ),
+        (
+            "concat-and-length-in-one-module",
+            "function size(t: Text) returns U64:\n  let s = sico.text.concat(t, \"x\")\n  return sico.text.length(s)\nend function",
+            1183,
+        ),
+        (
+            "let-binding",
+            "function size(t: Text) returns U64:\n  let n = sico.text.length(t)\n  return n\nend function",
+            1091,
+        ),
+        (
+            "local-alias",
+            "function size(t: Text) returns U64:\n  let x = t\n  let n = sico.text.length(x)\n  return n\nend function",
+            1091,
+        ),
+        (
+            "set-position",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  set n = sico.text.length(t)\n  return n\nend function",
+            1113,
+        ),
+        (
+            "two-calls-in-one-function",
+            "function size(t: Text) returns U64:\n  let a = sico.text.length(t)\n  let b = sico.text.length(t)\n  if U64.equal(a, b):\n    return U64.literal(1)\n  end if\n  return U64.literal(0)\nend function",
+            1197,
+        ),
+        (
+            "two-functions",
+            "function first(t: Text) returns U64:\n  return sico.text.length(t)\nend function\n\nfunction second(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            1139,
+        ),
+        (
+            "return-position",
+            "function size(t: Text) returns U64:\n  return sico.text.length(t)\nend function",
+            1091,
+        ),
+        (
+            "return-position-with-a-literal",
+            "function size() returns U64:\n  return sico.text.length(\"ab\")\nend function",
+            1111,
+        ),
+        (
+            "inside-an-if-block",
+            "function size(t: Text) returns U64:\n  let n = U64.literal(0)\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    set n = sico.text.length(t)\n  end if\n  return n\nend function",
+            1187,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the family fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} text-length component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn sico_codegen_guest_emits_the_loop_shapes_with_a_less_than_condition_byte_exactly() {
+    // STEP-0530: the guest emitter's remaining refusals are **not**
+    // `sico.text.length` gaps, and the pin says so with a control shape.
+    //
+    // The guest emitter refuses a module whose function body carries a
+    // `while` loop, **whether or not** the loop body carries a length call.
+    // The oracle emits both shapes, so the refusal belongs to the loop shape
+    // -- the guest emitter only knows a single straight-line block -- and not
+    // to this family.  Recording the control shape is what keeps the
+    // remaining gaps honest: a refusal that survives without the operator in
+    // it is not an operator gap.
+    //
+    // STEP-0538 (emitter vocabulary A-1): the emitter now knows the
+    // `less_fixed` operation, so the three loop shapes are **emitted** and the
+    // component is byte for byte the Rust backend's production component.  The
+    // pin was renamed from
+    // `sico_codegen_guest_refuses_the_loop_shape_outside_the_text_length_subset`;
+    // STEP-0530 keeps the original text and gains an addendum.
+    for (label, body, component_bytes) in [
+        (
+            "loop-without-a-length-call",
+            "function size(t: Text) returns U64:\n  let total = U64.literal(0)\n  let more = U64.literal(1)\n  while U64.less_than(U64.literal(0), more):\n    set total = U64.literal(7)\n    set more = U64.literal(0)\n  end while\n  return total\nend function",
+            1142,
+        ),
+        (
+            "loop-with-a-length-call",
+            "function size(t: Text) returns U64:\n  let total = U64.literal(0)\n  let more = U64.literal(1)\n  while U64.less_than(U64.literal(0), more):\n    set total = sico.text.length(t)\n    set more = U64.literal(0)\n  end while\n  return total\nend function",
+            1209,
+        ),
+        (
+            "loop-condition-with-a-length-call",
+            "function size(t: Text) returns U64:\n  let i = U64.literal(0)\n  while U64.less_than(i, sico.text.length(t)):\n    set i = U64.literal(1)\n  end while\n  return i\nend function",
+            1187,
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the loop fixture");
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .expect("the oracle component must pass the real Wasm validator");
+        let RunOutcome::Output(output) =
+            run_guest_with_args(&source, vec!["--emit-component-hex".into()])
+        else {
+            panic!("the guest emitter must emit the {label} loop component")
+        };
+        let actual = decode_hex(&output.stdout);
+        assert_bytes_equal(&actual, &expected);
+        wasmparser::Validator::new()
+            .validate_all(&actual)
+            .expect("the guest component must pass the real Wasm validator");
+    }
+}
+
+#[test]
+fn the_guest_frontend_narrower_than_the_oracle_on_the_u64_bit_operators() {
+    // STEP-0530: the guest frontend refuses `U64.bit_or` and `U64.shr` with
+    // `ERR:E-SH-IR-EXPRESSION` while the oracle lowers and emits them.  The
+    // refusal is **not** a `sico.text.length` gap -- it reproduces without
+    // the operator in the source -- so it is registered as the guest
+    // frontend's own narrowness and kept out of this family's accounting.
+    for (label, body) in [
+        (
+            "bit-or",
+            "function size(t: Text) returns U64:\n  let a = U64.literal(1)\n  let b = U64.literal(2)\n  return U64.bit_or(a, b)\nend function",
+        ),
+        (
+            "shift-right",
+            "function size(t: Text) returns U64:\n  let a = U64.literal(1)\n  return U64.shr(a, U64.literal(1))\nend function",
+        ),
+    ] {
+        let source = text_length_fixture(body);
+        let RunOutcome::Domain { code, message } = run_guest(&source) else {
+            panic!("the guest frontend must refuse the {label} operator")
+        };
+        assert_eq!(code, "invalid-input", "{label}");
+        assert_eq!(message, "ERR:E-SH-IR-EXPRESSION", "{label}");
+        let module = rust_module(&source);
+        let expected = codegen_oracle::compile_script_program(&module)
+            .expect("the Rust backend emits the Script-profile Component for the operator fixture");
+        assert_eq!(
+            expected.len(),
+            1039,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0536 / M22 R0.4: the frozen `match` site ledger.
+//
+// STEP-0535 proved four **synthetic** `match` fixtures byte for byte at the
+// component layer and then wrote "42 / 519 sites (shape面)".  The owner audit
+// (AGENTS.md §10.1, §10.4 R0.4) rejects that extrapolation: the 42 candidates
+// are real S sites and each of them needs its own verdict against the Rust
+// oracle -- canonical IR, Component bytes and a real validator run.
+//
+// This test is the executor.  It reads the frozen ledger
+// (`selfhost/match-component-coverage-v1.json`), re-derives every site from
+// the frozen S, compares the guest against the Rust oracle and checks the
+// recorded verdict.  A site that moves is a failure, exactly like the
+// frontend frontier probe.
+//
+// STEP-0536 (M-g1) extended the ledger from the 42 sites the parameter-count
+// gate let through to all 396 `U64.checked_add` match statements of the
+// frozen S -- the 42 plus the 354 the gate used to refuse.
+//
+// The unit of comparison is the site's **same-file dependency closure** plus
+// the Script-profile harness (`run` + the ScriptInput/ScriptOutput records),
+// so both sides see the same module and the Component axis is comparable.
+// A closure that grows past the bound is not silently skipped: it is reported
+// as `closure-too-large` and its IR evidence comes from the whole-file
+// differential pin that covers that file.
+// ---------------------------------------------------------------------------
+
+const MATCH_COVERAGE_LEDGER: &str =
+    include_str!("../../../selfhost/match-component-coverage-v1.json");
+const COMPILER_SEMANTICS_SOURCE: &str = include_str!("../../../selfhost/compiler_semantics.sico");
+
+/// Closure bound: a site whose same-file dependency closure grows past this
+/// many functions (or bytes) is compared through the whole-file differential
+/// instead of a standalone one.
+///
+/// STEP-0550 (M22 P2): the bound was raised from 64 functions / 256 KiB to
+/// 256 functions / 1 MiB.  The bound is a **fixture** limit, not a
+/// measurement: a site reported as `closure-too-large` was never compared at
+/// all.  The frozen ledger carried 219 such sites -- every one of them in
+/// `parser.sico` -- while the largest real closure of the frozen S is 164
+/// functions / 1,027,015 bytes (`scalar_ir`), so the old bound skipped more
+/// than half of the 396 sites and the new one covers all of them.  Only the
+/// fixture bound moves here: the fuel, timeout, memory and hostcall limits
+/// are untouched.
+const MATCH_CLOSURE_FUNCTION_LIMIT: usize = 256;
+const MATCH_CLOSURE_BYTE_LIMIT: usize = 1_048_576;
+
+/// STEP-0550 (M22 P2): the closure bound is **configurable for probes**.
+/// `SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT` / `SICO_M22_MATCH_CLOSURE_BYTE_LIMIT`
+/// move the bound of the probe run only.  The frozen ledger is always checked
+/// under `MATCH_CLOSURE_FUNCTION_LIMIT` / `MATCH_CLOSURE_BYTE_LIMIT` above,
+/// so the frozen expectation table never depends on the environment.
+fn match_probe_closure_limits() -> (usize, usize) {
+    let function_limit = std::env::var("SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(MATCH_CLOSURE_FUNCTION_LIMIT);
+    let byte_limit = std::env::var("SICO_M22_MATCH_CLOSURE_BYTE_LIMIT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(MATCH_CLOSURE_BYTE_LIMIT);
+    (function_limit, byte_limit)
+}
+
+/// The files whose **whole-file** canonical IR differential is pinned by the
+/// firmware, so a `closure-too-large` site still has a current-snapshot IR
+/// witness.  A new file must not appear here without a matching pin.
+const MATCH_WHOLE_FILE_PINNED: &[(&str, &str)] = &[(
+    "parser.sico",
+    "sico_guest_arena_accommodates_full_parser_selfhost_input",
+)];
+
+#[derive(serde::Deserialize)]
+struct MatchCoverageLedger {
+    schema: String,
+    sites: Vec<MatchCoverageSite>,
+}
+
+#[derive(serde::Deserialize)]
+struct MatchCoverageSite {
+    id: String,
+    path: String,
+    line: u64,
+    function: String,
+    function_line: u64,
+    parameter_count: u64,
+    head: String,
+    labels: String,
+    case_shape: String,
+    verdict: String,
+    source_sha256: String,
+    ir_sha256: String,
+    component_sha256: String,
+    note: String,
+}
+
+struct MatchSicoFunction {
+    name: String,
+    line: u64,
+    text: String,
+}
+
+#[derive(Clone)]
+struct MatchSiteOutcome {
+    verdict: String,
+    source_sha256: String,
+    ir_sha256: String,
+    component_sha256: String,
+}
+
+fn match_frozen_source(path: &str) -> Option<&'static str> {
+    Some(match path {
+        "codegen.sico" => CODEGEN_SOURCE,
+        "compiler.sico" => COMPILER_SOURCE,
+        "compiler_lexer.sico" => COMPILER_LEXER_SOURCE,
+        "compiler_parser.sico" => COMPILER_PARSER_SOURCE,
+        "compiler_semantics.sico" => COMPILER_SEMANTICS_SOURCE,
+        "formatter.sico" => FORMATTER_SOURCE,
+        "parser.sico" => PARSER_SOURCE,
+        _ => return None,
+    })
+}
+
+fn match_sico_functions(text: &str) -> Vec<MatchSicoFunction> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut out: Vec<MatchSicoFunction> = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let trimmed = lines[index].trim_start();
+        if let Some(rest) = trimmed.strip_prefix("function ") {
+            let name: String = rest
+                .chars()
+                .take_while(|character| character.is_ascii_alphanumeric() || *character == '_')
+                .collect();
+            let mut end = index;
+            while end < lines.len() && lines[end].trim() != "end function" {
+                end += 1;
+            }
+            if end < lines.len() && !name.is_empty() {
+                out.push(MatchSicoFunction {
+                    name,
+                    line: (index + 1) as u64,
+                    text: lines[index..=end].join("\n"),
+                });
+                index = end + 1;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    out
+}
+
+/// The same-file functions a function body calls.  A name is a call only when
+/// it is not a member access (`U64.checked_add(`) and not part of a longer
+/// identifier, so `sico.text.length(` never becomes a local callee.
+fn match_sico_callees(text: &str, known: &[String]) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut found: Vec<String> = Vec::new();
+    for index in 0..bytes.len() {
+        if bytes[index] != b'(' {
+            continue;
+        }
+        let mut start = index;
+        while start > 0 {
+            let byte = bytes[start - 1];
+            if byte.is_ascii_alphanumeric() || byte == b'_' {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+        if start == index || start == 0 {
+            continue;
+        }
+        let before = bytes[start - 1];
+        if before == b'.' || before.is_ascii_alphanumeric() || before == b'_' {
+            continue;
+        }
+        let name = &text[start..index];
+        if known.iter().any(|candidate| candidate == name)
+            && !found.iter().any(|candidate| candidate == name)
+        {
+            found.push(name.to_string());
+        }
+    }
+    found
+}
+
+/// The transitive same-file dependency closure of `root`, emitted in file
+/// order so the original declaration order is preserved.
+///
+/// STEP-0550 (M22 P2): the bound is a parameter so a probe can move it.  The
+/// frozen ledger always passes the frozen bound.
+fn match_sico_closure(
+    text: &str,
+    root: &str,
+    function_limit: usize,
+    byte_limit: usize,
+) -> Result<String, String> {
+    let functions = match_sico_functions(text);
+    let names: Vec<String> = functions.iter().map(|f| f.name.clone()).collect();
+    let mut selected = vec![false; functions.len()];
+    let mut stack = vec![root.to_string()];
+    let mut count = 0usize;
+    let mut bytes = 0usize;
+    while let Some(name) = stack.pop() {
+        let Some(position) = functions.iter().position(|f| f.name == name) else {
+            continue;
+        };
+        if selected[position] {
+            continue;
+        }
+        selected[position] = true;
+        count += 1;
+        bytes += functions[position].text.len();
+        if count > function_limit || bytes > byte_limit {
+            return Err(format!("closure-too-large:{count}fn/{bytes}B"));
+        }
+        for callee in match_sico_callees(&functions[position].text, &names) {
+            stack.push(callee);
+        }
+    }
+    let mut out = String::new();
+    for (position, function) in functions.iter().enumerate() {
+        if selected[position] {
+            out.push_str(&function.text);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+fn match_sha256(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// Compares one real site against the Rust oracle on both axes and returns
+/// the verdict plus the digests the ledger freezes.
+///
+/// STEP-0550 (M22 P2): the closure bound is a parameter, so the frozen run
+/// and a probe run share one measurement path and differ only in the bound.
+fn match_compare_site(
+    path: &str,
+    function: &str,
+    function_limit: usize,
+    byte_limit: usize,
+) -> MatchSiteOutcome {
+    let blank = MatchSiteOutcome {
+        verdict: "unknown-source".to_string(),
+        source_sha256: String::new(),
+        ir_sha256: String::new(),
+        component_sha256: String::new(),
+    };
+    let Some(text) = match_frozen_source(path) else {
+        return blank;
+    };
+    let closure = match match_sico_closure(text, function, function_limit, byte_limit) {
+        Ok(closure) => closure,
+        Err(reason) => {
+            return MatchSiteOutcome {
+                verdict: reason,
+                ..blank
+            };
+        }
+    };
+    let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+    let source_sha256 = match_sha256(source.as_bytes());
+
+    let guest = run_guest(&source);
+    let rust = SourceFile::from_text(SourceId::new(0), "selfhost-input.sico", source.clone())
+        .map_err(|error| format!("source:{error:?}"))
+        .and_then(|file| lower_core(&file).map_err(|error| format!("{error:?}")));
+
+    let (guest_ir, guest_refusal) = match guest {
+        RunOutcome::Output(output) if output.exit_code == 0 => (Some(output.stdout), None),
+        RunOutcome::Domain { message, .. } => (None, Some(message)),
+        other => (None, Some(format!("{other:?}"))),
+    };
+
+    let module = match (guest_ir, rust) {
+        (Some(_), Ok(module)) => module,
+        (None, Err(refusal)) => {
+            return MatchSiteOutcome {
+                verdict: format!("both-refused:{refusal}"),
+                source_sha256,
+                ..blank
+            };
+        }
+        (None, Ok(_)) => {
+            return MatchSiteOutcome {
+                verdict: format!("guest-refused:{}", guest_refusal.unwrap_or_default()),
+                source_sha256,
+                ..blank
+            };
+        }
+        (Some(_), Err(reason)) => {
+            return MatchSiteOutcome {
+                verdict: format!("rust-refused:{reason}"),
+                source_sha256,
+                ..blank
+            };
+        }
+    };
+
+    let expected_ir = canonical_json(&module).expect("the Rust oracle emits canonical IR");
+    let ir_sha256 = match_sha256(expected_ir.as_bytes());
+
+    // The Component axis: the Rust backend is the oracle, the guest emitter
+    // is the implementation under test, and both must produce the same bytes.
+    let expected_component = match codegen_oracle::compile_script_program(&module) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return MatchSiteOutcome {
+                verdict: format!("ir-equal+component-refused-rust:{error:?}"),
+                source_sha256,
+                ir_sha256,
+                ..blank
+            };
+        }
+    };
+    wasmparser::Validator::new()
+        .validate_all(&expected_component)
+        .expect("the Rust oracle Component must pass the real Wasm validator");
+    let component_sha256 = match_sha256(&expected_component);
+
+    match run_guest_with_args(&source, vec!["--emit-component-hex".into()]) {
+        RunOutcome::Output(output) => {
+            let actual = decode_hex(&output.stdout);
+            if actual == expected_component {
+                MatchSiteOutcome {
+                    verdict: "ir-equal+component-equal".to_string(),
+                    source_sha256,
+                    ir_sha256,
+                    component_sha256,
+                }
+            } else {
+                MatchSiteOutcome {
+                    verdict: "component-mismatch".to_string(),
+                    source_sha256,
+                    ir_sha256,
+                    component_sha256,
+                }
+            }
+        }
+        RunOutcome::Domain { message, .. } => MatchSiteOutcome {
+            verdict: format!("ir-equal+component-refused-guest:{message}"),
+            source_sha256,
+            ir_sha256,
+            component_sha256,
+        },
+        other => MatchSiteOutcome {
+            verdict: format!("ir-equal+component-other:{other:?}"),
+            source_sha256,
+            ir_sha256,
+            component_sha256,
+        },
+    }
+}
+
+/// The ledger's sites grouped by their enclosing function: one comparison per
+/// distinct (path, function), because the verdict applies to every site
+/// inside it.
+fn match_ledger_groups(
+    ledger: &MatchCoverageLedger,
+) -> Vec<(String, String, Vec<&MatchCoverageSite>)> {
+    let mut groups: Vec<(String, String, Vec<&MatchCoverageSite>)> = Vec::new();
+    for site in &ledger.sites {
+        match groups
+            .iter_mut()
+            .find(|(path, function, _)| path == &site.path && function == &site.function)
+        {
+            Some((_, _, members)) => members.push(site),
+            None => groups.push((site.path.clone(), site.function.clone(), vec![site])),
+        }
+    }
+    groups
+}
+
+/// Writes the measured outcomes next to the ledger so the census script can
+/// refresh the frozen expectations without hand-editing 396 records.
+///
+/// STEP-0550 (M22 P2): the file is rewritten after **every** group and moved
+/// into place atomically, so a recompute that is interrupted keeps whatever it
+/// has already measured and never leaves a half-written report behind.  The
+/// file name is a parameter so a probe run can not clobber the report the
+/// census script reads.
+fn match_write_actual_report(actuals: &[(String, String, MatchSiteOutcome)], name: &str) {
+    let directory = std::env::temp_dir().join("sico-m22-match-coverage");
+    std::fs::create_dir_all(&directory).expect("the coverage directory is writable");
+    // STEP-0550: serialise through `serde_json` instead of interpolating the
+    // verdict into a format string.  A verdict can carry a quoted reason
+    // (`guest-refused:Trap("malformed result: stdout exceeds 8 MiB")`), and
+    // the unescaped form is not JSON -- the census script then refuses the
+    // whole report and the measured groups are lost.
+    let entries: Vec<serde_json::Value> = actuals
+        .iter()
+        .map(|(path, function, outcome)| {
+            serde_json::json!({
+                "path": path,
+                "function": function,
+                "verdict": outcome.verdict,
+                "source_sha256": outcome.source_sha256,
+                "ir_sha256": outcome.ir_sha256,
+                "component_sha256": outcome.component_sha256,
+            })
+        })
+        .collect();
+    let report = serde_json::to_string_pretty(&entries).expect("the coverage report serialises");
+    let report = format!("{report}\n");
+    let target = directory.join(name);
+    let temporary = directory.join(format!("{name}.tmp-{}", std::process::id()));
+    std::fs::write(&temporary, report).expect("the coverage report is writable");
+    std::fs::rename(&temporary, &target).expect("the coverage report is movable");
+}
+
+/// Measures every group under the given closure bound.
+fn match_measure_groups(
+    groups: &[(String, String, Vec<&MatchCoverageSite>)],
+    function_limit: usize,
+    byte_limit: usize,
+    report_name: &str,
+) -> Vec<(String, String, MatchSiteOutcome)> {
+    let mut actuals: Vec<(String, String, MatchSiteOutcome)> = Vec::new();
+    for (path, function, _members) in groups {
+        let outcome = match_compare_site(path, function, function_limit, byte_limit);
+        actuals.push((path.clone(), function.clone(), outcome));
+        // STEP-0550 (P2): flush after every group so an interrupted recompute
+        // keeps the groups it has already measured.
+        match_write_actual_report(&actuals, report_name);
+    }
+    match_write_actual_report(&actuals, report_name);
+    actuals
+}
+
+#[test]
+fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
+    // STEP-0536, M22 R0.4: the 396 candidate `match` sites of the frozen S are
+    // re-derived from the frozen sources, compared against the Rust oracle on
+    // both axes (canonical IR and Component bytes, with a real validator run)
+    // and checked against the frozen ledger.
+    //
+    // STEP-0536 (M-g1) removed the checked-arithmetic route's parameter-count
+    // gate, so the candidate set grew from the 42 sites the gate let through
+    // to **all** 396 `U64.checked_add` match statements -- the 42 plus the 354
+    // the gate used to refuse.  Each site records its real parameter count,
+    // so the ledger states the arity it was measured at.
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    assert_eq!(
+        ledger.schema, "sico.m22.match-coverage.v1",
+        "the ledger schema is frozen"
+    );
+    assert_eq!(
+        ledger.sites.len(),
+        396,
+        "the ledger registers the 396 candidate sites"
+    );
+
+    // The site list itself must stay derived from the frozen S: every entry
+    // names a function that still exists at the recorded line.
+    for site in &ledger.sites {
+        let Some(text) = match_frozen_source(&site.path) else {
+            panic!("{} names an unknown source file {}", site.id, site.path);
+        };
+        let functions = match_sico_functions(text);
+        let function = functions
+            .iter()
+            .find(|f| f.name == site.function)
+            .unwrap_or_else(|| {
+                panic!("{} names a missing function {}", site.id, site.function);
+            });
+        assert_eq!(
+            function.line, site.function_line,
+            "{}: the frozen function line moved",
+            site.id
+        );
+        // STEP-0536 (M-g1): the ledger states the **real** parameter count of
+        // every site, so a site cannot silently drift to another arity.
+        let signature = function.text.split('\n').next().unwrap_or_default();
+        let open = signature.find('(').unwrap_or(0);
+        let close = signature[open..]
+            .find(')')
+            .map(|offset| offset + open)
+            .unwrap_or(open);
+        let real_parameters = signature[open + 1..close]
+            .split(',')
+            .filter(|part| !part.trim().is_empty())
+            .count() as u64;
+        assert_eq!(
+            site.parameter_count, real_parameters,
+            "{}: the recorded parameter count of {}:{} moved",
+            site.id, site.path, site.function
+        );
+        let lines: Vec<&str> = text.split('\n').collect();
+        let site_line = site.line as usize;
+        assert!(
+            site_line >= 1 && site_line <= lines.len(),
+            "{}: the frozen site line is outside the file",
+            site.id
+        );
+        let head_line = lines[site_line - 1];
+        assert!(
+            head_line.contains("match") && head_line.contains("checked_add"),
+            "{}: the frozen site line no longer holds the match head",
+            site.id
+        );
+        assert!(
+            !site.case_shape.is_empty() && !site.head.is_empty(),
+            "{}: the frozen shape fields must stay recorded",
+            site.id
+        );
+        assert!(
+            site.head.contains("checked_add"),
+            "{}: the frozen head must stay a checked_add match head",
+            site.id
+        );
+        assert_eq!(site.labels, "ok+error", "{}: the case labels", site.id);
+    }
+
+    // One comparison per distinct enclosing function; the verdict applies to
+    // every site inside it.
+    let groups = match_ledger_groups(&ledger);
+
+    // STEP-0550 (M22 P2): the frozen ledger is always measured under the
+    // **frozen** closure bound, never under an environment override.
+    let actuals = match_measure_groups(
+        &groups,
+        MATCH_CLOSURE_FUNCTION_LIMIT,
+        MATCH_CLOSURE_BYTE_LIMIT,
+        "actual.json",
+    );
+
+    for (path, function, members) in &groups {
+        let outcome = actuals
+            .iter()
+            .find(|(recorded_path, recorded_function, _)| {
+                recorded_path == path && recorded_function == function
+            })
+            .map(|(_, _, outcome)| outcome.clone())
+            .expect("every group has a measured outcome");
+        if outcome.verdict.starts_with("closure-too-large") {
+            let pinned = MATCH_WHOLE_FILE_PINNED
+                .iter()
+                .find(|(file, _)| file == path)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: the closure of {path}:{function} is too large and the file has no whole-file IR pin",
+                        members[0].id
+                    )
+                });
+            assert!(
+                members.iter().all(|site| site.note.contains(pinned.1)),
+                "{}: a closure-too-large site must name the whole-file pin in its note",
+                members[0].id
+            );
+        }
+        for site in members {
+            assert_eq!(
+                site.verdict, outcome.verdict,
+                "{}: the verdict of {path}:{function} moved",
+                site.id
+            );
+            assert_eq!(
+                site.source_sha256, outcome.source_sha256,
+                "{}: the compared source digest of {path}:{function}",
+                site.id
+            );
+            assert_eq!(
+                site.ir_sha256, outcome.ir_sha256,
+                "{}: the canonical IR digest of {path}:{function}",
+                site.id
+            );
+            assert_eq!(
+                site.component_sha256, outcome.component_sha256,
+                "{}: the Component digest of {path}:{function}",
+                site.id
+            );
+        }
+    }
+}
+
+#[test]
+fn every_match_site_is_measured_on_the_component_axis() {
+    // STEP-0550 (M22 P2): the closure bound is a **fixture** limit, not a
+    // measurement.  A site reported as `closure-too-large` was never compared
+    // at all -- it was skipped, not failed -- and the frozen ledger used to
+    // carry 219 of those, every one of them in `parser.sico`.
+    //
+    // The bound is now large enough to cover the largest real closure of the
+    // frozen S (164 functions / 1,027,015 bytes), so every one of the 396
+    // sites must carry a **measured** verdict, and whatever residue is left
+    // must be a named reason rather than a fixture skip.
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    assert_eq!(
+        ledger.sites.len(),
+        396,
+        "the ledger registers the 396 candidate sites"
+    );
+    let skipped: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.verdict.starts_with("closure-too-large"))
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        skipped.is_empty(),
+        "{} of the 396 sites are still skipped by the closure bound instead of measured: {skipped:?}",
+        skipped.len()
+    );
+    let unmeasured: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.source_sha256.is_empty())
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        unmeasured.is_empty(),
+        "{} of the 396 sites carry no compared-source digest, so they were never compiled: {unmeasured:?}",
+        unmeasured.len()
+    );
+    let unnamed: Vec<&str> = ledger
+        .sites
+        .iter()
+        .filter(|site| site.verdict.is_empty() || site.verdict == "pending")
+        .map(|site| site.id.as_str())
+        .collect();
+    assert!(
+        unnamed.is_empty(),
+        "{} of the 396 sites carry no verdict at all: {unnamed:?}",
+        unnamed.len()
+    );
+}
+
+/// STEP-0550 (M22 P2): the closure bound **probe**.
+///
+/// It measures the 396 sites under a caller-chosen bound and prints the
+/// verdict histogram.  It never rewrites the frozen ledger, never asserts the
+/// frozen table and writes its report to its own file, so a probe can not
+/// silently move an expectation.
+///
+/// Run it explicitly:
+/// ```text
+/// $env:SICO_M22_MATCH_CLOSURE_FUNCTION_LIMIT = '64'
+/// $env:SICO_M22_MATCH_CLOSURE_BYTE_LIMIT = '262144'
+/// cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml \
+///     --test selfhost_compiler -- --ignored --nocapture \
+///     sico_compiler_probes_the_match_site_closure_bound
+/// ```
+#[test]
+#[ignore = "a closure bound probe; run it explicitly"]
+fn sico_compiler_probes_the_match_site_closure_bound() {
+    let (function_limit, byte_limit) = match_probe_closure_limits();
+    let ledger: MatchCoverageLedger =
+        serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
+    let groups = match_ledger_groups(&ledger);
+    let actuals = match_measure_groups(&groups, function_limit, byte_limit, "actual-probe.json");
+    let mut histogram: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    for (_path, _function, outcome) in &actuals {
+        *histogram.entry(outcome.verdict.clone()).or_default() += 1;
+    }
+    println!(
+        "MATCH_CLOSURE_PROBE function_limit={function_limit} byte_limit={byte_limit} groups={}",
+        actuals.len()
+    );
+    for (verdict, count) in &histogram {
+        println!("MATCH_CLOSURE_PROBE {count:>4}  {verdict}");
+    }
+    println!("MATCH_CLOSURE_PROBE_DONE groups={}", actuals.len());
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0536 (M22 R0.3 / R0.5): the canonical-IR injection harness.
+//
+// The canonical IR is the guest emitter's untrusted boundary input. The
+// injection fixture hands the ingested IR straight to `codegen`, so an IR the
+// Sico frontend cannot produce still reaches the boundary the production
+// backend sees, and both sides are asked the same question about the same
+// bytes.
+//
+// Nothing here changes the production compiler: the oracle stays the Rust
+// frontend plus the Rust backend, and the guest stays the Sico emitter.
+// ---------------------------------------------------------------------------
+
+/// The injection fixture: it reads the canonical IR from stdin and answers
+/// with the emitted component, or with the identity of the refusal.
+const IR_INJECTION_SOURCE: &str = r#"record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+use codegen.component_hex_for_ir
+use codegen.component_refusal_for_ir
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let refusal = codegen.component_refusal_for_ir(input.stdin)
+  if U64.equal(sico.text.length(refusal), U64.literal(0)):
+    let component_hex = codegen.component_hex_for_ir(input.stdin)
+    return ok(ScriptOutput(stdout: sico.text.encode(component_hex), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+  end if
+  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: refusal))
+end function
+"#;
+
+fn injection_sources() -> [(&'static str, &'static str); 2] {
+    [
+        ("inject.sico", IR_INJECTION_SOURCE),
+        ("codegen.sico", CODEGEN_SOURCE),
+    ]
+}
+
+fn injection_component() -> &'static [u8] {
+    static COMPONENT: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+    COMPONENT.get_or_init(|| cached_component("inject.sico", &injection_sources()))
+}
+
+/// The guest's answer for one injected canonical IR: the emitted component
+/// hex, or the identity of the refusal.
+enum GuestEmission {
+    Component(String),
+    Refusal(String),
+}
+
+fn guest_emission(ir: &str) -> GuestEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel: 800_000_000_000,
+            timeout: std::time::Duration::from_secs(120),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    let outcome = outcome.expect("the injected IR bounds hold");
+    match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestEmission::Component(String::from_utf8(output.stdout).expect("the hex is utf-8"))
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestEmission::Refusal(message)
+        }
+        _ => panic!("the injection fixture must answer with a component or a refusal"),
+    }
+}
+
+/// The canonical IR text of a module, without the verifier's gate: the
+/// malformed shapes have to reach the emitter, so they are serialized
+/// directly instead of through `canonical_json`.
+fn injected_ir(module: &Module) -> String {
+    serde_json::to_string(module).expect("the module serializes")
+}
+
+fn zero_range() -> SourceRange {
+    SourceRange { start: 0, end: 0 }
+}
+
+fn injected_parameter(id: u32, name: &str, ty: Type) -> Parameter {
+    Parameter {
+        id: ValueId(id),
+        name: name.to_owned(),
+        ty,
+        range: zero_range(),
+    }
+}
+
+fn injected_local(name: &str, ty: Type) -> Local {
+    Local {
+        name: name.to_owned(),
+        ty,
+        range: zero_range(),
+    }
+}
+
+fn injected_instruction(result: u32, ty: Type, operation: Operation) -> Instruction {
+    Instruction {
+        result: ValueId(result),
+        ty,
+        operation,
+        range: zero_range(),
+    }
+}
+
+fn injected_block(id: u32, instructions: Vec<Instruction>, terminator: Terminator) -> Block {
+    Block {
+        id: BlockId(id),
+        instructions,
+        terminator,
+        range: zero_range(),
+    }
+}
+
+fn injected_arm(patterns: Vec<Pattern>, target: u32) -> MatchArm {
+    MatchArm {
+        patterns,
+        target: BlockId(target),
+        range: zero_range(),
+    }
+}
+
+/// The `size` function of the module, for the shapes that rewrite it.
+fn injected_size(module: &mut Module) -> &mut Function {
+    module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function")
+}
+
+/// The canonical IR of the two-parameter `U64.checked_add` match shape: the
+/// packed `Result` cell, the `ok` arm projection and the checked add.
+fn match_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_add(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
+    ))
+}
+
+/// The `Result[u64, u64]` cell shape: both arms flatten, so the cell's flat
+/// layout is the tag plus two payload slots and the `error` arm can be
+/// projected. The shape is a layout shape, not a semantics one: the arm the
+/// block belongs to is not the arm the block projects.
+fn result_cell_module(field: &str) -> Module {
+    let mut module = match_shape_module();
+    let result_ty = Type::Result {
+        ok: Box::new(Type::U64),
+        error: Box::new(Type::U64),
+    };
+    let blocks = vec![
+        injected_block(
+            0,
+            vec![
+                injected_instruction(2, Type::U64, Operation::ConstU64(0)),
+                injected_instruction(
+                    3,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 0,
+                        value: ValueId(2),
+                    },
+                ),
+                injected_instruction(
+                    4,
+                    result_ty.clone(),
+                    Operation::Variant {
+                        name: "error".to_owned(),
+                        payload: vec![ValueId(2)],
+                    },
+                ),
+                injected_instruction(
+                    5,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 1,
+                        value: ValueId(4),
+                    },
+                ),
+            ],
+            Terminator::Match {
+                values: vec![ValueId(4)],
+                arms: vec![
+                    injected_arm(
+                        vec![Pattern::Variant {
+                            name: "ok".to_owned(),
+                            payload: vec![Pattern::Binding("total".to_owned())],
+                        }],
+                        1,
+                    ),
+                    injected_arm(
+                        vec![Pattern::Variant {
+                            name: "error".to_owned(),
+                            payload: vec![Pattern::Wildcard],
+                        }],
+                        2,
+                    ),
+                ],
+            },
+        ),
+        injected_block(
+            1,
+            vec![
+                injected_instruction(6, result_ty.clone(), Operation::ReadLocal { local: 1 }),
+                injected_instruction(
+                    7,
+                    Type::U64,
+                    Operation::Project {
+                        base: ValueId(6),
+                        field: field.to_owned(),
+                    },
+                ),
+                injected_instruction(
+                    8,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 2,
+                        value: ValueId(7),
+                    },
+                ),
+                injected_instruction(9, Type::U64, Operation::ReadLocal { local: 2 }),
+                injected_instruction(
+                    10,
+                    Type::Unit,
+                    Operation::WriteLocal {
+                        local: 0,
+                        value: ValueId(9),
+                    },
+                ),
+            ],
+            Terminator::Jump(BlockId(3)),
+        ),
+        injected_block(
+            2,
+            vec![injected_instruction(11, Type::U64, Operation::ConstU64(0))],
+            Terminator::Return(Some(ValueId(11))),
+        ),
+        injected_block(
+            3,
+            vec![injected_instruction(
+                12,
+                Type::U64,
+                Operation::ReadLocal { local: 0 },
+            )],
+            Terminator::Return(Some(ValueId(12))),
+        ),
+    ];
+    let function = injected_size(&mut module);
+    function.locals = vec![
+        injected_local("out", Type::U64),
+        injected_local("#match1", result_ty),
+        injected_local("#matchtotal", Type::U64),
+    ];
+    function.blocks = blocks;
+    module
+}
+
+/// The boolean match shape: a `bool` value read by a literal pattern.
+fn bool_pattern_module() -> Module {
+    let mut module = match_shape_module();
+    let blocks = vec![
+        injected_block(
+            0,
+            Vec::new(),
+            Terminator::Match {
+                values: vec![ValueId(0)],
+                arms: vec![
+                    injected_arm(vec![Pattern::Bool(true)], 1),
+                    injected_arm(vec![Pattern::Bool(false)], 2),
+                ],
+            },
+        ),
+        injected_block(
+            1,
+            vec![injected_instruction(1, Type::U64, Operation::ConstU64(1))],
+            Terminator::Return(Some(ValueId(1))),
+        ),
+        injected_block(
+            2,
+            vec![injected_instruction(2, Type::U64, Operation::ConstU64(2))],
+            Terminator::Return(Some(ValueId(2))),
+        ),
+    ];
+    let function = injected_size(&mut module);
+    function.parameters = vec![injected_parameter(0, "a", Type::Bool)];
+    function.locals = Vec::new();
+    function.blocks = blocks;
+    module
+}
+
+/// The signed checked shape: the same match over `i64` operands.
+fn i64_checked_module() -> Module {
+    let mut module = match_shape_module();
+    let result_ty = Type::Result {
+        ok: Box::new(Type::I64),
+        error: Box::new(Type::Named("NumericError".to_owned())),
+    };
+    let function = injected_size(&mut module);
+    function.return_type = Type::I64;
+    function.parameters = vec![
+        injected_parameter(0, "a", Type::I64),
+        injected_parameter(1, "b", Type::I64),
+    ];
+    function.locals = vec![
+        injected_local("out", Type::I64),
+        injected_local("#match1", result_ty.clone()),
+        injected_local("#matchtotal", Type::I64),
+    ];
+    for block in &mut function.blocks {
+        for instruction in &mut block.instructions {
+            let replacement = match &instruction.operation {
+                Operation::ConstU64(value) => {
+                    Some(Operation::ConstI64(i64::try_from(*value).unwrap_or(0)))
+                }
+                _ => None,
+            };
+            if let Some(operation) = replacement {
+                instruction.operation = operation;
+            }
+            instruction.ty = match &instruction.ty {
+                Type::U64 => Type::I64,
+                Type::Result { ok, error } if **ok == Type::U64 => Type::Result {
+                    ok: Box::new(Type::I64),
+                    error: error.clone(),
+                },
+                other => other.clone(),
+            };
+        }
+    }
+    module
+}
+
+/// The unsigned checked subtraction: the underflow check next to the
+/// overflow one.
+fn checked_sub_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::CheckedAdd { left, right } = instruction.operation {
+                    instruction.operation = Operation::CheckedSub { left, right };
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The projection that reads the `ok` arm but declares a `bool` result: the
+/// same slot count, a different Wasm type.
+fn project_type_mismatch_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::Project { .. } = &instruction.operation {
+                    instruction.ty = Type::Bool;
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The match whose value is a plain `u64`: a variant pattern over a value
+/// that carries no discriminant.
+fn variant_over_scalar_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { values, .. } = &mut block.terminator {
+                values[0] = ValueId(0);
+            }
+        }
+    }
+    module
+}
+
+/// The match whose value is a plain `u64` read by a literal pattern: a
+/// literal pattern needs a single scalar slot, and `u64` is one -- but the
+/// pattern's own type does not match the value's.
+fn bool_over_scalar_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { values, arms } = &mut block.terminator {
+                values[0] = ValueId(0);
+                for arm in arms {
+                    arm.patterns.fill(Pattern::Bool(true));
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The match arm whose variant pattern carries a nested variant pattern.
+fn nested_payload_module() -> Module {
+    let mut module = match_shape_module();
+    for function in &mut module.functions {
+        if function.name != "size" {
+            continue;
+        }
+        for block in &mut function.blocks {
+            if let Terminator::Match { arms, .. } = &mut block.terminator {
+                for arm in arms {
+                    for pattern in &mut arm.patterns {
+                        if let Pattern::Variant { payload, .. } = pattern {
+                            payload.clear();
+                            payload.push(Pattern::Variant {
+                                name: "ok".to_owned(),
+                                payload: Vec::new(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_malformed_canonical_ir_is_refused_by_the_guest_and_by_the_rust_oracle() {
+    // STEP-0536, M22 R0.3: the canonical IR is an untrusted boundary input.
+    // The two malformed shapes the audit named -- a projection that carries
+    // the same slot count but a different Wasm type, and a variant pattern
+    // over a value that carries no discriminant -- must be refused on both
+    // sides, and the third one -- a nested pattern payload -- must stay
+    // refused as well.
+    //
+    // The positive control comes first: the same harness, the same module
+    // and no malformation must still emit the production component, so a
+    // refusal below is the malformation and not a broken harness.
+    let control = match_shape_module();
+    let expected =
+        codegen_oracle::compile_script_program(&control).expect("the oracle emits the match shape");
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the emitted match component passes the real Wasm validator");
+    match guest_emission(&injected_ir(&control)) {
+        GuestEmission::Component(hex) => assert_eq!(
+            decode_hex(hex.as_bytes()),
+            expected,
+            "the injection harness must reach the emitter"
+        ),
+        GuestEmission::Refusal(identity) => {
+            panic!("the injection harness must reach the emitter, refused with {identity}")
+        }
+    }
+
+    for (label, module, identity) in [
+        (
+            "same-slot-count-wrong-type-projection",
+            project_type_mismatch_module(),
+            "ERR:E-SH-CG-IR-PROJECT-TYPE",
+        ),
+        (
+            "variant-pattern-over-a-non-variant-value",
+            variant_over_scalar_module(),
+            "ERR:E-SH-CG-IR-MATCH-VARIANT",
+        ),
+        (
+            "literal-pattern-over-a-non-boolean-value",
+            bool_over_scalar_module(),
+            "ERR:E-SH-CG-IR-MATCH-SCALAR",
+        ),
+        (
+            "nested-payload-pattern",
+            nested_payload_module(),
+            "ERR:E-SH-CG-IR-EMIT",
+        ),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "{label}: the Rust oracle must refuse the malformed IR"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(actual) => assert_eq!(
+                actual, identity,
+                "{label}: the guest must refuse the malformed IR with its own identity"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!("{label}: the guest must refuse the malformed IR, got {hex}")
+            }
+        }
+    }
+}
+
+#[test]
+fn the_result_layout_and_the_checked_arithmetic_boundaries_are_pinned() {
+    // STEP-0536, M22 R0.5: the layout and boundary shapes the audit named.
+    // Every accepted shape is compared byte for byte against the production
+    // backend -- not only its length -- and the one shape the guest covers
+    // narrower than the oracle keeps its own typed refusal identity.
+    for (label, module) in [
+        ("ok-arm-projection", match_shape_module()),
+        ("result-cell", result_cell_module("ok")),
+        ("error-arm-projection", result_cell_module("error")),
+        ("bool-pattern", bool_pattern_module()),
+        ("u64-add-overflow-check", match_shape_module()),
+        ("u64-sub-underflow-check", checked_sub_module()),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => assert_eq!(
+                decode_hex(hex.as_bytes()),
+                expected,
+                "{label}: the guest component must be byte for byte equal"
+            ),
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The signed checked arithmetic is the guest's own narrowing: the backend
+    // emits the signed overflow check, the guest refuses the shape with a
+    // typed identity instead of approximating the signed comparison.
+    let signed = i64_checked_module();
+    let signed_oracle = codegen_oracle::compile_script_program(&signed);
+    assert!(
+        signed_oracle.is_ok(),
+        "the oracle emits the signed checked shape: {signed_oracle:?}"
+    );
+    match guest_emission(&injected_ir(&signed)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "the signed checked shape must stay a typed refusal"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the signed checked shape must stay a typed refusal, got {hex}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0539 (emitter vocabulary A-2): the two inline intrinsics that carry a
+// four-slot numeric `Result`.
+//
+// `sico.list.get` and `sico.bytes.slice` are the two intrinsics the frozen S
+// uses most that return `Result[..., NumericError]`.  That result flattens into
+// **four** slots -- the tag, the `(pointer, length)` pair of the payload and the
+// `NumericError` discriminant -- and both intrinsics are emitted **inline**:
+// the backend writes the call site and the error arm, and needs no core
+// helper.  The `ok` and the `error` arm therefore live in the same function
+// body, and the byte-exact comparison below covers both of them.
+// ---------------------------------------------------------------------------
+
+/// The `sico.list.get` shape of the frozen S: the intrinsic inside a `match`,
+/// with the `ok` arm projecting the element and the `error` arm the fallback.
+fn list_get_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function word_at(words: List[Text], i: U64) returns Text:\n  match sico.list.get(words, i):\n    case ok(w):\n      return w\n    case error(_):\n      return \"?\"\n  end match\nend function",
+    ))
+}
+
+/// The `sico.bytes.slice` shape of the frozen S: the intrinsic inside a
+/// `match`, with the `ok` arm decoding the sliced bytes.
+fn bytes_slice_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function slice_text(src: Bytes, start: U64, len: U64) returns Text:\n  match sico.bytes.slice(src, start, len):\n    case ok(part):\n      return sico.bytes.utf8_decode(part)\n    case error(_):\n      return \"?\"\n  end match\nend function",
+    ))
+}
+
+/// The same `sico.list.get` call with its index argument removed: the
+/// intrinsic's own arity gate must stay a typed refusal on both sides.
+fn list_get_without_index_module() -> Module {
+    let mut module = list_get_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.list.get" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_a2_covers_the_list_get_and_bytes_slice_shapes() {
+    // STEP-0539 (emitter vocabulary A-2): the two four-slot numeric intrinsics.
+    // The guest's component is byte for byte the Rust backend's production
+    // component -- not only its length -- and both sides pass the real
+    // `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("list-get", list_get_shape_module(), 1255),
+        ("bytes-slice", bytes_slice_shape_module(), 1769),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the same intrinsic without its index argument is
+    // refused by the Rust verifier and by the guest's own arity gate.
+    let malformed = list_get_without_index_module();
+    assert!(
+        codegen_oracle::compile_script_program(&malformed).is_err(),
+        "the Rust oracle must refuse the list.get call without its index"
+    );
+    match guest_emission(&injected_ir(&malformed)) {
+        GuestEmission::Refusal(identity) => assert_eq!(
+            identity, "ERR:E-SH-CG-IR-EMIT",
+            "the guest must refuse the list.get call without its index"
+        ),
+        GuestEmission::Component(hex) => {
+            panic!("the guest must refuse the list.get call without its index, got {hex}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0540 (emitter vocabulary B-1): the first **core helper** of the
+// emission vocabulary -- `sico.bytes.equal`.
+//
+// `sico.bytes.equal` is not an inline intrinsic: the backend emits a core
+// helper function for it and the call site only forwards the two
+// `(pointer, length)` pairs into that helper.  The helper is the first one in
+// the backend's own alphabetical helper order, so a module that uses it
+// shifts every helper the guest already knew about by one index -- which is
+// exactly what the `bytes.equal` + `text.concat` shape below pins.
+// ---------------------------------------------------------------------------
+
+/// The `sico.bytes.equal` shape of the frozen S: two encoded byte strings
+/// compared for equality.
+fn bytes_equal_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(w: Text, target: Text) returns Bool:\n  return sico.bytes.equal(sico.text.encode(w), sico.text.encode(target))\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `bytes.equal` takes
+/// the lower core index and `concat` the next one.
+fn bytes_equal_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function size(a: Text, b: Text) returns Text:\n  if sico.bytes.equal(sico.text.encode(a), sico.text.encode(b)):\n    return sico.text.concat(a, b)\n  end if\n  return sico.text.concat(b, a)\nend function",
+    ))
+}
+
+/// The same call with its second argument removed: the intrinsic's own arity
+/// gate must stay a typed refusal on both sides.
+fn bytes_equal_without_second_module() -> Module {
+    let mut module = bytes_equal_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.bytes.equal" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operands are the two **text** parameters instead of
+/// the two encoded byte strings: the operand-kind gate must stay a typed
+/// refusal on both sides.
+fn bytes_equal_text_operand_module() -> Module {
+    let mut module = bytes_equal_shape_module();
+    for function in &mut module.functions {
+        let parameters: Vec<ValueId> = function
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id)
+            .collect();
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.bytes.equal" {
+                    arguments.clear();
+                    arguments.extend_from_slice(&parameters);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b1_covers_the_bytes_equal_helper_shape() {
+    // STEP-0540 (emitter vocabulary B-1): the first core helper of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("bytes-equal", bytes_equal_shape_module(), 1130),
+        (
+            "bytes-equal-and-concat",
+            bytes_equal_and_concat_module(),
+            1274,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its second argument and the
+    // intrinsic with text operands are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", bytes_equal_without_second_module()),
+        ("operand-kind", bytes_equal_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the bytes.equal shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the bytes.equal shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the bytes.equal shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0541 (emitter vocabulary B-2): the `sico.u64.to_text` core helper.
+//
+// `sico.u64.to_text` is the second **core helper** of the emission
+// vocabulary: the backend emits a helper function that formats the i64 value
+// into the arena and returns the `(pointer, length)` pair.  The helper calls
+// the arena allocator twice, so its body carries the allocator's core index,
+// and it sorts **last** in the backend's alphabetical helper order -- so the
+// helpers the guest already knew about keep their core indices.
+// ---------------------------------------------------------------------------
+
+/// The `sico.u64.to_text` shape of the frozen S: a U64 rendered as decimal
+/// text.  The second parameter gives the module a text value, so the
+/// operand-kind control below has something to point at.
+fn u64_to_text_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(n: U64, s: Text) returns Text:\n  return sico.u64.to_text(n)\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `text.concat` keeps
+/// the lower core index and `u64.to_text` takes the last one.
+fn u64_to_text_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(n: U64, a: Text, b: Text) returns Text:\n  return sico.text.concat(sico.u64.to_text(n), sico.text.concat(a, b))\nend function",
+    ))
+}
+
+/// The same call with its argument removed: the intrinsic's own arity gate
+/// must stay a typed refusal on both sides.
+fn u64_to_text_without_argument_module() -> Module {
+    let mut module = u64_to_text_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.u64.to_text" {
+                    arguments.clear();
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operand is the **text** parameter instead of the U64:
+/// the operand-kind gate must stay a typed refusal on both sides.
+fn u64_to_text_text_operand_module() -> Module {
+    let mut module = u64_to_text_shape_module();
+    for function in &mut module.functions {
+        let text_parameter = function
+            .parameters
+            .iter()
+            .find(|parameter| parameter.ty == Type::String)
+            .map(|parameter| parameter.id);
+        let Some(text_parameter) = text_parameter else {
+            continue;
+        };
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.u64.to_text" {
+                    arguments.clear();
+                    arguments.push(text_parameter);
+                }
+            }
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b3_covers_the_text_starts_with_helper_shape() {
+    // STEP-0541 (emitter vocabulary B-3): the third core helper of the
+    // emission vocabulary.  Its body calls nothing, so it is frozen verbatim;
+    // it sorts between `sico.text.length` and `sico.u64.to_text`, so the
+    // helpers the guest already knew about keep their core indices.
+    for (label, module, component_bytes) in [
+        ("starts-with", starts_with_shape_module(), 1106),
+        (
+            "starts-with-and-concat",
+            starts_with_and_concat_module(),
+            1252,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its fourth argument and the
+    // intrinsic with byte operands are refused by the Rust verifier and by the
+    // guest's own gates.
+    for (label, module) in [
+        ("arity", starts_with_without_fourth_argument_module()),
+        ("operand-kind", starts_with_bytes_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the starts_with shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the starts_with shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the starts_with shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0541 (emitter vocabulary B-3): the `sico.text.starts_with` core helper.
+//
+// `sico.text.starts_with` is the third **core helper** of the emission
+// vocabulary: the backend emits a helper function that compares the prefix
+// and returns a boolean.  The helper calls nothing, so its body is frozen
+// verbatim, and it sorts between `sico.text.length` and `sico.u64.to_text`.
+// ---------------------------------------------------------------------------
+
+/// The `sico.text.starts_with` shape of the frozen S: a prefix test on two
+/// texts.
+fn starts_with_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function starts(a: Text, b: Text) returns Bool:\n  return sico.text.starts_with(a, b)\nend function",
+    ))
+}
+
+/// The same shape next to `sico.text.concat`: the two helpers must be
+/// numbered in the backend's own alphabetical order, so `text.concat` takes
+/// the lower core index and `text.starts_with` the next one.
+fn starts_with_and_concat_module() -> Module {
+    rust_module(&match_fixture(
+        "function starts(a: Text, b: Text, c: Text) returns Text:\n  if sico.text.starts_with(a, b):\n    return sico.text.concat(a, c)\n  end if\n  return sico.text.concat(b, c)\nend function",
+    ))
+}
+
+/// The same call with its fourth argument removed: the intrinsic's own arity
+/// gate must stay a typed refusal on both sides.
+fn starts_with_without_fourth_argument_module() -> Module {
+    let mut module = starts_with_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.text.starts_with" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose operands are **bytes** instead of texts: the
+/// operand-kind gate must stay a typed refusal on both sides.
+fn starts_with_bytes_operand_module() -> Module {
+    let mut module = starts_with_shape_module();
+    for function in &mut module.functions {
+        for parameter in &mut function.parameters {
+            parameter.ty = Type::Bytes;
+        }
+    }
+    module
+}
+
+#[test]
+fn the_emitter_vocabulary_b2_covers_the_u64_to_text_helper_shape() {
+    // STEP-0541 (emitter vocabulary B-2): the second core helper of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    for (label, module, component_bytes) in [
+        ("u64-to-text", u64_to_text_shape_module(), 1154),
+        (
+            "u64-to-text-and-concat",
+            u64_to_text_and_concat_module(),
+            1245,
+        ),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        assert_eq!(
+            expected.len(),
+            component_bytes,
+            "the measured oracle component size of the {label} shape is pinned"
+        );
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+
+    // The gates stay live: the intrinsic without its argument and the
+    // intrinsic with a text operand are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", u64_to_text_without_argument_module()),
+        ("operand-kind", u64_to_text_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the u64.to_text shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the u64.to_text shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the u64.to_text shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0542 (emitter vocabulary C): the six remaining collection helpers.
+//
+// The backend emits a collection helper call as the arguments' flat slots in
+// order, then the call itself, then the result's flat slots in reverse order
+// (`emit_collection_call`, crates/sico-codegen-wasm/src/lib.rs).  The guest
+// now owns the six collection helpers of the vocabulary, so every shape has
+// to be byte for byte the Rust backend's production component -- not only its
+// length -- and both sides have to pass the real `wasmparser::Validator`.
+//
+// The source-level spelling of the monomorphised helpers is the bracket form
+// the frozen end-to-end corpus uses (`tests/end-to-end/list-numeric.sico`):
+// `sico.list.empty[U64]()`, `sico.list.get[U64](list, index)`,
+// `sico.list.append[U64](list, value)`.
+// ---------------------------------------------------------------------------
+
+/// The `sico.list.empty[U64]` shape: the empty numeric list.
+fn list_empty_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64]) returns List[U64]:\n  return sico.list.empty[U64]()\nend function",
+    ))
+}
+
+/// The `sico.list.get[U64]` shape: one element of a numeric list.
+fn list_get_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64], index: U64) returns U64:\n  match sico.list.get[U64](items, index):\n    case ok(first):\n      return first\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
+    ))
+}
+
+/// The `sico.list.append[U64]` shape: a numeric list with one more element.
+fn list_append_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64], value: U64) returns List[U64]:\n  return sico.list.append[U64](items, value)\nend function",
+    ))
+}
+
+/// The `sico.list.append` shape: a text list with one more element.
+fn list_append_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[Text], value: Text) returns List[Text]:\n  return sico.list.append(items, value)\nend function",
+    ))
+}
+
+/// The `sico.text.split_lines` shape: the lines of a text.
+fn text_split_lines_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(text: Text) returns List[Text]:\n  return sico.text.split_lines(text)\nend function",
+    ))
+}
+
+/// The `sico.text.join` shape: the elements of a list joined by a separator.
+fn text_join_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[Text], separator: Text) returns Text:\n  return sico.text.join(items, separator)\nend function",
+    ))
+}
+
+/// STEP-0560: the `sico.list.length[U64]` shape: the element count of a
+/// numeric list.  The call is the seventh and last collection helper of the
+/// emission vocabulary; the six STEP-0542 shapes are pinned in
+/// `the_emitter_vocabulary_c_covers_the_collection_helper_shapes`.
+fn list_length_u64_shape_module() -> Module {
+    rust_module(&match_fixture(
+        "function render(items: List[U64]) returns U64:\n  return sico.list.length[U64](items)\nend function",
+    ))
+}
+
+/// The same call with its argument removed: the intrinsic's own arity gate
+/// must stay a typed refusal on both sides.
+fn list_get_u64_without_argument_module() -> Module {
+    let mut module = list_get_u64_shape_module();
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                let Operation::Intrinsic { name, arguments } = &mut instruction.operation else {
+                    continue;
+                };
+                if name == "sico.list.get[U64]" {
+                    arguments.truncate(1);
+                }
+            }
+        }
+    }
+    module
+}
+
+/// The same call whose index operand is a **text** parameter instead of a
+/// U64: the operand-kind gate must stay a typed refusal on both sides.
+fn list_get_u64_text_operand_module() -> Module {
+    let mut module = list_get_u64_shape_module();
+    for function in &mut module.functions {
+        for parameter in &mut function.parameters {
+            if parameter.ty == Type::U64 {
+                parameter.ty = Type::String;
+            }
+        }
+    }
+    module
+}
+
+/// STEP-0542: the measured oracle component sizes of the six collection
+/// shapes, in the order the pin measures them.  The values are the Rust
+/// backend's production output sizes -- they are **measured**, never
+/// hand-written hex.
+const COLLECTION_SHAPE_COMPONENT_BYTES: [(&str, usize); 6] = [
+    ("list-empty-u64", 1044),
+    ("list-get-u64", 1208),
+    ("list-append-u64", 1263),
+    ("list-append", 1293),
+    ("text-split-lines", 1360),
+    ("text-join", 1233),
+];
+
+#[test]
+fn the_emitter_vocabulary_c_covers_the_collection_helper_shapes() {
+    // STEP-0542 (emitter vocabulary C): the six collection helpers of the
+    // emission vocabulary.  The guest's component is byte for byte the Rust
+    // backend's production component -- not only its length -- and both sides
+    // pass the real `wasmparser::Validator`.
+    //
+    // The measured component sizes are pinned as well, so a change in the
+    // helper set (which moves the core indices and therefore the section
+    // layout) is caught by the size, not only by the byte comparison.
+    let mut measured: Vec<(&str, usize)> = Vec::new();
+    for (label, module) in [
+        ("list-empty-u64", list_empty_u64_shape_module()),
+        ("list-get-u64", list_get_u64_shape_module()),
+        ("list-append-u64", list_append_u64_shape_module()),
+        ("list-append", list_append_shape_module()),
+        ("text-split-lines", text_split_lines_shape_module()),
+        ("text-join", text_join_shape_module()),
+    ] {
+        let expected = codegen_oracle::compile_script_program(&module)
+            .unwrap_or_else(|error| panic!("{label}: the oracle must emit, got {error:?}"));
+        wasmparser::Validator::new()
+            .validate_all(&expected)
+            .unwrap_or_else(|error| {
+                panic!("{label}: the emitted component must be valid: {error}")
+            });
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Component(hex) => {
+                assert_eq!(
+                    hex.len() % 2,
+                    0,
+                    "{label}: the guest hex must be whole bytes (len={})",
+                    hex.len()
+                );
+                assert_eq!(
+                    hex.len() / 2,
+                    expected.len(),
+                    "{label}: the guest component size must match the oracle's"
+                );
+                measured.push((label, expected.len()));
+                let actual = decode_hex(hex.as_bytes());
+                assert_bytes_equal(&actual, &expected);
+                wasmparser::Validator::new()
+                    .validate_all(&actual)
+                    .unwrap_or_else(|error| {
+                        panic!("{label}: the guest component must be valid: {error}")
+                    });
+            }
+            GuestEmission::Refusal(identity) => {
+                panic!("{label}: the guest must emit, refused with {identity}")
+            }
+        }
+    }
+    assert_eq!(
+        measured,
+        COLLECTION_SHAPE_COMPONENT_BYTES.to_vec(),
+        "the measured oracle component sizes of the six collection shapes are pinned"
+    );
+
+    // The gates stay live: the intrinsic without its argument and the
+    // intrinsic with a text operand are refused by the Rust verifier and by
+    // the guest's own gates.
+    for (label, module) in [
+        ("arity", list_get_u64_without_argument_module()),
+        ("operand-kind", list_get_u64_text_operand_module()),
+    ] {
+        assert!(
+            codegen_oracle::compile_script_program(&module).is_err(),
+            "the Rust oracle must refuse the list.get[U64] shape with the {label} fault"
+        );
+        match guest_emission(&injected_ir(&module)) {
+            GuestEmission::Refusal(identity) => assert_eq!(
+                identity, "ERR:E-SH-CG-IR-EMIT",
+                "the guest must refuse the list.get[U64] shape with the {label} fault"
+            ),
+            GuestEmission::Component(hex) => {
+                panic!(
+                    "the guest must refuse the list.get[U64] shape with the {label} fault, got {hex}"
+                )
+            }
+        }
+    }
+}
+
+/// STEP-0560: the seventh collection helper of the emission vocabulary,
+/// `sico.list.length[U64]`.  The guest's component must be byte for byte the
+/// Rust backend's production component, and both sides must pass the real
+/// `wasmparser::Validator`.
+#[test]
+fn the_emitter_vocabulary_c_covers_the_list_length_u64_shape() {
+    let module = list_length_u64_shape_module();
+    let expected = codegen_oracle::compile_script_program(&module)
+        .expect("the oracle must emit the list.length[U64] shape");
+    wasmparser::Validator::new()
+        .validate_all(&expected)
+        .expect("the oracle component must pass the real Wasm validator");
+    match guest_emission(&injected_ir(&module)) {
+        GuestEmission::Component(hex) => {
+            assert_eq!(hex.len() % 2, 0, "the guest hex must be whole bytes");
+            assert_eq!(
+                hex.len() / 2,
+                expected.len(),
+                "the guest component size must match the oracle's"
+            );
+            let actual = decode_hex(hex.as_bytes());
+            assert_bytes_equal(&actual, &expected);
+            wasmparser::Validator::new()
+                .validate_all(&actual)
+                .expect("the guest component must be valid");
+        }
+        GuestEmission::Refusal(identity) => {
+            panic!("the guest must emit, refused with {identity}")
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0544 (fuel attribution): measuring the guest's fuel cost.
+//
+// Discipline: **measurement only**.  No fuel limit is raised, no size gate is
+// added, no production code changes (`crates/` and `selfhost/` stay untouched).
+//
+// `RunOutcome::FuelExhausted` carries no remaining-fuel reading, so the cost is
+// measured by bisecting the store's fuel budget instead of by adding a public
+// API (ADR-0015 decision 8 / plan D13).
+//
+// The measured shape is emitted by the guest itself; an exhausted budget is a
+// **measurement result**, not a failure: the 140 `FuelExhausted` sites of the
+// ledger are exactly the phenomenon this slice has to explain.  Only a
+// refusal would mean the probe measured the refusal path, and that is a hard
+// failure.
+// ---------------------------------------------------------------------------
+
+/// The fuel ceiling the measurement uses: the same budget the firmware runs
+/// under, so "exhausted" means exactly what it means in the ledger.
+const STEP0544_FUEL_CEILING: u64 = 800_000_000_000;
+
+/// The guest's answer for one injected canonical IR under an explicit fuel
+/// budget: the emitted component hex, the identity of the refusal, or the
+/// fact that the budget was exhausted.
+enum GuestFuelEmission {
+    Component(String),
+    Refusal(String),
+    FuelExhausted,
+    Trap { reason: String },
+}
+
+/// `guest_emission` with the fuel budget as a parameter.
+///
+/// The original helper panics on any outcome that is neither `Output` nor
+/// `Domain`; a fuel-limited run legitimately ends in `FuelExhausted`, so the
+/// budget-limited copy has to classify that outcome instead of panicking.
+fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            timeout: std::time::Duration::from_secs(300),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    let outcome = outcome.expect("the injected IR bounds hold");
+    match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        // A guest trap is neither an emission nor a refusal: the guest died
+        // before it could answer.  It is a measurement result of its own --
+        // the shape is beyond what the guest can emit at all -- so it is
+        // recorded instead of crashing the probe.
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a fuel budget: {:?}", other),
+    }
+}
+
+/// The **ledger path** answer for one source: the guest compiler lowers the
+/// source, then emits the component, under an explicit fuel budget.
+///
+/// STEP-0551: the fuel probes above measure the *injection* fixture, which runs
+/// the emitter twice (`component_refusal_for_ir` and then
+/// `component_hex_for_ir`) and skips the guest frontend.  The frozen site
+/// ledger instead runs the full guest compiler once (`--emit-component-hex`
+/// under the same 800e9 fuel and 120s timeout), so a bracket measured here is
+/// the one comparable to a ledger verdict.
+fn guest_component_with_fuel(source: &str, fuel: u64) -> GuestFuelEmission {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = compile_guest().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let outcome = prepared.run(
+        &ScriptInput {
+            arguments: vec!["--emit-component-hex".into()],
+            stdin: source.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            // The ledger's own limit (`run_guest_with_args`), so a point that
+            // traps here traps there too.
+            timeout: std::time::Duration::from_secs(120),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    match outcome.expect("input bounds hold") {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a fuel budget: {:?}", other),
+    }
+}
+
+/// The fuel bracket in which the guest flips from "budget exhausted" to
+/// "component emitted": `low` is a budget that failed and `high` is a budget
+/// that succeeded, so the real consumption lies in `(low, high]`.
+///
+/// The search climbs a geometric ladder from `seed` and then refines the last
+/// octave until the bracket is within a quarter of its upper end -- tight
+/// enough to fit an exponent, and every probe stays close to the threshold.
+/// A ceiling-fueled run of a big closure is the slow case this slice
+/// measures, so probing the ceiling would dominate the wall time.
+fn fuel_bracket<F: FnMut(u64) -> bool>(
+    mut emits: F,
+    ceiling: u64,
+    seed: u64,
+) -> Option<(u64, u64)> {
+    let mut low = 0u64;
+    let mut high;
+    let mut budget = seed.clamp(1, ceiling);
+    loop {
+        if emits(budget) {
+            high = budget;
+            break;
+        }
+        low = budget;
+        if budget >= ceiling {
+            return None;
+        }
+        budget = budget.saturating_mul(2).min(ceiling);
+    }
+    while high - low > 1 && high - low > high / 4 {
+        let middle = low + (high - low) / 2;
+        if emits(middle) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some((low, high))
+}
+
+/// STEP-0544: the bisection itself is pinned, so a flat measurement can be
+/// blamed on the guest and not on the search.
+#[test]
+fn the_fuel_bracket_brackets_the_threshold_where_the_guest_flips() {
+    for threshold in [1_234_567u64, 250_000_000, 700_000_000_000] {
+        let emits = |fuel: u64| fuel >= threshold;
+        let (low, high) =
+            fuel_bracket(emits, STEP0544_FUEL_CEILING, 1_000_000).expect("the ceiling is enough");
+        assert!(
+            low < threshold && threshold <= high,
+            "the bracket must contain the threshold {}: {}..{}",
+            threshold,
+            low,
+            high
+        );
+        assert!(
+            high - low <= high / 4 + 1,
+            "the bracket must be tight enough to fit an exponent: {}..{}",
+            low,
+            high
+        );
+    }
+    // A cost above the ceiling yields no bracket at all: the search climbs to
+    // the ceiling, the guest is still exhausted, and the ladder stops there.
+    // The threshold must be *above* the ceiling, not merely large.
+    assert!(
+        fuel_bracket(
+            |fuel| fuel > STEP0544_FUEL_CEILING,
+            STEP0544_FUEL_CEILING,
+            1_000_000
+        )
+        .is_none(),
+        "a ceiling below the cost yields no bracket"
+    );
+}
+
+/// X family: the module's instruction count `n` grows, everything else stays
+/// constant.  The module is built by cloning a shape the oracle already
+/// accepts and appending exactly `n` instructions, so the instruction count is
+/// **exact** and does not depend on how the frontend lowers a source fixture.
+///
+/// Every instruction makes the guest's emitter resolve one more value slot
+/// (`cgs_value_slot` walks the whole instruction array on every call), so the
+/// X family separates the IR-walk path from the hex-assembly path: the latter
+/// contributes a linear term here, because the number of concatenations
+/// tracks the number of emitted sections, not the number of instructions.
+///
+/// STEP-0551: the filler is appended to the function's **last** block and its
+/// ids continue from the function's highest id, so the fixture stays canonical
+/// IR at every size.  The guest's emitter keys its value index by id and
+/// refuses a document whose ids are sparse or out of order (they would alias
+/// another value's entry); the earlier fixture injected `10000 + i` into every
+/// block, which only the pre-index text-scanning lookup tolerated.
+fn x_family_ir(n: usize) -> String {
+    let mut module = match_shape_module();
+    let function = module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "size")
+        .expect("the match fixture module has a size function");
+    let next = function
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0)
+        .chain(function.blocks.iter().flat_map(|block| {
+            block
+                .instructions
+                .iter()
+                .map(|instruction| instruction.result.0)
+        }))
+        .max()
+        .map_or(0, |highest| highest + 1);
+    let last = function
+        .blocks
+        .last_mut()
+        .expect("the match fixture function has blocks");
+    for (offset, index) in (0..n).enumerate() {
+        last.instructions.push(injected_instruction(
+            next + offset as u32,
+            Type::U64,
+            Operation::ConstU64(index as u64),
+        ));
+    }
+    injected_ir(&module)
+}
+
+/// Y family: the instruction count stays constant while one text literal
+/// grows.  The literal is patched at the IR level, because the source-level
+/// contract would turn this into a line-length test instead of a size test.
+fn y_family_ir(length: usize) -> String {
+    let mut module = rust_module(&match_fixture(
+        "function size(a: Text) returns Text:\n  return \"x\"\nend function",
+    ));
+    let filler = "x".repeat(length);
+    let mut patched = 0usize;
+    for function in &mut module.functions {
+        for block in &mut function.blocks {
+            for instruction in &mut block.instructions {
+                if let Operation::ConstString(value) = &mut instruction.operation {
+                    *value = filler.clone();
+                    patched += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(patched, 1, "the fixture carries exactly one text literal");
+    injected_ir(&module)
+}
+
+/// What one measured point of the attribution curve says.
+enum FuelProbe {
+    /// The guest emitted a component; the real consumption lies in
+    /// `(low, high]`.
+    Measured { low: u64, high: u64 },
+    /// The 800e9 ceiling was not enough -- the shape is beyond the budget.
+    Exhausted,
+    /// The guest trapped instead of answering: it died before it could emit
+    /// a component, so no fuel threshold exists for this shape.
+    Trapped { fuel: u64, reason: String },
+}
+
+/// One measured point of the attribution curve.
+struct FuelMeasurement {
+    probe: FuelProbe,
+    ir_bytes: usize,
+    component_bytes: usize,
+    wall_ms: u128,
+    work_ms: u128,
+}
+
+/// Measure one synthetic IR: the fuel bracket in which the guest flips from
+/// "budget exhausted" to "component emitted".
+///
+/// An exhausted ceiling is a result, not a failure: it is the phenomenon the
+/// ledger records for 140 sites.  A refusal is a hard failure.  A trap is a
+/// third result of its own: the guest cannot emit that shape at all, so no
+/// fuel threshold exists and the point is recorded as trapped.
+///
+/// `wall_ms` is the wall time of the whole bracket search, which also pays
+/// for the ladder; `work_ms` is the wall time of a single run at the
+/// measured threshold, so the time column stays comparable across points.
+fn measure_fuel(ir: &str, seed: u64) -> FuelMeasurement {
+    let started = std::time::Instant::now();
+    let component_bytes = std::cell::Cell::new(0usize);
+    let trap = std::cell::RefCell::new(None::<(u64, String)>);
+    let mut emits = |fuel: u64| -> bool {
+        if trap.borrow().is_some() {
+            return false;
+        }
+        match guest_emission_with_fuel(ir, fuel) {
+            GuestFuelEmission::Component(hex) => {
+                component_bytes.set(hex.len() / 2);
+                true
+            }
+            GuestFuelEmission::FuelExhausted => false,
+            GuestFuelEmission::Refusal(identity) => {
+                panic!(
+                    "the guest refused the measured shape with {identity}; the probe would measure the refusal path"
+                )
+            }
+            GuestFuelEmission::Trap { reason } => {
+                *trap.borrow_mut() = Some((fuel, reason));
+                false
+            }
+        }
+    };
+    let bracket = fuel_bracket(&mut emits, STEP0544_FUEL_CEILING, seed);
+    let probe = match bracket {
+        Some((low, high)) => FuelProbe::Measured { low, high },
+        None => {
+            let taken = std::mem::take(&mut *trap.borrow_mut());
+            match taken {
+                Some((fuel, reason)) => FuelProbe::Trapped { fuel, reason },
+                None => FuelProbe::Exhausted,
+            }
+        }
+    };
+    let mut work_ms = 0u128;
+    if let FuelProbe::Measured { high, .. } = probe {
+        let work_started = std::time::Instant::now();
+        let _ = guest_emission_with_fuel(ir, high);
+        work_ms = work_started.elapsed().as_millis();
+    }
+    FuelMeasurement {
+        probe,
+        ir_bytes: ir.len(),
+        component_bytes: component_bytes.get(),
+        wall_ms: started.elapsed().as_millis(),
+        work_ms,
+    }
+}
+
+/// Parse a comma separated list of sizes from the environment.
+fn step0544_sizes(name: &str, fallback: &[usize]) -> Vec<usize> {
+    match std::env::var(name) {
+        Ok(raw) => raw
+            .split(',')
+            .filter_map(|part| part.trim().parse::<usize>().ok())
+            .filter(|size| *size > 0)
+            .collect(),
+        Err(_) => fallback.to_vec(),
+    }
+}
+
+/// The text of one measured point.
+fn step0544_verdict(probe: &FuelProbe) -> String {
+    match probe {
+        FuelProbe::Measured { low, high } => format!("{low}\t{high}"),
+        FuelProbe::Exhausted => "exhausted\t-".to_owned(),
+        FuelProbe::Trapped { fuel, reason } => {
+            let tail = reason.lines().last().unwrap_or("trap");
+            let tail: String = tail.chars().take(120).collect();
+            format!("trapped@{fuel}\t{tail}")
+        }
+    }
+}
+
+/// Write the measurement report as it stands.
+///
+/// The report is flushed after every measured point, so a host restart cannot
+/// lose the points that were already measured: the file always holds the
+/// longest prefix of the curve that survived.
+fn step0544_flush(directory: &std::path::Path, report: &str) {
+    std::fs::write(directory.join("fuel-attribution.txt"), report)
+        .expect("the measurement file is writable");
+}
+
+/// STEP-0544: the fuel attribution measurement.
+///
+/// X family: `F(n)` is fitted before any repair is attempted.  If the cubic
+/// term dominates, the IR-walk path is the fuel wall and the fix is
+/// mechanical (cursor advance + a prefix-sum table).  If it does not, the
+/// measurement says so and the next hypothesis is measured instead.
+///
+/// Y family: the fuel cost must grow at most **linearly** with the literal
+/// length -- the hex assembly copies bytes, it does not execute an
+/// instruction per copied byte, so the fuel wall of the assembly path is
+/// the number of assembly steps.  If the fuel grew faster than linearly with
+/// the literal, a third path would exist that the current model does not
+/// cover.  The *time* is expected to grow super-linearly, because the
+/// incremental assembly copies the accumulated bytes again and again.
+///
+/// The test is `#[ignore]`d on purpose: it is a measurement, not a gate, so it
+/// must not stretch the firmware battery or the independent CI.  The sizes can
+/// be overridden with `SICO_STEP0544_X_SIZES` / `SICO_STEP0544_Y_SIZES`.
+#[test]
+#[ignore = "the STEP-0544 fuel attribution measurement; run it explicitly"]
+fn the_fuel_attribution_is_measured_before_any_repair() {
+    let x_sizes = step0544_sizes("SICO_STEP0544_X_SIZES", &[8, 16, 32, 48, 64, 80, 96, 128]);
+    let y_sizes = step0544_sizes(
+        "SICO_STEP0544_Y_SIZES",
+        &[1024, 2048, 4096, 8192, 16384, 32768],
+    );
+
+    let directory =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/tmp/step0544");
+    std::fs::create_dir_all(&directory).expect("the measurement directory is writable");
+
+    let mut report = String::new();
+    report.push_str("# STEP-0544 fuel attribution (measurement only)\n");
+    report.push_str("# fuel = the bracket in which the guest flips from exhausted to emitted\n");
+    report.push_str("# the real consumption lies in (fuel_low, fuel_high]\n");
+    report.push_str("# 'exhausted' = the 800e9 ceiling was not enough for that point\n");
+
+    report.push_str("\n## X family: the instruction count grows, the rest is constant\n");
+    report.push_str("n\tir_bytes\tcomponent_bytes\tfuel_low\tfuel_high\tsearch_ms\twork_ms\n");
+    let mut seed = 1_000_000u64;
+    let mut previous: Option<(usize, u64)> = None;
+    for (index, n) in x_sizes.iter().copied().enumerate() {
+        let ir = x_family_ir(n);
+        let measurement = measure_fuel(&ir, seed);
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            seed = high.saturating_mul(2).min(STEP0544_FUEL_CEILING);
+        }
+        report.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            n,
+            measurement.ir_bytes,
+            measurement.component_bytes,
+            step0544_verdict(&measurement.probe),
+            measurement.wall_ms,
+            measurement.work_ms
+        ));
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            if let Some((previous_n, previous_fuel)) = previous {
+                let ratio = high as f64 / previous_fuel as f64;
+                report.push_str(&format!(
+                    "#   n {} -> {}: ratio {:.2} => implied exponent {:.2}\n",
+                    previous_n,
+                    n,
+                    ratio,
+                    ratio.log2()
+                ));
+            }
+            previous = Some((n, high));
+        }
+        step0544_flush(&directory, &report);
+        // The first point is the positive control: it must be measured, or the
+        // probe measured the refusal path instead of the emission path.
+        if index == 0 {
+            assert!(
+                matches!(measurement.probe, FuelProbe::Measured { .. }),
+                "the positive control must be measured"
+            );
+        }
+    }
+
+    report.push_str("\n## Y family: the literal grows, the instruction count is constant\n");
+    report.push_str("length\tir_bytes\tcomponent_bytes\tfuel_low\tfuel_high\tsearch_ms\twork_ms\n");
+    let mut seed = 1_000_000u64;
+    for (index, length) in y_sizes.iter().copied().enumerate() {
+        let ir = y_family_ir(length);
+        let measurement = measure_fuel(&ir, seed);
+        if let FuelProbe::Measured { high, .. } = measurement.probe {
+            seed = high.saturating_mul(2).min(STEP0544_FUEL_CEILING);
+        }
+        report.push_str(&format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            length,
+            measurement.ir_bytes,
+            measurement.component_bytes,
+            step0544_verdict(&measurement.probe),
+            measurement.wall_ms,
+            measurement.work_ms
+        ));
+        step0544_flush(&directory, &report);
+        if index == 0 {
+            assert!(
+                matches!(measurement.probe, FuelProbe::Measured { .. }),
+                "the positive control must be measured"
+            );
+        }
+    }
+
+    step0544_flush(&directory, &report);
+    println!("{report}");
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0551 (M22 B2): the component-emission fuel of a **real** match group.
+//
+// B2 replaces the emitter's per-value rescan with a per-function value index,
+// so the measurement that matters is the emission cost of real closures, not
+// a synthetic instruction ladder.  This probe re-uses the ledger's own closure
+// builder, lowers the closure with the Rust oracle to canonical IR, and then
+// brackets the guest's **component emission** under an explicit fuel budget.
+//
+// It is a development probe (`#[ignore]`): the ledger rerun, not this probe,
+// is the slice's exit evidence.  `SICO_M22_PROBE_GROUPS` selects the groups
+// (`path:function,...`), `SICO_M22_PROBE_FUEL` caps the bracket ceiling.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "a synthetic scaling probe for the emitter's fuel cost; run it explicitly"]
+fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(200_000_000_000);
+    // The quadratic theory: each `read_local` emission calls `cgs_cell_slot`,
+    // which rescans the enclosing function's JSON (`cgs_dispatcher_slot` +
+    // `cgs_cell_slots`).  N such instructions in one function should therefore
+    // cost O(N^2), so doubling N should roughly quadruple the minimal fuel.
+    // This probe brackets the minimal fuel for N = 4, 8, 16, 32 and prints the
+    // growth ratio so the hypothesis is judged from data, not design.
+    for count in [64usize, 128, 256, 512, 1024, 2048, 4096] {
+        let mut body = String::from("function probe_closure(data: U64) returns U64:\n");
+        body.push_str("  let n0 = data\n");
+        for i in 1..count {
+            body.push_str(&format!("  let n{i} = n{}\n", i - 1));
+        }
+        body.push_str(&format!("  return n{}\nend function\n", count - 1));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_component_with_fuel(&source, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!("EMITTER_SCALING read_locals={count} fuel={verdict}");
+    }
+    // A discriminating arm for `const_int` (no cell_slot, no per-op concat)
+    // was attempted but is refused `unsupported codegen source shape` at every
+    // N -- the synthetic helper's shape doesn't pass the emitter's gates.
+    // Isolating the two quadratic candidates (cell_slot rescan vs per-op
+    // text-concat) from the read_local arm alone remains open; both are
+    // confounded inside `cgs_read_local_hex`.
+
+    // Module-level arm: F helper functions in one module.  `cgs_core_code_hex`
+    // emits each function via `cgs_function_at_index(bytes, i)`, and that path
+    // calls `cgj_array_item` which rescans the functions array from the start
+    // every call -- O(F) per function, O(F^2) per module.  Measured: F=16 ->
+    // 2.4e9, 32 -> 9.6e9, 64 -> 1.92e10, 128 -> 7.68e10 (4x per doubling = the
+    // quadratic knee sits between F=64 and F=128), 256 -> exhausted at the
+    // probe's fuel ceiling.  Each helper is tiny (~80B IR, no read_local, no
+    // per-op concat), so this isolates a per-MODULE quadratic.
+    //
+    // Negative result (knife tried and reverted): switching `cgs_core_code_hex`
+    // to cursor traversal (`cgj_array_first`/`cgj_array_next`) so
+    // `cgs_function_body_hex` takes the function node directly preserved the
+    // component byte-for-byte (28/28 codegen_guest) but left the fuel bracket
+    // UNCHANGED at every F -- the array-rescan quadratic is real but contributes
+    // only ~81K wasm ops vs ~128M fixed per-function cost, so it is swamped.
+    // The dominant module-level term is therefore the parser processing F
+    // functions, OR another emitter term that grows with module size; the two
+    // are not yet separated (needs an emitter-only multi-function injection).
+    for funcs in [16usize, 32, 64, 128, 256] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!(
+                "function helper_{f}(data: U64) returns U64:\n  let a0 = data\n  let a1 = a0\n  let a2 = a1\n  return a2\nend function\n"
+            ));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_component_with_fuel(&source, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!("EMITTER_SCALING functions={funcs} fuel={verdict}");
+    }
+
+    // Emitter-only split arm: the SAME F-function module, but lowered to IR by
+    // the Rust oracle on the host (no guest fuel), then emitted parse-free via
+    // guest_emission_with_fuel.  Comparing this to the module-level arm above
+    // (which pays guest PARSE + IR-build + emit) splits the two: if emit-only
+    // is linear and the source-path module-level arm is quadratic, the parser
+    // is the dominant term; if emit-only is also quadratic, the emitter carries
+    // a per-module term of its own.  This is the shortest path to locating the
+    // 331-site wall's layer.
+    for funcs in [16usize, 32, 64, 128, 256] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!(
+                "function helper_{f}(data: U64) returns U64:\n  let a0 = data\n  let a1 = a0\n  let a2 = a1\n  return a2\nend function\n"
+            ));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "EMIT_ONLY functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
+    }
+
+    // Candidate C vs D discriminator: fix the TOTAL `let` count (256 lets)
+    // across the whole module and vary how they are split across functions:
+    //   F=4  -> 4 functions  x 64 lets each
+    //   F=16 -> 16 functions x 16 lets each
+    //   F=64 -> 64 functions x 4 lets each
+    // All three carry the same total body material (256 `let`s) plus a fixed
+    // per-function overhead (name/locals/return, ~60B IR each), so the TOTAL IR
+    // is approximately constant across F -- the clean control the emit-only arm
+    // lacked.  Candidate C (module-level text accumulation) costs ~ total^2 and
+    // is FLAT in F at fixed total; candidate D (per-call module offset rescan)
+    // costs ~ F * total and GROWS with F.  A flat fuel column across F=4/16/64
+    // confirms C; a rising one confirms D.  (The per-function overhead does add
+    // a small linear-in-F IR term, but it is dwarfed by the 256 fixed `let`s,
+    // so the trend in F is still readable.)
+    let total_lets = 256usize;
+    for (funcs, per) in [(4usize, 64usize), (16, 16), (64, 4)] {
+        let mut body = String::new();
+        for f in 0..funcs {
+            body.push_str(&format!("function helper_{f}(data: U64) returns U64:\n"));
+            for i in 0..per {
+                if i == 0 {
+                    body.push_str(&format!("  let h{f}_{i} = data\n"));
+                } else {
+                    body.push_str(&format!("  let h{f}_{i} = h{f}_{}\n", i - 1));
+                }
+            }
+            body.push_str(&format!("  return h{f}_{}\nend function\n", per - 1));
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "EMIT_SPLIT functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
+    }
+
+    // Clean C-vs-D discriminator (fixes the EMIT_SPLIT flaw above): hold the
+    // TOTAL IR budget ~constant across F by padding with empty functions, so
+    // the per-function overhead that made EMIT_SPLIT's IR drift is excluded.
+    // Each layout has 64 `let`s of real body (spread over the first `funcs`
+    // functions) plus (64 - funcs) empty padding functions, all inside a fixed
+    // IR envelope.  At FIXED total IR: candidate C (module-level accumulation,
+    // cost ~ total^2) is FLAT in F; candidate D (each of F functions rescans
+    // its own blocks/instructions, cost ~ F * per_fn) GROWS with F.  A flat
+    // fuel column across F=8/32/64 confirms C; a rising one confirms D.
+    let real_lets = 64usize;
+    for funcs in [8usize, 32, 64] {
+        let per = real_lets / funcs;
+        let mut body = String::new();
+        for f in 0..funcs {
+            if f < 1 {
+                body.push_str(&format!("function helper_{f}(data: U64) returns U64:\n"));
+                for i in 0..per {
+                    if i == 0 {
+                        body.push_str(&format!("  let h{f}_{i} = data\n"));
+                    } else {
+                        body.push_str(&format!("  let h{f}_{i} = h{f}_{}\n", i - 1));
+                    }
+                }
+                body.push_str(&format!("  return h{f}_{}\nend function\n", per - 1));
+            } else {
+                // Empty padding function: same envelope (name/locals/return),
+                // no `let`s, so total body material stays at real_lets.
+                body.push_str(&format!(
+                    "function helper_{f}(data: U64) returns U64:\n  return data\nend function\n"
+                ));
+            }
+        }
+        body.push_str(&format!(
+            "function run_probe(data: U64) returns U64:\n  let r = helper_0(data)\n  let r1 = helper_{}(r)\n  return r1\nend function\n",
+            funcs - 1
+        ));
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let mut low = 0u64;
+        let mut budget = 100_000_000u64;
+        let verdict = loop {
+            match guest_emission_with_fuel(&ir, budget) {
+                GuestFuelEmission::Component(_) => break format!("{low}\t{budget}"),
+                GuestFuelEmission::FuelExhausted => low = budget,
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "EMIT_PADDED functions={funcs} ir_bytes={} fuel={verdict}",
+            ir.len()
+        );
+    }
+}
+
+#[test]
+#[ignore = "a real-closure component-emission fuel probe; run it explicitly"]
+fn the_component_emission_fuel_of_a_real_match_group_is_measured() {
+    let raw = std::env::var("SICO_M22_PROBE_GROUPS").unwrap_or_default();
+    let groups: Vec<(String, String)> = raw
+        .split(',')
+        .filter_map(|part| {
+            let mut fields = part.trim().split(':');
+            let path = fields.next()?;
+            let function = fields.next()?;
+            Some((path.to_owned(), function.to_owned()))
+        })
+        .collect();
+    assert!(
+        !groups.is_empty(),
+        "set SICO_M22_PROBE_GROUPS=path:function,..."
+    );
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(STEP0544_FUEL_CEILING);
+    println!("COMPONENT_FUEL ceiling={ceiling}");
+    for (path, function) in groups {
+        let Some(text) = match_frozen_source(&path) else {
+            panic!("the frozen source of {path} is loaded");
+        };
+        let closure = match match_sico_closure(
+            text,
+            &function,
+            MATCH_CLOSURE_FUNCTION_LIMIT,
+            MATCH_CLOSURE_BYTE_LIMIT,
+        ) {
+            Ok(closure) => closure,
+            Err(reason) => {
+                println!("COMPONENT_FUEL {path}:{function} closure {reason}");
+                continue;
+            }
+        };
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let component_bytes = std::cell::Cell::new(0usize);
+        let started = std::time::Instant::now();
+        let mut emits = |fuel: u64| match guest_emission_with_fuel(&ir, fuel) {
+            GuestFuelEmission::Component(hex) => {
+                component_bytes.set(hex.len() / 2);
+                true
+            }
+            GuestFuelEmission::FuelExhausted => false,
+            GuestFuelEmission::Refusal(identity) => {
+                panic!("the group was refused at {fuel}: {identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                panic!("the group trapped at {fuel}: {reason}")
+            }
+        };
+        let bracket = fuel_bracket(&mut emits, ceiling, 100_000_000);
+        let verdict = match bracket {
+            Some((low, high)) => format!("{low}\t{high}"),
+            None => "exhausted\t-".to_owned(),
+        };
+        println!(
+            "COMPONENT_FUEL {path}:{function} ir_bytes={} component_bytes={} fuel={verdict} search_ms={}",
+            ir.len(),
+            component_bytes.get(),
+            started.elapsed().as_millis()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0551: the same bracket on the **ledger path**.
+//
+// The probe above feeds canonical IR straight to the injection fixture, which
+// (a) skips the guest frontend and (b) runs the emitter twice, because
+// `component_refusal_for_ir` builds the component before `component_hex_for_ir`
+// builds it again.  Neither is what the frozen ledger measures: the ledger runs
+// the full guest compiler once with `--emit-component-hex` under 800e9 fuel and
+// a 120s timeout.  This probe measures that path, so a before/after fuel
+// comparison is like for like.
+//
+// It is a development probe (`#[ignore]`).  `SICO_M22_PROBE_GROUPS` selects the
+// groups (`path:function,...`), `SICO_M22_PROBE_FUEL` caps the bracket ceiling.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "a real-closure ledger-path component fuel probe; run it explicitly"]
+fn the_component_emission_fuel_of_a_real_match_group_through_the_compiler_is_measured() {
+    let raw = std::env::var("SICO_M22_PROBE_GROUPS").unwrap_or_default();
+    let groups: Vec<(String, String)> = raw
+        .split(',')
+        .filter_map(|part| {
+            let mut fields = part.trim().split(':');
+            let path = fields.next()?;
+            let function = fields.next()?;
+            Some((path.to_owned(), function.to_owned()))
+        })
+        .collect();
+    assert!(
+        !groups.is_empty(),
+        "set SICO_M22_PROBE_GROUPS=path:function,..."
+    );
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(STEP0544_FUEL_CEILING);
+    println!("COMPILER_COMPONENT_FUEL ceiling={ceiling}");
+    for (path, function) in groups {
+        let Some(text) = match_frozen_source(&path) else {
+            panic!("the frozen source of {path} is loaded");
+        };
+        let closure = match match_sico_closure(
+            text,
+            &function,
+            MATCH_CLOSURE_FUNCTION_LIMIT,
+            MATCH_CLOSURE_BYTE_LIMIT,
+        ) {
+            Ok(closure) => closure,
+            Err(reason) => {
+                println!("COMPILER_COMPONENT_FUEL {path}:{function} closure {reason}");
+                continue;
+            }
+        };
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+        let component_bytes = std::cell::Cell::new(0usize);
+        let started = std::time::Instant::now();
+        // Doubling only: this probe compares magnitudes, so the first budget
+        // that emits is enough.  A refusal or a trap is terminal -- repeating
+        // it at a larger budget would only burn fuel.
+        let mut budget = 100_000_000u64;
+        let mut low = 0u64;
+        let verdict = loop {
+            match guest_component_with_fuel(&source, budget) {
+                GuestFuelEmission::Component(hex) => {
+                    component_bytes.set(hex.len() / 2);
+                    break format!("{low}\t{budget}");
+                }
+                GuestFuelEmission::FuelExhausted => {
+                    low = budget;
+                }
+                GuestFuelEmission::Refusal(identity) => break format!("refused:{identity}\t-"),
+                GuestFuelEmission::Trap { reason } => break format!("trap:{reason}\t-"),
+            }
+            if budget >= ceiling {
+                break "exhausted\t-".to_owned();
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+        };
+        println!(
+            "COMPILER_COMPONENT_FUEL {path}:{function} source_bytes={} component_bytes={} fuel={verdict} search_ms={}",
+            source.len(),
+            component_bytes.get(),
+            started.elapsed().as_millis()
+        );
+    }
 }

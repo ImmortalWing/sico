@@ -439,6 +439,10 @@ AI 实验必须记录：
 
 使用 API agent、流式工具、Web/UI、Sico 原生 GUI 格式转换器和独立消费者检验公开接口。俄罗斯方块案例仅保留 M14 纯 Sico 离线求解器验收 oracle；M16 capture/input 与 M17 vision 的既有独立证据保留，但该案例不再作为 M18/M24 试点验收载体（2026-09-22 owner 指令，STEP-0258）。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
 
+#### M19–M22（当前状态登记）
+
+M19 GO（部分）；M20 NO-GO（部分）；M21 GO。M22 编译器自举轨为当前主动线（分支 `codex/m22-w2`）：S1/S2 complete，S3/S4/S5 partial，S6 not entered，S7 已复审 NO-GO；R0 已按 Option A 拍板（ADR-0017 accepted）。M23 项 1/2 已落地（RFC-0048/0049，STEP-0328/0329），item 3 仍为 deferred-external，不得读作 M23 整体 GO；M24 已在独立 worktree 并行开工。当前 STEP 号、gates 与证据等级一律以 [`docs/STATUS.md`](./docs/STATUS.md) 与 [`docs/ROADMAP.md`](./docs/ROADMAP.md) 为准，本节不复制每步易变的数字。
+
 #### M23：语言 v1 第三批——表达式人机工学
 
 所有者于 2026-09-17 以「继续完成sico，M22-M25」确认登记。逐项关闭 M22 计划 §8 记录的语言摩擦（中缀比较/逻辑运算符、表达式位置条件、裸字面量复测政策、text.chars），每项走 RFC-0033 证据门（显式反糖、source-map 身份、格式化幂等、typed 诊断）。实现按双路径进入：M22 S7 GO 后的 Route A，或 M22 W2 S3/S4 四个实现 STEP 无 canary/拒绝前沿进展并登记 R3 止损后的 Route B；盘点和 RFC 起草可先行。
@@ -451,9 +455,13 @@ AI 实验必须记录：
 
 语言 v1 freeze、§13 完成审计以 M14–M24 全证据链重发、M19 残余在 owner 输入允许处收口、可复现签名 v1.0 bundle。审计分别给出 v1.0 发布与整个项目 §13 完成两个结论：M23 语言第三批或 M24 原生 GUI 转换器 NO-GO 时 v1.0 发布仍 NO-GO；外部门控逐项注明且不能冒充项目完成。M22 止损登记不等于自举 GO。公网 rollout、移动平台与无凭据 live-model 主张保持外部门控。
 
+#### M26：PDF 文档处理
+
+所有者于 2026-09-24 登记（排在 M25 之后）：PDF 结构化读取、合并与旋转作为 versioned package 交付（RFC-first、fail-closed 语料，不改动核心语言与 authority），GUI PDF 工具建立在 M24 §8.6.1 的 Sico 原生 UI 库工作流之上。尚无实现 STEP 号，入口门槛被证据满足后方可开工。
+
 ### 9. 当前建议执行顺序
 
-每次根据仓库真实状态调整，但默认从当前 M0 缺口开始：
+本清单为 M0 历史清单——M0–M13 已全部 complete，不应当作当前缺口从头执行；实际执行从 [`docs/STATUS.md`](./docs/STATUS.md) 记录的当前阶段接续（当前主动线为 M22 编译器自举轨，M23/M24 为并行轨）。历史上的默认顺序保留备查：
 
 1. 建立 `docs/` 审计结构、模板、STATUS 和 ROADMAP；
 2. 对 A0/B/C 建立单点错误注入集与静态恢复评测；
@@ -580,7 +588,7 @@ AI 实验必须记录：
 
 1. 读取仓库指令和所有权威文档；
 2. 检查 Git 和当前真实资产；
-3. 对照 M0-M7 生成差距审计；
+3. 对照 `docs/STATUS.md` 当前阶段生成差距审计；
 4. 若审计目录不存在，创建目录、模板、STATUS、ROADMAP 和第一个步骤文档；
 5. 选择当前最高优先级未阻塞工作；
 6. 实现、验证、记录、提交并推送；

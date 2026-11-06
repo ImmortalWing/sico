@@ -16,7 +16,7 @@ M8–M18 built survivable outside this repository.
 | # | Condition | Status (measured 2026-09-13) |
 |---|---|---|
 | 1 | M15–M17 exit audits explicit (GO or honest NO-GO registers) | **satisfied** — M15 GO 7/7 (STEP-0158 + 0162), M16 GO 7/7 (STEP-0159), M17 NO-GO register with gate-1 GO and completion path (STEP-0160/0166) |
-| 2 | M18 internal-fixture portfolio runs without core patches | **satisfied (4/5)** — STEP-0164/0165: API agent, streaming tool, Web/UI app, package consumer all green; block-game pilot honestly deferred (M17 full GO pending) |
+| 2 | M18 internal-fixture portfolio runs without core patches | **satisfied (4/5)** — STEP-0164/0165: API agent, streaming tool, Web/UI app, package consumer all green; block-game pilot deleted by owner directive (STEP-0258); M18 portfolio item 4 re-designated as GUI format converter under M24 |
 | 3 | No unresolved compiler-defect registers (A6-class seams) | **satisfied** — A6 repaired (STEP-0148); the five vision-package defects found in STEP-0166 were fixed in the same step; register clear |
 | 4 | Registry/deployment external inputs (domain, TLS, identity) remain owner-gated | unchanged — owner-supplied; M19 prepares but does not claim public deployment |
 

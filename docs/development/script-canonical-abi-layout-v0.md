@@ -59,7 +59,7 @@ Fields are laid out in declaration order; each field offset is aligned up to the
 
 ## 5. Ownership and cleanup
 
-- One Wasm instance owns exactly one bounded arena. Arena base follows the static data segment; the arena ceiling is the declared memory maximum of 64 MiB (1,024 pages). Allocation uses checked 32-bit arithmetic and traps on overflow or ceiling crossing; it never silently wraps.
+- One Wasm instance owns exactly one bounded arena. Arena base follows the static data segment; the arena ceiling is the guest arena limit `ARENA_LIMIT` (2 GiB, raised by the RFC-0029 STEP-0454 amendment), and the **declared linear memory** — emitted as the memory minimum **and** maximum, so it never grows — is 33,792 Wasm pages = 2,214,592,512 B. The arena lives *inside* that declared memory, so the two figures are not interchangeable (RFC-0029 STEP-0497 amendment). Allocation uses checked 32-bit arithmetic and traps on overflow or ceiling crossing; it never silently wraps.
 - Host-to-guest lowering allocates list/string payloads through the guest-exported `cabi_realloc(old_ptr, old_size, align, new_size) -> ptr`. Ownership of lowered parameter buffers transfers to the guest for the duration of the call.
 - Guest-to-host lifting reads the 32-byte result area and every referenced payload before `cabi_post_run` returns. Result payload bytes are copied by the guest into its own arena during lowering; result buffers never alias caller-supplied parameter storage.
 - `cabi_post_run` deterministically resets the arena bump pointer to the arena base. Repeated calls on one instance therefore reuse the same arena and do not grow memory. Cleanup is idempotent: a second reset has no effect. Dropping the Store releases the entire instance allocation; there is no general GC and no cross-instance reference.
@@ -67,7 +67,7 @@ Fields are laid out in declaration order; each field offset is aligned up to the
 
 ## 6. Bounds enforced at the boundary
 
-From RFC-0029: at most 1,024 arguments; at most 64 KiB UTF-8 bytes per argument; at most 1 MiB of UTF-8 bytes across all arguments; at most 8 MiB each for stdin, stdout and stderr; at most 64 KiB in `script-error.message`; guest linear memory at most 64 MiB. Pointer, length, alignment, multiplication and addition are checked before any memory access; violations fail closed (host helper: typed refusal; engine lift: trap; guest allocation: trap).
+From RFC-0029: at most 1,024 arguments; at most 64 KiB UTF-8 bytes per argument; at most 1 MiB of UTF-8 bytes across all arguments; at most 8 MiB each for stdin, stdout and stderr; at most 64 KiB in `script-error.message`; guest linear memory: the **declared** 2,214,592,512 B (33,792 pages, minimum == maximum). A package or Host memory limit may only restrict execution *inside* that declaration: a limit **below** the declared bound is unsatisfiable rather than tighter, and is refused with a typed error instead of being executed (RFC-0029 STEP-0497 amendment; `sico_package::build_script_v1` and `sico_runtime::effective_memory_limits`). Pointer, length, alignment, multiplication and addition are checked before any memory access; violations fail closed (host helper: typed refusal; engine lift: trap; guest allocation: trap).
 
 ## 7. Guest visible exports
 

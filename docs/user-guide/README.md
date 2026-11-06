@@ -5,7 +5,7 @@
 ## 推荐阅读顺序
 
 1. [安装与构建](./INSTALLATION.md)：安装 Windows SDK，或从源码构建 `sico`、`sico-app`、`sico-lsp` 和 `sico-ai-tool`。
-2. [五分钟入门](./GETTING-STARTED.md)：检查、格式化、构建、检查包并运行第一个程序。
+2. [五分钟入门](./GETTING-STARTED.md)：用 `sico run` 直达运行第一个程序，再检查、格式化、构建、检查包，并用 `sico test` 写测试。
 3. [语言基础与可运行子集](./LANGUAGE-BASICS.md)：当前语法和 compiler/Runtime 支持边界。
 4. [CLI 参考](./CLI.md)：所有命令、参数、输入输出和退出码。
 5. [编译、打包与运行](./BUILD-RUN.md)：源码、Component、`.sapp`、Wasmtime 和能力授权。
@@ -18,9 +18,10 @@
 ## 文档约定
 
 - SDK 用户的命令示例可在任意目录执行；源码开发命令以仓库根目录为当前目录。
-- Windows 是当前唯一 runtime-verified 的 Desktop Host 平台。
+- Windows 是当前唯一 runtime-verified 的 Desktop Host 平台；Linux runner 已有原生运行时证据（STEP-0126/0141），但 Linux Desktop Host 与安装器尚不存在。
 - 终端安装器会持久配置 PATH；源码构建的 `target/release/sico.exe` 与 `sico-app.exe` 也可在临时加入 PATH 后简写。
 - 用户应用分发格式是 `.sapp`；语言 CLI 只生成 WebAssembly Component。
 - “签名有效”不等于“本机信任”，development key 也不等于 production publisher。
+- 「哪些语言特性真的能跑」的唯一权威答案是 [application-profile-v0](../../tests/language-matrix/application-profile-v0.json) 矩阵；[语言基础](./LANGUAGE-BASICS.md)与[限制与平台状态](./LIMITATIONS.md)都指向它。
 
 如果要参与 Sico 自身开发，请转到[开发手册](../development/README.md)。

@@ -174,9 +174,20 @@ fn frozen_corpus_manifest_is_complete_and_forms_a_canonical_bundle() {
         .iter()
         .map(|entry| entry.path.clone())
         .collect();
+    // The record fixtures (RFC-0047) were re-frozen into the 235-entry
+    // corpus by the dev-line STEP-0279-0283 batch, so `declared` already
+    // names them. Only the M23 language v1 batch 3 fixtures (STEP-0328/0329)
+    // landed after that freeze: they are covered by language_batch3.rs and
+    // must be accounted for explicitly so an unrelated source addition
+    // cannot silently widen this frozen bundle.
+    let mut expected_discovered = declared.clone();
+    expected_discovered.extend(
+        ["infix-comparisons.sico", "let-bind.sico"].map(|file| format!("tests/end-to-end/{file}")),
+    );
+    expected_discovered.sort();
     assert_eq!(
-        declared, discovered,
-        "manifest must name every frozen source"
+        expected_discovered, discovered,
+        "every source must be in the frozen manifest or the post-freeze batch corpus"
     );
 
     let mut bundle = Vec::with_capacity(manifest.entries.len());

@@ -1,0 +1,465 @@
+{
+  "schema": "sico.m22.corpus-parity-map.v1",
+  "version": 1,
+  "created": "2026-11-06",
+  "step": "STEP-0564",
+  "purpose": "Explicit mapping contract between the guest self-host compiler refusal identity (ERR:E-SH-IR-* namespace, emitted by selfhost/parser.sico) and the Rust oracle frozen diagnostic id namespace (LEXICAL / E-code) for the W4 rejection corpus. Only evidence-backed equivalence classes are registered (ningque wuluan: prefer gaps over speculative entries).",
+  "evidence_level": "internal-fixture",
+  "span_axis": {
+    "status": "blocked-guest-side",
+    "rust": "Rust oracle check --json emits full spans (code/key/range.line:col/byte); frozen corpus diagnostic_ids are a coarse classification (regex E[0-9]{4} over plain check text, else LEXICAL) and carry no span.",
+    "guest": "Guest refusal identity is a bare ERR:E-SH-IR-* code with no span (runner outcome class domain-error). No guest-side span evidence exists.",
+    "consequence": "True (verdict, id, span) triple parity is NOT reachable with current evidence. This artifact registers (rust_code <-> guest_code) equivalence classes only; span parity is reported as a residual gap, not asserted."
+  },
+  "fields": {
+    "rust_code": "Rust oracle frozen diagnostic id from selfhost/corpus-v0.json .diagnostic_ids (LEXICAL or E-code).",
+    "guest_code": "Guest refusal identity ERR:E-SH-IR-* from the STEP-0561 frozen parity run.",
+    "grain": "refined = specific E-code maps to a specific guest IR code; coarse = the frontend LEXICAL bucket collapses to the guest coarse IR function-count refusal.",
+    "equivalence_class": "Named equivalence class the pair is registered under.",
+    "evidence": {
+      "corpus_count": "number of corpus entries backing this pair in the frozen parity run.",
+      "sample_paths": "up to 3 corpus paths (deterministic first-3 order).",
+      "source": "provenance of the evidence."
+    }
+  },
+  "mappings": [
+    {
+      "rust_code": "E2001",
+      "guest_code": "ERR:E-SH-IR-CALL-TARGET",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/nominal-invariants/invalid/structural-record-confusion.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2001",
+      "guest_code": "ERR:E-SH-IR-TYPE-MISMATCH",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/numbers-units/invalid/text-as-int.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2001",
+      "guest_code": "ERR:E-SH-IR-UNRESOLVED",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2001",
+      "evidence": {
+        "corpus_count": 3,
+        "sample_paths": [
+          "syntax-candidates/b/nominal-invariants/invalid/nominal-confusion.sico",
+          "syntax-candidates/b/numbers-units/invalid/cross-currency.sico",
+          "syntax-candidates/b/numbers-units/invalid/mixed-unit.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2002",
+      "guest_code": "ERR:E-SH-IR-RETURN-TYPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2002",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/numbers-units/invalid/implicit-int-to-float.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2010",
+      "guest_code": "ERR:E-SH-IR-CONSTRUCT-FIELD",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2010",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/nominal-invariants/invalid/missing-field.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2011",
+      "guest_code": "ERR:E-SH-IR-CONSTRUCT-VALUE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2011",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/nominal-invariants/invalid/unknown-field.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E2020",
+      "guest_code": "ERR:E-SH-IR-CONSTRUCT-VALUE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E2020",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/nominal-invariants/invalid/invariant-violation.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3001",
+      "guest_code": "ERR:E-SH-IR-MATCH-SHAPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/exhaustive-match/invalid/missing-variant.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3002",
+      "guest_code": "ERR:E-SH-IR-MATCH-SHAPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3002",
+      "evidence": {
+        "corpus_count": 2,
+        "sample_paths": [
+          "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-enum.sico",
+          "syntax-candidates/b/exhaustive-match/invalid/wildcard-sealed-product.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3003",
+      "guest_code": "ERR:E-SH-IR-MATCH-SHAPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3003",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/exhaustive-match/invalid/unreachable-branch.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3101",
+      "guest_code": "ERR:E-SH-IR-VARIANT-PAYLOAD",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3101",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/result-mapping/invalid/error-type-mismatch.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3102",
+      "guest_code": "ERR:E-SH-IR-VARIANT-PAYLOAD",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3102",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/result-mapping/invalid/incomplete-error-map.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3103",
+      "guest_code": "ERR:E-SH-IR-VARIANT-PAYLOAD",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3103",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/result-mapping/invalid/catch-all-error-map.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E3104",
+      "guest_code": "ERR:E-SH-IR-VARIANT-PAYLOAD",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E3104",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/result-mapping/invalid/unhandled-result.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E4001",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E4001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/effects-capabilities/invalid/undeclared-capability.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E4002",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E4002",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/effects-capabilities/invalid/undeclared-effect.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5001",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/affine-resources/invalid/use-after-move.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5002",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5002",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/affine-resources/invalid/use-after-close.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5003",
+      "guest_code": "ERR:E-SH-IR-TYPE-MISMATCH",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5003",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/affine-resources/invalid/borrow-across-await.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5101",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5101",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/future-task/invalid/await-twice.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5102",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5102",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/future-task/invalid/task-escapes-scope.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5103",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5103",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/future-task/invalid/uncollected-task.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5104",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5104",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/future-task/invalid/detached-spawn.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5201",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5201",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/stream/invalid/unbounded-collect.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E5202",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E5202",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/stream/invalid/missing-await.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E6001",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E6001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/component-call/invalid/version-as-type.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E6002",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E6002",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/component-call/invalid/trap-as-domain-error.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E7001",
+      "guest_code": "ERR:E-SH-IR-EXPRESSION",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E7001",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/revision/invalid/missing-commit-revision.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E7002",
+      "guest_code": "ERR:E-SH-IR-CONSTRUCT-VALUE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E7002",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "syntax-candidates/b/revision/invalid/unchecked-stale-result.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "E8010",
+      "guest_code": "ERR:E-SH-IR-MATCH-SHAPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:E8010",
+      "evidence": {
+        "corpus_count": 1,
+        "sample_paths": [
+          "tests/end-to-end/modules-report/math_util.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "LEXICAL",
+      "guest_code": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "grain": "coarse",
+      "equivalence_class": "frontend-lexical-check-rejected",
+      "evidence": {
+        "corpus_count": 98,
+        "sample_paths": [
+          "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
+          "semantic-cases/affine-resources/invalid/use-after-close.sico",
+          "semantic-cases/affine-resources/invalid/use-after-move.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "LEXICAL",
+      "guest_code": "ERR:E-SH-IR-RECORD-END",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:LEXICAL",
+      "evidence": {
+        "corpus_count": 8,
+        "sample_paths": [
+          "semantic-cases/nominal-invariants/invalid/invariant-violation.sico",
+          "semantic-cases/nominal-invariants/valid/satisfied-invariant.sico",
+          "semantic-cases/revision/invalid/unchecked-stale-result.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    },
+    {
+      "rust_code": "LEXICAL",
+      "guest_code": "ERR:E-SH-IR-RECORD-TYPE",
+      "grain": "refined",
+      "equivalence_class": "frontend-check-rejected:LEXICAL",
+      "evidence": {
+        "corpus_count": 8,
+        "sample_paths": [
+          "semantic-cases/nominal-invariants/invalid/missing-field.sico",
+          "semantic-cases/nominal-invariants/invalid/structural-record-confusion.sico",
+          "semantic-cases/nominal-invariants/invalid/unknown-field.sico"
+        ],
+        "source": "selfhost/corpus-parity-v0.json (STEP-0561 frozen run)"
+      }
+    }
+  ]
+}

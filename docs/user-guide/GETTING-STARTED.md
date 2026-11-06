@@ -10,11 +10,21 @@ end function
 
 以下命令假设 Sico SDK 已安装，或 `target/release` 已加入当前会话 `PATH`。
 
-只想立即查看运行结果时执行：
+最简单的运行方式——源码直达，无需打包：
+
+```powershell
+sico run .\hello.sico
+```
+
+预期 stdout 为 `42`。`sico run` 把源码编译为 Script Profile 并经独立 `sico-runner` 执行。
+
+也可以一行完成「编译 + 临时打包 + 运行」：
 
 ```powershell
 sico-app dev .\hello.sico
 ```
+
+为 Script 写测试：在源码旁放置 `hello.test.json`（字段 `stdin`/`args`/`expect_exit`/`expect_stdout` 全可选），然后执行 `sico test .`；详见 [CLI 参考](./CLI.md)。
 
 该命令依次调用独立的 `sico build`、内部 pack 和 Runtime，成功或失败后清理临时产物。需要检查中间产物时加 `--keep-artifacts`。仓库中的 `tools/sico-dev.ps1` 继续作为旧脚本兼容入口。
 

@@ -243,7 +243,7 @@ impl Default for RunnerLimits {
         Self {
             fuel: 10_000_000,
             timeout: Duration::from_secs(10),
-            memory_bytes: 64 * 1024 * 1024,
+            memory_bytes: 2560 * 1024 * 1024,
             hostcall_fuel: 128 << 20,
         }
     }

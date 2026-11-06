@@ -1,6 +1,6 @@
 use std::{fmt::Write as _, fs, path::Path};
 
-use sico_codegen_wasm::{CodegenError, compile_script_program};
+use sico_codegen_wasm::{CodegenError, SCRIPT_MEMORY_BYTES, compile_script_program};
 use sico_ir::{
     Block, BlockId, ConstructField, Function, FunctionId, Instruction, Module, Operation,
     Parameter, SourceRange, Terminator, Type, ValueId,
@@ -20,6 +20,85 @@ fn script_error_program_is_deterministic_valid_and_snapshot() {
     assert_eq!(bytes, compile_script_program(&error_module()).unwrap());
     validate(&bytes);
     snapshot("script-error-component", &bytes);
+}
+
+/// STEP-0497: the guest linear memory a Component declares is the floor every
+/// execution path's effective memory ceiling has to clear.
+///
+/// The declaration is fixed — the minimum equals the maximum, so the guest
+/// memory never grows — and it is the number the Host and the package limit
+/// are both measured against. This guard pins the emitted bytes, so a change
+/// to the declared page count fails here instead of silently moving the floor
+/// under every launch path.
+#[test]
+fn script_and_package_components_declare_the_same_fixed_guest_memory() {
+    assert_eq!(SCRIPT_MEMORY_BYTES, 33_792 * 65_536);
+    assert_eq!(SCRIPT_MEMORY_BYTES, 2_214_592_512);
+
+    let script = compile_script_program(&echo_module()).unwrap();
+    let script_memories = declared_guest_memory(&script);
+    assert_eq!(
+        script_memories,
+        vec![(33_792, Some(33_792))],
+        "a Script program component declares exactly one fixed guest memory"
+    );
+
+    let package = sico_codegen_wasm::package_builder::csv_package();
+    let package_memories = declared_guest_memory(&package);
+    assert_eq!(
+        package_memories,
+        vec![(33_792, Some(33_792))],
+        "a package component declares exactly one fixed guest memory"
+    );
+}
+
+/// The `(minimum, maximum)` page counts of every memory a Component declares
+/// or imports, walked through the nested core modules.
+///
+/// `parse_all` descends into the nested modules on its own, so one pass over
+/// the Component bytes reaches the core memory section.
+fn declared_guest_memory(bytes: &[u8]) -> Vec<(u64, Option<u64>)> {
+    let mut memories = Vec::new();
+    for payload in wasmparser::Parser::new(0).parse_all(bytes).flatten() {
+        match payload {
+            wasmparser::Payload::MemorySection(reader) => {
+                for memory in reader.into_iter().flatten() {
+                    memories.push((memory.initial, memory.maximum));
+                }
+            }
+            wasmparser::Payload::ImportSection(reader) => {
+                for group in reader.into_iter().flatten() {
+                    match group {
+                        wasmparser::Imports::Single(_index, import) => {
+                            if let wasmparser::TypeRef::Memory(memory) = import.ty {
+                                memories.push((memory.initial, memory.maximum));
+                            }
+                        }
+                        wasmparser::Imports::Compact1 { items, .. } => {
+                            for item in items.into_iter().flatten() {
+                                if let wasmparser::TypeRef::Memory(memory) = item.ty {
+                                    memories.push((memory.initial, memory.maximum));
+                                }
+                            }
+                        }
+                        wasmparser::Imports::Compact2 {
+                            ty,
+                            names,
+                            module: _,
+                        } => {
+                            if let wasmparser::TypeRef::Memory(memory) = ty {
+                                for _ in 0..names.count() {
+                                    memories.push((memory.initial, memory.maximum));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    memories
 }
 
 #[test]

@@ -18,7 +18,7 @@ at.
 | # | Condition | Status (measured 2026-09-13) |
 |---|---|---|
 | 1 | M19 CI + release engineering green | future — M19 plan refined and sequenced (§8); its exit gates 1–3 remain the gate |
-| 2 | M18 portfolio runs without core patches | **satisfied (4/5)** — STEP-0165 exit audit; block-game pilot deferred pending M17 full GO |
+| 2 | M18 portfolio runs without core patches | **satisfied (4/5)** — STEP-0165 exit audit; block-game pilot deleted by owner directive (STEP-0258); M18 portfolio item 4 re-designated as GUI format converter under M24 |
 | 3 | macOS/Linux runners and Android toolchain/licensed devices are owner-supplied | external inputs; contract work may proceed without them (contract-verified only) |
 | 4 | Language surface changes carry an accepted RFC each | standing rule (RFC-0033 reconsideration gate) |
 

@@ -27,6 +27,8 @@
 ## 架构入口
 
 - [模块边界与命令所有权](./MODULE-BOUNDARIES.md)
+- [Script Canonical ABI 布局 v0](./script-canonical-abi-layout-v0.md)
+- [Script Component 发射规范 v0（guest 侧逐字节镜像规格）](./script-component-emission-v0.md)
 - [Windows 手动发布](./RELEASING.md)
 - [完整架构与开发设计](../../DEVELOPMENT.md)
 - [方向与非目标](../../DIRECTION.md)
@@ -37,7 +39,7 @@
 - [RFC](../rfc/README.md)
 - [STEP 执行记录](../steps/README.md)
 - [验证报告](../reports/README.md)
-- [任务交接](../TASK-HANDOFF.md)
+- [任务交接](../handoffs/README.md)
 
 ## 仓库结构
 

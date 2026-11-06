@@ -1,0 +1,1 @@
+{"stdin": "", "args": [], "expect_exit": 0, "expect_stdout": "v|lt|le|gt|ge-boundary|ne|le-boundary|ugt|ule|ult|uge-boundary|une|ueq|and3|loop|jdone|done"}

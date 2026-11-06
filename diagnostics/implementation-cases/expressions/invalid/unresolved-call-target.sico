@@ -1,0 +1,6 @@
+// case: EXP-004
+// expect: reject(UNRESOLVED_CALL_TARGET)
+
+function main() returns Int:
+  return missing_helper(I64.literal(1))
+end function

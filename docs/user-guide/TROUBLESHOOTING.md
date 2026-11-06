@@ -53,7 +53,7 @@ end function
 
 ## backend refusal
 
-`sico check` 覆盖的语言范围比当前 codegen 更广。records、Result、部分调用、resource/async 源码可能检查通过但无法构建。参见[语言支持边界](./LANGUAGE-BASICS.md)。
+`sico check` 覆盖的语言范围比当前 codegen 更广。records/enum、Result 与一般函数调用现已可执行；仍会 typed 拒绝的代表性缺口：`sico.text.replace`（build 拒绝，STEP-0203）、checked-result ABI 缝（用户函数直接返回 `Result` 的 script-profile build 拒绝——先在调用点做 checked match）、一等 Task/Future/Stream 值、`try` 表达式（仅 check 阶段）、`List[record]`（E2031）。逐项清单参见[语言支持边界](./LANGUAGE-BASICS.md)与 `tests/language-matrix/application-profile-v0.json`。
 
 ## package 要求 `--trusted-key`
 
@@ -71,9 +71,9 @@ sico-app inspect --json app.sapp
 
 `--grant` 只能授予已经请求的能力；storage 还需要 `--storage-root`。
 
-## 旧文档中的 `sico run`、源码缓存或 `--raw-component`
+## 旧文档中的源码缓存或 `--raw-component`
 
-这些属于 `v0.0.1` 的一体化开发流程。当前 `main` 使用 `sico build`、`sico-app pack`、`sico-app run`，且不提供隐式源码运行缓存。需要复现旧行为时检出 `v0.0.1` 或归档分支。
+这些属于 `v0.0.1` 的一体化开发流程。当前 `main` 的正式子命令包括 `sico run`（Script 直达）以及 `sico build`、`sico-app pack`、`sico-app run`；除 `sico run`/`sico watch` 的 RFC-0029 编译缓存外，不提供隐式源码运行缓存。需要复现旧行为时检出 `v0.0.1` 或归档分支。
 
 ## Windows 错误 740
 

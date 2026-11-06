@@ -1,0 +1,13 @@
+enum Color
+  Red
+  Green
+  Blue
+end
+
+fn name(color: Color) -> Text
+  match color
+    Color.Red => return "red"
+    Color.Green => return "green"
+    Color.Blue => return "blue"
+  end
+end

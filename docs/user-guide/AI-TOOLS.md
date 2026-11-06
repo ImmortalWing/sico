@@ -59,8 +59,27 @@ Get-Content request.json -Raw | .\target\release\sico-ai-tool.exe
 
 路径和参数中的空格、`;`、反引号或 `$()` 都保留为单独字面参数，`shell` 永远为 false。调用方必须执行 argument array、限制日志捕获，并按 plan 终止 direct child tree。
 
+## MCP server
+
+`sico-mcp-server` 把上面四个冻结的 `sico.ai-tool.v0` 操作以 1:1 映射暴露为 MCP 工具，供支持 MCP 的 agent 框架调用（STEP-0121）。它是同一个无副作用工具核心的传输外壳：不新增外部依赖，不访问文件系统、不启动进程、不联网、不调用模型。
+
+```powershell
+cargo build --locked --release -p sico-mcp-server
+Get-Content frames.jsonl | .\target\release\sico-mcp-server.exe
+```
+
+- 传输：stdio 上按行分帧的 JSON-RPC 2.0（MCP stdio framing），每行一个 JSON 值；
+- 方法：`initialize`（protocol `2025-06-18`）、`ping`、`tools/list`、`tools/call`；`notifications/*` 不回复，其它方法返回 `-32601`；
+- 工具：`inspect`、`validate_fix`、`plan_execution`、`summarize_execution`，各带 `inputSchema`（`required: ["input"]`、`additionalProperties: false`）；未知工具名或缺少 `input` 返回 `-32602`，畸形帧返回 `-32700`，均不会崩溃；
+- 预算：`max_files 16`、`max_input_bytes 1 MiB`、`max_symbols 256`、`max_diagnostics 100` 由服务端固定，客户端**不能扩大**；`schema`/`protocol_version`/`request_id`/`budget` 一律服务端填充，调用方只控制 `operation` 与 `input`；
+- 响应：`sico.ai-tool.response.v0` 的 JSON 原样作为 MCP text content 返回，`isError` 镜像其中的 `ok`，因此与直接调用 `sico-ai-tool` 的摘要和诊断保持字节可比。
+
+证据等级：仓库内真实 stdio 会话往返（initialize → tools/list → inspect → validate_fix）与 512 项冻结语料经 MCP 传输的重放，属 `internal-fixture`；对具体第三方 MCP 客户端的互操作声明需要另行取证。
+
 ## 证据边界
 
-仓库的 54-source/12-fix/96-task 数据用于验证工具链和评测协议，不是模型成绩。真实模型评测仍需要准确 model metadata、raw output、重复次数、凭据和成本授权。
+仓库的 54-source/12-fix/96-task 数据用于验证工具链和评测协议，不是模型成绩。工具协议数据同样不是模型成绩。
+
+已完成的权威 live-model 评测（STEP-0128，报告 [ai-eval-live-model-v1](../reports/ai-eval-live-model-v1.md)）：DeepSeek `deepseek-chat`，2880 次真实调用，实际成本 USD 0.78，总体 0.909544（2245/2880 全对），达到 ADR-0012 修订后的 ≥ 0.900 目标；已登记缺口 B-repair 0.833。该成绩绑定特定的模型、prompt、语料与预算，不能解释为其他模型或任务上的通用成绩。后续 live-model 声明仍需要准确 model metadata、raw output、重复次数、凭据和成本授权。
 
 完整 schema 与示例见 [tooling protocol](../../ai-eval/tooling-protocol.md)。

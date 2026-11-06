@@ -310,8 +310,13 @@ if ($caseMap.schema -ne 'sico.semantic-diagnostic-cases.v0' -or $caseMap.catalog
   throw 'unsupported semantic diagnostic case map'
 }
 $cases = @($caseMap.cases)
-$invalidSources = @(Get-ChildItem (Join-Path $root 'semantic-cases') -Recurse -Filter '*.sico' -File |
-  Where-Object { $_.FullName -match '[\\/]invalid[\\/]' })
+$implementationRoot = Join-Path $root 'diagnostics/implementation-cases'
+$invalidSources = @(
+  @(Get-ChildItem (Join-Path $root 'semantic-cases') -Recurse -Filter '*.sico' -File |
+    Where-Object { $_.FullName -match '[\\/]invalid[\\/]' })
+  @(Get-ChildItem $implementationRoot -Recurse -Filter '*.sico' -File |
+    Where-Object { $_.FullName -match '[\\/]invalid[\\/]' })
+)
 if ($cases.Count -ne $invalidSources.Count) {
   throw "expected one diagnostic case entry per invalid source: map=$($cases.Count) sources=$($invalidSources.Count)"
 }
@@ -329,7 +334,7 @@ foreach ($caseEntry in $cases) {
     throw "duplicate or invalid diagnostic case id: $caseId"
   }
   if ($seenSources.ContainsKey($source) -or $source.Contains('\') -or
-      $source -notmatch '^semantic-cases/[^/]+/invalid/[^/]+\.sico$') {
+      $source -notmatch '^(semantic-cases|diagnostics/implementation-cases)/[^/]+/invalid/[^/]+\.sico$') {
     throw "duplicate or invalid diagnostic case source: $source"
   }
   $sourcePath = Join-Path $root $source
@@ -356,8 +361,7 @@ foreach ($caseEntry in $cases) {
   }
   $maxMessageBytes = [Math]::Max($maxMessageBytes, $messageBytes)
 
-  $sourceParts = $source -split '/'
-  $readmePath = Join-Path $root "semantic-cases/$($sourceParts[1])/README.md"
+  $readmePath = Join-Path (Split-Path -Parent (Split-Path -Parent (Join-Path $root $source))) 'README.md'
   $readmeText = Read-NormalizedText $readmePath
   $matchingRows = @($readmeText -split "`n" | Where-Object {
     $_.StartsWith('|') -and $_.Contains($caseId)
@@ -376,6 +380,52 @@ foreach ($caseEntry in $cases) {
 }
 $semanticCatalogKeys = @($catalog.diagnostics | Where-Object { [int]$_.code.Substring(1) -ge 2000 } | ForEach-Object { [string]$_.key })
 Compare-StringSets @($usedKeys.Keys) $semanticCatalogKeys 'semantic catalog usage'
+
+# The implementation corpus (diagnostics/implementation-cases) is the
+# implementation-level counterpart of the design-level P0 corpus: its sources
+# use the current executable syntax, so the real compiler can reproduce every
+# registered code. `tools/validate-step-0489.ps1` runs that comparison.
+$implementationManifest = Read-Json (Join-Path $implementationRoot 'manifest.json')
+if ($implementationManifest.schema -ne 'sico.diagnostic-implementation-cases.v0' -or
+    $implementationManifest.catalog -ne 'catalog.json') {
+  throw 'unsupported diagnostic implementation case manifest'
+}
+$implementationSources = @(Get-ChildItem $implementationRoot -Recurse -Filter '*.sico' -File |
+  Where-Object { $_.FullName -match '[\\/]invalid[\\/]' })
+if ([int]$implementationManifest.case_count -ne $implementationSources.Count) {
+  throw "implementation case count differs: manifest=$($implementationManifest.case_count) sources=$($implementationSources.Count)"
+}
+$implementationCodes = @($implementationManifest.codes)
+if ($implementationCodes.Count -ne $implementationSources.Count -or
+    @($implementationCodes | Sort-Object -Unique).Count -ne $implementationCodes.Count) {
+  throw 'implementation manifest codes are invalid'
+}
+foreach ($implementationCode in $implementationCodes) {
+  if (-not $catalogByCode.ContainsKey([string]$implementationCode)) {
+    throw "implementation case code is not in the catalog: $implementationCode"
+  }
+  if (-not $usedKeys.ContainsKey([string]$catalogByCode[[string]$implementationCode].key)) {
+    throw "implementation case code has no case-map entry: $implementationCode"
+  }
+}
+$implementationGroupCounts = @{}
+foreach ($implementationSource in $implementationSources) {
+  $relative = $implementationSource.FullName.Substring($implementationRoot.Length + 1).Replace('\', '/')
+  $group = ($relative -split '/')[0]
+  if (-not $implementationGroupCounts.ContainsKey($group)) { $implementationGroupCounts[$group] = 0 }
+  $implementationGroupCounts[$group]++
+}
+$implementationGroups = @($implementationManifest.groups)
+if ($implementationGroupCounts.Count -ne $implementationGroups.Count) {
+  throw 'implementation manifest groups differ from the corpus tree'
+}
+foreach ($implementationGroup in $implementationGroups) {
+  $groupId = [string]$implementationGroup.id
+  if (-not $implementationGroupCounts.ContainsKey($groupId) -or
+      [int]$implementationGroup.case_count -ne $implementationGroupCounts[$groupId]) {
+    throw "implementation group count differs: $groupId"
+  }
+}
 
 $syntaxMap = Read-Json (Join-Path $diagnosticsRoot 'syntax-mutation-map.json')
 if ($syntaxMap.schema -ne 'sico.syntax-diagnostic-mutations.v0' -or @($syntaxMap.cases).Count -ne 12) {

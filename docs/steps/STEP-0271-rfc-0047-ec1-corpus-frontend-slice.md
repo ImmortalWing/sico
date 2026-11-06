@@ -31,15 +31,15 @@ unknown 洞。build 期实测再暴露 script-v0 适配器只接受标量（下�
 
 | 文件 | 期望 | 验证状态 |
 | --- | --- | --- |
-| [record-basic](../..tests/end-to-end/record-basic.sico) | accept + run → `record-basic-ok` | check ✓（run 待 ABI 片） |
-| [record-nested](../..tests/end-to-end/record-nested.sico) | accept + run → `record-nested-ok`（嵌套字段 + 访问链 `seg.b.x`） | check ✓ |
-| [record-list-field](../..tests/end-to-end/record-list-field.sico) | accept + run（`List[Text]`/`Bool` 字段 + 多行字面量） | check ✓ |
-| [record-list-of-records](../..tests/end-to-end/record-list-of-records.sico) | accept + run（`List[record]`，RFC D5） | **gate 到 D5 片**（`sico.list.*[Point]` 单态不存在，E2031 如实拒绝） |
-| [record-refusal-empty](../..tests/end-to-end/record-refusal-empty.sico) | refuse **E2022** EMPTY_RECORD | ✓ 单诊断 |
-| [record-refusal-duplicate-field](../..tests/end-to-end/record-refusal-duplicate-field.sico) | refuse **E2021** DUPLICATE_FIELD | ✓ 单诊断 |
-| [record-refusal-unknown-access](../..tests/end-to-end/record-refusal-unknown-access.sico) | refuse **E2011** UNKNOWN_FIELD（点访问） | ✓ 单诊断 |
-| [record-refusal-nominal](../..tests/end-to-end/record-refusal-nominal.sico) | refuse **E2001** TYPE_MISMATCH（名义不等价，同形 Point≠Size） | ✓ 单诊断 |
-| [record-refusal-missing-field](../..tests/end-to-end/record-refusal-missing-field.sico) | refuse **E2010** MISSING_FIELD | ✓ 单诊断 |
+| [record-basic](../../tests/end-to-end/record-basic.sico) | accept + run → `record-basic-ok` | check ✓（run 待 ABI 片） |
+| [record-nested](../../tests/end-to-end/record-nested.sico) | accept + run → `record-nested-ok`（嵌套字段 + 访问链 `seg.b.x`） | check ✓ |
+| [record-list-field](../../tests/end-to-end/record-list-field.sico) | accept + run（`List[Text]`/`Bool` 字段 + 多行字面量） | check ✓ |
+| [record-list-of-records](../../tests/end-to-end/record-list-of-records.sico) | accept + run（`List[record]`，RFC D5） | **gate 到 D5 片**（`sico.list.*[Point]` 单态不存在，E2031 如实拒绝） |
+| [record-refusal-empty](../../tests/end-to-end/record-refusal-empty.sico) | refuse **E2022** EMPTY_RECORD | ✓ 单诊断 |
+| [record-refusal-duplicate-field](../../tests/end-to-end/record-refusal-duplicate-field.sico) | refuse **E2021** DUPLICATE_FIELD | ✓ 单诊断 |
+| [record-refusal-unknown-access](../../tests/end-to-end/record-refusal-unknown-access.sico) | refuse **E2011** UNKNOWN_FIELD（点访问） | ✓ 单诊断 |
+| [record-refusal-nominal](../../tests/end-to-end/record-refusal-nominal.sico) | refuse **E2001** TYPE_MISMATCH（名义不等价，同形 Point≠Size） | ✓ 单诊断 |
+| [record-refusal-missing-field](../../tests/end-to-end/record-refusal-missing-field.sico) | refuse **E2010** MISSING_FIELD | ✓ 单诊断 |
 
 新诊断码 append-only：E2021、E2022（D7 家族）；复用 E2010/E2011/E2001。
 `record` 作标识符的 typed 拒绝语料：现有 lexer 已保留该字（M2/M3 起），

@@ -91,6 +91,12 @@ pub enum TokenKind {
     For,
     In,
     QuestionMark,
+    // RFC-0048 language v1 batch 3 (STEP-0328). Appended for the same reason.
+    LessThan,
+    GreaterThan,
+    GreaterEqual,
+    BangEqual,
+    AmpAmp,
 }
 
 impl TokenKind {
@@ -396,11 +402,22 @@ fn keyword(word: &str) -> TokenKind {
 
 fn punctuation(rest: &str) -> Option<(TokenKind, usize)> {
     let pair = rest.get(..2);
+    // RFC-0048 (STEP-0328): the frozen comparison/`&&` pair set, longest
+    // match first. `|`, bare `!` and bare `&` stay non-tokens (lex errors).
     if pair == Some("==") {
         return Some((TokenKind::EqualEqual, 2));
     }
     if pair == Some("<=") {
         return Some((TokenKind::LessEqual, 2));
+    }
+    if pair == Some(">=") {
+        return Some((TokenKind::GreaterEqual, 2));
+    }
+    if pair == Some("!=") {
+        return Some((TokenKind::BangEqual, 2));
+    }
+    if pair == Some("&&") {
+        return Some((TokenKind::AmpAmp, 2));
     }
     Some(match *rest.as_bytes().first()? {
         b'(' => (TokenKind::LeftParen, 1),
@@ -415,6 +432,8 @@ fn punctuation(rest: &str) -> Option<(TokenKind, usize)> {
         b'-' => (TokenKind::Minus, 1),
         b'=' => (TokenKind::Equal, 1),
         b'?' => (TokenKind::QuestionMark, 1),
+        b'<' => (TokenKind::LessThan, 1),
+        b'>' => (TokenKind::GreaterThan, 1),
         _ => return None,
     })
 }

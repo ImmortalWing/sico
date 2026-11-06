@@ -1,0 +1,13 @@
+// case: EXP-002
+// expect: reject(LET_BIND_ARM_NOT_EXPRESSION)
+
+function main() returns Int:
+  let a = I64.literal(3)
+  let x = if a < I64.literal(4):
+    set a = I64.literal(0)
+    "y"
+  else:
+    "n"
+  end if
+  return 0
+end function

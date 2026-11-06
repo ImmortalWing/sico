@@ -1,0 +1,19 @@
+{
+  "schema": "sico.diagnostic-implementation-cases.v0",
+  "catalog": "catalog.json",
+  "case_count": 8,
+  "groups": [
+    { "id": "records", "case_count": 4 },
+    { "id": "expressions", "case_count": 4 }
+  ],
+  "codes": [
+    "E2021",
+    "E2022",
+    "E2023",
+    "E2024",
+    "E2025",
+    "E2026",
+    "E2027",
+    "E2031"
+  ]
+}

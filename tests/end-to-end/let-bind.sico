@@ -1,0 +1,85 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+// RFC-0049 (language v1 batch 3, STEP-0329): the two let-bound statement
+// forms. `let x = if cond: … else: … end if` and `let x = match subject:
+// … end match` carry exactly one expression per arm and desugar to the
+// already-landed cell + branch writes + join read machinery — only the
+// taken arm evaluates, and the binding is visible after the region joins.
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = "v"
+  let a = I64.literal(3)
+  let b = I64.literal(7)
+  let branch = if a < b:
+    "if-taken"
+  else:
+    "else-taken"
+  end if
+  set out = sico.text.concat(out, branch)
+  let u = U64.literal(9)
+  let w = U64.literal(4)
+  let width = if u > w:
+    sico.text.length("abcd")
+  else:
+    sico.text.length("ab")
+  end if
+  set out = sico.text.concat(out, sico.u64.to_text(width))
+  let flagged = if I64.equal(a, I64.literal(3)):
+    "eq"
+  else:
+    "ne"
+  end if
+  set out = sico.text.concat(out, flagged)
+  let both = if a < b && u >= U64.literal(9):
+    "and"
+  else:
+    "no"
+  end if
+  set out = sico.text.concat(out, both)
+  let shifted = match I64.checked_add(a, I64.literal(4)):
+  case ok(sum):
+      sico.i64.to_text(sum)
+  case error(_):
+      "overflow"
+  end match
+  set out = sico.text.concat(out, shifted)
+  let severity = match ScriptErrorCode.ResourceLimit:
+  case ScriptErrorCode.InvalidInput:
+      "invalid"
+  case ScriptErrorCode.ResourceLimit:
+      "limit"
+  case ScriptErrorCode.DomainError:
+      "domain"
+  case ScriptErrorCode.Cancelled:
+      "cancelled"
+  end match
+  set out = sico.text.concat(out, severity)
+  let exit_code = if u == U64.literal(9):
+    I64.literal(0)
+  else:
+    I64.literal(1)
+  end if
+  set out = sico.text.concat(out, "|bound")
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: exit_code))
+end function

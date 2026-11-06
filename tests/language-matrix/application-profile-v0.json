@@ -2,7 +2,7 @@
   "schema": "sico.application-profile.v0",
   "step": "STEP-0131..0203",
   "rfc": "RFC-0038;RFC-0039;RFC-0045;RFC-0046;RFC-0047",
-  "updated": "2026-09-24",
+  "updated": "2026-09-30",
   "profile": "script-v0",
   "matrix": {
     "executable": {
@@ -161,6 +161,15 @@
         "semantics": "infix `left == right` in if conditions lowers to EqualFixed for same-width I64/U64 operands; mixed-width or non-fixed operands keep the typed refusal",
         "notes": "bare integer literals remain unbounded Int (NUM-001 oracle unchanged) — the bare-literal typing decision is recorded as the v1 open question in RFC-0044"
       },
+      "infix-comparison-conditions": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0328",
+        "rfc": "RFC-0048",
+        "semantics": "infix `<` `<=` `>` `>=` `!=` extend RFC-0044 and `&&` conjoins comparison conditions in if/while positions; all lower through the existing EqualFixed/LessFixed operations with branch inversion (`!=` `<=` `>=`) and operand swap (`>` `<=`, atom-restricted operands, E2025); `&&` short-circuits by construction and its operands must be comparison conditions",
+        "notes": "no new IR operations or intrinsics; `||` and `!` stay out of v0 (no measured consumer); bare `!`/`&`/`|` remain lex errors; chained comparisons and value-position `&&` keep named build refusals; e2e infix-comparisons.sico byte-exact through the real runner"
+      },
       "stdlib-batch-2-byte-text": {
         "check": true,
         "build": true,
@@ -226,6 +235,15 @@
         "rfc": "RFC-0047",
         "semantics": "user-declared nominal records: bare `name: Type` declarations, named literals, dot field access incl. chains, whole-record replacement via set (fields immutable), copy-on-write value semantics; typed refusals E2010 missing field / E2011 unknown field / E2021 duplicate field / E2022 empty record / E2023 field set / E2024 record comparison / E2001 nominal mismatch; `List[record]` (D5) not executable yet",
         "notes": "e2e record-basic/nested/list-field/copy-on-write run through the real runner with content-asserting markers; refusal corpus record-refusal-*.sico; `List[record]` stays gated (E2031) until the D5 slice"
+      },
+      "let-bound-if-match": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0329",
+        "rfc": "RFC-0049",
+        "semantics": "`let x = if cond: <expr> else: <expr> end if` and `let x = match subject: case p: <expr> … end match` desugar to the landed cell + branch writes + join read machinery (one unconditional write per arm, join read always defined); only the taken arm evaluates; single-expression arms (E2026), mandatory else (E2027), arm types unify (E2001); conditions use the statement grammar (RFC-0044/0048)",
+        "notes": "no new IR operations; pattern variables scope to their arm; the binding becomes visible only after the region joins, so no arm can read the cell; annotated (`let x: T = if …`), nested-condition, and multi-statement-arm forms stay refused; e2e let-bind.sico byte-exact through the real runner"
       }
     },
     "refused": {
@@ -363,6 +381,40 @@
         "refusal": "E2031 unresolved-call-target at check: List[Bool]/List[Bytes] are not executable types; bracket list monomorphs accept I64/U64 only",
         "step": "STEP-0175",
         "rfc": "RFC-0046"
+      },
+      "infix-swap-form-non-atom-operands": {
+        "check": true,
+        "build": true,
+        "refusal": "E2025 INFIX_SWAP_OPERAND_NOT_ATOM at check: the swap-form `>`/`<=` operators evaluate their source-left operand second, so v0 restricts their operands to atoms (literals, bindings, field-access chains)",
+        "step": "STEP-0328",
+        "rfc": "RFC-0048"
+      },
+      "disjunction-negation-operators": {
+        "check": true,
+        "refusal": "lexical refusal: `||`, prefix `!`, and bare `&`/`|` are not tokens in v0 (RFC-0048 excludes disjunction and negation for lack of a measured consumer); UnexpectedCharacter diagnostics",
+        "step": "STEP-0328",
+        "rfc": "RFC-0048"
+      },
+      "chained-comparisons-and-value-position-and": {
+        "check": true,
+        "build": true,
+        "refusal": "typed build refusals: chained comparisons (`a < b < c`) and `&&` outside a condition position (or with a non-comparison operand) keep named build-channel refusals",
+        "step": "STEP-0328",
+        "rfc": "RFC-0048"
+      },
+      "let-bind-arm-shape-violations": {
+        "check": true,
+        "build": true,
+        "refusal": "E2026 LET_BIND_ARM_NOT_EXPRESSION (arm is not exactly one expression statement), E2027 LET_BIND_MISSING_ELSE, and E2001 TYPE_MISMATCH on the offending arm at check; named build refusals mirror the same shapes",
+        "step": "STEP-0329",
+        "rfc": "RFC-0049"
+      },
+      "expression-position-conditions": {
+        "check": true,
+        "build": true,
+        "refusal": "if/match in operand, argument, or return position, annotated let-binds (parse refusal), and nested if-expression conditions stay out of v0 (RFC-0049 §9 non-goals); nested if-expression conditions keep the named build-channel expression refusal",
+        "step": "STEP-0329",
+        "rfc": "RFC-0049"
       }
     },
     "proposed": {
@@ -394,6 +446,9 @@
     "for-loops-fixture": "tests/end-to-end/for-loop-words.sico",
     "for-collections-fixture": "tests/end-to-end/for-loop-collections.sico",
     "error-propagation-fixture": "tests/end-to-end/error-propagation.sico",
-    "list-numeric-fixture": "tests/end-to-end/list-numeric.sico"
+    "list-numeric-fixture": "tests/end-to-end/list-numeric.sico",
+    "infix-comparisons-fixture": "tests/end-to-end/infix-comparisons.sico",
+    "batch3-runner-test": "runner/sico-runner/tests/language_batch3.rs",
+    "let-bind-fixture": "tests/end-to-end/let-bind.sico"
   }
 }

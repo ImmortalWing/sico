@@ -802,11 +802,14 @@ fn read_hex_key<const N: usize>(path: &Path, label: &str) -> Result<[u8; N], Str
 }
 
 /// Script package limits: channel and memory bounds match RFC-0029 Script v0.
+///
+/// STEP-0497: the memory bound is the guest linear memory the Script
+/// components declare (`sico_package::SCRIPT_MEMORY_BYTES`), not the generic
+/// 64 MiB package default. The declaration is fixed (minimum equals maximum),
+/// so a smaller limit puts the effective ceiling below the declared minimum
+/// and every Script launch traps while instantiating the guest memory.
 fn script_limits() -> RuntimeLimits {
-    RuntimeLimits {
-        body_bytes: 8 * 1024 * 1024,
-        ..RuntimeLimits::default()
-    }
+    sico_package::script_profile_limits()
 }
 
 fn write_new_artifact(output: &Path, bytes: &[u8]) -> Result<(), String> {

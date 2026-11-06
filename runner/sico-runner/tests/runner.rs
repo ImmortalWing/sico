@@ -1457,6 +1457,17 @@ fn prepared_program_reruns_are_isolated_and_survive_a_trap() {
         "PERSISTENT_WARM_MEDIAN_US={}",
         elapsed[elapsed.len() / 2].as_micros()
     );
+    // The 20 ms budget is the M9 planning target for a persistent warm rerun
+    // of a minimal cached script (STEP-0090/0094, measured 5.994 ms then).
+    // STEP-0454/0484 raised the script profile's guest linear-memory ceiling
+    // to 2 GiB (MEMORY_PAGES 33,792), so every script component now reserves
+    // its full 2 GiB linear-memory minimum per instance: the measured warm
+    // median on the reference host moved from 6.5 ms at the 128 MiB ceiling
+    // to 17.4 ms at the 2 GiB ceiling. The reservation cost is recorded in
+    // RFC-0029; the budget constant stays unchanged, and this assert is one
+    // of the two env-sensitive budget asserts classified in the M19 plan
+    // (§3.1: fails under heavy parallel load, passes solo). CI runs the
+    // runner suite serially (tools/run-ci.ps1).
     assert!(
         elapsed[elapsed.len() / 2] <= std::time::Duration::from_millis(20),
         "warm median {:?}",

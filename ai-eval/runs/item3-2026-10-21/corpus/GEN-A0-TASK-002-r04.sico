@@ -1,0 +1,11 @@
+async fn compute(value: Int) -> Int
+  return value + 1
+end
+
+async fn pair() -> List<Int>
+  task group
+    let first = spawn compute(1)
+    let second = spawn compute(2)
+    return await collect_tasks([first, second], order: input)
+  end
+end

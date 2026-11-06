@@ -1,0 +1,62 @@
+{
+  "schema": "sico.m22.corpus-parity.v0",
+  "mapped_by": {
+    "schema": "sico.m22.corpus-parity-map.v1",
+    "version": 1
+  },
+  "checked_count": 6,
+  "exact_parity_count": 6,
+  "structural_parity_count": 0,
+  "zero_parity_count": 0,
+  "mapped_id_coverage": {
+    "registered_classes": 33,
+    "refined": 32,
+    "coarse": 1
+  },
+  "span_axis": "not-compared: guest emits no span (see selfhost/corpus-parity-map-v1.json .span_axis)",
+  "unmapped_rust_ids": [],
+  "entries": [
+    {
+      "path": "semantic-cases/affine-resources/invalid/borrow-across-await.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    },
+    {
+      "path": "semantic-cases/affine-resources/invalid/use-after-close.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    },
+    {
+      "path": "semantic-cases/affine-resources/invalid/use-after-move.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    },
+    {
+      "path": "semantic-cases/affine-resources/valid/close-once.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    },
+    {
+      "path": "semantic-cases/affine-resources/valid/scoped-cleanup.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    },
+    {
+      "path": "semantic-cases/component-call/invalid/trap-as-domain-error.sico",
+      "rust_verdict": "REFUSED:LEXICAL",
+      "guest_verdict": "REFUSED:ERR:E-SH-IR-FUNCTION-COUNT",
+      "mapped_id": "ERR:E-SH-IR-FUNCTION-COUNT",
+      "parity": "exact"
+    }
+  ]
+}

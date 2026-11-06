@@ -1,0 +1,20 @@
+enum ParseError
+  Empty
+  Invalid(value: Text)
+end
+
+enum AppError
+  MissingInput
+  BadInput(value: Text)
+end
+
+fn parse() -> Result<Int, ParseError>
+  return ok(1)
+end
+
+fn load() -> Result<Int, AppError>
+  return parse().map_error(problem => match problem
+    ParseError.Empty => return AppError.MissingInput
+    ParseError.Invalid(value) => return AppError.BadInput(value)
+  end)
+end

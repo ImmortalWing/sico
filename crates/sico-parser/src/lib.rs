@@ -730,6 +730,21 @@ fn opener(tokens: &[Token], line: &Line) -> Option<(BlockKind, usize)> {
     }
     let first = line.significant[0];
     let first_kind = tokens[first].kind;
+    // RFC-0049 (STEP-0329): the two let-bound statement forms bind the
+    // block — `let x = if …:` closes with `end if`, `let x = match …:`
+    // with `end match`. Detection is positional (fourth significant token)
+    // so no other `let` line can be mistaken for a block opener.
+    if first_kind == TokenKind::Let
+        && let Some(bound) = line.significant.get(3).copied()
+        && matches!(tokens[bound].kind, TokenKind::If | TokenKind::Match)
+    {
+        let kind = if tokens[bound].kind == TokenKind::If {
+            BlockKind::If
+        } else {
+            BlockKind::Match
+        };
+        return Some((kind, first));
+    }
     let direct = match first_kind {
         TokenKind::Record => Some(BlockKind::Record),
         TokenKind::Enum => Some(BlockKind::Enum),

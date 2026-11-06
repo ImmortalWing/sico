@@ -1,0 +1,610 @@
+{
+  "schema": "sico.bare-literal-corpus.v0",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "date": "2026-10-21",
+  "prompt_packet_sha256": "438c0bab18e6272c45e69a73a1cb7c3e9d3f40cde2fcaf8e24f5297986d6f34a",
+  "cost_total_usd": 0.027196,
+  "files": [
+    {
+      "file": "GEN-A0-CAP-001-r01.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 1,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r02.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 2,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r03.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 3,
+      "sha256": "1bf79aa163d96b8c4a625c6a6753af7b4949022bdfdb0dc59c0a65306ffc4d75"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r04.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 4,
+      "sha256": "1bf79aa163d96b8c4a625c6a6753af7b4949022bdfdb0dc59c0a65306ffc4d75"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r05.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 5,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r06.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 6,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r07.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 7,
+      "sha256": "1bf79aa163d96b8c4a625c6a6753af7b4949022bdfdb0dc59c0a65306ffc4d75"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r08.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 8,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r09.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 9,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-CAP-001-r10.sico",
+      "task_id": "GEN-A0-CAP-001",
+      "repetition": 10,
+      "sha256": "1cb8313e7974c0c6c97ed58f3f0ded2ec3ae13f2b0e1f6e9428e60e1cbc34269"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r01.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 1,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r02.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 2,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r03.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 3,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r04.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 4,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r05.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 5,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r06.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 6,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r07.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 7,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r08.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 8,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r09.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 9,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-COMP-001-r10.sico",
+      "task_id": "GEN-A0-COMP-001",
+      "repetition": 10,
+      "sha256": "e9ea74228db3881a9defe4e434abf7d393a4e947c8ced3a9cd30da054e845938"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r01.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 1,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r02.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 2,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r03.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 3,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r04.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 4,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r05.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 5,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r06.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 6,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r07.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 7,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r08.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 8,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r09.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 9,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-MATCH-001-r10.sico",
+      "task_id": "GEN-A0-MATCH-001",
+      "repetition": 10,
+      "sha256": "b25e316c7ed09b5da57097e8138630dc871aeb6e307b188e819631aa3c4e6429"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r01.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 1,
+      "sha256": "3f6a6f5e04f9cbeb91b435f35a0f72a6459b828dd8560142ccae41861f617688"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r02.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 2,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r03.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 3,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r04.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 4,
+      "sha256": "3f6a6f5e04f9cbeb91b435f35a0f72a6459b828dd8560142ccae41861f617688"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r05.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 5,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r06.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 6,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r07.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 7,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r08.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 8,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r09.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 9,
+      "sha256": "42b00677aa99bce8d6287aae2a702c36c33fed501f75d633af9888a15c11fe62"
+    },
+    {
+      "file": "GEN-A0-NOM-002-r10.sico",
+      "task_id": "GEN-A0-NOM-002",
+      "repetition": 10,
+      "sha256": "3f6a6f5e04f9cbeb91b435f35a0f72a6459b828dd8560142ccae41861f617688"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r01.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 1,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r02.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 2,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r03.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 3,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r04.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 4,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r05.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 5,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r06.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 6,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r07.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 7,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r08.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 8,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r09.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 9,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-NUM-003-r10.sico",
+      "task_id": "GEN-A0-NUM-003",
+      "repetition": 10,
+      "sha256": "cb581a9077aa60ca77f87babbae5360ed3e38a04589645953d057c5408591e20"
+    },
+    {
+      "file": "GEN-A0-RES-002-r01.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 1,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r02.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 2,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r03.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 3,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r04.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 4,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r05.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 5,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r06.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 6,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r07.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 7,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r08.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 8,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r09.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 9,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RES-002-r10.sico",
+      "task_id": "GEN-A0-RES-002",
+      "repetition": 10,
+      "sha256": "ddc9094ef5ee4c93158f19736f6b7549433a19f0095e280cc005882139b4e5ef"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r01.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 1,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r02.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 2,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r03.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 3,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r04.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 4,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r05.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 5,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r06.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 6,
+      "sha256": "9788baeba8b41a3af1753d97fe682404755dcd3ec433f8301943194f8633be21"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r07.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 7,
+      "sha256": "9788baeba8b41a3af1753d97fe682404755dcd3ec433f8301943194f8633be21"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r08.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 8,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r09.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 9,
+      "sha256": "0492f7a3801cfef68bda6524fc1194e2779a98181d496a3778f5dd8d2b52a313"
+    },
+    {
+      "file": "GEN-A0-RESULT-002-r10.sico",
+      "task_id": "GEN-A0-RESULT-002",
+      "repetition": 10,
+      "sha256": "9788baeba8b41a3af1753d97fe682404755dcd3ec433f8301943194f8633be21"
+    },
+    {
+      "file": "GEN-A0-REV-001-r01.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 1,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r02.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 2,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r03.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 3,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r04.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 4,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r05.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 5,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r06.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 6,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r07.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 7,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r08.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 8,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r09.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 9,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-REV-001-r10.sico",
+      "task_id": "GEN-A0-REV-001",
+      "repetition": 10,
+      "sha256": "19b4eed070d5fff7533d899d9c894a516199f28ce0b7f2b54356fe1eb1fc4425"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r01.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 1,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r02.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 2,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r03.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 3,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r04.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 4,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r05.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 5,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r06.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 6,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r07.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 7,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r08.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 8,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r09.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 9,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-STREAM-002-r10.sico",
+      "task_id": "GEN-A0-STREAM-002",
+      "repetition": 10,
+      "sha256": "7ac15e47c7d1778575e73a5df90492c342118b09a8ecf8f73831c16d0182cb27"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r01.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 1,
+      "sha256": "12bc6ed8e66b166696687ad28cded783782fd1fdb630b64d5fd407c47d2b0448"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r02.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 2,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r03.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 3,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r04.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 4,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r05.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 5,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r06.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 6,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r07.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 7,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r08.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 8,
+      "sha256": "c82e467175582355ba318133086cd2e647d75d6b5aaae31dbdb47c444168c149"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r09.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 9,
+      "sha256": "12bc6ed8e66b166696687ad28cded783782fd1fdb630b64d5fd407c47d2b0448"
+    },
+    {
+      "file": "GEN-A0-TASK-002-r10.sico",
+      "task_id": "GEN-A0-TASK-002",
+      "repetition": 10,
+      "sha256": "12bc6ed8e66b166696687ad28cded783782fd1fdb630b64d5fd407c47d2b0448"
+    }
+  ]
+}

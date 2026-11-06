@@ -59,6 +59,15 @@ Items, exactly as recorded in the M22 plan §8:
     B fires only after convergence is declared absent, never during a
     closure attempt. Only RFC/contract drafting and measured-consumer
     evidence proceed while M22 is mid-flight regardless of route.
+  - **Owner parallel directive (2026-09-30, registered):** 「现在有个
+    代理在完成M22，你来完成M23」 authorizes batch-3 implementation in
+    parallel with the mid-flight M22 line. The dual-gate's churn concern
+    is neutralized by the RFC-0048 §4/§9 and RFC-0049 §4/§8 append-only
+    proofs (every new form widens today's refusal surface; the selfhost
+    sources consume none of it; the M22 differential stays byte-stable —
+    re-verified by the STEP-0329 shared-tree record). The selfhost
+    re-baseline remains a separately registered decision (§9) and the
+    M22 critical path is untouched.
 - Per-item accepted RFC (RFC-0033 gate): measured consumer, explicit
   desugar, source-map identity, formatter idempotence, typed
   diagnostics for pre-existing identifiers that used the new keywords/
@@ -134,13 +143,16 @@ labels for planning, not allocated STEP identifiers.
 
 ### 8.1 Item 1 — infix comparison and logical operators
 
-> Status 2026-09-25 (card 23-B): RFC drafted —
-> [`RFC-0048`](../rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)
-> (draft, owner acceptance required) proposes the five ordered/inequality
-> infix comparisons plus `&&`, desugared onto the existing
-> `EqualFixed`/`LessFixed` operations; `||` and `!` excluded (no measured
-> consumer). The RFC also records the discovered `<=` check-green /
-> build-refused split on the unconsumed `LessEqual` token.
+> Status 2026-09-30 (STEP-0328): **implemented** under the owner
+> parallel directive (§2). [`RFC-0048`](../rfc/RFC-0048-language-v1-batch3-infix-comparison-logical-and.md)
+> (accepted by the STEP-0323 adjudication) landed: lexer pair scan,
+> condition-position desugar onto `EqualFixed`/`LessFixed` with branch
+> inversion and atom-restricted swap forms (E2025), short-circuit `&&`
+> between comparison conditions in if/while, E2024 message generalized,
+> formatter one-space canonical, matrix rows + validator + e2e and
+> refusal corpora, limit+1 nesting evidence. `||`/`!` out of v0 as
+> drafted. The `<=` check-green/build-refused debt is closed (accepted
+> in-shape; narrower named refusal out-of-shape).
 
 - **Measured consumer (inventory phase).** Enumerate the current tracked
   `selfhost/*.sico` sources and line counts in the inventory STEP (the
@@ -171,11 +183,16 @@ labels for planning, not allocated STEP identifiers.
 
 ### 8.2 Item 2 — expression-position conditions
 
-> Status 2026-09-25 (card 23-B): RFC drafted —
-> [`RFC-0049`](../rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)
-> (draft, owner acceptance required): the two let-bound statement forms
-> only (`let x = if/else`, `let x = match`), single-expression arms,
-> desugared through the landed D2 machinery; E2026/E2027 appended.
+> Status 2026-09-30 (STEP-0329): **implemented** under the owner
+> parallel directive (§2). [`RFC-0049`](../rfc/RFC-0049-language-v1-batch3-let-bound-if-match.md)
+> (accepted by the STEP-0323 adjudication) landed: parser openers for the
+> two let-bound forms, check-side E2026/E2027/E2001 arm rules with
+> join-time binding visibility, lowering through the landed cell +
+> branch-writes + join-read machinery (statement-match payload spill
+> reused verbatim), formatter canonical shape (else:/case: at header
+> depth), matrix rows + validator + e2e and refusal corpora, limit+1
+> nesting evidence. Annotated/nested/multi-statement forms refused as
+> drafted.
 
 - **Measured consumer.** Count the mutable-cell + all-return match +
   join-read sites that exist only to bind one conditional value, in the
@@ -206,6 +223,25 @@ labels for planning, not allocated STEP identifiers.
   owner-reviewed AI-generated corpus remains the unmet leg; the decision
   record is therefore **deferred**, the item stays open, and no grammar
   change is made.
+- **Status 2026-10-21 (STEP-0498) — item 3 closed.** Both legs ran and the
+  owner reviewed the corpus. The AI leg: 100 provider-billed
+  `deepseek-chat` calls (M13 identity, USD 0.027196) over the 10 frozen A0
+  generation tasks; the corpus is frozen under
+  [`ai-eval/runs/item3-2026-10-21/`](../../ai-eval/runs/item3-2026-10-21/)
+  with per-file SHA-256 and an explicit audit exception to the
+  "raw provider output is not committed" policy. The measurement:
+  **0 literal-constructor calls (0.000/KB)** on the AI corpus against
+  3,236 calls (3.055/KB) on the selfhost leg — and that zero is a
+  **surface-syntax artifact**, not a property of AI-written code (A0 is an
+  M1-era retained control syntax whose guide has no explicit-width literal
+  form and which no compiler can execute; 100/100 candidates are rejected
+  by the current front-end with `E1013`), so the AI leg is **not
+  commensurable** with the selfhost leg. The measured type facts
+  (`Int` already accepts bare literals; `I64` rejects them with `E2002`)
+  narrow the open question to a context-inferred width literal for
+  `I64`/`U64`. The decision record is written in
+  [`RFC-0046` §3 D3](../rfc/RFC-0046-language-v1-batch2-for-loops-error-propagation-list-elements-v0.md):
+  **D3 stands, no grammar change**, and no typed-literal RFC is opened.
 
 ### 8.4 Item 4 — `text.chars` (queued by RFC-0046 §2)
 
@@ -241,6 +277,60 @@ labels for planning, not allocated STEP identifiers.
   declared, disjoint subset is recorded; a wide operator set forces the
   parser slices to re-freeze, which is exactly why the RFC must fix the
   smallest closed set first (§5 risk 1).
+- **Dual-implementation register entry (2026-09-30, STEP-0328/0329):**
+  the Sico selfhost frontend declares a **disjoint subset** of the
+  batch-3 surface: the selfhost lexer/parser/checker/formatter sources
+  keep the intrinsic-call style (0 infix-operator occurrences, 0 let-
+  bound forms) and do not consume `< <= > >= != &&` or `let x =
+  if/match`; no selfhost slice re-freezes and the M22 differential
+  (corpus-v0.json stays frozen at 215 entries; post-freeze corpus files
+  are excluded per the RFC-0047 record precedent) is byte-stable. A
+  future re-baseline that adopts the batch-3 surface re-opens S1/S2
+  differentials under the unchanged ADR-0015 contract.
 - Items 1 and 2 share one diagnostic-namespace decision (append-only
   codes); landing them under one RFC-set review keeps the code registry
   coherent, but they remain separately gated items.
+
+## 10. Residual closure (2026-10-20, STEP-0489)
+
+The 2026-09-30 exit audit closed items 1/2/4 and left three residuals. This
+section records their current state; it does not change any exit gate.
+
+| Residual | State after STEP-0489 | Depends on M22? |
+|---|---|---|
+| `diagnostics/catalog.json` + `semantic-case-map.json` full protocol extension (E2021–E2027, E2031) | **closed** — the eight implemented-but-unregistered semantic codes are now registered with catalog templates, and a new implementation-level corpus proves every one of them against the real compiler (`sico check --json`: code, key, argument set and rendered message byte-identical to the catalog) | no |
+| item 3 bare-literal re-measurement (owner-review AI corpus leg) | **closed** (2026-10-21, STEP-0498) — the selfhost leg is re-measured at a pinned commit (literal-constructor density **3.199 → 3.055 per KB**, i.e. the explicit-width ceremony did not get denser even though the absolute count grew 2,169 → 3,236), and the AI leg ran for real: 100 billed DeepSeek calls (M13 identity) over the 10 frozen A0 generation tasks, USD 0.0272 → a 100-file / 22,091-byte corpus (560 expression lines by the repository tool's denominator) with **0 literal-constructor calls**. That zero is a **surface-syntax artifact** (A0 is an M1-era retained control syntax with no explicit-width literal form and no compiler), so the AI leg is **not commensurable** with the selfhost leg; the measured type facts (`Int` accepts bare literals, `I64` does not) narrow the open question to a context-inferred width literal for `I64`/`U64`. The owner reviewed and froze the corpus (now in the repository) and recorded the decision in RFC-0046 §3 D3: **D3 stands, no grammar change** | no |
+| STEP-0328/0329 independent CI adjudication | **closed** (2026-10-21, STEP-0500) — GitHub Actions is reachable again and the adjudication is green: runs `39524849306` (`7e5ad3c`) and `39525367456` (`4e14b9d`) both **success** on the `windows-gnu` job with all eleven inner steps passing (fmt, clippy workspace + runner, build runner debug, test workspace, test runner, module boundaries, planning contract, application-profile matrix, cross-host matrix + UI corpus, whitespace). The two earlier red points (`39454624507` on `2531427`, `39457030463` on `6808569`) were attributed with a deterministic root cause to an M22-owned constant mismatch (`MEMORY_PAGES` 33,792 pages declared as the guest memory minimum vs the app-layer ceiling of 2 GiB = 32,768 pages, introduced by `c50b3fd`; reproduced byte-for-byte on this host with the repo-pinned wasmtime), and the M22 track repaired it in STEP-0497 — see [`ci-arena-ceiling-attribution-2026-10-21.md`](../../docs/reports/ci-arena-ceiling-attribution-2026-10-21.md). The green run on the repaired tree closes this residual | no |
+
+Two catalog-scope boundaries are now recorded explicitly in
+[`diagnostics/README.md`](../../diagnostics/README.md) instead of being left
+implicit:
+
+- **E8xxx stays outside the catalog.** RFC-0001 reserves `E8000–E8999`; the
+  RFC-0039 module/package codes are CLI link-channel identities, not
+  source-level compiler diagnostics, and registering them would change a
+  reserved partition (new protocol major version + RFC).
+- **E1014–E1016 remain unregistered.** They are syntax codes whose case maps
+  (`syntax-mutation-map.json`, `top-level-syntax-map.json`) are bound to the
+  frozen mutation and candidate corpora; extending those maps is a separate
+  bounded step, not a silent table growth inside this one.
+
+The self-host interaction is unchanged: the batch-3 surface stays a declared
+disjoint subset (§9), so the M22 differential corpus stays byte-stable and
+this step introduces no M22 re-baseline obligation.
+
+### 10.1 STEP-0490 — item 3 preparation (2026-10-21)
+
+| Item | State |
+|---|---|
+| selfhost leg re-measured | **done** at a pinned commit (2531427; 9/9 selfhost blobs byte-identical to the commit): literal-constructor calls 2,169 → 3,236, but density **3.199 → 3.055 per KB**, comparison-predicate density 59.671 → 54.166 per 1,000 lines. A second, independent measurement tool agrees exactly (3,236) and also prices the hypothetical typed-literal form (42,042 bytes, 3.88% of the corpus) |
+| AI corpus source | **frozen** — the 10 A0 `generation` tasks of `sico-ai-eval-v1` (`tools/prepare-ai-eval.ps1 -Category generation -Syntax A0`); B/C are alternative candidate syntaxes and are excluded from a current-Sico ceremony count |
+| DeepSeek adapter | **versioned** — `tools/ai-eval/deepseek_generation_corpus.py` (standard library only, key read from `DEEPSEEK_API_KEY` and never persisted), M13-identical identity/parameters, cost computed from provider-reported tokens at the published rates, hard USD 10 cap; the M13 adapter was lost with `target/` and is not repeated here |
+| provider credential | **used** — the owner supplied the DeepSeek key on 2026-10-21 for this leg; it was read from the environment only and never written to disk or into the repository |
+| offline proof | **done** — fixture mode produces the run file (SHA), the corpus candidates, the per-file SHA manifest and the cost line; `--dry-run` prints the full call plan; a local-mock pre-flight additionally exercised the **live HTTP path** (request shape, response parsing, the 429 backoff branch, corpus + manifest + run-file writing, cost accounting): 14/14 checks, 21 HTTP requests for 20 calls |
+| live AI leg | **executed** (2026-10-21) — 100 billed calls (10 A0 generation tasks × 10 repetitions), M13-identical identity (`deepseek-chat`, temp 0, top_p 1, 4 in-flight), **USD 0.0272**, 75,830 in / 6,116 out provider-reported tokens, 0 failed calls. Corpus: 100 files / 22,091 B / 1,190 lines / 400 expression lines / 350 call sites → **0 literal-constructor calls (0.000/KB)**. Evidence: [`ai-eval-item3-live-model-2026-10-21.md`](../../docs/reports/ai-eval-item3-live-model-2026-10-21.md) |
+| why the AI leg reads zero | **measured, not assumed** — the A0 candidate syntax writes integer literals plainly (`return keep_size(Bytes(16))`) and defines no explicit-width literal form; A0 is an M1-era *retained control* syntax that no compiler can execute (`syntax-candidates/README.md`), and the current front-end rejects all 100 files with `E1013` (the frozen prompts ask for declaration-only programs; the current language requires an explicit `main`). The zero is therefore a **surface-syntax artifact**: the AI leg as frozen is **not commensurable** with the selfhost leg and can neither corroborate nor refute its 3.055/KB |
+| type-system mechanism | **measured** (`sico check --json`) — bare `0` is **accepted** where an `Int` is expected; `return 0` in an `I64` context is `E2002` (`expected I64, found Int; convert explicitly`); `I64.literal(0)` in an `Int` context is `E2001`. `Int` and `I64` have no implicit conversion, so the constructor is forced wherever an `I64`/`U64` value is needed — the selfhost's density reflects its width-typed code, not a tax on all integer use. The narrowest open question is therefore a **context-inferred width literal for `I64`/`U64`**, not a general "bare literal" change |
+| corpus statistics | **11 distinct programs** (14 byte-distinct raw outputs), not 100 samples: at temperature 0 the provider is near-deterministic — 9 of the 10 tasks produced a single program across their 10 repetitions, and the 4 tasks with two raw variants differ only in the trailing newline; only `GEN-A0-TASK-002` produced two genuinely different programs. This is the M13 identity the owner required, but it caps the statistical value of the leg and must not be reported as 100 independent samples |
+| owner review of the corpus | **done** — the owner reviewed the corpus on 2026-10-21 and approved it as-is; the frozen corpus is in the repository at [`ai-eval/runs/item3-2026-10-21/`](../../ai-eval/runs/item3-2026-10-21/) (100 files + manifest + run file, per-file SHA-256), under an explicit audit exception to the "raw provider output is not committed" policy |
+| D3 decision record | **written** — RFC-0046 §3 D3 now carries the 2026-10-21 re-measurement: selfhost numbers, the AI leg's negative result with its surface-syntax cause, the `Int`/`I64` type facts, and the decision **D3 stands — no grammar change**; the narrowed open question (a context-inferred width literal for `I64`/`U64`) is recorded as *not decided here*, and no typed-literal RFC is opened |

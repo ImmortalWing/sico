@@ -1474,12 +1474,16 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
             vec![list_of(Type::String), Type::U64],
             result_of(Type::String),
         ),
-        "sico.list.append" => (
+        "sico.list.append" | "sico.arena.push_chunk" => (
             vec![list_of(Type::String), Type::String],
             list_of(Type::String),
         ),
         "sico.u64.to_text" => (vec![Type::U64], Type::String),
         "sico.i64.to_text" => (vec![Type::I64], Type::String),
+        // STEP-0484 arena treadmill (RFC-0029 amendment): owned-arena
+        // (non-transport) script cores only; the codegen refuses these in
+        // transport modules at build.
+        "sico.arena.enter_scratch" | "sico.arena.exit_scratch" => (vec![], Type::U64),
         "sico.fs.read" => (
             vec![Type::String],
             Type::Result {

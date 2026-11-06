@@ -265,6 +265,70 @@
       "key": "UNCHECKED_STALE_RESULT",
       "arguments": {},
       "expected_message": "compare loaded.revision before applying loaded.text"
+    },
+    {
+      "case": "REC-001",
+      "source": "diagnostics/implementation-cases/records/invalid/duplicate-field.sico",
+      "code": "E2021",
+      "key": "DUPLICATE_FIELD",
+      "arguments": { "field": "x" },
+      "expected_message": "duplicate field: x"
+    },
+    {
+      "case": "REC-002",
+      "source": "diagnostics/implementation-cases/records/invalid/empty-record.sico",
+      "code": "E2022",
+      "key": "EMPTY_RECORD",
+      "arguments": { "record": "Empty" },
+      "expected_message": "record Empty declares no fields"
+    },
+    {
+      "case": "REC-003",
+      "source": "diagnostics/implementation-cases/records/invalid/field-immutable.sico",
+      "code": "E2023",
+      "key": "FIELD_IMMUTABLE",
+      "arguments": { "record": "p", "field": "x" },
+      "expected_message": "field p.x is immutable; replace the whole record with set"
+    },
+    {
+      "case": "REC-004",
+      "source": "diagnostics/implementation-cases/records/invalid/record-comparison.sico",
+      "code": "E2024",
+      "key": "RECORD_COMPARISON",
+      "arguments": { "type": "Point", "operator": "==" },
+      "expected_message": "records of type Point do not support ==; compare fields explicitly"
+    },
+    {
+      "case": "EXP-001",
+      "source": "diagnostics/implementation-cases/expressions/invalid/swap-form-non-atom.sico",
+      "code": "E2025",
+      "key": "INFIX_SWAP_OPERAND_NOT_ATOM",
+      "arguments": { "operator": ">", "rewrite": "b < a" },
+      "expected_message": "non-atom operand in a swap-form > condition; evaluate the operand into a binding first or rewrite as b < a"
+    },
+    {
+      "case": "EXP-002",
+      "source": "diagnostics/implementation-cases/expressions/invalid/let-bind-arm-not-expression.sico",
+      "code": "E2026",
+      "key": "LET_BIND_ARM_NOT_EXPRESSION",
+      "arguments": {},
+      "expected_message": "let-bound arm must be exactly one expression"
+    },
+    {
+      "case": "EXP-003",
+      "source": "diagnostics/implementation-cases/expressions/invalid/let-bind-missing-else.sico",
+      "code": "E2027",
+      "key": "LET_BIND_MISSING_ELSE",
+      "arguments": {},
+      "expected_message": "let-bound if requires an else arm"
+    },
+    {
+      "case": "EXP-004",
+      "source": "diagnostics/implementation-cases/expressions/invalid/unresolved-call-target.sico",
+      "code": "E2031",
+      "key": "UNRESOLVED_CALL_TARGET",
+      "arguments": { "callee": "missing_helper" },
+      "expected_message": "unresolved call target missing_helper"
     }
   ]
 }

@@ -66,6 +66,16 @@ sico-app run --trusted-key trusted-public-key.hex signed-demo.sapp
 
 公钥、app ID、version、package digest 或 capability closure 不一致时必须拒绝执行。
 
+## 源码包导入（RFC-0039，STEP-0147）
+
+源码可以导入签名的预编译 Component 包：
+
+```sico
+use pkg <name> version <n> expose <Interface>
+```
+
+解析经 `sico-lock.json` 锁定版本与 digest（缺失、digest 不匹配或签名校验失败分别得到 E8013 等 typed 拒绝）；包内 `interface <Name> version <n>` 成为 `sico:user/<name>@<n>` import 身份，`<package>.<function>` 合格调用跨为 Component import。v0 值集合受限（amendment A7：标量、一层 List、标量错误的 Result）；包必须是 pure、零 authority 的 Component——自带 import 的包被拒绝（E8021）；exports 形状由 producer stamp digest 门校验（E8016）；一次最多 16 个包（E8015）。
+
 ## 安全边界
 
 - development seed 不得复用为 production key；
