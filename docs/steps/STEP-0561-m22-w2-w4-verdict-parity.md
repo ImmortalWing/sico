@@ -1,4 +1,4 @@
-# STEP-0557 m22-w2 **W4 拒绝语料 verdict parity（前端 150 项）**
+# STEP-0561 m22-w2 **W4 拒绝语料 verdict parity（前端 150 项）**
 
 | 项 | 值 |
 |---|---|
@@ -70,7 +70,7 @@ verdict parity = guest 不出现「Rust 拒绝、guest 接受」的**越权接�
 
 | 通道 | 状态 | 归属 |
 |---|---|---|
-| W4 verdict parity（前端 150 项） | **本片** | STEP-0557 |
+| W4 verdict parity（前端 150 项） | **本片** | STEP-0561 |
 | W4 精确 (id, span) parity | 未达（诊断映射契约未定义） | 后续判断 |
 | W4 SCRIPT_ABI build 轴 | 过早（前端能力缺口挡路） | 待 W2/W3 |
 | 燃料墙：331 `FuelExhausted` + 24 个 8 MiB trap | **owner 决策叉口** | 上调限额 / 收窄口径均属 owner；唯一自主解为结构预解析（大改、收益不确定） |

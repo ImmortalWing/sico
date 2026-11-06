@@ -2,14 +2,14 @@
 
 | 项 | 值 |
 |---|---|
-| 片型 | **实现片**：修复 STEP-0557 发现的 W4 声音洞——guest 前端把 Rust oracle 以 `E2010`（missing field）拒绝的缺字段 record 构造降为 canonical IR。修复 = 新增字段完备性检查，**只落在 record 构造路由**（`record_construct_function_ir`），不触碰共享的 variant 载荷路由 |
+| 片型 | **实现片**：修复 STEP-0561 发现的 W4 声音洞——guest 前端把 Rust oracle 以 `E2010`（missing field）拒绝的缺字段 record 构造降为 canonical IR。修复 = 新增字段完备性检查，**只落在 record 构造路由**（`record_construct_function_ir`），不触碰共享的 variant 载荷路由 |
 | exit | **达成**：全量 150 项复跑 `checked=150, mismatch=3`（3 燃料墙）、**`lowered=0`**（`missing-field.sico` 由 `lowered` 翻 `refused:ERR:E-SH-IR-CONSTRUCT-FIELD`，parity 146→**147/150**）；runner 固件 181 passed / 5 failed（4 个 CALL-SHAPE = 既有红 + 1 个 MS-225 ledger 行移位 = 本修复后续项，见 §4.2/§4.3） |
 | 不翻门 | 门 1/5/6 GO、门 2 PARTIAL、门 3 NO-GO、门 4/7 不得沿用 —— 全部**维持**（无变化） |
 | 证据等级 | `internal-fixture`：本机 Windows x64，debug 测试构建，`sico_runner` 限额不变（fuel 800e9 / timeout 120 s / 内存 2560 MiB） |
 
-## 1. 问题（STEP-0557 的 1 个声音洞）
+## 1. 问题（STEP-0561 的 1 个声音洞）
 
-STEP-0557 W4 verdict parity 发现 1 项 `lowered`（越权接受）：
+STEP-0561 W4 verdict parity 发现 1 项 `lowered`（越权接受）：
 
 > `syntax-candidates/b/nominal-invariants/invalid/missing-field.sico`：`record Feature: field name: Text; field enabled: Bool`，`main` 只构造 `Feature(name: "search")`（缺 `enabled`）。Rust oracle 拒绝 `E2010`（missing field）；guest 前端把它降为 canonical IR（`op":"construct"`，`fields:[{"name":"name",...}]`）。
 
@@ -43,7 +43,7 @@ STEP-0557 W4 verdict parity 发现 1 项 `lowered`（越权接受）：
 
 `tools/probe-m22-corpus-parity.ps1` 全量重跑（`bash-oai2r7fz`，2026-11-05 本机，`sico_runner` 限额不变：fuel 800e9 / timeout 120 s / 内存 2560 MiB），重写 `selfhost/corpus-parity-v0.json`（前置工件备份 `/tmp/corpus-parity-v0.prefix.json`，35453 B）。
 
-| 汇总 | 修复前（STEP-0557） | 修复后（本片） |
+| 汇总 | 修复前（STEP-0561） | 修复后（本片） |
 |---|---|---|
 | `checked_count` | 150 | **150** |
 | `mismatch_count` | 4 | **3** |

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-M22 W4 rejection-corpus parity probe (STEP-0557).
+M22 W4 rejection-corpus parity probe (STEP-0561).
 
 .DESCRIPTION
 Checks the GUEST frontend's verdict against the RUST oracle's frozen rejection
