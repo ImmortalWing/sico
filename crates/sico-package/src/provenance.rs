@@ -15,10 +15,15 @@
 //! re-adjudication 2026-10-01) is a load-time property and lives here: an
 //! asset budget that exceeds its mapped package limit is a distinct typed
 //! refusal, and [`ProvenanceManifest::verify_binding`] performs A1.2's
-//! name→payload digest/size cross-check. The *run-time* enforcement of budgets
+//! name→payload digest/size cross-check. [`verify_provenance_in_package`]
+//! wires A1.2 + A1.3 into the `.sapp` install path (the crate-root `verify`),
+//! so a package carrying a provenance manifest is refused fail-closed when
+//! its binding or budget disagrees. The *run-time* enforcement of budgets
 //! (executing a fixture-model guest under the mapped limits) and cancellation
 //! mid-inference (properties 3-runtime and 4) belong to the runner wiring and
 //! are intentionally **not** implemented or claimed here.
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -269,6 +274,57 @@ impl ProvenanceManifest {
         }
         Ok(())
     }
+}
+
+/// RFC-0051 Amendment A1 install-time enforcement (property 3, load half):
+/// scans a verified package's resources for provenance manifests (A1.1
+/// `resources/<name>.provenance.json`), then for each one:
+///
+/// 1. parses it structurally (any §3.5 refusal is fail-closed);
+/// 2. cross-checks the name→payload binding (A1.2): the sibling resource's
+///    actual digest/size must equal the manifest's declaration;
+/// 3. checks the asset budget is a subset of the package limits (A1.3) via
+///    [`ProvenanceManifest::check_budgets_within`].
+///
+/// A package without any provenance manifest passes trivially — provenance is
+/// opt-in per A1.1. A provenance resource that does not parse, whose sibling
+/// payload disagrees with its declaration, or whose budget exceeds the package
+/// ceiling is a distinct typed refusal (never a silent skip).
+///
+/// # Errors
+///
+/// The matching [`PackageError`]; `Ok(())` when every provenance manifest is
+/// well-formed, binding-consistent and within the package budget ceiling.
+pub fn verify_provenance_in_package(
+    resources: &BTreeMap<String, Vec<u8>>,
+    package_limits: &RuntimeLimits,
+) -> Result<(), PackageError> {
+    for (path, bytes) in resources {
+        if !path.ends_with(".provenance.json") {
+            continue;
+        }
+        let manifest = ProvenanceManifest::parse(bytes)?;
+        // A1.1: the manifest occupies exactly `resources/<name>.provenance.json`.
+        if path != &manifest.provenance_resource_path() {
+            return Err(PackageError::Manifest(format!(
+                "provenance manifest {path} does not sit at its A1.1 path {}",
+                manifest.provenance_resource_path()
+            )));
+        }
+        let payload = resources
+            .get(&manifest.payload_resource_path())
+            .ok_or_else(|| {
+                PackageError::Manifest(format!(
+                    "provenance manifest {path} has no sibling payload {}",
+                    manifest.payload_resource_path()
+                ))
+            })?;
+        let stored_bytes = u64::try_from(payload.len())
+            .map_err(|_| PackageError::LengthMismatch("asset size overflows u64".to_owned()))?;
+        manifest.verify_binding(&sha256_hex(payload), stored_bytes)?;
+        manifest.check_budgets_within(package_limits)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

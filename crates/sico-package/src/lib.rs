@@ -236,6 +236,44 @@ impl VerifiedPackage {
     pub fn unsigned_bytes(&self) -> &[u8] {
         &self.unsigned_bytes
     }
+
+    /// RFC-0051 Amendment A1.3 runtime half (STEP-0578): the asset budget
+    /// declared by the package's provenance manifest, when the package
+    /// carries one. This is the mount point from a verified package to the
+    /// run-time ceiling: the returned [`provenance::Budgets`] is the input to
+    /// the runner's narrowing, so the operative run ceiling is the asset
+    /// budget (never wider than the package ceiling, which [`verify`] already
+    /// enforced through `check_budgets_within`).
+    ///
+    /// A package may carry at most one provenance manifest; a second one makes
+    /// the operative budget ambiguous and is a fail-closed
+    /// [`PackageError::Manifest`] refusal (never a silent pick). A package
+    /// with no provenance manifest yields `Ok(None)` — provenance stays
+    /// opt-in per A1.1.
+    ///
+    /// # Errors
+    ///
+    /// [`PackageError::Manifest`] when more than one provenance manifest is
+    /// present, or when a manifest does not re-parse (unreachable after a
+    /// successful [`verify`]; kept fail-closed).
+    pub fn provenance_budgets(&self) -> Result<Option<provenance::Budgets>, PackageError> {
+        let mut found: Option<provenance::Budgets> = None;
+        for (path, bytes) in &self.resources {
+            if !path.ends_with(".provenance.json") {
+                continue;
+            }
+            let manifest = provenance::ProvenanceManifest::parse(bytes)?;
+            if found.is_some() {
+                return Err(PackageError::Manifest(
+                    "package carries more than one provenance manifest; the operative asset \
+                     budget is ambiguous"
+                        .to_owned(),
+                ));
+            }
+            found = Some(manifest.asset.budgets);
+        }
+        Ok(found)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -565,6 +603,12 @@ pub fn verify(bytes: &[u8]) -> Result<VerifiedPackage, PackageError> {
         .filter(|entry| entry.path != SIGNATURE_PATH)
         .cloned()
         .collect();
+    // RFC-0051 Amendment A1 install-time enforcement (STEP-0578): a package
+    // carrying a provenance manifest is refused fail-closed when the
+    // manifest/payload binding (A1.2) disagrees or the asset budget exceeds
+    // the package limit ceiling (A1.3). Provenance is opt-in: a package
+    // without a `.provenance.json` resource passes unchanged.
+    provenance::verify_provenance_in_package(&resources, &manifest.limits)?;
     Ok(VerifiedPackage {
         manifest,
         component: component_entry.bytes.clone(),

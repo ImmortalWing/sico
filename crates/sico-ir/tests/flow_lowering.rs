@@ -114,7 +114,11 @@ fn cumulative_capability_is_twenty_lowered_and_five_typed_refused() {
     // STEP-0104: structured-pair (collect_tasks) lowers to explicit task IR.
     // STEP-0137: payload bindings on computed all-return match subjects
     // spill into compiler cells, un-refusing explicit-result-handle.
-    assert_eq!((lowered, unsupported), (20, 5));
+    // 23 lowered / 5 typed-refused = lower_core partition of the 28
+    // accept-marked syntax-candidates/b cases post-merge 7bcdc35 (20/5 -> 23/5;
+    // 3 further accept cases now lower through core, frozen with the 235-entry
+    // corpus refreeze, STEP-0279..0283).
+    assert_eq!((lowered, unsupported), (23, 5));
 }
 
 /// RFC-0036 §5: lowering emits the canonical scope table, LIFO region

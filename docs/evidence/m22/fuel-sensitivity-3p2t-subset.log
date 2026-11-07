@@ -1,0 +1,17 @@
+
+running 1 test
+SENS_FUEL fuels=[3200000000000] timeout=300s
+test the_fuel_sensitivity_of_real_match_groups_is_measured has been running for over 60 seconds
+SENS_FUEL parser.sico:parameters_ir fuel=3200000000000 outcome=component component_bytes=11917 component_equal=yes wall_ms=82246 source_bytes=13807
+SENS_FUEL parser.sico:gw_rhs_error_arm fuel=3200000000000 outcome=fuel-exhausted component_bytes=0 component_equal=- wall_ms=156083 source_bytes=19774
+SENS_FUEL parser.sico:fixed_operation_literal_instructions fuel=3200000000000 outcome=component component_bytes=18043 component_equal=yes wall_ms=130310 source_bytes=21416
+SENS_FUEL parser.sico:gw_rhs_utf8_decode_arm fuel=3200000000000 outcome=component component_bytes=19109 component_equal=yes wall_ms=143865 source_bytes=23455
+SENS_FUEL parser.sico:construct_field_value_ir fuel=3200000000000 outcome=fuel-exhausted component_bytes=0 component_equal=- wall_ms=153029 source_bytes=25234
+SENS_FUEL parser.sico:fixed_guard_condition_json fuel=3200000000000 outcome=component component_bytes=22237 component_equal=yes wall_ms=147252 source_bytes=25983
+SENS_FUEL parser.sico:gw_list_get_subject_packed fuel=3200000000000 outcome=fuel-exhausted component_bytes=0 component_equal=- wall_ms=152689 source_bytes=28781
+SENS_FUEL parser.sico:gw_u64_less_than_value_packed fuel=3200000000000 outcome=fuel-exhausted component_bytes=0 component_equal=- wall_ms=147481 source_bytes=28908
+test the_fuel_sensitivity_of_real_match_groups_is_measured ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1112.99s
+
+EXIT=0

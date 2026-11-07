@@ -9,6 +9,7 @@
 - [Sico 开发手册](./development/README.md)
 - [当前 M22 交接手稿](./handoff-m22.md)
 - [M22–M26 单步执行卡](./plans/M22-M26-execution-cards.md)
+- [接手文档目录](./handoffs/README.md)
 - [当前状态](./STATUS.md)
 - [阶段路线图](./ROADMAP.md)
 - [步骤记录](./steps/README.md)

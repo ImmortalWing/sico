@@ -1,0 +1,30 @@
+{
+  "schema": "sico.m24.ui-event-corpus.v0",
+  "step": "STEP-0577",
+  "shell": "sico-ui-renderer-d2d",
+  "token-set": "fluent-subset-v0",
+  "platform": "windows x86_64 (1.98.0-x86_64-pc-windows-gnu)",
+  "event-mapping": "the WndProc reduces WM_CLOSE / WM_SIZE / WM_PAINT / WM_LBUTTONDOWN to RawMessage; events::translate maps it to WindowEvent; degenerate messages (zero client size, negative client click) are filtered; Closed/Clicked align with the ui@1 closed/click variants (RFC-0052 §2)",
+  "determinism": "same message stream => same delivered event sequence => same digest; the frozen value is recomputed in every process, so two separate processes agree exactly",
+  "evidence-class": "internal-fixture / runtime-verified window-shell event pump (not a guest-level or pilot-level feature claim)",
+  "digest": "sha256 over the fixed versioned wire form of the delivered event sequence",
+  "cases": [
+    {
+      "name": "resize_paint",
+      "sha256": "a527861327bafb4495f8777a66ced5fe2dadfcb13fe8ce937ea914ea6c05c92c"
+    },
+    {
+      "name": "click",
+      "sha256": "dd34562962f23c750e4193f2069dfc4868fb83238ae997a124e16f358a0d1356"
+    },
+    {
+      "name": "close",
+      "sha256": "46928f99598facfe0de61735cf84ce48ab3bd3b1f32e169d92556568ccc85975"
+    }
+  ],
+  "limits": [
+    "title-bytes: 256 (checked before UTF-16 encoding / any window allocation)",
+    "queue-events: 256 (pre-allocated; a push beyond the cap coalesces by kind where lossless, otherwise reports the overflow; never a silent drop)"
+  ],
+  "real-window-smoke": "opt-in (#[ignore]); passed on the evidence host: create_window -> offscreen render -> present -> read-back byte-identical -> close -> Closed event delivered -> should_quit -> idempotent destroy"
+}

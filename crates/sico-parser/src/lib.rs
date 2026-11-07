@@ -1186,7 +1186,10 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 58);
+        // 66 = syntax-candidates/b recursive `.sico` census post-merge 7bcdc35
+        // (58 -> 66; +8 cases added by the M22/M23/M24 lines and frozen with the
+        // 235-entry corpus refreeze, STEP-0279..0283).
+        assert_eq!(paths.len(), 66);
         let mut designed_accept = 0;
         let mut designed_reject = 0;
         let mut shapes = Vec::new();

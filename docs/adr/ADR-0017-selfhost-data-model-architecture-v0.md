@@ -1,6 +1,6 @@
 # ADR-0017: Self-host data-model architecture — records RFC vs SOA permanence v0
 
-> - status: accepted (Option A, owner 2026-09-24 「开始」 recorded by STEP-0269; RFC-0047 accepted separately by STEP-0270)
+> - status: accepted (Option A, owner 2026-09-24「我只看最终效果和稳定性、长期可维护性」directive registered at STEP-0267/0268; owner acceptance direction recorded by STEP-0269; RFC-0047 accepted separately by STEP-0270)
 > - date: 2026-09-24
 > - owners: autonomous-agent
 > - supersedes: -
@@ -106,15 +106,14 @@ Rejected unchanged: this is the P0-2 debt itself.
 
 ## Decision
 
-**Accepted: Option A** (owner direction recorded by STEP-0269; the initial
-draft recommended B under cost-minimisation, then STEP-0268 amended the
-recommendation before owner acceptance). Scope of the records RFC: the minimal closed set only (record
+**Decision: Option A** (accepted 2026-09-24 per the owner criteria directive「我只看最终效果和稳定性、长期可维护性」, registered at STEP-0267/0268; owner direction recorded by STEP-0269; the initial draft recommended B under cost-minimisation — see STEP-0268 for the evaluation trail; RFC-0047 was drafted and accepted per the same decision chain, STEP-0269/0270). Scope of the records RFC: the minimal closed set only (record
 declarations, field access, literals, typed record lists); RFC-0033 gate
 intact; SOA invariants remain enforced until the re-baseline lands; ADR-0015
 closure contract and ADR-0016 compilation-unit contract unchanged.
 
-If the owner selects Option B instead, this ADR records that choice as its
-Decision (Option B text above), status moves to accepted, and the W1
+Option B remains recorded above as the fallback: if the owner ever selects
+Option B instead, this ADR records that choice as its
+Decision (Option B text above), and the W1
 consolidation debts of STEP-0265 §5 become mandatory queue items.
 
 ## Consequences

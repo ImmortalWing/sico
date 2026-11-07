@@ -29,8 +29,11 @@ foreach ($relative in @(
     }
 }
 
-# The 215-source frozen corpus now runs through the integrated chain.
+# The frozen corpus runs through the integrated chain. The corpus was re-frozen
+# 215 -> 235 with STEP-0279..0283 (merge 7bcdc35); the checker test owns the
+# exact cardinality (it asserts entries.len() == 235), so this validator only
+# replays the differential and reports the current census.
 & $cargo test --locked --offline --manifest-path (Join-Path $root 'runner\sico-runner\Cargo.toml') --test selfhost_checker
 if ($LASTEXITCODE -ne 0) { throw 'STEP-0215 retirement: integrated-chain corpus differential failed' }
 
-Write-Output 'STEP_0215_OK corpus=215 lexer=integrated-retired equivalence=byte-exact runner=real retired-by=STEP-0278'
+Write-Output 'STEP_0215_OK corpus=235 lexer=integrated-retired equivalence=byte-exact runner=real retired-by=STEP-0278'

@@ -119,6 +119,13 @@ end function
 /// ceiling only; no limit is raised by this slice.
 const FUEL_CEILING: u64 = 800_000_000_000;
 
+/// One measured family: a label plus the source builder for that shape.
+///
+/// Named so the fixed-size family arrays below stay readable; the inline
+/// tuple type triggers `clippy::type_complexity` (the runner CI step runs
+/// `clippy --all-targets -- -D warnings`).
+type SourceFamily = (&'static str, Box<dyn Fn(usize) -> String>);
+
 /// The real frozen site this slice brackets. STEP-0562 ranked it the *smallest*
 /// of the 16 exhausted `parser.sico` groups (~92 KB emit-only IR), so it is the
 /// cheapest real site that still exhausts -- the right anchor for a bounded
@@ -506,7 +513,7 @@ fn the_emitter_cost_centers_are_ranked_by_fuel_slope() {
     // and confirms the *growing* families are measuring emitter work, not the
     // bracket search.
     let forwarded_let_source = |n: usize| {
-        let mut body = format!("function probe(data: U64) returns U64:\n  let a0 = data\n");
+        let mut body = "function probe(data: U64) returns U64:\n  let a0 = data\n".to_string();
         for i in 1..n {
             body.push_str(&format!("  let a{i} = a{}\n", i - 1));
         }
@@ -514,7 +521,7 @@ fn the_emitter_cost_centers_are_ranked_by_fuel_slope() {
         format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
     };
 
-    let families: [(&str, Box<dyn Fn(usize) -> String>); 4] = [
+    let families: [SourceFamily; 4] = [
         ("match_statements", Box::new(match_statements_source)),
         ("text_concat", Box::new(concat_source)),
         ("functions", Box::new(functions_source)),
@@ -644,7 +651,7 @@ fn the_match_quadratic_term_is_discriminated_from_body_scanning() {
         format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
     };
 
-    let families: [(&str, Box<dyn Fn(usize) -> String>); 2] = [
+    let families: [SourceFamily; 2] = [
         ("match_flat", Box::new(match_flat_source)),
         ("match_one", Box::new(match_one_source)),
     ];

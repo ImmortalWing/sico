@@ -23,6 +23,12 @@
 
 use std::sync::Arc;
 
+use sico_ui_renderer_d2d::Hit;
+use sico_ui_renderer_d2d::UiBackendError;
+use sico_ui_renderer_d2d::events::WindowEvent;
+use sico_ui_renderer_d2d::layout::compute as layout_compute;
+use sico_ui_renderer_d2d::tree::UiTree;
+use sico_ui_renderer_d2d::windowed::WindowedUiBackend;
 use wasmtime::component::{ComponentType, Lift, Lower};
 
 use crate::RunState;
@@ -152,6 +158,276 @@ pub trait UiRenderer: Send + Sync {
     fn poll_event(&self) -> Option<UiEvent>;
     /// Presents one frame (a pure function of UI state, ADR-0018 §3).
     fn run(&self) -> Result<bool, UiError>;
+}
+
+/// The production [`UiRenderer`] backend: the isolated Direct2D renderer core
+/// (STEP-0338) composed with the real OS window shell and event pump
+/// (STEP-0577) through [`WindowedUiBackend`]. The runner holds it behind the
+/// default-deny [`guarded`] gate, so it is **never touched without a grant**;
+/// authority is not part of this type (ADR-0018 §4).
+///
+/// Error mapping: the renderer's [`UiBackendError`] is folded into the closed
+/// guest `ui-error` set. The v0 `ui-error` enum has **no** render-failure
+/// discriminant (RFC-0052 §3), so a window-creation / present / unsupported
+/// failure collapses to the typed `no-window` refusal and an invalid argument
+/// collapses to `limit` — never a panic, never a silently swallowed failure.
+/// This collapse is the only honest option in the closed set; a dedicated
+/// `render-failed` discriminant would need a WIT append (out of scope here).
+pub struct D2dUiRenderer {
+    backend: WindowedUiBackend,
+    /// Number of coordinate clicks skipped because no node handle could be
+    /// resolved (STEP-0585). This is the host-side observable for the honest
+    /// "click happened but cannot map to a handle" gap: a skipped click is
+    /// distinguishable from "no event was pending", even though the closed
+    /// `ui@1` contract cannot carry it as a typed refusal.
+    skipped_click_count: std::sync::atomic::AtomicU64,
+}
+
+impl D2dUiRenderer {
+    /// Builds the production Direct2D + window-shell backend.
+    ///
+    /// On a non-Windows host the renderer refuses (`UnsupportedPlatform`),
+    /// folded to the typed `no-window`; the runner must then fall back to not
+    /// advertising `ui@1` at all (an honest "UI backend unavailable").
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiError`] when the platform cannot provide a UI backend.
+    pub fn new() -> Result<Self, UiError> {
+        WindowedUiBackend::new()
+            .map(|backend| Self {
+                backend,
+                skipped_click_count: std::sync::atomic::AtomicU64::new(0),
+            })
+            .map_err(fold_error)
+    }
+
+    /// The title of the open window, if a real window was created.
+    ///
+    /// This is the host-side audit affordance the e2e tests use to prove the
+    /// guest's `window` call reached a real OS window; it is **not** a guest
+    /// contract member.
+    #[must_use]
+    pub fn window_title(&self) -> Option<String> {
+        self.backend.window_title()
+    }
+
+    /// The number of coordinate clicks that could not be resolved to a node
+    /// handle and were therefore honestly skipped (STEP-0585).
+    ///
+    /// This is the host-side observable for the "click happened but cannot map
+    /// to a handle" gap: a real click that was ignored increments this counter,
+    /// so a caller (test, audit) can distinguish it from "no event was pending"
+    /// (`poll_event` returned `None` with a zero count). It is **not** a guest
+    /// contract member.
+    #[must_use]
+    pub fn skipped_click_count(&self) -> u64 {
+        self.skipped_click_count
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Posts a `WM_CLOSE` so the window closes deterministically.
+    ///
+    /// Host-side lifecycle affordance (not guest-visible); the guest's app
+    /// loop observes the resulting `closed` event through `poll-event`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiError::NoWindow`] when no window exists.
+    pub fn close(&self) -> Result<(), UiError> {
+        self.backend.close().map_err(fold_error)
+    }
+
+    /// Destroys the window; idempotent.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiError::NoWindow`] when no window exists.
+    pub fn destroy(&self) -> Result<(), UiError> {
+        self.backend.destroy().map_err(fold_error)
+    }
+}
+
+/// Folds the renderer's typed failures into the closed guest `ui-error` set.
+fn fold_error(error: UiBackendError) -> UiError {
+    match error {
+        UiBackendError::UnknownHandle => UiError::UnknownHandle,
+        UiBackendError::WrongParentKind => UiError::WrongParentKind,
+        UiBackendError::Limit { .. } => UiError::Limit,
+        // A range violation (e.g. an out-of-range window size) is a declared
+        // constraint, folded onto the `limit` refusal.
+        UiBackendError::InvalidArgument { .. } => UiError::Limit,
+        // A window-creation / present / unsupported-platform failure has no
+        // guest discriminant; it is an explicit typed `no-window` refusal
+        // (documented collapse, never a panic or a silent swallow).
+        UiBackendError::NoWindow
+        | UiBackendError::UnsupportedPlatform
+        | UiBackendError::RenderFailed { .. } => UiError::NoWindow,
+    }
+}
+
+/// The honest classification of one pumped [`WindowEvent`] that is **not** a
+/// coordinate click (STEP-0597).
+///
+/// Returns the `ui@1` event to deliver, if any. A `Closed` maps to the
+/// `closed` variant. A `Resized`/`Paint` is a window-lifecycle notification
+/// with no `ui@1` variant (it drives a re-render and never crosses the
+/// boundary). A coordinate `Clicked` is **not** classified here: it needs the
+/// layout to resolve a handle, so [`route_click_event`] owns it.
+fn classify_window_event(event: WindowEvent) -> Option<UiEvent> {
+    match event {
+        WindowEvent::Closed => Some(UiEvent::Closed),
+        WindowEvent::Clicked { .. } | WindowEvent::Resized { .. } | WindowEvent::Paint => None,
+    }
+}
+
+/// Routes one client-coordinate click to a `ui@1` event (STEP-0597).
+///
+/// This is the host-side point→handle hit-testing seam: it lays the tree out
+/// at the current client size and hit-tests the point. A click is **never
+/// fabricated** into a `click(handle)` — the handle comes from the layout.
+///
+/// Return value:
+/// - `Ok(Some(event))` delivers `click(handle)` for a node hit. The handle is
+///   the **deepest** node under the point: a child/leaf resolves to itself, a
+///   point in a container but in no child (e.g. the sibling gap) resolves to
+///   the container, and a point in the window padding resolves to
+///   `Hit::Node(root)`. `Node(root)` is the correct attribution when the point
+///   is inside the window but under **no** child node — it is **not** the
+///   STEP-0585 "attribute any click to the root" behaviour (which had no
+///   layout and so could not distinguish the root from a child).
+/// - `Ok(None)` is an explicit [`Hit::Miss`]: the point is outside the window
+///   (or no node covers it). The caller counts it as a skipped click.
+/// - `Err` is a typed layout failure ([`UiBackendError::NoWindow`] /
+///   [`UiBackendError::InvalidArgument`] / a tree refusal). It is never turned
+///   into an event.
+pub fn route_click_event(
+    x: i32,
+    y: i32,
+    tree: &UiTree,
+    width: u32,
+    height: u32,
+) -> Result<Option<UiEvent>, UiBackendError> {
+    let layout = layout_compute(tree, width, height)?;
+    Ok(match layout.hit(x, y) {
+        Hit::Node(handle) => Some(UiEvent::Click(UiHandle { id: handle })),
+        Hit::Miss => None,
+    })
+}
+
+impl UiRenderer for D2dUiRenderer {
+    fn window(&self, title: &str, width: i64, height: i64) -> Result<u64, UiError> {
+        self.backend
+            .window(title, width, height)
+            .map_err(fold_error)
+    }
+
+    fn column(&self, parent: u64) -> Result<u64, UiError> {
+        self.backend.column(parent).map_err(fold_error)
+    }
+
+    fn row(&self, parent: u64) -> Result<u64, UiError> {
+        self.backend.row(parent).map_err(fold_error)
+    }
+
+    fn text(&self, parent: u64, content: &str) -> Result<u64, UiError> {
+        self.backend.text(parent, content).map_err(fold_error)
+    }
+
+    fn button(&self, parent: u64, label: &str) -> Result<u64, UiError> {
+        self.backend.button(parent, label).map_err(fold_error)
+    }
+
+    fn dropdown(&self, parent: u64, options: &[String]) -> Result<u64, UiError> {
+        self.backend.dropdown(parent, options).map_err(fold_error)
+    }
+
+    fn image_preview(&self, parent: u64, width: u64, height: u64) -> Result<u64, UiError> {
+        self.backend
+            .image_preview(parent, width, height)
+            .map_err(fold_error)
+    }
+
+    fn progress(&self, parent: u64) -> Result<u64, UiError> {
+        self.backend.progress(parent).map_err(fold_error)
+    }
+
+    fn set_text(&self, handle: u64, content: &str) -> Result<bool, UiError> {
+        self.backend.set_text(handle, content).map_err(fold_error)
+    }
+
+    fn set_progress(&self, handle: u64, done: u64, of: u64) -> Result<bool, UiError> {
+        self.backend
+            .set_progress(handle, done, of)
+            .map_err(fold_error)
+    }
+
+    fn draw_image(
+        &self,
+        handle: u64,
+        width: u64,
+        height: u64,
+        pixels: &[u8],
+    ) -> Result<bool, UiError> {
+        self.backend
+            .draw_image(handle, width, height, pixels)
+            .map_err(fold_error)
+    }
+
+    fn poll_event(&self) -> Option<UiEvent> {
+        // Pump until a deliverable event surfaces (STEP-0585, extended by
+        // STEP-0597). `Closed` maps to the `closed` variant. A coordinate
+        // `Clicked` is routed through the layout ([`route_click_event`]): a
+        // node hit delivers `click(handle)`, a `Hit::Miss` is an honest skip
+        // (counted, observable), and a layout failure is a host invariant
+        // surfaced as `None` — never a fabricated event. A `Resized`/`Paint`
+        // is a window-lifecycle notification with no `ui@1` variant (it drives
+        // a re-render and never crosses the boundary). A lost shell thread
+        // surfaces as `None` — the only honest signal the `option<ui-event>`
+        // contract allows for a pump that cannot run.
+        loop {
+            match self.backend.poll_event() {
+                Ok(Some(event)) => {
+                    if let WindowEvent::Clicked { x, y } = event {
+                        match self.backend.layout_input() {
+                            Ok((width, height, tree)) => {
+                                match route_click_event(x, y, &tree, width, height) {
+                                    Ok(Some(delivered)) => return Some(delivered),
+                                    Ok(None) => {
+                                        // `Hit::Miss`: the point is outside the
+                                        // window (or no node covers it). Honest
+                                        // skip, observable (STEP-0585).
+                                        self.skipped_click_count
+                                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    }
+                                    Err(_) => {
+                                        // A layout failure is a host invariant
+                                        // (the tree and the live client size
+                                        // are always laid out-able in normal
+                                        // operation). No event is fabricated;
+                                        // the closed `option<ui-event>` has no
+                                        // error channel, so the honest signal
+                                        // is `none`.
+                                        return None;
+                                    }
+                                }
+                            }
+                            // No window / a lost shell thread / a poisoned
+                            // tree lock: the same honest `none` signal.
+                            Err(_) => return None,
+                        }
+                    } else if let Some(delivered) = classify_window_event(event) {
+                        return Some(delivered);
+                    }
+                }
+                Ok(None) | Err(_) => return None,
+            }
+        }
+    }
+
+    fn run(&self) -> Result<bool, UiError> {
+        self.backend.run().map_err(fold_error)
+    }
 }
 
 /// Runner-level UI host capability: the frozen grants plus the optional
@@ -487,5 +763,80 @@ mod tests {
         let engine = wasmtime::Engine::new(&config).expect("engine");
         let mut linker = wasmtime::component::Linker::<RunState>::new(&engine);
         link_ui(&mut linker).expect("the ui@1 surface registers without error");
+    }
+
+    #[test]
+    fn classify_window_event_covers_the_non_click_events() {
+        // STEP-0597: a `Closed` is delivered as the `closed` variant; a
+        // `Resized`/`Paint` is a lifecycle notification with no `ui@1` variant
+        // (it drives a re-render and never crosses the boundary); a coordinate
+        // `Clicked` is NOT classified here — it needs the layout and is routed
+        // by `route_click_event`.
+        assert_eq!(
+            classify_window_event(WindowEvent::Closed),
+            Some(UiEvent::Closed)
+        );
+        assert_eq!(
+            classify_window_event(WindowEvent::Clicked { x: 4, y: 8 }),
+            None
+        );
+        assert_eq!(
+            classify_window_event(WindowEvent::Resized {
+                width: 1,
+                height: 1,
+            }),
+            None
+        );
+        assert_eq!(classify_window_event(WindowEvent::Paint), None);
+    }
+
+    #[test]
+    fn route_click_event_delivers_the_deepest_node_and_misses_explicitly() {
+        use sico_ui_renderer_d2d::tree::NodeKind;
+
+        // window(320x160) > column > button "OK".
+        let mut tree = UiTree::new();
+        let root = tree.insert(NodeKind::Root, None).unwrap();
+        let column = tree.insert(NodeKind::Column, Some(root)).unwrap();
+        let button = tree.insert(NodeKind::Button, Some(column)).unwrap();
+        tree.set_text(button, "OK").unwrap();
+        let layout = layout_compute(&tree, 320, 160).unwrap();
+
+        // A click on the button resolves to the button (the deepest node), not
+        // to its column or the root.
+        let (cx, cy) = layout.rect(button).unwrap().center();
+        assert_eq!(
+            route_click_event(cx as i32, cy as i32, &tree, 320, 160),
+            Ok(Some(UiEvent::Click(UiHandle { id: button })))
+        );
+
+        // A click in the window padding resolves to the root: the point is
+        // inside the window but under NO child node. This is the correct
+        // `Node(root)` attribution (STEP-0592), NOT the STEP-0585 "attribute
+        // any click to the root" (which had no layout).
+        assert_eq!(
+            route_click_event(8, 8, &tree, 320, 160),
+            Ok(Some(UiEvent::Click(UiHandle { id: root })))
+        );
+
+        // A click outside the window is an explicit `Hit::Miss` (`Ok(None)`),
+        // never a fabricated event and never an error.
+        assert_eq!(route_click_event(-1, -1, &tree, 320, 160), Ok(None));
+        assert_eq!(route_click_event(400, 400, &tree, 320, 160), Ok(None));
+
+        // A tree without a window root is a typed layout failure, never a
+        // fabricated event.
+        let empty = UiTree::new();
+        assert_eq!(
+            route_click_event(0, 0, &empty, 320, 160),
+            Err(UiBackendError::NoWindow)
+        );
+        // A zero client size is a typed layout failure.
+        assert_eq!(
+            route_click_event(0, 0, &tree, 0, 160),
+            Err(UiBackendError::InvalidArgument {
+                which: "client-size"
+            })
+        );
     }
 }

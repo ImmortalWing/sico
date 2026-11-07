@@ -17,7 +17,9 @@ fn main() {
     collect_sico(&root.join("syntax-candidates/b"), &mut paths);
     collect_sico(&root.join("syntax-mutations/b"), &mut paths);
     paths.sort();
-    assert_eq!(paths.len(), 70);
+    // 78 = 66 syntax-candidates/b + 12 syntax-mutations/b recursive `.sico`
+    // census post-merge 7bcdc35 (70 -> 78; b grew 58 -> 66, STEP-0580).
+    assert_eq!(paths.len(), 78);
     let inputs: Vec<_> = paths
         .iter()
         .map(|path| (path.display().to_string(), fs::read(path).unwrap()))
@@ -42,8 +44,12 @@ fn main() {
                 failure += 1;
             }
         }
-        assert_eq!(success, u64::try_from((iteration + 1) * 58).unwrap());
-        assert_eq!(failure, u64::try_from((iteration + 1) * 12).unwrap());
+        // 65 parse-success / 13 parse-failure per iteration = measured split of
+        // the 78 files: IND-003 (indentation/invalid/zero-indent-recovery-
+        // declaration.sico) is a canonical parse-reject (E1001), so it counts
+        // as failure alongside the 12 mutation files (58/12 -> 65/13).
+        assert_eq!(success, u64::try_from((iteration + 1) * 65).unwrap());
+        assert_eq!(failure, u64::try_from((iteration + 1) * 13).unwrap());
     }
     let elapsed = started.elapsed();
     let total_bytes = bytes_per_iteration * iterations;
@@ -53,8 +59,8 @@ fn main() {
         "{}",
         serde_json::to_string(&json!({
             "schema": "sico.m1.frontend-performance.v0",
-            "corpus_files": 70,
-            "canonical_files": 58,
+            "corpus_files": 78,
+            "canonical_files": 66,
             "mutation_files": 12,
             "iterations": iterations,
             "bytes_per_iteration": bytes_per_iteration,

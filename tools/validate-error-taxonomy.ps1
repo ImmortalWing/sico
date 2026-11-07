@@ -97,8 +97,13 @@ foreach ($case in @($caseMap.cases)) {
     throw "semantic case has no taxonomy class: $($case.case)"
   }
 }
-if ($caseIds.Count -ne 33) {
-  throw "expected 33 semantic invalid cases, found $($caseIds.Count)"
+# Current-tree census: diagnostics/semantic-case-map.json grew 33 -> 46 with
+# STEP-0584's 5-case registration (IND-003/004/005, REV-201/203) following the
+# 235-entry corpus refreeze. Measured 2026-11-07: 46 cases. (Note: this count
+# check is currently masked by the earlier taxonomy-vs-catalog coverage check
+# at the top of the script, which fails on a separate data inconsistency.)
+if ($caseIds.Count -ne 46) {
+  throw "expected 46 semantic invalid cases, found $($caseIds.Count)"
 }
 
 $manifestMutationIds = @($mutations.entries | ForEach-Object { [string]$_.mutation } | Sort-Object -Unique)

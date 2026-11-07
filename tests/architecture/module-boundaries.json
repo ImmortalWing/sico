@@ -40,7 +40,8 @@
       "sico-desktop-host",
       "sico-mobile-host-core",
       "sico-automation-host",
-      "sico-automation-fixture"
+      "sico-automation-fixture",
+      "sico-ui-renderer-d2d"
     ],
     "ecosystem": [
       "sico-ecosystem",

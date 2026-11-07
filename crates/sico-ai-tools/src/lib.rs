@@ -886,7 +886,10 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root.join("syntax-candidates/b"), &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 58);
+        // 66 = syntax-candidates/b recursive `.sico` census post-merge 7bcdc35
+        // (58 -> 66; +8 cases added by the M22/M23/M24 lines and frozen with the
+        // 235-entry corpus refreeze, STEP-0279..0283).
+        assert_eq!(paths.len(), 66);
         let mut clean = 0;
         let mut diagnosed = 0;
         for (index, path) in paths.iter().enumerate() {
@@ -908,7 +911,9 @@ mod tests {
                 diagnosed += 1;
             }
         }
-        assert_eq!((clean, diagnosed), (25, 33));
+        // 28 clean / 38 diagnosed = `// expect: accept` marker split of the 66
+        // syntax-candidates/b cases (25/33 -> 28/38).
+        assert_eq!((clean, diagnosed), (28, 38));
     }
 
     #[test]

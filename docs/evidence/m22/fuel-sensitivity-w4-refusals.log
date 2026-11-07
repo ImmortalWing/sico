@@ -1,0 +1,17 @@
+
+running 1 test
+SENS_CORPUS fuels=[800000000000, 1600000000000, 3200000000000] timeout=300s
+SENS_CORPUS semantic-cases/future-task/invalid/scope-nesting-limit.sico fuel=800000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=2320 source_bytes=10162
+SENS_CORPUS semantic-cases/future-task/invalid/scope-nesting-limit.sico fuel=1600000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=15 source_bytes=10162
+SENS_CORPUS semantic-cases/future-task/invalid/scope-nesting-limit.sico fuel=3200000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=14 source_bytes=10162
+SENS_CORPUS syntax-candidates/b/future-task/invalid/scope-nesting-limit.sico fuel=800000000000 outcome=refused:ERR:E-SH-IR-EXPRESSION wall_ms=16 source_bytes=10607
+SENS_CORPUS syntax-candidates/b/future-task/invalid/scope-nesting-limit.sico fuel=1600000000000 outcome=refused:ERR:E-SH-IR-EXPRESSION wall_ms=15 source_bytes=10607
+SENS_CORPUS syntax-candidates/b/future-task/invalid/scope-nesting-limit.sico fuel=3200000000000 outcome=refused:ERR:E-SH-IR-EXPRESSION wall_ms=15 source_bytes=10607
+SENS_CORPUS syntax-candidates/c/future-task/invalid/scope-nesting-limit.sico fuel=800000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=15 source_bytes=10175
+SENS_CORPUS syntax-candidates/c/future-task/invalid/scope-nesting-limit.sico fuel=1600000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=14 source_bytes=10175
+SENS_CORPUS syntax-candidates/c/future-task/invalid/scope-nesting-limit.sico fuel=3200000000000 outcome=refused:ERR:E-SH-IR-FUNCTION-COUNT wall_ms=17 source_bytes=10175
+test the_fuel_sensitivity_of_corpus_refusals_is_measured ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 2.45s
+
+EXIT=0

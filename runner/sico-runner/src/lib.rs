@@ -13,10 +13,12 @@ pub mod bootstrap;
 mod dap;
 pub mod http2;
 pub mod scheduler;
+pub mod stream_provider;
 pub mod ui;
 
 pub use dap::{RuntimeDapBackend, RuntimeDapConfig};
 use scheduler::{ReadinessClass, RunIdentity, SchedulerCore, TerminalKind};
+pub use stream_provider::{StreamTransport, StreamTransportFactory};
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -35,6 +37,7 @@ use sico_observability::{
     ExecutionEvent, ExecutionEventPayload, MAX_CAPTURED_CHANNEL_BYTES, RuntimeFault, RuntimeFrame,
     parse_cancel_request, resolve_engine_frame, validate_runtime_fault, verify_debug_artifacts,
 };
+use sico_package::provenance::Budgets;
 use wasmparser::{Parser, Payload};
 use wasmtime::component::types::ComponentItem;
 use wasmtime::component::{Component, Linker, Resource, ResourceTable, ResourceType, Val};
@@ -245,6 +248,42 @@ impl Default for RunnerLimits {
             timeout: Duration::from_secs(10),
             memory_bytes: 2560 * 1024 * 1024,
             hostcall_fuel: 128 << 20,
+        }
+    }
+}
+
+impl RunnerLimits {
+    /// RFC-0051 property 3 (runtime half, STEP-0578): narrows these limits by a
+    /// provenance asset budget, mapped one-to-one onto the existing limit kinds
+    /// (never a second ceiling path):
+    ///
+    /// ```text
+    /// max_memory_bytes → memory_bytes
+    /// max_wall_ms      → timeout (as a Duration)
+    /// max_hostcalls    → hostcall_fuel
+    /// ```
+    ///
+    /// Each mapped field takes the minimum, so the result can only **narrow**,
+    /// never widen (AGENTS.md §helpers narrow, never widen). The deterministic
+    /// wasm `fuel` bound is deliberately untouched: the budget carries no
+    /// fuel field — `max_hostcalls` is the transport/hostcall budget, and the
+    /// non-termination bound stays at the caller's own ceiling.
+    ///
+    /// The caller must have already enforced the A1.3 install-time subset
+    /// (`ProvenanceManifest::check_budgets_within` against the package ceiling)
+    /// before applying this; it is a pure narrowing, not a second validation.
+    #[must_use]
+    pub fn narrowed_by(&self, budgets: &Budgets) -> RunnerLimits {
+        let memory_bytes = usize::try_from(budgets.max_memory_bytes)
+            .map_or(usize::MAX, |value| self.memory_bytes.min(value));
+        let timeout = self.timeout.min(Duration::from_millis(budgets.max_wall_ms));
+        let hostcall_fuel = usize::try_from(budgets.max_hostcalls)
+            .map_or(usize::MAX, |value| self.hostcall_fuel.min(value));
+        RunnerLimits {
+            fuel: self.fuel,
+            timeout,
+            memory_bytes,
+            hostcall_fuel,
         }
     }
 }
@@ -1130,7 +1169,6 @@ struct RunState {
     streams_live: u32,
     http_abandoned: bool,
     cancel: CancelToken,
-    io: IoWorkers,
     /// The run's bounded scheduler core (M11 STEP-0105): root task plus
     /// identity-checked Host-operation completion ingress.
     scheduler: SchedulerCore,
@@ -1140,6 +1178,10 @@ struct RunState {
     /// Per-Store `ui@1.0.0` state (RFC-0052 A1): frozen default-deny UI
     /// capability plus the shared renderer backend; dies with the Store.
     ui: crate::ui::Ui1State,
+    /// Per-run stream provider transport (RFC-0030): the real stdio workers
+    /// by default, or a caller-substituted typed transport through the
+    /// [`StreamTransportFactory`] seam (STEP-0587).
+    io: Box<dyn StreamTransport>,
     /// RFC-0039 §2.4 (STEP-0147): per-Store package instances; indexes are
     /// captured by the bridge closures at link time.
     package_instances: Vec<wasmtime::component::Instance>,
@@ -1218,6 +1260,48 @@ fn spawn_io_workers() -> IoWorkers {
     }
 }
 
+/// The default stream transport (STEP-0587): the process's real stdio through
+/// the bounded [`IoWorkers`]. This is what every existing `Runner` constructor
+/// uses — the seam's production side, and the only implementation compiled into
+/// the provider path.
+struct RealStreamTransportFactory;
+
+impl StreamTransportFactory for RealStreamTransportFactory {
+    fn spawn_transport(&self) -> Box<dyn StreamTransport> {
+        Box::new(spawn_io_workers())
+    }
+}
+
+impl StreamTransport for IoWorkers {
+    fn read_stdin(&self, max: u64, cancel: &CancelToken) -> Result<Vec<u8>, HostStreamError> {
+        send_cancellable(&self.stdin_request, max, cancel)
+            .and_then(|()| recv_cancellable(&self.stdin_response, cancel))
+    }
+
+    fn write_output(
+        &self,
+        stderr: bool,
+        bytes: Vec<u8>,
+        cancel: &CancelToken,
+    ) -> Result<(), HostStreamError> {
+        send_cancellable(
+            &self.output_request,
+            OutputJob::Write { stderr, bytes },
+            cancel,
+        )
+        .and_then(|()| recv_cancellable(&self.output_response, cancel))
+    }
+
+    fn flush_output(&self, stderr: bool, cancel: &CancelToken) -> Result<(), HostStreamError> {
+        send_cancellable(&self.output_request, OutputJob::Flush { stderr }, cancel)
+            .and_then(|()| recv_cancellable(&self.output_response, cancel))
+    }
+
+    fn try_flush_output(&self, stderr: bool) {
+        let _ = self.output_request.try_send(OutputJob::Flush { stderr });
+    }
+}
+
 /// Waits for one worker response, returning `Cancelled` as soon as the
 /// run's token fires instead of blocking behind the OS call.
 pub(crate) fn recv_cancellable<T, E>(
@@ -1266,11 +1350,13 @@ pub(crate) fn send_cancellable<T>(
     }
 }
 
-/// RFC-0030 stream-error enum in WIT declaration order.
+/// RFC-0030 stream-error enum in WIT declaration order. Public because the
+/// [`StreamTransport`] seam (STEP-0587) exposes it as the provider's typed
+/// fault type.
 #[derive(Clone, Copy, Debug, wasmtime::component::ComponentType, wasmtime::component::Lower)]
 #[component(enum)]
 #[repr(u8)]
-pub(crate) enum HostStreamError {
+pub enum HostStreamError {
     #[component(name = "io")]
     Io,
     #[component(name = "cancelled")]
@@ -1326,11 +1412,24 @@ impl ResourceLimiter for RunState {
     fn table_growing(
         &mut self,
         _current: usize,
-        _desired: usize,
-        _maximum: Option<usize>,
+        desired: usize,
+        maximum: Option<usize>,
     ) -> Result<bool, wasmtime::Error> {
-        self.denied = true;
-        Ok(false)
+        // wasmtime invokes this both at table creation (current=0,
+        // desired=the declared minimum) and on a runtime `table.grow`. The
+        // ADR-0019 class-b package cores declare fixed-size funcref tables
+        // (declared minimum == maximum, 18 or 71 elements in the current
+        // corpus), so creation is the only call that fires — runtime growth
+        // is semantically impossible. The module's own declared maximum is
+        // the authoritative, bounded ceiling (wasmtime re-checks it after
+        // this callback), so allow creation/growth up to it and refuse a
+        // table with no declared maximum rather than admit an unbounded
+        // path; a refusal keeps the fail-closed `denied` posture.
+        let allowed = maximum.is_some_and(|max| desired <= max);
+        if !allowed {
+            self.denied = true;
+        }
+        Ok(allowed)
     }
 
     fn instances(&self) -> usize {
@@ -1340,7 +1439,16 @@ impl ResourceLimiter for RunState {
     }
 
     fn tables(&self) -> usize {
-        0
+        // The program core and the STEP-0083 fs transport module define no
+        // wasm tables (the runner's hand-written cores and the Sico codegen
+        // output are table-free — the committed zero ceiling passes every
+        // non-package run). Each ADR-0019 class-b package core defines
+        // exactly one funcref table, and wasmtime's `bump_resource_counts`
+        // accumulates it into a per-Store table count checked against this
+        // ceiling, so the ceiling widens by the prepared package count — the
+        // same `package_instances_capacity` shape as `instances()` and
+        // `memories()`. Bounded: the capacity is fixed at prepare time.
+        self.package_instances_capacity
     }
 
     fn memories(&self) -> usize {
@@ -1363,6 +1471,12 @@ pub struct Runner {
     /// so `sico:script/ui@1.0.0` is not linked and a guest importing it fails
     /// to instantiate (an honest "UI backend unavailable" outcome).
     ui: crate::ui::UiHost,
+    /// Stream-provider transport factory (RFC-0030, STEP-0587): the default is
+    /// the real stdio [`RealStreamTransportFactory`]; a caller may substitute
+    /// a typed implementation through [`Runner::with_stream_transport`]. This
+    /// is the dependency-injection seam for provider-fault tests — never a
+    /// production switch (see [`stream_provider`]).
+    stream_factory: Arc<dyn StreamTransportFactory>,
 }
 
 type ComponentCache = Arc<std::sync::Mutex<Vec<([u8; 32], Component)>>>;
@@ -1463,7 +1577,21 @@ impl Runner {
             debug_enabled: debug,
             run_counter: Arc::new(AtomicU64::new(0)),
             ui: crate::ui::UiHost::default(),
+            stream_factory: Arc::new(RealStreamTransportFactory),
         })
+    }
+
+    /// Substitutes the stream-provider transport factory (RFC-0030,
+    /// STEP-0587) — the provider-fault injection seam. A test supplies a
+    /// typed failing [`StreamTransportFactory`] here to inject a deterministic
+    /// provider fault; `Runner::new()` keeps the real stdio transport, so the
+    /// default construction and the production run path are unchanged. This is
+    /// dependency injection, not a production switch: the failing
+    /// implementation lives in the test, not in this crate.
+    #[must_use]
+    pub fn with_stream_transport(mut self, factory: Arc<dyn StreamTransportFactory>) -> Self {
+        self.stream_factory = factory;
+        self
     }
 
     /// Returns a runner with the host UI capability wired to a renderer
@@ -1510,6 +1638,33 @@ impl Runner {
         fs: &FsGrants,
     ) -> Result<RunOutcome, InputViolation> {
         self.run_program_with_net(component, input, limits, cancel, fs, &NetGrants::default())
+    }
+
+    /// RFC-0051 property 3 (runtime half, STEP-0578): executes one Program
+    /// Component under a provenance **asset budget**. The budget is applied by
+    /// [`RunnerLimits::narrowed_by`] to `base_limits`, so the operative run
+    /// ceiling is the asset budget — which can only **narrow** the caller's
+    /// limits, never widen, and never opens a second ceiling path (AGENTS.md
+    /// §helpers narrow, never widen). The caller must already have enforced
+    /// the A1.3 install-time subset
+    /// (`ProvenanceManifest::check_budgets_within` against the package
+    /// ceiling) before the package reaches this point; this is a pure
+    /// narrowing, not a second validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] without any guest execution.
+    pub fn run_program_with_budgets(
+        &self,
+        component: &[u8],
+        input: &ScriptInput,
+        base_limits: &RunnerLimits,
+        budgets: &Budgets,
+        cancel: &CancelToken,
+        fs: &FsGrants,
+    ) -> Result<RunOutcome, InputViolation> {
+        let narrowed = base_limits.narrowed_by(budgets);
+        self.run_program(component, input, &narrowed, cancel, fs)
     }
 
     /// Runs with explicit scoped filesystem and network grants.
@@ -2094,7 +2249,7 @@ impl PreparedProgram {
                 streams_live: 0,
                 http_abandoned: false,
                 cancel: cancel.clone(),
-                io: spawn_io_workers(),
+                io: self.runner.stream_factory.spawn_transport(),
                 scheduler: SchedulerCore::new(RunIdentity {
                     run_id: run_id.to_owned(),
                     generation_id,
@@ -2308,7 +2463,7 @@ impl PreparedProgram {
                 streams_live: 0,
                 http_abandoned: false,
                 cancel: cancel.clone(),
-                io: spawn_io_workers(),
+                io: self.runner.stream_factory.spawn_transport(),
                 scheduler: SchedulerCore::new(identity),
                 http2: crate::http2::Http2State::new(&self.http_policy),
                 ui: self.runner.ui.state(),
@@ -3206,9 +3361,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 .delete(Resource::<HostOutputStream>::new_own(rep))?;
             // Drop is close. RFC-0030 promises only a best-effort flush here;
             // never block Store teardown behind a full or OS-blocked queue.
-            let _ = state.io.output_request.try_send(OutputJob::Flush {
-                stderr: stream.stderr,
-            });
+            state.io.try_flush_output(stream.stderr);
             state.streams_live = state.streams_live.saturating_sub(1);
             Ok(())
         },
@@ -3281,8 +3434,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 Ok(operation) => operation,
                 Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
             };
-            let outcome = send_cancellable(&store.data().io.stdin_request, max, &cancel)
-                .and_then(|()| recv_cancellable(&store.data().io.stdin_response, &cancel));
+            let outcome = store.data().io.read_stdin(max, &cancel);
             let payload = outcome.as_ref().map_or(0, Vec::len);
             if let Err(fault) = store
                 .data_mut()
@@ -3321,15 +3473,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 Ok(operation) => operation,
                 Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
             };
-            let outcome = send_cancellable(
-                &store.data().io.output_request,
-                OutputJob::Write {
-                    stderr: stderr_channel,
-                    bytes,
-                },
-                &cancel,
-            )
-            .and_then(|()| recv_cancellable(&store.data().io.output_response, &cancel));
+            let outcome = store.data().io.write_output(stderr_channel, bytes, &cancel);
             if let Err(fault) = store
                 .data_mut()
                 .scheduler
@@ -3368,14 +3512,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                 Ok(operation) => operation,
                 Err(fault) => return Err(wasmtime::Error::msg(format!("scheduler: {fault}"))),
             };
-            let outcome = send_cancellable(
-                &store.data().io.output_request,
-                OutputJob::Flush {
-                    stderr: stderr_channel,
-                },
-                &cancel,
-            )
-            .and_then(|()| recv_cancellable(&store.data().io.output_response, &cancel));
+            let outcome = store.data().io.flush_output(stderr_channel, &cancel);
             if let Err(fault) = store
                 .data_mut()
                 .scheduler
@@ -3417,13 +3554,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
             let mut total = 0_u64;
             let outcome = loop {
                 let cancel = store.data().cancel.clone();
-                let chunk = match send_cancellable(
-                    &store.data().io.stdin_request,
-                    MAX_STREAM_READ,
-                    &cancel,
-                )
-                .and_then(|()| recv_cancellable(&store.data().io.stdin_response, &cancel))
-                {
+                let chunk = match store.data().io.read_stdin(MAX_STREAM_READ, &cancel) {
                     Ok(chunk) => chunk,
                     Err(error) => break Err(error),
                 };
@@ -3431,17 +3562,7 @@ fn link_streams(linker: &mut Linker<RunState>) -> Result<(), wasmtime::Error> {
                     break Ok(total);
                 }
                 let moved = chunk.len() as u64;
-                if let Err(error) = send_cancellable(
-                    &store.data().io.output_request,
-                    OutputJob::Write {
-                        stderr: stderr_channel,
-                        bytes: chunk,
-                    },
-                    &cancel,
-                ) {
-                    break Err(error);
-                }
-                if let Err(error) = recv_cancellable(&store.data().io.output_response, &cancel) {
+                if let Err(error) = store.data().io.write_output(stderr_channel, chunk, &cancel) {
                     break Err(error);
                 }
                 total = total.saturating_add(moved);
@@ -4042,7 +4163,7 @@ mod tests {
                 streams_live: 0,
                 http_abandoned: false,
                 cancel: CancelToken::new(),
-                io: spawn_io_workers(),
+                io: RealStreamTransportFactory.spawn_transport(),
                 http2: crate::http2::Http2State::new(&HttpPolicy::default()),
                 ui: crate::ui::UiHost::default().state(),
                 scheduler: SchedulerCore::new(RunIdentity {

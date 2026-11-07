@@ -89,7 +89,10 @@ function Invoke-Process {
 
 $manifestPath = Join-Path $root 'selfhost\corpus-v0.json'
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-if ($manifest.entry_count -ne 215 -or $manifest.entries.Count -ne 215) {
+# Current-tree census: the frozen M22 corpus was re-frozen 215 -> 235 with
+# STEP-0279..0283 (merge 7bcdc35). Measured by PowerShell ConvertFrom-Json over
+# selfhost/corpus-v0.json (2026-11-07): entry_count == entries.Count == 235.
+if ($manifest.entry_count -ne 235 -or $manifest.entries.Count -ne 235) {
     throw 'M22 corpus cardinality drifted'
 }
 foreach ($entry in $manifest.entries) {
@@ -205,4 +208,4 @@ finally {
     Pop-Location
 }
 
-Write-Output 'STEP_0246_OK canonical-corpus=215 unified-lowering=identity+add_int core-seam=constant'
+Write-Output 'STEP_0246_OK canonical-corpus=235 unified-lowering=identity+add_int core-seam=constant'

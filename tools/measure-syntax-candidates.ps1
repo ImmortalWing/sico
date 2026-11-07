@@ -93,13 +93,22 @@ $candidateRoots = [ordered]@{
   B = 'syntax-candidates/b'
   C = 'syntax-candidates/c'
 }
+# Frozen `.sico` census per root (post-merge 7bcdc35, 235-entry corpus
+# refreeze STEP-0279..0283): A0/C unchanged at 58, B grew 58 -> 66 with the
+# +8 cases added by the M22/M23/M24 lines.
+$candidateCounts = [ordered]@{
+  A0 = 58
+  B = 66
+  C = 58
+}
 $rows = @()
 
 foreach ($syntax in $candidateRoots.Keys) {
   $base = Join-Path $root $candidateRoots[$syntax]
   $files = @(Get-ChildItem -LiteralPath $base -Recurse -Filter '*.sico' | Sort-Object FullName)
-  if ($files.Count -ne 58) {
-    throw "expected 58 $syntax files, found $($files.Count)"
+  $expected = $candidateCounts[$syntax]
+  if ($files.Count -ne $expected) {
+    throw "expected $expected $syntax files, found $($files.Count)"
   }
   foreach ($file in $files) {
     $relative = $file.FullName.Substring($base.Length + 1).Replace('\', '/')

@@ -28,6 +28,7 @@ members = [
     "crates/sico-source",
     "crates/sico-syntax",
     "crates/sico-tooling-protocol",
+    "crates/sico-ui-renderer-d2d",
     "pilots/third-party-component",
 ]
 resolver = "3"

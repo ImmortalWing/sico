@@ -12032,7 +12032,6 @@ fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
     // confirms C; a rising one confirms D.  (The per-function overhead does add
     // a small linear-in-F IR term, but it is dwarfed by the 256 fixed `let`s,
     // so the trend in F is still readable.)
-    let total_lets = 256usize;
     for (funcs, per) in [(4usize, 64usize), (16, 16), (64, 4)] {
         let mut body = String::new();
         for f in 0..funcs {

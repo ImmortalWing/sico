@@ -40,10 +40,10 @@ foreach ($forbidden in @('syntax-candidates/', '// expect:', 'source_sha256')) {
         throw "semantic implementation must not identify fixtures via $forbidden"
     }
 }
-if (-not $tests.Contains('(116, 34, 65, 0)')) {
+if (-not $tests.Contains('(116, 46, 73, 0)')) {
     throw 'complete frozen-corpus partition assertion is missing'
 }
-if (-not $tests.Contains('assert_eq!(entries.len(), 215)')) {
+if (-not $tests.Contains('assert_eq!(entries.len(), 235)')) {
     throw 'frozen-corpus cardinality assertion is missing'
 }
 if ($checker.Contains('function check_source(') -or $checker.Contains('function report_line(')) {

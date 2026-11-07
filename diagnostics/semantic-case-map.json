@@ -267,6 +267,46 @@
       "expected_message": "compare loaded.revision before applying loaded.text"
     },
     {
+      "case": "REV-201",
+      "source": "syntax-candidates/b/revision/invalid/unchecked-stale-result-renamed.sico",
+      "code": "E7002",
+      "key": "UNCHECKED_STALE_RESULT",
+      "arguments": {},
+      "expected_message": "compare loaded.revision before applying loaded.text"
+    },
+    {
+      "case": "REV-203",
+      "source": "syntax-candidates/b/revision/invalid/cross-payload-guard-stale-result.sico",
+      "code": "E7002",
+      "key": "UNCHECKED_STALE_RESULT",
+      "arguments": {},
+      "expected_message": "compare loaded.revision before applying loaded.text"
+    },
+    {
+      "case": "IND-003",
+      "source": "syntax-candidates/b/indentation/invalid/zero-indent-recovery-declaration.sico",
+      "code": "E1001",
+      "key": "SYNTAX_MISSING_FUNCTION_CLOSE",
+      "arguments": {},
+      "expected_message": "missing end function"
+    },
+    {
+      "case": "IND-004",
+      "source": "syntax-candidates/b/indentation/invalid/zero-indent-undeclared-capability.sico",
+      "code": "E4001",
+      "key": "UNDECLARED_CAPABILITY",
+      "arguments": { "capability": "stdout" },
+      "expected_message": "capability stdout is not declared at this boundary"
+    },
+    {
+      "case": "IND-005",
+      "source": "syntax-candidates/b/indentation/invalid/zero-indent-stale-result.sico",
+      "code": "E7002",
+      "key": "UNCHECKED_STALE_RESULT",
+      "arguments": {},
+      "expected_message": "compare loaded.revision before applying loaded.text"
+    },
+    {
       "case": "REC-001",
       "source": "diagnostics/implementation-cases/records/invalid/duplicate-field.sico",
       "code": "E2021",

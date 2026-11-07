@@ -1,0 +1,51 @@
+{
+  "schema": "sico.m24.ui-frame-corpus.v0",
+  "step": "STEP-0338",
+  "renderer": "sico-ui-renderer-d2d",
+  "token-set": "fluent-subset-v0",
+  "platform": "windows x86_64 (1.98.0-x86_64-pc-windows-gnu)",
+  "renderer-stack": "Direct2D + DirectWrite custom rendering; no WinUI 3 / Windows App SDK runtime (ADR-0018 §2)",
+  "client-size": "per scene, fixed; 96-DPI logical pixels; no timers, no animation, no environment-derived value",
+  "determinism": "same tree + same token set => identical BGRA8 pixels; verified in-process and across two separate processes",
+  "evidence-class": "internal-fixture / runtime-verified renderer-frame (not a guest-level or pilot-level feature claim)",
+  "digest": "sha256 over the BGRA8 pixel payload of the frame",
+  "cases": [
+    {
+      "name": "empty",
+      "width": 200,
+      "height": 120,
+      "sha256": "039b877a6cfe7bc6bf44253430aa452f71865b0ce47e2f4d5e15ba7bfc95d503"
+    },
+    {
+      "name": "text",
+      "width": 320,
+      "height": 160,
+      "sha256": "0bd324c87c0f4e41c3f61d62d7a10bd8f3b2bc15b7443a791b234673ef592868"
+    },
+    {
+      "name": "controls",
+      "width": 360,
+      "height": 280,
+      "sha256": "f407bcd035ae600ba65d0e0c9db37fb2777ba6745f176b5999aa1bbf8bbbed12"
+    },
+    {
+      "name": "row",
+      "width": 320,
+      "height": 120,
+      "sha256": "9e28e6aa06d9995b46e87c57639fc128be3be04a57d7f65b2ba613402e6464b7"
+    }
+  ],
+  "refusals": [
+    "unknown-handle",
+    "wrong-parent-kind",
+    "limit:text-bytes",
+    "limit:node-count",
+    "limit:tree-depth",
+    "limit:option-count",
+    "limit:title-bytes",
+    "limit:image-bytes",
+    "invalid-argument:image-payload",
+    "invalid-argument:window-size",
+    "no-window"
+  ]
+}

@@ -10,9 +10,17 @@ $performance = Get-Content -LiteralPath (Join-Path $root 'tests/performance/m1-f
 if ($performance.schema -ne 'sico.m1.frontend-performance-runs.v0' -or @($performance.runs).Count -ne 3) {
   throw 'invalid M1 performance evidence envelope'
 }
-if ($performance.corpus.files -ne 70 -or $performance.corpus.canonical -ne 58 -or $performance.corpus.mutations -ne 12) {
-  throw 'performance corpus does not match the M1 parser corpus'
+if ($performance.corpus.canonical + $performance.corpus.mutations -ne $performance.corpus.files) {
+  throw 'performance corpus envelope is not internally consistent (canonical + mutations must equal files)'
 }
+# NOTE: the M1 performance artifact is a *dated* measurement (2026-07-15) and its
+# corpus counts describe the corpus **at that date**. The corpus has since been
+# re-frozen (215 -> 235 entries; `syntax-candidates/b` 58 -> 66), so asserting
+# equality against a hard-coded *current* corpus size would both be wrong and
+# would rewrite history. The artifact is therefore checked for internal
+# consistency and for retention of its measured scope only. The live corpus
+# census is owned by the corpus validators (validate-step-0016 / -0068 / -0245
+# and `m1_frontend_bench.rs`), which measure it rather than hard-code it.
 if ($performance.iterations_per_run -ne 200 -or $performance.sla -ne 'not-established') {
   throw 'performance evidence must retain measured iterations and non-SLA scope'
 }

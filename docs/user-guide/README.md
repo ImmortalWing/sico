@@ -14,6 +14,7 @@
 8. [AI 工具](./AI-TOOLS.md)：compiler-backed inspect/fix JSON 协议。
 9. [故障排查](./TROUBLESHOOTING.md)：常见错误、退出码和修复方法。
 10. [限制与平台状态](./LIMITATIONS.md)：尚未实现或没有证据的能力。
+11. [原生 UI 库当前能力](./NATIVE-UI.md)：M24 §8.6.1 `ui@1` 现在能做什么、什么尚未提供（仅 Windows x64 交互桌面）。
 
 ## 文档约定
 

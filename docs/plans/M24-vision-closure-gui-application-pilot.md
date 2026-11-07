@@ -251,13 +251,104 @@ class and no capability contract changes; no STEP number is reserved.
 
 #### 8.6.1 Sico-language native UI library (prerequisite workstream)
 
-> Status 2026-09-25 (post 24-A): contracts drafted — source side
-> [`RFC-0052`](../rfc/RFC-0052-native-ui-source-binding-v0.md) (draft:
-> `sico:user/ui@1`, zero grammar growth) and renderer side
+> Status 2026-11-07 (post STEP-0338 / STEP-0577 / STEP-0581, audited by
+> STEP-0589): contracts **accepted** (owner directive 2026-09-30「完整完成M22-M26」,
+> STEP-0323 — source side
+> [`RFC-0052`](../rfc/RFC-0052-native-ui-source-binding-v0.md)+A1 re-homed
+> to the `sico:script/ui@1.0.0` host-provider face; renderer side
 > [`ADR-0018`](../adr/ADR-0018-native-renderer-fluent-subset-v0.md)
-> (proposed: Direct2D+DirectWrite Fluent-token subset, isolated adapter
-> crate, frame determinism, default-deny UI authority). Both require
-> owner acceptance before any UI implementation STEP.
+> Direct2D+DirectWrite Fluent-token subset, isolated adapter crate, frame
+> determinism, default-deny UI authority). **Four implementation slices have
+> landed**:
+> ① [`STEP-0338`](../../steps/STEP-0338-m24-native-ui-fluent-d2d-renderer.md) —
+> `crates/sico-ui-renderer-d2d`: frozen Fluent token table
+> (`fluent-subset-v0`) + deterministic offscreen frame corpus (4 scenes,
+> SHA-256 pinned, identical across two processes, 5/5 green);
+> ② [`STEP-0577`](../../steps/STEP-0577-m24-window-shell-event-pump.md) — OS
+> window shell + event pump (`shell/win.rs` platform unsafe isolated per
+> ADR-0018 §1) + platform-neutral frozen **event** corpus, with a real-window
+> smoke test opt-in via `#[ignore]` for headless sessions (17 passed / 0
+> failed / 1 ignored; STEP-0338's four frozen frame digests unchanged);
+> ③ [`STEP-0581`](../../steps/STEP-0581-m24-runner-ui-d2d-backend-wiring.md) —
+> runner-side `ui@1` wired to a **real** window backend
+> (`WindowedUiBackend`: window shell kept on a dedicated worker thread
+> because a Win32 window is thread-affine and `WindowShell` is `!Send`,
+> while the runner's `UiRenderer` requires `Send + Sync` ⇒ request/reply
+> channel, **zero `unsafe impl`**), default-deny semantics unchanged (no
+> grant ⇒ typed `authority-denied`, renderer never touched; no backend ⇒
+> `ui@1` not advertised); ④ `STEP-0585` — FFI invariant hardening from the
+> STEP-0577 independent safety review (explicit `!Send`/`!Sync` marker plus
+> compile-time negative constraint) and **explicit registration of the
+> `click`/`select` event gap** (`ui.wit` does define `click(ui-handle)` /
+> `select(ui-selection)`; the missing piece was point→handle hit testing,
+> because the renderer had no layout yet — a coordinate click must not be
+> silently dropped); ⑤ `STEP-0591` — guest-level evidence for **G2/G3**
+> (`ui_guest_visible.rs`: guest `window()` observes its handle; guest `run()`
+> then host read-back is byte-identical to an independent offscreen frame;
+> guest `poll-event` delivers `closed` after a host `WM_CLOSE`); ⑥
+> `STEP-0592` — renderer-side **layout + point→handle hit testing**
+> (`layout.rs`, pure computation, metrics taken only from the frozen token
+> table, frozen layout/hit corpus; the STEP-0338 frame digests and the
+> STEP-0577 event digests stay **byte-identical**); ⑦ `STEP-0593` — the
+> runner's wasm **table budget** for the M7 registry path (`tables()` was
+> hard-coded to `0`, so every ADR-0019 class-b package core — which defines
+> one funcref table — was refused before the guest ran; the ceiling now
+> scales with the prepared package count, the same shape as
+> `instances()`/`memories()`), which closes the **registry-consumption half
+> of gate 3** (11/11 green, byte-exact against the frozen corpora) without
+> flipping gate 3 as a whole.
+> Evidence class = **internal-fixture / runtime-verified renderer-frame,
+> window-shell, runner-wiring and guest-level UI**; **no §3 gate moved**.
+> **Guest-visible UI is NOT yet achieved**: per the acceptance criteria
+> fixed in
+> [`STEP-0590`](../../steps/STEP-0590-m24-ui-contract-amendments-draft.md)
+> (G1∧G2∧G3∧G4∧G5∧G6), **G1** (a guest `window()` call creates a real
+> OS window and observes its handle) and **G2**/**G3** are met **in a
+> narrowed sense** — G2 as *guest triggers + host read-back verifies*
+> (`ui@1` has **no frame read-back channel**, a recorded contract gap) and
+> G3 as *guest observes `closed` after a host-initiated close* (`ui@1` has
+> **no guest-visible `close`**, another recorded contract gap); **G5**
+> (guest-level frame determinism) is met in a narrowed sense (STEP-0595:
+> N=6 independent generations, byte-identical, anchored to the frozen
+> `text` scene digest, cross-process consistent — single platform / tree /
+> token set). **Two layout systems currently coexist** (STEP-0592): the
+> **hit grid** (token-derived extents, deterministic across machines, which
+> `route_click_event` resolves against) and the **rendered visual grid**
+> (DirectWrite text plus 0x0 container cells) may **diverge** — a click that
+> resolves to a node on the hit grid may not visually sit on that node, and
+> vice versa. **Unifying them requires switching the render path, which
+> changes the frame bytes and therefore requires re-freezing the frame
+> corpus** (the four frozen frame SHA-256 values from STEP-0338 plus a
+> `TOKEN_SET_VERSION` bump) — an owner-authorized audit action, recorded as
+> a known limitation, not a defect in any single gate. **G4 splits into two
+> sub-items** (STEP-0599): **G4a
+> `click(handle)` is met** (STEP-0597 — the production routing seam
+> `route_click_event` resolves the deepest hit; `Node(root)` yields the
+> root handle only when no child rectangle covers the point; `Miss` is
+> skipped and counted; the coordinate is injected by the host, so the OS
+> `WM_LBUTTONDOWN`→`translate` step — a pure deterministic mapping covered
+> by the frozen event corpus — is the only bypass), while **G4b `select`
+> is NOT deliverable and is a contract/model gap, not an implementation
+> gap** (the dropdown carries `options`, so the index domain exists, but
+> the model has no selected-state field, no op can set a selection, there
+> is no per-option hit geometry and the shell produces no select event —
+> so a guest polling `poll-event` can never see `select`); the three
+> candidate resolutions (contract narrowing now / model extension later /
+> host-side select event) are drafted as
+> [`RFC-0052-A3`](../rfc/RFC-0052-amendment-A3-ui-selection-model.md)
+> (PROPOSED, owner decision pending). **G6** (clean-room pilot application)
+> is out of scope, so the capability may **not** yet be claimed. `run()`/`closed`
+> are exercised through the production backend
+> handle in e2e and **also** by guest-level fixtures (STEP-0591); file
+> dialogs and the
+> pilot application are **not** done. The recorded "#4 Direct2D is
+> unavailable on this host" premise was **measured to be false** (see> STEP-0338 §3: `windows-sys` carries no Direct2D/DirectWrite at all; the
+> usable binding is the full `windows` crate pinned at 0.52 so the prebuilt
+> merged import library is used and no `dlltool`/`as` toolchain is needed).
+> **M24 overall remains NO-GO on this host** (exit audit
+> [`m24-exit-audit-2026-11-07`](../../reports/m24-exit-audit-2026-11-07.md),
+> STEP-0589: gates 1/4/5/7 NO-GO, gate 2 and gate 3's registry half
+> "in-flight, to be refreshed", gate 6 GO as a discipline).
 
 Today the M5 desktop host UI is a strict companion model with no
 compiler-facing Sico binding (recorded in the 案例项目 README), and M15's

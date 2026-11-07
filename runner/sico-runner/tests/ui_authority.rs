@@ -21,7 +21,7 @@
 
 use sico_runner::{
     CancelToken, FsGrants, NetGrants, RunOutcome, Runner, RunnerLimits, ScriptInput,
-    ui::{UiGrants, UiRenderer},
+    ui::{D2dUiRenderer, UiGrants, UiRenderer},
 };
 use std::sync::{
     Arc,
@@ -883,4 +883,164 @@ fn granted_poll_event_delivers_an_event_once() {
         1,
         "exactly one renderer poll crosses the granted authority gate"
     );
+}
+
+/// The real Direct2D + window-shell backend e2e (STEP-0581). These run the
+/// same hand-encoded guest Components through the real runner, but the
+/// `UiRenderer` is the production [`D2dUiRenderer`] (STEP-0338 renderer core +
+/// STEP-0577 window shell), so a granted `window` call creates a **real OS
+/// window** and the guest observes its handle.
+///
+/// Real windows need an interactive desktop; on a headless host the guest's
+/// `window` call returns a typed `ui-error` and the test degrades to asserting
+/// that typed refusal plus an explicit `ENV_LIMIT` marker (never a fabricated
+/// "presented"). On this evidence host the window is real and the full
+/// lifecycle runs.
+#[cfg(windows)]
+mod real_backend {
+    use super::*;
+    use sico_runner::ui::UiEvent;
+
+    fn real_backend() -> Arc<D2dUiRenderer> {
+        Arc::new(
+            D2dUiRenderer::new().expect("the Direct2D + window-shell backend builds on Windows"),
+        )
+    }
+
+    fn run_ui_real(deny: bool) -> (RunOutcome, Arc<D2dUiRenderer>) {
+        let component = fixture_component();
+        let renderer = real_backend();
+        let grants = if deny {
+            UiGrants::default()
+        } else {
+            UiGrants { window: true }
+        };
+        let runner = Runner::new()
+            .expect("runner builds")
+            .with_ui_backend(grants, renderer.clone());
+        let prepared = runner
+            .prepare_program_with_net(&component, &FsGrants::default(), &NetGrants::default())
+            .expect("fixture component links with the real backend");
+        let outcome = prepared
+            .run(
+                &ScriptInput {
+                    arguments: vec!["unused".to_owned()],
+                    stdin: Vec::new(),
+                },
+                &RunnerLimits::default(),
+                &CancelToken::new(),
+            )
+            .expect("input bounds hold");
+        (outcome, renderer)
+    }
+
+    /// Pumps until a `Closed` event surfaces or `rounds` pumps are exhausted.
+    fn pump_until_closed(renderer: &D2dUiRenderer, rounds: usize) -> bool {
+        for _ in 0..rounds {
+            match renderer.poll_event() {
+                Some(UiEvent::Closed) => return true,
+                Some(_) => {}
+                None => {}
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn denied_window_with_real_backend_is_authority_refusal_without_touching_backend() {
+        // The default-deny gate fires before the backend; the production
+        // backend is never asked to create a window, so no tree root and no OS
+        // window exist afterwards (window_title() is None).
+        let (outcome, renderer) = run_ui_real(true);
+        let (stdout, exit) = exit_of(outcome);
+        assert!(stdout.is_empty());
+        assert_eq!(
+            exit, 115,
+            "authority-denied is discriminant 5: exit = 110 + 5 → {exit}"
+        );
+        assert_eq!(
+            renderer.window_title(),
+            None,
+            "a denied call must never reach the production backend"
+        );
+    }
+
+    #[test]
+    fn granted_window_with_real_backend_creates_a_real_window() {
+        let (outcome, renderer) = run_ui_real(false);
+        let (stdout, exit) = exit_of(outcome);
+        assert!(stdout.is_empty());
+        if renderer.window_title().is_some() {
+            // A real OS window was created: the guest observed the root handle.
+            assert_eq!(
+                exit, 1,
+                "the guest observed the real window root handle (handle id 1)"
+            );
+        } else {
+            // Headless / no interactive desktop: the guest saw a typed ui-error
+            // (any discriminant), never a trap and never a fabricated frame.
+            assert!(
+                (111..=115).contains(&exit),
+                "expected a typed ui-error refusal on headless, got exit {exit}"
+            );
+            eprintln!(
+                "ENV_LIMIT: no interactive desktop; real window creation refused as a typed ui-error"
+            );
+        }
+    }
+
+    #[test]
+    fn granted_window_lifecycle_present_close_event_destroy() {
+        let (outcome, renderer) = run_ui_real(false);
+        let (_, exit) = exit_of(outcome);
+        if renderer.window_title().is_none() {
+            // Headless: the guest already got the typed refusal; the lifecycle
+            // drive needs a real window, so it is honestly skipped.
+            eprintln!(
+                "ENV_LIMIT: headless; the window lifecycle drive is skipped (typed refusal above)"
+            );
+            return;
+        }
+        assert_eq!(exit, 1, "the guest observed the real window handle");
+
+        // Present one frame through the production backend (render + blit).
+        renderer
+            .run()
+            .expect("the present path runs on a real window");
+
+        // No closed event before the close is posted.
+        assert!(
+            !pump_until_closed(&renderer, 8),
+            "no closed event before the close is posted"
+        );
+
+        // The close posts WM_CLOSE; pumping delivers Closed deterministically.
+        renderer.close().expect("close posts WM_CLOSE");
+        assert!(
+            pump_until_closed(&renderer, 64),
+            "WM_CLOSE must deliver a closed event"
+        );
+
+        // Destroy is idempotent for the close-then-destroy path: the OS already
+        // destroyed the window on close, so the first destroy clears it (Ok);
+        // a second destroy with no window is the typed NoWindow refusal.
+        renderer
+            .destroy()
+            .expect("destroy clears the closed window");
+        assert_eq!(
+            renderer.destroy(),
+            Err(sico_runner::ui::UiError::NoWindow),
+            "a second destroy with no window is a typed refusal"
+        );
+    }
+}
+
+#[cfg(not(windows))]
+#[test]
+fn d2d_renderer_is_refused_typed_off_windows() {
+    // The Direct2D/win32 backend is a Windows implementation; on any other host
+    // it must refuse with the typed `no-window` (the runner folds the renderer's
+    // UnsupportedPlatform), never panic and never pretend to own a window.
+    let error = D2dUiRenderer::new().expect_err("the backend must refuse off Windows");
+    assert_eq!(error, sico_runner::ui::UiError::NoWindow);
 }

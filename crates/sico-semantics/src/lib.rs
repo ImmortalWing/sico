@@ -4823,12 +4823,18 @@ mod tests {
             .filter(|case| case["case"].as_str().unwrap().starts_with("REV-"))
             .map(|case| (case["case"].as_str().unwrap().to_owned(), case.clone()))
             .collect();
-        assert_eq!(expected.len(), 2);
+        // 4 = registered `REV-` cases in the oracle map (REV-101, REV-102,
+        // REV-201, REV-203). REV-201/REV-203 were registered by STEP-0584;
+        // before that the map carried only the two `REV-1xx` entries.
+        assert_eq!(expected.len(), 4);
 
         let mut paths = Vec::new();
         collect_sico(&repository.join("syntax-candidates/b/revision"), &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 4);
+        // 7 = syntax-candidates/b/revision recursive `.sico` census post-merge
+        // 7bcdc35 (4 -> 7; +3 revision valid/invalid cases frozen with the
+        // 235-entry corpus refreeze, STEP-0279..0283).
+        assert_eq!(paths.len(), 7);
         let mut accepted = 0;
         let mut rejected = 0;
         for (index, path) in paths.iter().enumerate() {
@@ -4874,7 +4880,9 @@ mod tests {
                     .all(|fact| source.span(fact.range).is_some())
             );
         }
-        assert_eq!((accepted, rejected), (2, 2));
+        // 3 accept / 4 reject = `// expect: accept` marker split of the 7
+        // revision cases (2/2 -> 3/4).
+        assert_eq!((accepted, rejected), (3, 4));
     }
 
     #[test]
@@ -4883,7 +4891,10 @@ mod tests {
         let mut paths = Vec::new();
         collect_sico(&root, &mut paths);
         paths.sort();
-        assert_eq!(paths.len(), 58);
+        // 66 = syntax-candidates/b recursive `.sico` census post-merge 7bcdc35
+        // (58 -> 66; +8 cases added by the M22/M23/M24 lines and frozen with the
+        // 235-entry corpus refreeze, STEP-0279..0283).
+        assert_eq!(paths.len(), 66);
         for (index, path) in paths.iter().enumerate() {
             let path_text = path.to_string_lossy();
             let source = SourceFile::from_bytes(

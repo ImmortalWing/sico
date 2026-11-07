@@ -24,8 +24,10 @@ if ($contractCases -ne 21) {
   throw "expected 21 lexical contract cases, found $contractCases"
 }
 $bCases = @(Get-ChildItem -LiteralPath (Join-Path $root 'syntax-candidates/b') -Recurse -File -Filter '*.sico')
-if ($bCases.Count -ne 58) {
-  throw "expected 58 B cases, found $($bCases.Count)"
+# 66 = syntax-candidates/b `.sico` census (58 -> 66; +8 cases frozen with the
+# 235-entry corpus refreeze, STEP-0279..0283), post-merge 7bcdc35.
+if ($bCases.Count -ne 66) {
+  throw "expected 66 B cases, found $($bCases.Count)"
 }
 
 $sourceText = Get-Content -LiteralPath (Join-Path $root 'crates/sico-source/src/lib.rs') -Raw -Encoding UTF8

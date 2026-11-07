@@ -21,7 +21,13 @@ if ($typeNames.Count -ne 16 -or -not ($typeNames -contains 'Int') -or -not ($typ
 if ($prelude.namespaces.cross_namespace_collision -notmatch 'requires a new case') {
   throw 'undecided namespace collision must remain an explicit RFC gate'
 }
-if ($bCases.Count -ne 58 -or $snapshots.Count -ne 58 -or $mutations.Count -ne 12) {
+# Current-tree census: STEP-0022 (M2, 2026-07) recorded cases=58 / snapshots=58
+# / mutations=12; the corpus was re-frozen 215 -> 235 and b grew 58 -> 66
+# (STEP-0279..0283, merge 7bcdc35). Measured 2026-11-07: 66 cases / 58 HIR
+# snapshots / 12 mutations. The HIR snapshot file (b-shapes.txt) was NOT
+# regenerated for the +8 cases; regeneration is blocked by IND-003
+# (owner-pending, STEP-0584 §6), so snapshots stay at their recorded 58.
+if ($bCases.Count -ne 66 -or $snapshots.Count -ne 58 -or $mutations.Count -ne 12) {
   throw "HIR evidence mismatch: cases=$($bCases.Count) snapshots=$($snapshots.Count) mutations=$($mutations.Count)"
 }
 
@@ -34,4 +40,7 @@ try {
   $env:RUSTUP_TOOLCHAIN = $previousToolchain
 }
 
-Write-Output 'STEP_0022_OK b_lowered=58 snapshots=58 stable_ids=pass source_maps=pass semantic_tokens=complete mutations_blocked=12 prelude_types=16 fixture_members=3 namespace_collision=undecided-rfc-gated'
+# b_lowered is the current census; the HIR snapshot regeneration for the +8
+# cases is blocked by IND-003 (owner-pending, STEP-0584 §6), so snapshots stay
+# at their recorded 58.
+Write-Output "STEP_0022_OK b_lowered=$($bCases.Count) snapshots=58 stable_ids=pass source_maps=pass semantic_tokens=complete mutations_blocked=12 prelude_types=16 fixture_members=3 namespace_collision=undecided-rfc-gated"

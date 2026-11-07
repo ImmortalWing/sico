@@ -25,7 +25,12 @@ if ($buildManifest.schema -cne 'sico.m22.script-build-corpus.v0') {
 }
 $accepted = @($entries | Where-Object rust_script_build -eq 'accepted')
 $refused = @($entries | Where-Object rust_script_build -eq 'refused')
-if ($entries.Count -ne 215 -or $accepted.Count -ne 37 -or $refused.Count -ne 178) {
+# Current-tree census: the M22 script-build corpus was re-frozen with the main
+# corpus 215 -> 235 (STEP-0279..0283, merge 7bcdc35), so these counts follow
+# the 235-entry manifest. Measured by PowerShell ConvertFrom-Json over
+# selfhost/script-build-corpus-v0.json (2026-11-07): 235 / 42 accepted / 193
+# refused; every accepted entry is component-reproducible.
+if ($entries.Count -ne 235 -or $accepted.Count -ne 42 -or $refused.Count -ne 193) {
     throw "unexpected Script corpus counts: total=$($entries.Count) accepted=$($accepted.Count) refused=$($refused.Count)"
 }
 if (@($accepted | Where-Object { -not $_.component_reproducible -or [string]::IsNullOrWhiteSpace($_.component_sha256) }).Count -ne 0) {
@@ -41,8 +46,11 @@ foreach ($entry in $refused) {
     if (-not $classes.ContainsKey($key)) { $classes[$key] = 0 }
     $classes[$key]++
 }
-if ($classes['LEXICAL'] -ne 116 -or $classes['SCRIPT_ABI'] -ne 28) {
+# LEXICAL 116 is unchanged by the 235 refreeze; SCRIPT_ABI grew 28 -> 31 (the
+# +20 entries added with STEP-0279..0283 are lexical/semantic refusals, not
+# Script-ABI; measured on the 193-entry refused partition, 2026-11-07).
+if ($classes['LEXICAL'] -ne 116 -or $classes['SCRIPT_ABI'] -ne 31) {
     throw 'Script refusal class counts drifted'
 }
 
-Write-Output 'STEP_0220_OK corpus=215 script_accept=37 reproducible=37 script_refuse=178 lexical=116 script_abi=28 semantic=34 artifact_leaks=0'
+Write-Output 'STEP_0220_OK corpus=235 script_accept=42 reproducible=42 script_refuse=193 lexical=116 script_abi=31 semantic=46 artifact_leaks=0'

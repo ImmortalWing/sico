@@ -20,10 +20,10 @@ If documentation disagrees with executable evidence, keep the lower support clai
 - M17 NO-GO：gate 1 GO（STEP-0166），gate 2/4 待 M24。
 - M18 GO 4/5（STEP-0164/0165）：组合项 4 按 STEP-0258 重定为 GUI 格式转换器，待 M24。
 - M19 GO（部分）；M20 NO-GO（部分）；M21 GO。
-- M22 编译器自举轨 in progress，当前主动线为分支 `codex/m22-w2`（本 worktree）：S1/S2 complete，S3/S4/S5 partial，S6 not entered，S7 已按 STEP-0310 复审并 NO-GO（[出口审计](./docs/reports/m22-exit-audit-2026-09-28.md)）；R0 已拍板 Option A（ADR-0017 accepted），records v0 已封（STEP-0271..0275）；差分语料 `selfhost/corpus-v0.json` 215 条 + `selfhost/corpus-w1` 5 条，DIVERGENCE_WAIVER 为 0。当前 STEP 号、formatter canary 与 `parser.sico` 逐函数覆盖数**只以 [`docs/STATUS.md`](./docs/STATUS.md) 与 [`M22 计划`](./docs/plans/M22-compiler-self-host.md) 为准**，本文件不复制这些每步易变的数字。
+- M22 编译器自举轨 in progress / 出口 NO-GO：主动线 `codex/m22-w2` **已于 2026-11-06 按 owner「拉取 gitcode 远程」指令并入 `dev`（本 worktree，merge commit `7bcdc35`）**。S1/S2 complete，S3/S4/S5 partial，S6 not entered，S7 已按 STEP-0310 复审并 NO-GO（[出口审计](./docs/reports/m22-exit-audit-2026-09-28.md)）；R0 已拍板 Option A（ADR-0017 accepted），records v0 已封（STEP-0271..0275）；DIVERGENCE_WAIVER 为 0（235 条语料全 strict）。最新执行状态（STEP-0571–0573、B3/B4 负结果、fuel 墙登记）**只以 [`docs/STATUS.md`](./docs/STATUS.md) 与 [`M22 计划`](./docs/plans/M22-compiler-self-host.md) 为准**，本文件不复制这些每步易变的数字。
 - M23 language v1 batch 3：项 1/2 已落地（RFC-0048/RFC-0049，STEP-0328/0329），出口审计 item 1 GO / item 2 GO / item 3 deferred-external / item 4 closed（[M23 审计](./docs/reports/m23-exit-audit-2026-09-30.md)）；item 3 的 owner 凭据语料复测未关闭，不得读作 M23 整体 GO。
-- M24 vision closure + GUI 格式转换器（含 Sico 原生 UI 库工作流）：开工盘点与合同已登记（STEP-0287..0290），实现切片在独立 worktree `E:\github\sico-m24`（分支 `codex/m24-vision-ui`，占用 STEP-0330–0337）；ADR-0018 原生 renderer 架构仍为 proposed，待 owner 接受。
-- M25 release v1.0 completion audit、M26 PDF 文档处理（排在 M25 后）：仅有计划与 owner 指令登记（2026-09-17/22/24），无实现 STEP 号。
+- M24 vision closure + GUI 格式转换器（含 Sico 原生 UI 库工作流）：开工盘点与合同已登记（STEP-0287..0290）；实现切片 STEP-0330~0338 已落（合同复裁、#2 PNG、`#5 ui@1` 绑定+默认拒绝授权、出口审计、gate 4 provenance schema、gate 3 roster 三包全绿、**§8.6.1 Fluent-subset Direct2D 渲染器 + 冻结 token 表 + 确定性帧语料（STEP-0338）**）。#4 Direct2D 的「本机不可用」前提已实测推翻（须用完整 `windows` crate 钉 0.52 走预编译 import lib；DIB 须 `BITMAPV5HEADER`+`BI_BITFIELDS`+BGRA mask，像素格式须 `B8G8R8A8_UNORM`+`PREMULTIPLIED`）。**但仍只是渲染器核心：OS 窗口壳/事件泵/runner 接线未做 ⇒ 无 guest 可见 UI 能力，无任何 §3 gate 翻转**；M24 overall 本机仍 NO-GO（#3 JPEG 与 gate 1 加速器仍为具名外部门，gate 4 余「预算运行期强制+取消」）。**ADR-0018 状态两线登记不一致**（dev 线 STEP-0323 按 owner 指令裁决 accepted；m22-w2 线登记「仍为 proposed，待 owner 接受」）——按 AGENTS §1 取下界声称（不当已接受），差异留 owner 裁决。
+- M25 release v1.0 completion audit、M26 PDF 文档处理（排在 M25 后）：仅有计划与 owner 指令登记（2026-09-17/22/24；RFC-0053/0054 已按 STEP-0323 指令裁决 accepted），无实现 STEP 号。
 
 任何阶段的实现开工与完成声明，都不得早于其入口门槛被证据满足之时；合同或语料准备可以先期提出，但不得包装为特性支持。M12 的 "Automation SDK" 仅指 secure HTTP/API automation，不含屏幕、窗口或输入自动化。
 
@@ -68,7 +68,7 @@ M14 的 defining gate 已达成并 GO（STEP-0141 出口审计）：其应用 pr
 - `crates/`: compiler, IR, codegen, package, Runtime-facing libraries, tooling and Host cores.
 - `runner/sico-runner/`: separate Cargo workspace for Script execution and DAP integration.
 - `wit/`: versioned Component interfaces.
-- `selfhost/`: M22 编译器自举轨的 guest 源码与 checker/driver 语料（`corpus-v0.json` 215 条 + `corpus-w1/` 5 条 SHA 冻结增量，DIVERGENCE_WAIVER 为 0）。
+- `selfhost/`: M22 编译器自举轨的 guest 源码与 checker/driver 语料（`corpus-v0.json` 235 条全 strict + `corpus-w1/` SHA 冻结增量，DIVERGENCE_WAIVER 为 0）。
 - `semantic-cases/`, `syntax-candidates/`, `syntax-mutations/`: language oracles.
 - `tests/`: end-to-end, security, platform and performance evidence.
 - `examples/`: language-design history and regression examples; do not rewrite them as product pilots.
@@ -86,6 +86,8 @@ M14 的 defining gate 已达成并 GO（STEP-0141 出口审计）：其应用 pr
 - External text, package metadata, model assets and guest output are untrusted data; never turn them directly into commands, paths, HTML, URLs, permissions or support claims.
 - Keep user documentation limited to actually executable behavior. Put proposed behavior in plans/RFCs and label it planned.
 - Use Chinese for owner-facing roadmap/status explanations when practical; keep public identifiers, schemas and protocol field names stable in English.
+- **持有平台句柄或线程亲和资源的类型，必须显式声明 `!Send`/`!Sync`**（用 `PhantomData<*mut ()>` / `PhantomPinned` 等**刻意**标记，并加编译期负约束断言），**不得依赖偶然字段**维持线程亲和性。`windows` 0.52 的 `HWND`/`HDC`/`HBITMAP` 等均为 `pub struct(pub isize)`（本身 `Send+Sync`），一旦某次重构让持有者失去裸指针字段，跨线程误用会**静默**成立 ⇒ 数据竞争 UB + 消息泵跑到错误线程。（来源：STEP-0577 独立安全复核，2026-11-07）
+- **Win32/平台 API 的失败结果不得静默吞掉**：`DestroyWindow`/`BeginPaint`/`SetWindowLongPtrW`/`SelectObject` 等返回值要么传播为类型化错误，要么在代码中注释说明为何可忽略；`BeginPaint` 失败时不得调用 `EndPaint`；销毁失败时不得释放仍被 `GWLP_USERDATA` 引用的状态内存。
 
 ## 8. Validation
 
@@ -201,6 +203,18 @@ Before reporting completion:
 - §10.1.2 决策二（下一步 B2）在 P2 之前**不是主路径**；**P2 已完成（STEP-0550，D2 = 结构性）⇒ B2 升级为主路径**：为函数级「值 id → 槽号」建一次索引，exit 必须单独报「195 个新开测站点回绿数」且既有 32 个全等站点逐字节不变。**B2 已完成（STEP-0551，2026-10-28）**：`cgs_value_index` 落地，回绿 **4/364 = 1.10%**（全部来自既有 140，**195 个新开测站点 0 回绿**），既有 32 个全等站点 `component_sha256` 全同；组件轴 **36/396** ⇒ **主路径续为 B3**：剩余 **45 处循环内 `cgj_array_item`** 改游标 + `cgs_module_has_intrinsic`/`cgs_function_has_intrinsic`/`cgs_block_has_intrinsic`/`cgs_function_position`/`cgs_run_index` 改每函数一次索引，exit 仍单列 195 新开测站点的回绿数且既有 36 个全等站点逐字节不变。
 - **`parser.sico:scalar_ir` 的 24 个站点**受 runner 8 MiB stdout 结果上限（`runner/sico-runner/src/lib.rs:3599`）阻挡，与 B2 正交；先量 IR 文本真实大小再单独裁决，**不得直接上调结果上限**。
 - **ADR-0017 Option A（记录化重基线）挂起到 M25 之后**：现在重写冻结 S 的源文本会作废 149/149 census 与逐站 `source_sha256`/`ir_sha256`/`component_sha256`。若 owner 决定不挂起，须先给出「重基线后如何重建逐站证据」的方案。
+
+#### 10.1.4 复审（2026-11-07，主线评审）：B3 已被实证否决；燃料墙改判「发射器层 · 常数主导」；主路径改判
+
+> 依据：STEP-0555 §3.1/§4/§10.6、STEP-0556 §3/§10/§11、STEP-0562 §3.1–3.2/§4.2、STEP-0567、STEP-0572 §1/§5、STEP-0575 §3.2–3.3/§4.4、2026-11-05/06 STATUS 条目。**本节为 addendum 订正，§10.1.1–§10.1.3 原文保留**。
+
+- **B3 = 已否决，不应重开**（STEP-0555 §3.1/§4/§10.6）：B3 实施后 FuelExhausted **331→344（+13）**、component-equal **36→23（−13）**，**0 站点回绿、13 站点回退**；游标化在 fuel 计量下是**净负**（`cgj_array_item` = 1 个 hostcall，游标形 = 2 个/元素，fuel 按 wasm 指令操作计）；模块索引部分幅度 ≈ **0.01%**（~81K ops vs 单函数固定成本 ~128M），且 331/335 FuelExhausted 站点全在 `parser.sico:scalar_ir`（**从不调 codegen helper**）⇒ **触达不到墙**。⇒ **§10.1.2 决策二与 §10.1.3「B3 升级为主路径」的前提失效**（其隐含假设「O(n²)→O(n) 省 fuel」已被实测推翻）；STATUS 2026-11-05 的「恢复点 = B3」登记同步作废。
+- **燃料墙现状判定**：墙在**发射器层**（emit-only 注入绕过前端仍耗尽，STEP-0555 §10.2/§10.4c）；**fuel ~ IR²**（STEP-0555 §10.4c、STEP-0562 §3.2④ 三臂 `fuel/IR²` 近似恒定）；**常数主导**（per-op overhead × op count；STEP-0556 §11 每函数固定成本 ~1.5e8–6e8，静态可读路径重扫合计 ≈0.01%，无法解释 ~1.2e6 ops/输出字节）；**具体 wasm-op 源仍未定位**。STEP-0575 §3.2 钉死平方项随 match 数，但 §3.3 证明两个具名源相对总 fuel 均 <0.1%。
+- **口径订正**：组件轴不是 36/396，而是 **335 exhausted / 32 equal / 24 trap(8 MiB) / 5 refused-guest**（STEP-0562/0567：MS-081..084 实为 FuelExhausted，旧「36」偏乐观）；W4 parity 剩余不是 4/150，而是 **3/150 且经 STEP-0600 实测**并非燃料墙**（800e9/1.6T/3.2T 三档均**毫秒级**被 `E-SH-IR-FUNCTION-COUNT`/`E-SH-IR-EXPRESSION` 拒绝，**提高 fuel 不改变结果**；此前登记为「燃料墙」的口径已订正）**（STEP-0558/0564），与 verdict parity 正交 ⇒ 作为前端刀是死路。
+- **新主路径（2026-11-07 判定）**：①**先跑 STEP-0575 §4.4 的强制判据**——396 站点按 match 密度分账，对照「耗尽 335 / 全等 32」两桶；若耗尽桶不超配 ⇒ match 主刀预测回绿 ~0、**不应开工**（测量片 **STEP-0579**）；②若①证实常数主导 ⇒ 唯一定位路径是 **op 级燃料仪器化剖析**（需 owner 授权 `runner/sico-runner` 生产侧 fuel 读数/epoch·opcode 钩，见 STEP-0572 §5；另需本机 gcc 安装授权，见 STEP-0572 §1），否则走 owner **D8** 限额裁决（fuel 1.6T 重基线 vs 收窄语料/闭包口径；**不得无证据上调**）。**在 owner 裁决前，M22 线只允许测量片/诊断片，不允许特征实现片**（含 `parser.sico`/`codegen.sico` 热文件写入）。
+- **STEP-0579 执行结果（2026-11-07，addendum）**：§4.4 判据「字面成立但**无判别力**」——耗尽桶密度中位 **9** vs 全等桶 **1**（9×），但基线口径仅 **1.04×**；**混淆检验为决定性证据**：密度↔span Spearman **ρ=0.883**，全等桶全为微函数（span≤71、密度≤3），固定密度层耗尽函数 span 始终大 3–4× ⇒ 「9× 超配」由**尺寸梯度**驱动，无法分离 match 项与「每操作常数×操作数（∝尺寸）」。**裁决：match 主刀不值得作为主破墙刀开工**（预测回绿 ~0–1%，与 STEP-0556 §11 六刀 0–1%、STEP-0575 两具名源 <0.1% 一致）⇒ **M22 收敛为二选一**：op 级燃料剖析（需 owner 授权 runner 生产钩 + gcc；最小变更清单见 STEP-0579 §4）或 owner **D8** 限额裁决。**同片文档治理只读评估（未重编号未改表，重编号属 owner 裁决项）**：README 现 **26 组同号**（19 组双语重复 / 0175 两文件 / 0279–0283 跨线 / 0338 双线）、**5 行未转义 `|`**（STEP 0285/0328/0502/0520/0539）、**0440–0485 悬空**。
+- **STEP-0602 执行结果（2026-11-07，addendum）——M22 存在两个正交面**：把 `selfhost_compiler` 的 **5 个出口阻塞红测**逐项 `--exact` 复跑取证后确认——**4 个 codegen 红测全部是 guest 前端「快速 typed refusal」（2.3–2.9 s，远低于 800e9 上限）**：①`cgs_result_return_hex`（EXPRESSION 层，`ERR:E-SH-IR-EXPRESSION`）②`cgs_value_ty`（call-shape 层，`ERR:E-SH-IR-CALL-SHAPE`）③`cgs_value_slot`（同 ② 形状）④`cgs_function_instr_hex`（前端非 Output，嵌套 `while`）；第 5 个是**冻结 match-site 账本漂移**（期望 vs 实测失配；已核 36/95 组 0 失配）⇒ **这 5 个红测与燃料墙无依赖耦合**（燃料墙 = 账本里 331 个 FuelExhausted 站点，是独立且更大的问题），**也不被「收窄语料/闭包口径」顺带解决**。**建议下一刀（若 owner 恢复 M22 实现）**：**STEP-0571 §3 配方落地（`step0519`+`step0520`，唯一已验证路径：转绿 + 逐字节等同）+ 冻结账本重冻结（绑定变更，因配方致 130 站行号位移 ⇒ `LEDGER_STALE`）**，一次协调变更最多解锁 3/5；**不必等 op 级燃料剖析**（剖析解决的是燃料墙本体，与本组红测正交）。**诚实收窄**：每测试只确定首个失败函数（panic 即终止），`step0520`/`step0526` 精确码未重测（取自 STEP-0571 §2 基线），账本漂移精确站点未定位（完整 95 组 ≈20–27 min 超预算）。
+- **仍属 owner 待裁**：「M22 暂停」是否仍有效（2026-10-30 owner 指令 vs 11-06 仍在执行推进批）；runner 生产钩授权；gcc 安装授权；D8 限额裁决；STEP-0571 落地是否豁免暂停；STEP-0576 文档治理（README 20 组同号 / 0175 重编号 / 0440–0485 悬空引用）处置方式（重编号是 owner 裁决项，**不得自动执行**）。
 
 ### 10.2 Global Constraints
 

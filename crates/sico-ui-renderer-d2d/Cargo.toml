@@ -1,0 +1,43 @@
+[package]
+name = "sico-ui-renderer-d2d"
+description = "Native Fluent-subset Direct2D renderer adapter for the Sico native UI library (M24 / ADR-0018)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sha2.workspace = true
+
+# The `windows` bindings are pinned to the 0.52 generation on purpose: the
+# 0.5x line resolves through `windows-targets` 0.52 and the prebuilt
+# `libwindows.0.52.0.a` import library, so the build needs no `dlltool`/`as`
+# toolchain (the 0.6x line uses `kind = "raw-dylib"`, which makes rustc shell
+# out to `dlltool`, which in turn needs the GNU assembler that is absent on
+# the evidence host). The Direct2D/DirectWrite surface exists in the full
+# `windows` crate but not in `windows-sys`, whose Graphics namespace stops at
+# Dwm/Gdi/GdiPlus/Hlsl/OpenGL/Printing.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Foundation",
+    "Foundation_Numerics",
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# The win module is the architecture-sanctioned FFI home (ADR-0018 §1); the
+# shared core stays unsafe-free. The workspace lint set is re-declared here
+# with unsafe_code relaxed for exactly this crate.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

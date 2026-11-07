@@ -437,7 +437,11 @@ AI 实验必须记录：
 
 #### M18：代表性 AI 应用与外部试点
 
-使用 API agent、流式工具、Web/UI、Sico 原生 GUI 格式转换器和独立消费者检验公开接口。俄罗斯方块案例仅保留 M14 纯 Sico 离线求解器验收 oracle；M16 capture/input 与 M17 vision 的既有独立证据保留，但该案例不再作为 M18/M24 试点验收载体（2026-09-22 owner 指令，STEP-0258）。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
+使用 API agent、流式工具、Web/UI、Sico 原生 GUI 格式转换器和独立消费者检验公开接口。俄罗斯方块案例仅保留 M14 纯 Sico 离线求解器验收 oracle；M16 capture/input 与 M17 vision 的既有独立证据保留，但该案例不再作为 M18/M24 试点验收载体（2026-09-22 owner 指令，STEP-0258）。M16 证据停在 M16 GO 级别不再延伸；M18 组合项 4 重定为 GUI 格式转换器（见 M24）。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
+
+#### M19–M22（当前状态登记）
+
+M19 GO（部分）；M20 NO-GO（部分）；M21 GO。M22 编译器自举轨 in progress，为当前主动线：`dev` 线当前 STEP-0283（W1/W2 已关闭，235 条语料全 strict，下一波次 S3/S4 records re-baseline）；`codex/m22-w1-ci` 线当前 STEP-0324（并已带入 M24 gate 3 roster 三包 STEP-0335–0337）；两线已于 2026-10-20 并入 `dev`（重复 STEP-0279–0283 编号并集登记未重编号；合并后仍待独立 CI 裁决）。精确 gates 与证据以 `docs/ROADMAP.md` 与 `docs/STATUS.md` 为准。
 
 #### M19–M22（当前状态登记）
 
@@ -462,6 +466,11 @@ M19 GO（部分）；M20 NO-GO（部分）；M21 GO。M22 编译器自举轨为�
 ### 9. 当前建议执行顺序
 
 本清单为 M0 历史清单——M0–M13 已全部 complete，不应当作当前缺口从头执行；实际执行从 [`docs/STATUS.md`](./docs/STATUS.md) 记录的当前阶段接续（当前主动线为 M22 编译器自举轨，M23/M24 为并行轨）。历史上的默认顺序保留备查：
+所有者于 2026-09-24 登记（排在 M25 之后）：PDF 文档处理支持。尚无实现 STEP 号，入口门槛满足后方可开工。
+
+### 9. 当前建议执行顺序
+
+本清单为 M0 历史清单——M0–M13 已全部 complete，不应当作当前缺口从头执行；当前执行从 `docs/STATUS.md` §1 记录的实际阶段接续（当前主动线为 M22 编译器自举轨）。历史上的默认顺序保留备查：
 
 1. 建立 `docs/` 审计结构、模板、STATUS 和 ROADMAP；
 2. 对 A0/B/C 建立单点错误注入集与静态恢复评测；

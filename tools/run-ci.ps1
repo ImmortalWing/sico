@@ -96,9 +96,18 @@ Invoke-Step 'build (runner debug)' { & $cargo build --locked --offline --manifes
 # assertion are unchanged; only the order is: the timing-sensitive binary runs
 # first, on a fresh machine, and the rest of the suite runs after it with the
 # timing test skipped so that it is measured exactly once.
-Invoke-Step 'test (runner core)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml --test runner -- --test-threads=1; $LASTEXITCODE }
-Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --workspace --all-targets --all-features; $LASTEXITCODE }
-Invoke-Step 'test (runner suite)' { & $cargo test --locked --offline --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1 --skip prepared_program_reruns_are_isolated_and_survive_a_trap; $LASTEXITCODE }
+# `--no-fail-fast` on the two whole-suite steps: on this host a test binary can
+# intermittently die at *process teardown* with STATUS_ACCESS_VIOLATION after
+# all of its assertions passed (observed on untouched binaries too, e.g.
+# `control_flow` and `frame_digest`; see STEP-0587/0592/0596 and the
+# STEP-0600 host notes). Without `--no-fail-fast` cargo aborts the run at that
+# target and the later targets are never executed, so a green-looking CI step
+# can hide unrun suites. The flag does NOT change the failure semantics: the
+# step still exits non-zero if any target failed, it only guarantees that every
+# target is attempted and reported.
+Invoke-Step 'test (runner core)' { & $cargo test --locked --offline --no-fail-fast --manifest-path .\runner\sico-runner\Cargo.toml --test runner -- --test-threads=1; $LASTEXITCODE }
+Invoke-Step 'test (workspace)' { & $cargo test --locked --offline --no-fail-fast --workspace --all-targets --all-features; $LASTEXITCODE }
+Invoke-Step 'test (runner suite)' { & $cargo test --locked --offline --no-fail-fast --manifest-path .\runner\sico-runner\Cargo.toml -- --test-threads=1 --skip prepared_program_reruns_are_isolated_and_survive_a_trap; $LASTEXITCODE }
 Invoke-Step 'module boundaries' { & powershell -ExecutionPolicy Bypass -File tools\validate-module-boundaries.ps1; $LASTEXITCODE }
 # The guest frontend's lexer does not skip `//` comments, so a comment inside
 # a function body is read as source by the guest's statement scanner and a

@@ -106,7 +106,10 @@ fn check_matches_all_58_semantic_oracles() {
     let mut sources = Vec::new();
     collect_sico(&repository.join("syntax-candidates/b"), &mut sources);
     sources.sort();
-    assert_eq!(sources.len(), 58);
+    // 66 = syntax-candidates/b recursive `.sico` census post-merge 7bcdc35
+    // (58 -> 66; +8 cases added by the M22/M23/M24 lines and frozen with the
+    // 235-entry corpus refreeze, STEP-0279..0283).
+    assert_eq!(sources.len(), 66);
     let mut accepted = 0;
     let mut rejected = 0;
     for source in sources {
@@ -134,7 +137,9 @@ fn check_matches_all_58_semantic_oracles() {
         }
         assert_eq!(json["status"]["semantic_checks_performed"], true);
     }
-    assert_eq!((accepted, rejected), (25, 33));
+    // 28 accept / 38 reject = `// expect: accept` marker split of the 66
+    // syntax-candidates/b cases (25/33 -> 28/38).
+    assert_eq!((accepted, rejected), (28, 38));
 }
 
 #[test]
