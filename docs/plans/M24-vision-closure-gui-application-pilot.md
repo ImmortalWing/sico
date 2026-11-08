@@ -334,9 +334,15 @@ class and no capability contract changes; no STEP number is reserved.
 > is no per-option hit geometry and the shell produces no select event —
 > so a guest polling `poll-event` can never see `select`); the three
 > candidate resolutions (contract narrowing now / model extension later /
-> host-side select event) are drafted as
+> host-side select event) were drafted as
 > [`RFC-0052-A3`](../rfc/RFC-0052-amendment-A3-ui-selection-model.md)
-> (PROPOSED, owner decision pending). **G6** (clean-room pilot application)
+> (owner decision pending); **the owner adjudicated
+> RFC-0052-A3 = A1 (narrow the contract) on 2026-11-07** — `select` is
+> narrowed as **declared-but-not-produced** in `ui@1` (a documentation-only
+> honesty narrowing; no WIT/source/test change, the `select` discriminant
+> stays in the WIT), with **A2 (model extension) / A3 (host-side select
+> event) not taken and deferred**. **G4b `select` remains NOT delivered** —
+> this is the honest record of the accepted narrowing, **not a gate flip**. **G6** (clean-room pilot application)
 > is out of scope, so the capability may **not** yet be claimed. `run()`/`closed`
 > are exercised through the production backend
 > handle in e2e and **also** by guest-level fixtures (STEP-0591); file

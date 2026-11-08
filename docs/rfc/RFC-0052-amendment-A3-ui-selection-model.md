@@ -1,6 +1,6 @@
-# RFC-0052 Amendment A3 (PROPOSED): `select(ui-selection)` model gap — honest narrowing vs model extension vs host-side event
+# RFC-0052 Amendment A3 (ACCEPTED — A1): `select(ui-selection)` model gap — honest narrowing vs model extension vs host-side event
 
-> - status: **PROPOSED (draft, not accepted)** — owner adjudication pending. **This amendment implements nothing, changes no behaviour, and touches no WIT, source, test or existing RFC text.** On owner acceptance a separate implementation STEP will be allocated; the STEP number is **not reserved here** (see §0).
+> - status: **ACCEPTED — A1 (narrow the contract) by owner decision 2026-11-07.** Of the three candidate resolutions in §2, **A1 is the accepted resolution**; **A2 (model extension) and A3 (host-side select event) are not taken** and remain **deferred** (they stay on record below as the historical option analysis, not as a plan). A1 is a **documentation-only honesty narrowing**: it implements nothing, changes no behaviour, and touches no WIT, source, test or existing RFC text (see §2.1). No implementation STEP is allocated by this acceptance; the STEP number is **not reserved here** (see §0).
 > - date: 2026-11-07
 > - phase: M24 §8.6.1 (Sico-language native UI library 前置工作流), contract-form review of the `ui@1` host-provider surface in use
 > - amends: [`RFC-0052`](./RFC-0052-native-ui-source-binding-v0.md) §2 (surface form, `poll_event` event vocabulary)
@@ -12,7 +12,7 @@
 ## 0. Discipline of this slice
 
 - **Contract surface is `wit/script-ui-v1/ui.wit`.** The runner hand-registers the surface via `func_wrap` and the compiler hand-encodes the instance type; neither parses this file (`wit/script-ui-v1/ui.wit:9-11`). Any WIT change is a **contract change** and therefore requires owner acceptance plus a versioning note — none of the options below is decided.
-- **No option is pre-adjudicated.** A1/A2/A3 are all presented as candidates; the recommendation in §3.4 is advisory and non-binding.
+- **No option was pre-adjudicated at draft time.** A1/A2/A3 were all presented as candidates; the recommendation in §3.4 was advisory and non-binding. **Since 2026-11-07 the owner has adjudicated A1** (narrow the contract); A2/A3 are deferred. The candidate framing below is retained as the historical option analysis.
 - **Lower bound where docs conflict with code:** the only ground truth used is the executable code (`runner/sico-runner/src/ui.rs`, `crates/sico-ui-renderer-d2d/src/*`) and the frozen WIT. Where a STEP's prose makes a stronger claim than the code can support, the code wins and the discrepancy is recorded.
 - **This amendment is the `select` sub-slice of the C-C gap.** The `click` sub-gap was closed by STEP-0592 (layout + hit-testing) and STEP-0597 (runner delivery); `select` remains, and its cause is **not** "missing hit-testing" (hit-testing now exists) but **"the model has no selection state"**. That is a different gap class — see §1.
 
@@ -61,6 +61,8 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 
 ### 2.1 A1 (option) — narrow the contract: "this version does not deliver `select`"
 
+> **ACCEPTED by owner decision 2026-11-07** (see status header). This is the posture now in force.
+
 - **Change:** no WIT change, no code change. Write into RFC-0052 §2 and the user documentation the explicit narrowing: "until the model carries dropdown selection state, the `ui@1` surface delivers only `click(handle)` and `closed`; `select(ui-selection)` is declared but **not produced** in the current model." Update the acceptance clause (STEP-0590 §6 G4) to split the click/select sub-items so the verdict is precise.
 - **Effect:** converts the guest-unobservable skip into a **declared** narrowing (default-deny-style honesty, exactly STEP-0590's C3 for clicks). A guest reading the contract now knows `select` will not arrive; it no longer has to guess. It **does not** add the capability — that stays A2.
 - **Invariant impact:** none on the model or the runner — the `select` discriminant stays unreachable (a declared-but-unproduced case, the same shape as `event-overflow` pre-A2/B1b). Wire-compatible; no versioning note beyond the doc text.
@@ -68,6 +70,8 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 - **Recommended slices:** documentation + acceptance-clause wording only. No STEP code.
 
 ### 2.2 A2 (option) — extend the model with dropdown items + selection state (the real fix)
+
+> **NOT TAKEN — deferred** (owner decision 2026-11-07). Remains the eventual correct fix but is not part of the accepted A1 posture; kept on record below.
 
 - **Change:** introduce a selection state into the model and a deterministic source for it. Minimum shape:
   - a `selected: Option<u64>` field on `UiNode` (or an equivalent per-dropdown selection slot), with a declared lifetime (default = `None`/unselected; cleared or clamped when `options` change; dropped with the node);
@@ -80,6 +84,8 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 - **Compatibility:** WIT append is wire-compatible (append-only `ui.wit:25-26`); existing guests unchanged unless they exhaustively match the (unchanged) `ui-event`/`ui-error`.
 
 ### 2.3 A3 (option) — make `select` a host-side event (user selects through another channel; the UI library only observes)
+
+> **NOT TAKEN — deferred** (owner decision 2026-11-07). Kept on record below as an alternative posture, not part of the accepted A1 posture.
 
 - **Change:** no Sico-model selection state. The host owns the selection: a native OS dropdown/combobox control (created and driven by the host, e.g. the ADR-0018 renderer) reports the user's selection to the host, and the host maps that native control to a `dropdown` node handle and produces `select{handle, index}`. The Sico guest's UI library only **observes** the resulting event; it never sets or holds the selection in the tree model.
 - **Determinism:** the index comes from the **host's** control state (user-driven), not from a pure function of the Sico tree — the event is a host event, like `closed`/`click`, not a derived model value. It is deterministic in the sense that the same user action yields the same event, but the selection state lives outside the model.
@@ -95,7 +101,7 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 - A2 is the eventual correct fix — the only option that makes `select` a **deliverable** event with a model-derived index — but it is a **new model capability** needing its own ADR/contract, a WIT append, layout corpus decisions and a lockstep compiler hand-encoded update; it must not be assumed into this slice.
 - A3 is a viable alternative that keeps the model selection-free, but it moves selection ownership out of the Sico model entirely (the guest cannot set/observe selection state, only receive the event), which is a different posture; it is a larger renderer change (native control) and does not let a Sico guest drive a selection deterministically.
 
-**Owner-decided.** Until accepted, the code stays as-is: `select` is not produced, `click`/`closed` are (STEP-0597), and the gap is registered by this amendment and by STEP-0599.
+**Advisory (now resolved).** The owner accepted **A1** on 2026-11-07; A2/A3 are deferred. As accepted, the code stays as-is: `select` is not produced, `click`/`closed` are (STEP-0597), and the gap is registered by this amendment and by STEP-0599.
 
 ## 4. Compatibility impact (WIT versioning)
 
@@ -106,7 +112,7 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 
 ## 5. Open questions (owner-decision items, not pre-adjudicated)
 
-1. **A1 vs A2 vs A3** — narrow now (A1), extend the model (A2), or host-side event (A3)?
+1. **A1 vs A2 vs A3** — narrow now (A1), extend the model (A2), or host-side event (A3)? **DECIDED 2026-11-07: A1** (narrow the contract); A2/A3 deferred.
 2. **If A2:** is the selection set by a guest op (`set-selected`), by per-option click geometry, or both? What is the initial selection and the lifetime (clear-on-options-change)?
 3. **If A2:** does a click on an option row produce `select{handle,index}` **and/or** `click(handle)`? (Currently it produces `click(dropdown_handle)` — `layout.rs:429-433,470-476`, `ui.rs:304-316`.)
 4. **If A2:** does per-option geometry change the frozen layout/event corpus hashes, and is a re-freeze (owner-authorized) acceptable in the same milestone or deferred?
@@ -115,8 +121,8 @@ The three candidates below are the three honest postures, mirroring the A2 amend
 
 ## 6. Honest narrowing / non-claims
 
-- This amendment **does not implement** anything and **does not change** any runtime behaviour; it records the `select` model gap and offers options. On owner acceptance, a separate implementation STEP is allocated and the RFC-0052 text + versioning note + user docs are updated together.
-- No option above is decided; no code path is proposed to be flipped here.
+- This amendment **does not implement** anything and **does not change** any runtime behaviour; it records the `select` model gap and offered options. The owner accepted **A1 (narrow the contract)** on 2026-11-07; A1 itself is the documentation-only narrowing (RFC-0052 §2 + user docs) and still allocates no implementation STEP.
+- No option above was decided at draft time; no code path is proposed to be flipped here. **A1 is now accepted (2026-11-07)** as the documentation-only narrowing; it flips no code path.
 - **Non-claims:** this amendment claims no `select` delivery, no selection state, no new op, no per-option geometry, no native control, no WIT change, no model-semantics change. `click`/`closed` delivery remains as delivered by STEP-0597; the `select` gap remains open.
-- **Relation to A2 (sibling):** A2 (PROPOSED) addresses `ui-error` render-failure + event-overflow observability; this A3 is the `select` sub-gap of the same C-C review. They are independent; A2's C-C wording ("do not deliver click/select until layout lands") is now **superseded for `click`** (STEP-0592/0597 delivered it) but **still applies to `select`** until this A3 is decided.
+- **Relation to A2 (sibling):** A2 (PROPOSED) addresses `ui-error` render-failure + event-overflow observability; this A3 is the `select` sub-gap of the same C-C review. They are independent; A2's C-C wording ("do not deliver click/select until layout lands") is now **superseded for `click`** (STEP-0592/0597 delivered it) but **still applies to `select`**. Under the accepted A1, `select` is narrowed as declared-but-not-produced (A1 does not deliver it); A2 remains PROPOSED and its own decision.
 - **Citation caveat repeated:** all `file:line` values above were verified in the worktree on 2026-11-07 and the runner/renderer are under concurrent agent edit; re-anchor before use.

@@ -301,7 +301,7 @@ gate 6 为唯一可直接判 GO 的门（纪律项）。
 
 | 变更 | 对门的影响 |
 |---|---|
-| STEP-0599（`select` 可交付性判定 = **合同/模型缺口**：`ui-selection{handle,index}` 需「哪个 dropdown 的哪个索引」，但 dropdown 虽有 `options`（索引定义域存在），**模型无选中态字段、无设置选中的 op、无逐选项命中几何、shell 不产 select 事件** ⇒ guest 永不见 `select`；三案见 `RFC-0052-A3` PROPOSED） | **gate 5 前置**：§8.6.1 的 G4 由「待刷新」细化为 **G4a `click` ✓ / G4b `select` = 模型缺口**；`select` 缺口**不是实现缺口**，不得以「再写一版实现」消解 |
+| STEP-0599（`select` 可交付性判定 = **合同/模型缺口**：`ui-selection{handle,index}` 需「哪个 dropdown 的哪个索引」，但 dropdown 虽有 `options`（索引定义域存在），**模型无选中态字段、无设置选中的 op、无逐选项命中几何、shell 不产 select 事件** ⇒ guest 永不见 `select`；三案 [`RFC-0052-A3`](../rfc/RFC-0052-amendment-A3-ui-selection-model.md) **已于 2026-11-07 由 owner 裁决为 A1（合同收窄）**——A1 是 documentation-only 诚实收窄（零 WIT/零代码/零测试、wire 兼容），**`select` 仍不交付**） | **gate 5 前置**：§8.6.1 的 G4 由「待刷新」细化为 **G4a `click` ✓ / G4b `select` = 模型缺口**；A1 把该缺口由「guest 不可观测跳过」变为**声明式收窄**（`select` 已声明但不产出），**不是交付、不是 gate flip** ⇒ **G4b `select` 仍不可交付/未交付**；`select` 缺口**不是实现缺口**，不得以「再写一版实现」消解 |
 | STEP-0597（G4a `click(handle)` 交付：生产路由 seam `route_click_event` + 只读 affordance `layout_input()`；最深命中⇒该句柄、`Node(root)`⇒根句柄且**仅在确实无子节点覆盖时**、`Miss`⇒跳过并计入 `skipped_click_count`、布局失败⇒类型化 `None`） | gate 5 前置推进；**证据口径**：「宿主投递坐标 → guest 经真实 runner 观测」，被旁路的仅是 OS `WM_LBUTTONDOWN`+`translate`（纯确定映射，已被冻结事件语料覆盖） |
 | STEP-0591（G2/G3 guest 级证据，**收窄口径**：G2 = guest 触发 + 宿主读回核验；G3 = 宿主触发 close + guest 观测 `closed`）+ STEP-0595（G5 正式专测：N=6 独立代逐字节一致 + 冻结 `text` 场景锚定 + 三重跨进程一致） | §8.6.1 的 G2/G3/G5 由「在途」变为**已达成（收窄）**；**guest 可见 UI 能力仍未整体达成**（G4b + G6 缺） |
 | STEP-0585（FFI 不变式**刻意固化**：`PhantomData<*mut ()>` + 编译期负约束 + 「无标记即 `Send+Sync`」的编译期反证；Win32 失败路径加固） | **消除 v1 登记的 medium soundness 隐患**（§2 能力分项的「带 1 项 medium 隐患」现已闭合） |

@@ -44,7 +44,7 @@ G1/G2/G3 达成、G4 **未整体达成**（G4a `click` 达成、G4b `select` 缺
 | G2 呈现帧（收窄口径） | `runner/sico-runner/tests/ui_guest_visible.rs` | `guest_run_presents_a_real_frame_byte_identical_to_offscreen_oracle` |
 | G3 `closed`（收窄口径） | `runner/sico-runner/tests/ui_guest_visible.rs` | `guest_poll_event_delivers_closed_after_host_close` |
 | G4a `click(handle)` | `runner/sico-runner/tests/ui_click_routing.rs` | `guest_observes_click_on_the_button_child`；`guest_observes_click_on_the_root_when_no_child_covers_the_point`；`a_click_outside_the_window_is_a_skip_not_a_delivery`；`denied_guest_is_typed_authority_refusal_with_zero_backend_touch` |
-| G4b `select` 缺口 | （无交付测试）`docs/steps/STEP-0599-m24-ui-select-deliverability.md` | 判定为合同/模型缺口；修正案 `docs/rfc/RFC-0052-amendment-A3-ui-selection-model.md`（PROPOSED） |
+| G4b `select` 缺口 | （无交付测试）`docs/steps/STEP-0599-m24-ui-select-deliverability.md` | 判定为合同/模型缺口；修正案 `docs/rfc/RFC-0052-amendment-A3-ui-selection-model.md`（**ACCEPTED — A1 合同收窄**） |
 | G5 帧确定性 | `runner/sico-runner/tests/ui_frame_determinism.rs` | `same_guest_tree_renders_n_byte_identical_frames`；`guest_frame_digest_matches_across_processes`；`same_tree_presented_repeatedly_on_one_backend_is_byte_identical` |
 | 渲染器语料 | `crates/sico-ui-renderer-d2d/tests/` | `frame_corpus.rs`（4 冻结帧）、`event_corpus.rs`（3 冻结事件）、`layout_corpus.rs`（4 场景布局/命中） |
 
@@ -61,7 +61,10 @@ G1/G2/G3 达成、G4 **未整体达成**（G4a `click` 达成、G4b `select` 缺
   无子节点、布局为单一叶子盒）、**shell 不产生 select 事件**（窗口事件闭集为
   `Close/Resize/Paint/LeftButtonDown`）。⇒ guest 轮询 `poll-event` **永不见 `select`**，无法
   区分「用户未选择」与「用户已选择但不可交付」。修正案三案（A1 合同收窄 / A2 模型扩展 /
-  A3 宿主侧事件）**均未裁决**——本页只陈述现状，不替 owner 选案。
+  A3 宿主侧事件）**已由 owner 于 2026-11-07 裁决为 A1（合同收窄）**：`ui@1` 现以
+  **「`select` 已声明但不产出」**为既定口径（文档层面的诚实收窄，不改 WIT/源码/测试；
+  WIT 中 `select` 判别式保留、append-only 且 wire-compatible），A2/A3 未采纳、挂起。
+  本页只陈述现状，不声称任何 gate 翻转——**G4b 仍未交付**。
 - **点击是「宿主投递坐标 → guest 观测 `click(handle)`」，不是真实鼠标点击**：`ui@1` 无
   guest 注入点击途径；shell 仅从真实 `WM_LBUTTONDOWN` 捕获（`HWND` 私密），`SendInput` 需
   窗口前台/焦点且 CI 不确定。与真实用户点击的唯一差别是 OS 捕获 + `translate`（纯确定
@@ -103,7 +106,8 @@ G1/G2/G3 达成、G4 **未整体达成**（G4a `click` 达成、G4b `select` 缺
   G4a/G4b，见该文件 2026-11-07 addendum）。
 - 分项证据：`STEP-0581`（接线）、`STEP-0591`（G2/G3）、`STEP-0592`（布局+命中）、
   `STEP-0595`（G5）、`STEP-0597`（G4a `click`）、`STEP-0599`（G4b `select` 判定）。
-- 修正案（PROPOSED，只读）：`docs/rfc/RFC-0052-amendment-A2-*.md`、
-  `docs/rfc/RFC-0052-amendment-A3-ui-selection-model.md`。
+- 修正案：`docs/rfc/RFC-0052-amendment-A2-*.md`（PROPOSED，只读，独立裁决）、
+  `docs/rfc/RFC-0052-amendment-A3-ui-selection-model.md`（**ACCEPTED — A1 合同收窄**，
+  2026-11-07）。
 - 合同与架构：`docs/rfc/RFC-0052-native-ui-source-binding-v0.md`（accepted）、
   `docs/adr/ADR-0018-native-renderer-fluent-subset-v0.md`（accepted）。

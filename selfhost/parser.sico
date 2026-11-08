@@ -13962,6 +13962,31 @@ function gw_list_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64
   let glg_dot2 = next_index(glg_list_seg, glg_n)
   let glg_get_seg = next_index(glg_dot2, glg_n)
   let glg_open = next_index(glg_get_seg, glg_n)
+  let glg_elem_json = "string"
+  let glg_elem_kind = "Text"
+  let glg_generic = I64.literal(0)
+  if is_word(word_at(words, glg_open), "["):
+    let glg_gen_ty = next_index(glg_open, glg_n)
+    let glg_gen_close = next_index(glg_gen_ty, glg_n)
+    if is_word(word_at(words, glg_gen_close), "]"):
+      let glg_gen_ok = I64.literal(1)
+    else:
+      return "ERR:E-SH-IR-CALL-SHAPE"
+    end if
+    if is_word(word_at(words, glg_gen_ty), "U64"):
+      let glg_gen_ty_ok = I64.literal(1)
+    else:
+      if is_word(word_at(words, glg_gen_ty), "Text"):
+        let glg_gen_ty_text_ok = I64.literal(1)
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
+    end if
+    set glg_elem_json = "u64"
+    set glg_elem_kind = word_at(words, glg_gen_ty)
+    set glg_generic = I64.literal(1)
+    set glg_open = next_index(glg_gen_close, glg_n)
+  end if
   let glg_list_atom = next_index(glg_open, glg_n)
   let glg_close = matching_close(words, glg_open, line_end_idx)
   if is_word(word_at(words, glg_dot1), "."):
@@ -14026,7 +14051,19 @@ function gw_list_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64
     if is_word(glg_list_kind, "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}"):
       set glg_list_value = glg_list_param
     else:
-      return "ERR:E-SH-IR-CALL-TYPE"
+      if I64.equal(glg_generic, I64.literal(1)):
+        if is_word(glg_elem_kind, "U64"):
+          if is_word(glg_list_kind, "{\"kind\":\"list\",\"data\":{\"kind\":\"u64\"}}"):
+            set glg_list_value = glg_list_param
+          else:
+            return "ERR:E-SH-IR-CALL-TYPE"
+          end if
+        else:
+          return "ERR:E-SH-IR-CALL-TYPE"
+        end if
+      else:
+        return "ERR:E-SH-IR-CALL-TYPE"
+      end if
     end if
   else:
     return "ERR:E-SH-IR-CALL-TYPE"
@@ -14105,7 +14142,8 @@ function gw_list_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64
     case error(_):
       return "ERR:E-SH-IR-RANGE"
   end match
-  let glg_ty = "{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\"string\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}"
+  let __nc_gw_list_get_subject_packed_40 = sico.text.concat(glg_elem_json, "\"},\"error\":{\"kind\":\"named\",\"data\":\"NumericError\"}}}")
+  let glg_ty = sico.text.concat("{\"kind\":\"result\",\"data\":{\"ok\":{\"kind\":\"", __nc_gw_list_get_subject_packed_40)
   let __nc_gw_list_get_subject_packed_38 = sico.text.concat(sico.u64.to_text(glg_i_value), "]")
   let glg_args = sico.text.concat("[", sico.text.concat(sico.u64.to_text(glg_list_value), sico.text.concat(",", __nc_gw_list_get_subject_packed_38)))
   let glg_close_off = word_span_offset(words, src, subject_start, subject_idx, glg_close)
@@ -14116,7 +14154,14 @@ function gw_list_get_subject_packed(words: List[Text], src: Bytes, name_idx: U64
     case error(_):
       return "ERR:E-SH-IR-RANGE"
   end match
-  let glg_call = intrinsic_instruction_json(glg_result, glg_ty, "sico.list.get", glg_args, subject_start, glg_call_end)
+  let glg_op_name = "sico.list.get"
+  if I64.equal(glg_generic, I64.literal(1)):
+    let __nc_gw_list_get_subject_packed_41 = sico.text.concat("[", glg_elem_kind)
+    set glg_op_name = sico.text.concat("sico.list.get", sico.text.concat(__nc_gw_list_get_subject_packed_41, "]"))
+  else:
+    set glg_op_name = "sico.list.get"
+  end if
+  let glg_call = intrinsic_instruction_json(glg_result, glg_ty, glg_op_name, glg_args, subject_start, glg_call_end)
   let glg_pieces = glg_i_json
   if U64.equal(sico.text.length(glg_pieces), U64.literal(0)):
     set glg_pieces = glg_call
@@ -15861,6 +15906,10 @@ function gw_match_open_pack(words: List[Text], src: Bytes, name_idx: U64, gi: U6
   end if
   if gmo_is_list_get:
     set gmo_ok_ty = "string"
+    let gmo_list_get_elem = word_at(words, next_index(next_index(next_index(next_index(next_index(next_index(gmo_subject, gmo_n), gmo_n), gmo_n), gmo_n), gmo_n), gmo_n))
+    if is_word(gmo_list_get_elem, "U64"):
+      set gmo_ok_ty = "u64"
+    end if
   end if
   if I64.equal(gmo_is_checked, I64.literal(1)):
     if is_word(word_at(words, gmo_subject), "I64"):

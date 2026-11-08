@@ -337,6 +337,43 @@ pub struct ObservedRun {
     pub cancellation_source: Option<CancellationSource>,
 }
 
+/// A single point-in-time fuel reading taken by the epoch-deadline watchdog.
+///
+/// `tick` is the ordinal of the watchdog tick at which the reading was taken
+/// (0 = the first epoch deadline the Store hit); `remaining` is the fuel the
+/// Store still had at that moment. Only [`PreparedProgram::run_with_fuel_timeline`]
+/// arms sampling, so a plain run produces no samples.
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct FuelSample {
+    pub tick: u32,
+    pub remaining: u64,
+}
+
+/// Production-side fuel readout for one execution. This is a **side channel**
+/// only: it never becomes a [`RunOutcome`] field, and the plain
+/// [`PreparedProgram::run`]/[`PreparedProgram::run_observed`] paths behave
+/// byte-identically (they do not read fuel at all).
+///
+/// `remaining`/`consumed` are `None` when the run produced no readable Store
+/// reading (an early-exit path such as input rejection or a launch failure);
+/// that is the honest "unavailable" case rather than a fabricated zero.
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
+pub struct FuelTrace {
+    /// The fuel charged at Store creation (`RunnerLimits::fuel`). No ceiling is
+    /// raised by this instrumentation; it only reads what was already set.
+    pub initial: u64,
+    /// Fuel left in the Store when the guest call returned, if readable.
+    pub remaining: Option<u64>,
+    /// `initial - remaining`, saturated at 0; `None` if `remaining` is `None`.
+    pub consumed: Option<u64>,
+    /// True when a stream/hostcall path re-armed fuel mid-run (the Store ended
+    /// with more fuel than `initial`, which only a mid-run top-up can cause).
+    pub fuel_rearmed: bool,
+    /// Watchdog-tick fuel samples; empty unless
+    /// [`PreparedProgram::run_with_fuel_timeline`] armed sampling.
+    pub timeline: Vec<FuelSample>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DebugStopFrame {
     pub core_module: Option<String>,
@@ -2350,6 +2387,7 @@ impl PreparedProgram {
                             outcome: classify_error(&store, &error),
                             frames: engine_frames(&error),
                             cancellation_source: None,
+                            fuel: FuelTrace::default(),
                         },
                     };
                 let decision = arbiter.commit(execution.outcome);
@@ -2400,7 +2438,9 @@ impl PreparedProgram {
             run_id,
             generation_id: 1,
         };
-        Ok(self.run_unchecked(input, limits, cancel, identity).outcome)
+        Ok(self
+            .run_unchecked(input, limits, cancel, identity, None)
+            .outcome)
     }
 
     /// Executes once and emits a strict fault record from typed outcome state
@@ -2427,6 +2467,7 @@ impl PreparedProgram {
                 run_id: run_id.to_owned(),
                 generation_id,
             },
+            None,
         );
         let fault = runtime_fault(
             &execution.outcome,
@@ -2442,12 +2483,83 @@ impl PreparedProgram {
         })
     }
 
+    /// Executes the same single run as [`PreparedProgram::run`] and additionally
+    /// returns a production-side fuel readout ([`FuelTrace`]).
+    ///
+    /// This is a side channel: the [`RunOutcome`] is identical to [`PreparedProgram::run`]
+    /// and no fuel ceiling is raised or lowered. Sampling is not armed, so
+    /// `FuelTrace::timeline` is empty; `remaining`/`consumed` come from a single
+    /// Store reading taken where the guest call returns.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] before creating a Store, exactly as
+    /// [`PreparedProgram::run`].
+    pub fn run_with_fuel(
+        &self,
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+    ) -> Result<(RunOutcome, FuelTrace), InputViolation> {
+        check_input(input)?;
+        let run_id = format!(
+            "run-{:016x}",
+            self.runner.run_counter.fetch_add(1, Ordering::Relaxed)
+        );
+        let identity = RunIdentity {
+            run_id,
+            generation_id: 1,
+        };
+        let execution = self.run_unchecked(input, limits, cancel, identity, None);
+        Ok((execution.outcome, execution.fuel))
+    }
+
+    /// Executes the same single run as [`PreparedProgram::run_with_fuel`] and
+    /// additionally arms epoch sampling so [`FuelTrace::timeline`] records a
+    /// fuel reading per watchdog tick.
+    ///
+    /// The sampling is folded into the existing epoch-deadline watchdog (there is
+    /// one callback slot per Store, and no second callback or call-hook is
+    /// registered). When sampling is armed the plain run paths are untouched.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InputViolation`] before creating a Store, exactly as
+    /// [`PreparedProgram::run`].
+    pub fn run_with_fuel_timeline(
+        &self,
+        input: &ScriptInput,
+        limits: &RunnerLimits,
+        cancel: &CancelToken,
+    ) -> Result<(RunOutcome, FuelTrace), InputViolation> {
+        check_input(input)?;
+        let run_id = format!(
+            "run-{:016x}",
+            self.runner.run_counter.fetch_add(1, Ordering::Relaxed)
+        );
+        let identity = RunIdentity {
+            run_id,
+            generation_id: 1,
+        };
+        let sink = Arc::new(Mutex::new(Vec::<FuelSample>::new()));
+        let execution = self.run_unchecked(input, limits, cancel, identity, Some(sink.clone()));
+        // Adopt the armed timeline. The guest worker owns the Store (and its
+        // epoch callback) while it runs, so the buffer is only read back here,
+        // after the worker has joined.
+        let mut trace = execution.fuel;
+        if let Ok(samples) = sink.lock() {
+            trace.timeline = samples.clone();
+        }
+        Ok((execution.outcome, trace))
+    }
+
     fn run_unchecked(
         &self,
         input: &ScriptInput,
         limits: &RunnerLimits,
         cancel: &CancelToken,
         identity: RunIdentity,
+        fuel_sink: Option<Arc<Mutex<Vec<FuelSample>>>>,
     ) -> Execution {
         let arbiter = Arc::new(TerminalArbiter::new());
         let _binding = match cancel.bind(&arbiter) {
@@ -2485,7 +2597,24 @@ impl PreparedProgram {
         let cancel = cancel.clone();
         let deadline_arbiter = arbiter.clone();
         let mut remaining_ticks = timeout_ticks.max(1);
-        store.epoch_deadline_callback(move |_| {
+        // Production-side fuel sampling is folded into THIS single epoch-deadline
+        // callback (one slot per Store); no second callback and no call-hook is
+        // registered. Only `run_with_fuel_timeline` arms the sink, so the plain
+        // `run`/`run_observed` path leaves this closure behaviorally unchanged.
+        let fuel_sink_for_callback = fuel_sink.clone();
+        let mut fuel_tick: u32 = 0;
+        store.epoch_deadline_callback(move |ctx| {
+            if let Some(sink) = fuel_sink_for_callback.as_ref() {
+                let remaining = ctx.get_fuel().unwrap_or(0);
+                let sample = FuelSample {
+                    tick: fuel_tick,
+                    remaining,
+                };
+                fuel_tick = fuel_tick.saturating_add(1);
+                if let Ok(mut samples) = sink.lock() {
+                    samples.push(sample);
+                }
+            }
             if cancel.is_cancelled() {
                 Err(Marker("cancelled").into())
             } else if remaining_ticks <= 1 {
@@ -2549,6 +2678,10 @@ impl PreparedProgram {
                                     } else {
                                         RunOutcome::Launch(format!("{error}"))
                                     },
+                                    // Instantiation failed before the guest `run`
+                                    // body executed, so there is no meaningful
+                                    // per-call fuel burn to attribute.
+                                    fuel: FuelTrace::default(),
                                 },
                             );
                         }
@@ -2609,12 +2742,47 @@ impl PreparedProgram {
         let params = [input_val(input)];
         let mut results = [Val::Result(Ok(None))];
         match run.call(&mut *store, &params, &mut results) {
-            Ok(()) => Execution::without_frames(read_result(&results[0])),
-            Err(error) => Execution {
-                outcome: classify_error(store, &error),
-                frames: engine_frames(&error),
-                cancellation_source: None,
-            },
+            Ok(()) => {
+                // Production-side fuel readout (side channel): read the remaining
+                // fuel while the Store is still mutably borrowed here. The plain
+                // `run`/`run_observed` path carries this in `Execution.fuel` but
+                // never surfaces it, so its behavior is unchanged. No ceiling is
+                // raised or lowered by reading.
+                let remaining = store.get_fuel().ok();
+                let rearmed = remaining.is_some_and(|remaining| remaining > limits.fuel);
+                let consumed = remaining.map(|remaining| limits.fuel.saturating_sub(remaining));
+                let mut execution = Execution::without_frames(read_result(&results[0]));
+                execution.fuel = FuelTrace {
+                    initial: limits.fuel,
+                    remaining,
+                    consumed,
+                    fuel_rearmed: rearmed,
+                    // The epoch-sampling timeline (when armed) is adopted by
+                    // `run_with_fuel_timeline` after the guest worker joins.
+                    timeline: Vec::new(),
+                };
+                execution
+            }
+            Err(error) => {
+                // Read the remaining fuel BEFORE `classify_error`, which borrows
+                // the Store mutably; a fuel-exhausted trap legitimately leaves a
+                // near-zero reading, which is the point of the measurement.
+                let remaining = store.get_fuel().ok();
+                let rearmed = remaining.is_some_and(|remaining| remaining > limits.fuel);
+                let consumed = remaining.map(|remaining| limits.fuel.saturating_sub(remaining));
+                Execution {
+                    outcome: classify_error(store, &error),
+                    frames: engine_frames(&error),
+                    cancellation_source: None,
+                    fuel: FuelTrace {
+                        initial: limits.fuel,
+                        remaining,
+                        consumed,
+                        fuel_rearmed: rearmed,
+                        timeline: Vec::new(),
+                    },
+                }
+            }
         }
     }
 }
@@ -2694,6 +2862,12 @@ struct Execution {
     outcome: RunOutcome,
     frames: Vec<RawEngineFrame>,
     cancellation_source: Option<CancellationSource>,
+    /// Production-side fuel readout (side channel). Early-exit paths that never
+    /// reach a readable Store carry [`FuelTrace::default`] (the honest
+    /// "unavailable" case: `remaining`/`consumed` are `None`). This field is
+    /// never surfaced through [`RunOutcome`], so the plain run paths are
+    /// byte-identical in behavior.
+    fuel: FuelTrace,
 }
 
 impl Execution {
@@ -2702,6 +2876,7 @@ impl Execution {
             outcome,
             frames: Vec::new(),
             cancellation_source: None,
+            fuel: FuelTrace::default(),
         }
     }
 }

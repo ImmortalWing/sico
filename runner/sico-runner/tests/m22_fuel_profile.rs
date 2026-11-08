@@ -287,14 +287,19 @@ enum GuestFuelEmission {
 ///
 /// A fuel-limited run legitimately ends in `FuelExhausted`, so unlike the
 /// differential helpers this classifies that outcome instead of panicking.
-fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
+///
+/// Returns the classified outcome **plus the exact measured fuel the guest
+/// burned** (`FuelTrace::consumed`, `None` only when the run produced no
+/// readable Store reading). This is the production-side readout from
+/// `PreparedProgram::run_with_fuel`; no fuel ceiling is raised by reading it.
+fn guest_emission_with_fuel(ir: &str, fuel: u64) -> (GuestFuelEmission, Option<u64>) {
     static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
     let pool = POOL.get_or_init(|| {
         let component: Vec<u8> = injection_component().to_vec();
         PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
     });
     let prepared = pool.acquire();
-    let outcome = prepared.run(
+    let result = prepared.run_with_fuel(
         &ScriptInput {
             arguments: Vec::new(),
             stdin: ir.as_bytes().to_vec(),
@@ -308,8 +313,9 @@ fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
         &CancelToken::new(),
     );
     pool.release(prepared);
-    let outcome = outcome.expect("the injected IR bounds hold");
-    match outcome {
+    let (outcome, fuel_trace) = result.expect("the injected IR bounds hold");
+    let consumed = fuel_trace.consumed;
+    let emission = match outcome {
         RunOutcome::Output(output) => {
             assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
             GuestFuelEmission::Component(
@@ -325,7 +331,8 @@ fn guest_emission_with_fuel(ir: &str, fuel: u64) -> GuestFuelEmission {
         // the guest can emit at all), recorded rather than crashing the probe.
         RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
         other => panic!("unexpected outcome under a fuel budget: {:?}", other),
-    }
+    };
+    (emission, consumed)
 }
 
 /// The fuel bracket in which the guest flips from "budget exhausted" to
@@ -405,17 +412,21 @@ fn a_real_fuel_exhausted_site_is_bracketed_emit_only() {
     );
 
     let component_bytes = std::cell::Cell::new(0usize);
+    // The exact fuel the guest burned at the flip point (the smallest ladder
+    // budget that still emitted), measured via `run_with_fuel`.
+    let flip_consumed = std::cell::Cell::new(Option::<u64>::None);
     let started = std::time::Instant::now();
     let mut emits = |fuel: u64| match guest_emission_with_fuel(&ir, fuel) {
-        GuestFuelEmission::Component(hex) => {
+        (GuestFuelEmission::Component(hex), consumed) => {
             component_bytes.set(hex.len() / 2);
+            flip_consumed.set(consumed);
             true
         }
-        GuestFuelEmission::FuelExhausted => false,
-        GuestFuelEmission::Refusal(identity) => {
+        (GuestFuelEmission::FuelExhausted, _consumed) => false,
+        (GuestFuelEmission::Refusal(identity), _) => {
             panic!("{path}:{function} refused at {fuel}: {identity}")
         }
-        GuestFuelEmission::Trap { reason } => {
+        (GuestFuelEmission::Trap { reason }, _) => {
             panic!("{path}:{function} trapped at {fuel}: {reason}")
         }
     };
@@ -432,8 +443,12 @@ fn a_real_fuel_exhausted_site_is_bracketed_emit_only() {
         Some((low, high)) => format!("{low}..{high}"),
         None => "exhausted (lower bound only)".to_owned(),
     };
+    let measured = match flip_consumed.get() {
+        Some(consumed) => consumed.to_string(),
+        None => "unavailable".to_owned(),
+    };
     println!(
-        "M22_FUEL_PROFILE site={path}:{function} ir_bytes={} component_bytes={} fuel_bracket={verdict} search_ms={}",
+        "M22_FUEL_PROFILE site={path}:{function} ir_bytes={} component_bytes={} fuel_bracket={verdict} measured_consumed_at_flip={measured} search_ms={}",
         ir.len(),
         component_bytes.get(),
         started.elapsed().as_millis()
@@ -444,6 +459,127 @@ fn a_real_fuel_exhausted_site_is_bracketed_emit_only() {
     assert!(
         component_bytes.get() == 0 || bracket.is_some(),
         "the anchor site must either exhaust or produce a real bracket"
+    );
+}
+
+/// One probe verdict for the measured bracket: whether the guest emitted under
+/// this budget, and the exact fuel it burned (`run_with_fuel` readout).
+struct FuelProbe {
+    emits: bool,
+    consumed: Option<u64>,
+}
+
+/// The fuel bracket in which the guest flips from "budget exhausted" to
+/// "component emitted", anchored on **measured** consumption.
+///
+/// Same geometric-ladder-then-refine search as [`fuel_bracket`], but each probe
+/// carries the exact `FuelTrace::consumed` from the production-side readout, and
+/// the returned bracket records the burn measured at the flip point (the largest
+/// `consumed` seen while the guest was still emitting). That anchors the
+/// `(low, high]` budget interval on real executed consumption rather than only
+/// on the budget the search happened to try.
+fn fuel_bracket_measured<F: FnMut(u64) -> FuelProbe>(
+    mut probe: F,
+    ceiling: u64,
+    seed: u64,
+) -> Option<(u64, u64, Option<u64>)> {
+    let mut low = 0u64;
+    let mut budget = seed.clamp(1, ceiling);
+    let mut measured: Option<u64> = None;
+    let high = loop {
+        let verdict = probe(budget);
+        if verdict.emits {
+            if let Some(consumed) = verdict.consumed {
+                measured = Some(match measured {
+                    Some(previous) => previous.max(consumed),
+                    None => consumed,
+                });
+            }
+            break budget;
+        }
+        low = budget;
+        if budget >= ceiling {
+            return None;
+        }
+        budget = budget.saturating_mul(2).min(ceiling);
+    };
+    let mut high = high;
+    while high - low > 1 && high - low > high / 4 {
+        let middle = low + (high - low) / 2;
+        let verdict = probe(middle);
+        if verdict.emits {
+            if let Some(consumed) = verdict.consumed {
+                measured = Some(match measured {
+                    Some(previous) => previous.max(consumed),
+                    None => consumed,
+                });
+            }
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    Some((low, high, measured))
+}
+
+/// The real anchor site, bracketed AND measured: the production-side
+/// `run_with_fuel` readout must attribute a concrete burn at the flip point that
+/// lies inside the budget bracket the search established.
+///
+/// This is the attribution the slice exists to clear: instead of only "exhausted
+/// at the ceiling", the wall is pinned to an executed `(low, high]` budget
+/// interval plus the exact fuel the guest consumed when it finally emitted.
+#[test]
+fn the_anchor_site_bracket_is_anchored_on_measured_consumption() {
+    let (path, function) = ANCHOR_SITE;
+    let closure = sico_closure(PARSER_SOURCE, function, 256, 1_048_576)
+        .unwrap_or_else(|reason| panic!("{path}:{function} closure {reason}"));
+    let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+    let ir = rust_ir(&source)
+        .unwrap_or_else(|reason| panic!("{path}:{function} must lower to canonical IR: {reason}"));
+
+    let ceiling = std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(6_400_000_000);
+    let mut probe = |fuel: u64| {
+        let (emission, consumed) = guest_emission_with_fuel(&ir, fuel);
+        let emits = match &emission {
+            GuestFuelEmission::Component(_) => true,
+            GuestFuelEmission::FuelExhausted => false,
+            GuestFuelEmission::Refusal(identity) => {
+                panic!("{path}:{function} refused at {fuel}: {identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                panic!("{path}:{function} trapped at {fuel}: {reason}")
+            }
+        };
+        FuelProbe { emits, consumed }
+    };
+    let bracket = fuel_bracket_measured(&mut probe, ceiling, 100_000_000);
+    let Some((low, high, measured)) = bracket else {
+        // Still exhausted at the top of the (bounded) ladder: report the honest
+        // lower bound. This is a real measurement outcome, not a failure.
+        println!(
+            "M22_FUEL_PROFILE_MEASURED site={path}:{function} exhausted lower_bound_only ceiling={ceiling}"
+        );
+        return;
+    };
+    let measured = measured.expect("an emitting flip point must carry a measured burn");
+    // The measured burn is the fuel the guest actually consumed when it emitted,
+    // under a budget of `high`. It can never exceed the budget it was given, and
+    // it must sit strictly above the largest budget that still exhausted -- that
+    // is what "anchored on measured consumption" means.
+    assert!(
+        measured <= high,
+        "measured burn {measured} must not exceed the emitting budget {high}"
+    );
+    assert!(
+        measured > low,
+        "measured burn {measured} must exceed the largest exhausted budget {low}"
+    );
+    println!(
+        "M22_FUEL_PROFILE_MEASURED site={path}:{function} budget_bracket={low}..{high} measured_consumed_at_flip={measured}"
     );
 }
 
@@ -542,10 +678,8 @@ fn the_emitter_cost_centers_are_ranked_by_fuel_slope() {
                 }
             };
             let mut emits = |fuel: u64| {
-                matches!(
-                    guest_emission_with_fuel(&ir, fuel),
-                    GuestFuelEmission::Component(_)
-                )
+                let (emission, _consumed) = guest_emission_with_fuel(&ir, fuel);
+                matches!(emission, GuestFuelEmission::Component(_))
             };
             let bracket = fuel_bracket(&mut emits, ceiling, 100_000_000);
             let midpoint = bracket.map(|(low, high)| (low + high) / 2);
@@ -670,10 +804,8 @@ fn the_match_quadratic_term_is_discriminated_from_body_scanning() {
                 }
             };
             let mut emits = |fuel: u64| {
-                matches!(
-                    guest_emission_with_fuel(&ir, fuel),
-                    GuestFuelEmission::Component(_)
-                )
+                let (emission, _consumed) = guest_emission_with_fuel(&ir, fuel);
+                matches!(emission, GuestFuelEmission::Component(_))
             };
             let bracket = fuel_bracket(&mut emits, ceiling, 100_000_000);
             let midpoint = bracket.map(|(low, high)| (low + high) / 2);

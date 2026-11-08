@@ -121,3 +121,16 @@ MS-267: the frozen site line no longer holds the match head
 2. **ledger firmware 双轴校验耗时**：单测 >8 分钟，需独立时间预算。
 3. **step0507 / step0526 独立根因未动**：EXPRESSION 层与非 Output 各自归因，需另片收口。
 4. **配方重放**：`target/tmp/parser.sico.step0571.fixed` 是完整工作副本（含全部 4 处修改），可直接 diff 重放；临时目录可能被清理，配方正文已完整固化在本文件 §3。
+
+## Addendum（2026-11-07）——配方已落地，两个目标红测转绿；账本 firmware 红为既有燃料墙乐观口径
+
+> 本 addendum 订正本文件表头的「配方验证 GO / 落地 NO-GO（本片内）」与 §6「回退保基线」状态：**§3 配方现已落地到 `selfhost/parser.sico` 工作树**（HEAD 未变，`af6dcb7`），**两个目标红测（step0519/step0520）已转绿且逐字节等同**。落地过程与隔离取证详见 [`STEP-0605`](./STEP-0605-m22-w2-step0571-recipe-landing.md)。
+
+- **配方已落地**：`selfhost/parser.sico` 现含 §3.1–§3.4 的 4 处纯插入式编辑（`gw_list_get_subject_packed` ~:13958 与 `gw_match_open_pack` ~:15703），全部 typed-refusal 臂原样保留。工作树 `parser.sico` sha256 = `b67ec56636d0211ce437b88dbfeeaceb9bad52ec45cff390922bf89d9eafd4aa`，23168 行（相对已提交基线 `b6cb6ab0…` 为 +52/−3）。
+- **两个目标红测转绿**（`--exact` 复跑，toolchain 1.98.0-x86_64-pc-windows-gnu，coordinator 亲跑）：`sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly` → ok（1 passed，4.21 s）；`sico_compiler_lowers_the_step0520_codegen_functions_byte_exactly` → ok（1 passed，3.52 s）。两者均为 `*_byte_exactly` ⇒ guest/Rust 组件逐字节等同确认。
+- **隔离守卫不变**（证明配方未波及两个独立红测）：`step0507`（`cgs_result_return_hex`）仍 FAILED，`ERR:E-SH-IR-EXPRESSION`（EXPRESSION 层独立根因）；`step0526`（`cgs_function_instr_hex`）仍 FAILED，非 Output 嵌套 `while` 独立根因。
+- **账本已随配方重编号**：`selfhost/match-component-coverage-v1.json` +257/−257（两个插入锚点之下 parser.sico 站点行号位移，如 MS-267 14102→14139、MS-268 14113→14151）。`selfhost/codegen.sico` 未触碰（clean）。
+- **账本 firmware 测试仍红，但为既有问题、非本配方回归**：`sico_compiler_reproduces_the_frozen_match_site_ledger`（`--exact`，3259 s ≈54 min）失败于 MS-081——账本冻结 verdict `"ir-equal+component-equal"` vs 实测 `"ir-equal+component-other:FuelExhausted"`。**既有、与配方无关的证明**：(a) HEAD 的 MS-081 具完全相同 verdict 与相同 line 4577；(b) MS-081..084 是 `fixed_literal_const_segment`（checked_add）站点（行 4577/4590/4622/4629），全部位于配方插入锚点（13958/15703）**之前**，而配方只改泛型 `list.get` ⇒ 不可能影响它们。这正是 AGENTS §10.1.3 记录的乐观口径：账本 36 个 `component-equal` 站点（含 MS-081..084）实为 FuelExhausted（共 331 个耗尽站点），旧「36 component-equal」偏乐观。
+- **MS-081 修正的阻塞项**：正确的 FuelExhausted 态 `component_sha256` 只能由账本重算工具 `tools/census-m22-match-sites.py` 产出，但本机**无可用 Python**（仅 WindowsApps stub；`SICO_PYTHON` 未设；`Python312` 目录只有 Lib/Scripts，无 python.exe）⇒ MS-081 修正顺延到燃料墙/D8 轨。
+- **诚实溯源**：`parser.sico` 配方编辑与账本重编号在落地 sub-agent 运行时**已在工作树中存在**（HEAD 未变，`af6dcb7`）；该 sub-agent 未施加任何编辑。coordinator 已核 diff 恰为 §3 配方且两个目标测试逐字节转绿，故**以已验证状态采纳**——但精确施加时间/agent 不确定（可能为本会话早前一次 sub-agent 运行）。此处如实记为「已验证状态采纳 + 溯源不确定」，不作过度声称。
+- **未翻任何门**：M22 overall 仍 **NO-GO**；未提交、未推送。

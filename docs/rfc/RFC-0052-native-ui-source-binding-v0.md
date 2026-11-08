@@ -40,6 +40,19 @@ poll_event() -> Option[UiEvent]   // UiEvent: click(handle) | select(handle, ind
 run() -> Result[Bool, UiError]    // present one frame; frame = pure function of UI state
 ```
 
+- **Event vocabulary narrowing (owner decision 2026-11-07,
+  [`RFC-0052-A3` A1](./RFC-0052-amendment-A3-ui-selection-model.md)):**
+  in the current `ui@1` model `select(handle, index)` is **declared but not
+  produced**. The model carries **no selection-state field** on a node, **no
+  set-selected op**, **no per-option hit geometry**, and the shell produces
+  **no OS select event** — a **contract/model gap** (the gap class recorded in
+  STEP-0599 / RFC-0052-A3 §1), not a missing implementation step. So for now a
+  guest polling `poll_event()` receives only `click(handle)` and `closed`;
+  `select(ui-selection)` is not delivered. This is a declared narrowing
+  (default-deny-style honesty), not a silent skip. The `select` discriminant
+  stays in the WIT (append-only, wire-compatible); no WIT change is made by
+  this narrowing.
+
 - **Dialogs are not package functions**: file open/save compose the
   existing least-privilege file capabilities with user-selected paths
   (M24 §8.4 rows), invoked from the same Sico source — the UI authority
@@ -62,8 +75,11 @@ typed refusals, not truncation.
 - Every frame is a pure function of UI state (ADR-0018 §3): the frozen
   corpus renders fixed node trees at fixed client size and hashes frames
   byte-stably on the real Windows native renderer.
-- Event evidence: scripted click/select sequences deliver exactly the
-  recorded events in order; `closed` terminates the app deterministically.
+- Event evidence: scripted `click` sequences deliver exactly the
+  recorded events in order and `closed` terminates the app deterministically.
+  `select` is **declared but not produced** in the current `ui@1` model
+  (RFC-0052-A3 A1, owner decision 2026-11-07), so event evidence covers
+  `click` + `closed` only — no `select` delivery is claimed.
 - Authority evidence: without the UI grant every call returns
   `authority-denied`; the pilot consumes no capture/input grants.
 - Full RFC-0033 four-part evidence through the real runner; the guest
