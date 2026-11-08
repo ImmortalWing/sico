@@ -8734,6 +8734,140 @@ function direct_host_call_return_ir(words: List[Text], src: Bytes, name_idx: U64
   return sico.text.concat(dhcr_json, "}}")
 end function
 
+function direct_list_empty_return_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
+  let n = sico.list.length(words)
+  let dler_signature_end = line_end(words, body_from)
+  if U64.equal(dler_signature_end, n):
+    return "SKIP"
+  end if
+  let dler_first = next_index(dler_signature_end, n)
+  if is_word(word_at(words, dler_first), "return"):
+    let dler_first_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let dler_expr_line = line_end(words, dler_first)
+  let dler_after_line = next_index(dler_expr_line, n)
+  let dler_after_end = next_index(dler_after_line, n)
+  if is_word(word_at(words, dler_after_line), "end"):
+    let dler_end_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, dler_after_end), "function"):
+    let dler_function_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if U64.equal(next_index(dler_after_end, n), body_end):
+    let dler_complete_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let dler_expr = next_index(dler_first, n)
+  if is_intrinsic_path(words, dler_expr, "list", "empty"):
+    let dler_path_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let dler_bracket = next_index(next_index(next_index(next_index(next_index(dler_expr, n), n), n), n), n)
+  let dler_elem = next_index(dler_bracket, n)
+  let dler_end_bracket = next_index(dler_elem, n)
+  let dler_paren = next_index(dler_end_bracket, n)
+  let dler_close = next_index(dler_paren, n)
+  if is_word(word_at(words, dler_bracket), "["):
+    let dler_b_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, dler_end_bracket), "]"):
+    let dler_eb_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, dler_paren), "("):
+    let dler_p_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if is_word(word_at(words, dler_close), ")"):
+    let dler_c_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  if U64.equal(next_index(dler_close, dler_expr_line), dler_expr_line):
+    let dler_tail_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let dler_elem_word = word_at(words, dler_elem)
+  let dler_intrinsic = ""
+  let dler_list_kind = ""
+  if is_word(dler_elem_word, "U64"):
+    set dler_intrinsic = "sico.list.empty[U64]"
+    set dler_list_kind = "{\"kind\":\"list\",\"data\":{\"kind\":\"u64\"}}"
+  else:
+    if is_word(dler_elem_word, "Text"):
+      set dler_intrinsic = "sico.list.empty[Text]"
+      set dler_list_kind = "{\"kind\":\"list\",\"data\":{\"kind\":\"string\"}}"
+    else:
+      return "SKIP"
+    end if
+  end if
+  if is_word(return_kind, dler_list_kind):
+    let dler_return_ok = I64.literal(1)
+  else:
+    return "SKIP"
+  end if
+  let dler_parameters = parameters_ir(words, name_idx, src, fn_start)
+  if sico.text.starts_with(dler_parameters, "ERR:"):
+    return dler_parameters
+  end if
+  let dler_expression_start = return_expression_start(src, fn_start)
+  if U64.equal(dler_expression_start, sico.bytes.length(src)):
+    return "SKIP"
+  end if
+  let dler_expression_end = return_expression_end(src, dler_expression_start)
+  let dler_result = parameter_count
+  let dler_instructions = intrinsic_instruction_json(dler_result, dler_list_kind, dler_intrinsic, "[]", dler_expression_start, dler_expression_end)
+  let dler_source_len = sico.bytes.length(src)
+  let dler_end_offset = gw_find_code_text(src, "end function", fn_start)
+  let dler_fn_end = next_index(dler_end_offset, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  set dler_fn_end = next_index(dler_fn_end, dler_source_len)
+  let dler_json = "{\"id\":"
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(function_ordinal))
+  set dler_json = sico.text.concat(dler_json, ",\"name\":\"")
+  set dler_json = sico.text.concat(dler_json, word_at(words, name_idx))
+  set dler_json = sico.text.concat(dler_json, "\",\"parameters\":")
+  set dler_json = sico.text.concat(dler_json, dler_parameters)
+  set dler_json = sico.text.concat(dler_json, ",\"return_type\":")
+  set dler_json = sico.text.concat(dler_json, dler_list_kind)
+  set dler_json = sico.text.concat(dler_json, ",\"effects\":[],\"entry\":0,\"blocks\":[{\"id\":0,\"instructions\":[")
+  set dler_json = sico.text.concat(dler_json, dler_instructions)
+  set dler_json = sico.text.concat(dler_json, "],\"terminator\":{\"kind\":\"return\",\"data\":")
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(dler_result))
+  set dler_json = sico.text.concat(dler_json, "},\"range\":{\"start\":")
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(fn_start))
+  set dler_json = sico.text.concat(dler_json, ",\"end\":")
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(dler_fn_end))
+  set dler_json = sico.text.concat(dler_json, "}}],\"range\":{\"start\":")
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(fn_start))
+  set dler_json = sico.text.concat(dler_json, ",\"end\":")
+  set dler_json = sico.text.concat(dler_json, sico.u64.to_text(dler_fn_end))
+  return sico.text.concat(dler_json, "}}")
+end function
+
 function direct_host_call_let_ir(words: List[Text], src: Bytes, name_idx: U64, body_from: U64, body_end: U64, fn_start: U64, function_ordinal: U64, return_kind: Text, parameter_count: U64) returns Text:
   let n = sico.list.length(words)
   if U64.equal(parameter_count, U64.literal(1)):
@@ -21321,6 +21455,21 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
             set direct_host_fn_end = source_len
           end if
           set source_cursor = direct_host_fn_end
+          set i = body_end_word
+          set prev = "function"
+          continue
+        end if
+        let direct_list_empty_json = direct_list_empty_return_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+        if is_word(direct_list_empty_json, "SKIP"):
+          let no_direct_list_empty = I64.literal(1)
+        else:
+          if sico.text.starts_with(direct_list_empty_json, "ERR:"):
+            return direct_list_empty_json
+          end if
+          set function_chunks = sico.arena.push_chunk(function_chunks, direct_list_empty_json)
+          let direct_list_empty_end_offset = gw_find_code_text(src, "end function", fn_start)
+          let direct_list_empty_newline = find_text_from(src, "\n", direct_list_empty_end_offset)
+          set source_cursor = next_index(direct_list_empty_newline, source_len)
           set i = body_end_word
           set prev = "function"
           continue
