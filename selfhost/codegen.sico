@@ -3848,7 +3848,78 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
   if cg_is_word(cih_name, "sico.text.split_lines"):
     return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
   end if
+  if cg_is_word(cih_name, "sico.bytes.is_utf8"):
+    return cgs_is_utf8_hex(bytes, run, instr, data, result0, vindex)
+  end if
   return "ERR:E-SH-CG-IR-EMIT"
+end function
+
+// The bytes of the `sico.bytes.is_utf8` intrinsic.
+//
+// The backend's arm is inline in its own dispatcher (it reuses the existing
+// `sico.bytes.utf8_decode` runtime helper, so `is_utf8` is not in the helper
+// table) and pushes the operand's (pointer, length) pair, calls the helper,
+// and writes the scalar bool answer into the single result slot. The guest
+// writes the same bytes in the same order.
+//
+// This lives in its own function, not inline in `cgs_intrinsic_hex`, so the
+// dispatcher stays inside the guest frontend's self-hosting statement frontier
+// (the STEP-0560 `cgs_list_length_u64_hex` pattern).
+function cgs_is_utf8_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+  let ciuh_arguments = cgj_member(bytes, data, "arguments")
+  if U64.equal(ciuh_arguments, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_first = cgj_array_item(bytes, ciuh_arguments, U64.literal(0))
+  if U64.equal(ciuh_first, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_second = cgj_array_item(bytes, ciuh_arguments, U64.literal(1))
+  if U64.less_than(U64.literal(0), ciuh_second):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_value = cgj_value_text(bytes, ciuh_first)
+  let ciuh_slot = cgs_value_slot(vindex, ciuh_value)
+  if U64.equal(ciuh_slot, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_ty = cgs_value_ty(vindex, ciuh_value)
+  if U64.equal(ciuh_ty, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_kind_off = cgj_member(bytes, ciuh_ty, "kind")
+  if U64.equal(ciuh_kind_off, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  if cg_is_word(cgj_ident_text(bytes, ciuh_kind_off), "bytes"):
+    let ciuh_kind_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_operand_slots = cgs_type_slots(bytes, ciuh_ty)
+  if U64.equal(ciuh_operand_slots, U64.literal(2)):
+    let ciuh_operand_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
+  if U64.equal(ciuh_result_slots, U64.literal(1)):
+    let ciuh_result_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_helper = cgs_helper_index(bytes, "sico.bytes.utf8_decode")
+  if U64.equal(ciuh_helper, U64.literal(0)):
+    return "ERR:E-SH-CG-IR-EMIT"
+  end if
+  let ciuh_ptr_slot = cgs_sub(ciuh_slot, U64.literal(1))
+  let ciuh_call = "10"
+  set ciuh_call = sico.text.concat(ciuh_call, cg_leb_hex(ciuh_helper))
+  let ciuh_out = cgs_local_get_hex(ciuh_ptr_slot)
+  set ciuh_out = sico.text.concat(ciuh_out, cgs_local_get_hex(ciuh_slot))
+  set ciuh_out = sico.text.concat(ciuh_out, ciuh_call)
+  set ciuh_out = sico.text.concat(ciuh_out, cgs_local_set_hex(result0))
+  return ciuh_out
 end function
 
 // The bytes of a `write_local` instruction: the source value's flat slots

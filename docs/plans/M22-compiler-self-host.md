@@ -428,6 +428,8 @@ Route B under [the replan](./M22-M26-route-replan-v1.md) §3.
 - **出口判据**：guest 对 `formatter.sico` 发射的组件 == Rust 后端**生产输出**，逐字节相同，过真实 `wasmparser::Validator`。
 - **纪律**：若此处失配 ⇒ 回到 W2 找 codegen 缺口，**不得**用"改 fixture"或"改期望值"绕过。
 
+> **状态注记（2026-11-08 addendum）**：W3-a 组件面已由 **STEP-0608**（仅测量片）实测被 `sico.bytes.is_utf8` 用作 `if` 条件挡住（`ERR:E-SH-CG-IR-EMIT`，~0.03% fuel，与燃料墙正交）；**STEP-0610** 已落地 `is_utf8` 发射器臂（`selfhost/codegen.sico` +71/−0，新函数 `cgs_is_utf8_hex` + `cgs_intrinsic_hex` 一行分派），但再定性为 **multi-block-`run` 双侧共享缺口**——oracle `lib.rs:4408` `"stdlib helper layout"` 同拒（`Unsupported{function:"run",...}`），非 guest 独有。**W3-a 仍 open**，需两侧另片实现 multi-block-`run` 发射（分支 terminator + 多 return result-area 推导），属 owner 级设计决策点。措辞取下界，不宣布完成。
+
 **W3-b：37 条 accepted 语料的组件级差分**（对应 canary 梯级 3）
 
 冻结事实：`selfhost/script-build-corpus-v0.json` 已冻结每条的 `component_sha256` 与 `component_reproducible`。

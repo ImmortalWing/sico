@@ -128,6 +128,7 @@
     "intrinsics": [
       "sico.bytes.at",
       "sico.bytes.equal",
+      "sico.bytes.is_utf8",
       "sico.bytes.length",
       "sico.bytes.slice",
       "sico.bytes.utf8_decode",
@@ -165,7 +166,7 @@
       "write_local"
     ],
     "source": "selfhost/codegen.sico",
-    "source_sha256": "806456389ab0387b2bb0564ee2db589a56f9e0215691a67f5484924bbce1ddfc"
+    "source_sha256": "cfcc7e63735cc76325624373aab83b6b1a21bf856ae83e47dc2e0d51b492ef5a"
   },
   "schema": "sico.m22.emitter-vocabulary.v1",
   "sites": [

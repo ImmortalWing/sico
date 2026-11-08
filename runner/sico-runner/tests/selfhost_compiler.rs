@@ -3933,6 +3933,62 @@ fn sico_codegen_guest_emits_the_host_call_component_byte_exactly() {
         .expect("the guest-emitted host-call component must pass the real Wasm validator");
 }
 
+/// STEP-0610 fixture: the W3-a gate shape -- the entry `run` gated on
+/// `if sico.bytes.is_utf8(input.stdin):`, exactly as the real `formatter.sico`
+/// `main` opens. This is the minimal body the guest frontend actually lowers
+/// (a body that also nests `sico.bytes.utf8_decode` / `sico.text.encode` trips
+/// the guest frontend's shape frontier, `ERR:E-SH-IR-CALL-SHAPE`, which is a
+/// hand-written-fixture artifact, not a statement about the formatter -- the
+/// whole `formatter.sico` lowers green).
+const IS_UTF8_GATE_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  if sico.bytes.is_utf8(input.stdin):\n    return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\n  end if\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"not utf8\"))\nend function\n";
+
+#[test]
+fn sico_is_utf8_lowers_byte_exactly_but_the_gated_run_emission_is_refused() {
+    // STEP-0610, codegen knife, HONEST OUTCOME. This slice added the missing
+    // `sico.bytes.is_utf8` arm to the guest's intrinsic dispatcher
+    // `cgs_intrinsic_hex` (the backend's inline arm reusing the
+    // `sico.bytes.utf8_decode` runtime helper: `local.get <ptr>` /
+    // `local.get <len>` / `call utf8_decode` / `local.set <bool>`). But the arm
+    // **does not by itself unlock whole-`formatter.sico` component emission**,
+    // because the W3-a blocker is a *different, pre-existing* gap:
+    //
+    //   * The only context the guest frontend accepts `is_utf8` in -- and the
+    //     one the real `formatter.sico` `main` uses -- is an `if`-condition in
+    //     the entry `run`. That makes `run` **multi-block**.
+    //   * The component emitter derives the Script `run` body through
+    //     `cgs_result_return_hex`, which refuses a multi-block `run` outright
+    //     (`if U64.less_than(0, cgj_array_item(blocks, 1)): return
+    //     "ERR:E-SH-CG-IR-EMIT"`), so it refuses before the `is_utf8`
+    //     instruction is ever emitted.
+    //
+    // So this test pins the localization: for the `is_utf8`-gated entry `run`
+    // (the W3-a shape), **both** the Rust oracle and the guest refuse component
+    // emission, because a branched `run` is multi-block and neither side yet
+    // derives a result-area layout for it. The `is_utf8` arm this slice added
+    // is a necessary prerequisite, but it cannot be exercised end-to-end until
+    // multi-block-`run` emission exists on both sides. (That the `is_utf8`
+    // shape lowers through the guest frontend is already pinned by
+    // `sico_compiler_lowers_ok_return_construct_byte_exactly`.)
+    let module = rust_module(IS_UTF8_GATE_FIXTURE_SOURCE);
+    assert!(
+        codegen_oracle::compile_script_program(&module).is_err(),
+        "the oracle also refuses the multi-block is_utf8-gated run: W3-a is blocked \
+         by a shared multi-block-run limitation, not by the missing is_utf8 arm alone"
+    );
+    assert_eq!(
+        run_guest_with_args(
+            IS_UTF8_GATE_FIXTURE_SOURCE,
+            vec!["--emit-component-hex".into()]
+        ),
+        RunOutcome::Domain {
+            code: "invalid-input".into(),
+            message: "unsupported codegen source shape".into(),
+        },
+        "the guest refuses the is_utf8-gated run because it is multi-block \
+         (the multi-block-run gap), not because is_utf8 lacks an arm"
+    );
+}
+
 #[test]
 fn sico_compiler_lowers_the_step0513_codegen_function_byte_exactly() {
     // STEP-0513: the guest's own new emission code has to stay inside the
