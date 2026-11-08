@@ -60,7 +60,7 @@
 //! bracket on the real site.
 
 use sico_ir::{canonical_json, lower_core};
-use sico_runner::{CancelToken, RunOutcome, RunnerLimits, ScriptInput};
+use sico_runner::{CancelToken, FuelTrace, RunOutcome, RunnerLimits, ScriptInput};
 use sico_source::{SourceFile, SourceId};
 
 #[path = "support/selfhost_common.rs"]
@@ -833,5 +833,306 @@ fn the_match_quadratic_term_is_discriminated_from_body_scanning() {
             }
             previous = midpoint.map(|fuel| (n, fuel, ir.len()));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0607: op/phase-level fuel attribution via the epoch-sampling timeline.
+//
+// STEP-0606 attributed the fuel wall to two named emitter operators
+// (`match`-dispatcher rescan + `text_concat` assembly) but only through
+// bracket-midpoint fuel (`run_with_fuel`, a ±12.5% band). It honestly narrowed
+// that `FuelTrace::timeline` (`run_with_fuel_timeline`, one fuel reading per
+// watchdog tick) was built but never exercised. These probes exercise it.
+//
+// What the timeline IS: the epoch-deadline watchdog fires every `TICK` (5 ms),
+// and each firing records `ctx.get_fuel()`. Because fuel is a deterministic
+// count of the Wasm ops the guest executed, the timeline is a
+// **fuel-burn-vs-execution-progress curve**: cumulative fuel against wall clock.
+//
+// What it is NOT: it is NOT a per-opcode hook. It cannot name a Wasm opcode; it
+// names a *phase* of the run. The honest attribution it supports is burn-rate
+// shape -- is fuel accumulated at a roughly constant rate from the first tick
+// (every op costs about the same, so the total is per-op constant x op count),
+// or does the rate rise as the run advances (the late work costs more per unit
+// of IR, i.e. a super-linear operator)? A phase whose fuel/ms *drops* is doing
+// disproportionately expensive work per op charged (hostcalls, traps, host
+// transport), since fuel is charged per Wasm op and not per hostcall.
+//
+// Both probes are emit-only (the frozen `codegen.sico` emitter on injected
+// canonical IR, guest frontend skipped) and `#[ignore]`d like the other
+// measurement probes: they are a measurement slice, advance no exit gate, raise
+// no ceiling, and touch no production code and no frozen guest source. M22 stays
+// NO-GO.
+// ---------------------------------------------------------------------------
+
+/// Runs the emit-only injection fixture with the epoch-sampling timeline armed.
+///
+/// Same fixture and limits as [`guest_emission_with_fuel`] (which it shares the
+/// prepared-program pool with), but through `run_with_fuel_timeline` so the
+/// production-side per-tick fuel samples come back in `FuelTrace::timeline`.
+/// The generous timeout only bounds a run that would otherwise hang; a
+/// fuel-exhausted run ends on its own well before it.
+fn guest_emission_with_timeline(
+    ir: &str,
+    fuel: u64,
+) -> (GuestFuelEmission, FuelTrace, std::time::Duration) {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let started = std::time::Instant::now();
+    let result = prepared.run_with_fuel_timeline(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            timeout: std::time::Duration::from_secs(600),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    let elapsed = started.elapsed();
+    pool.release(prepared);
+    let (outcome, trace) = result.expect("the injected IR bounds hold");
+    let emission = match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a timeline probe: {:?}", other),
+    };
+    (emission, trace, elapsed)
+}
+
+/// The probe fuel ceiling. Same env convention as the bracket probes; defaults to
+/// the frozen qualification ceiling so a super-linear curve can exhaust honestly
+/// rather than being truncated by the probe's own budget.
+fn probe_ceiling() -> u64 {
+    std::env::var("SICO_M22_PROBE_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(FUEL_CEILING)
+}
+
+/// Prints one timeline as a burn-rate curve.
+///
+/// The timeline is split into `SEGMENTS` equal fractions of *fuel consumed*
+/// (not of time), so each segment holds the same amount of guest work by
+/// definition and the reported wall-clock per segment is directly comparable:
+/// a run whose ops all cost about the same shows a near-constant wall clock per
+/// segment, while a run whose late ops are more expensive per unit charged shows
+/// segments that lengthen toward the end. Each segment is printed as
+/// `<fuel>/<wall_ms>` so the reader sees both the charge and the time it bought.
+fn print_fuel_curve(label: &str, trace: &FuelTrace, elapsed: std::time::Duration) {
+    const SEGMENTS: usize = 10;
+    const TICK_MS: u64 = 5;
+    let samples = &trace.timeline;
+    let verdict = match trace.remaining {
+        Some(remaining) if remaining > 0 => "emitted",
+        _ => "exhausted",
+    };
+    if samples.len() < SEGMENTS + 2 {
+        println!(
+            "M22_FUEL_CURVE {label} verdict={verdict} samples={} too_few (run finished within ~{} ticks)",
+            samples.len(),
+            SEGMENTS + 2
+        );
+        return;
+    }
+    // Cumulative fuel consumed at each tick, from the charged ceiling down to the
+    // remaining fuel. Tick `t` lands at about `t * TICK_MS` of wall clock.
+    let initial = trace.initial;
+    let points: Vec<(u64, u64)> = samples
+        .iter()
+        .map(|sample| (sample.tick as u64, initial.saturating_sub(sample.remaining)))
+        .collect();
+    let total_fuel = points.last().map(|(_, consumed)| *consumed).unwrap_or(0);
+    let total_ms = elapsed.as_millis().max(1) as u64;
+    let per_segment = (total_fuel / SEGMENTS as u64).max(1);
+    let mut segment_ms = [0u64; SEGMENTS];
+    let mut point_index = 0usize;
+    let mut previous_close_ms = 0u64;
+    for (segment, slot) in segment_ms.iter_mut().enumerate() {
+        let boundary = per_segment * (segment as u64 + 1);
+        while point_index < points.len() && points[point_index].1 < boundary {
+            point_index += 1;
+        }
+        let closed = point_index.min(points.len() - 1);
+        let close_ms = points[closed].0 * TICK_MS;
+        *slot = close_ms.saturating_sub(previous_close_ms).max(1);
+        previous_close_ms = close_ms;
+    }
+    let first = segment_ms[0].max(1);
+    let last = segment_ms[SEGMENTS - 1].max(1);
+    let shape = if last >= 4 * first {
+        "accelerating (late ops cost more per unit charged)"
+    } else if first >= 4 * last {
+        "decelerating (early ops cost more per unit charged)"
+    } else {
+        "flat (every op costs about the same)"
+    };
+    let segments: Vec<String> = segment_ms
+        .iter()
+        .map(|ms| format!("{per_segment}/{ms}ms"))
+        .collect();
+    println!(
+        "M22_FUEL_CURVE {label} verdict={verdict} samples={} wall_ms={total_ms} fuel_consumed={total_fuel} fuel_per_ms={} shape={shape}",
+        samples.len(),
+        total_fuel / total_ms,
+    );
+    println!(
+        "M22_FUEL_CURVE {label} segments(fuel/wall_ms)={}",
+        segments.join(" ")
+    );
+    // Where the burn concentrates: the tick at which each quarter of the total
+    // charge was reached, i.e. how much of the run's wall clock the first half of
+    // the work took versus the second half.
+    for quarter in 0..4 {
+        let boundary = total_fuel / 4 * quarter as u64;
+        let tick = points
+            .iter()
+            .find(|(_, consumed)| *consumed >= boundary)
+            .map(|(tick, _)| *tick)
+            .unwrap_or(0);
+        println!(
+            "M22_FUEL_CURVE {label} quarter={quarter} reached_at_tick={tick} ({}ms)",
+            tick * TICK_MS
+        );
+    }
+}
+
+/// The `match`-dispatcher rescan curve, discriminated against body scanning.
+///
+/// Same two arms as `the_match_quadratic_term_is_discriminated_from_body_scanning`
+/// (`match_flat` = N matches in one function, `match_one` = 1 match plus N-1
+/// plain `set` statements at equal body size), now traced through the epoch
+/// timeline. If the quadratic term is the per-match dispatcher rescan,
+/// `match_flat` burns with an accelerating curve (each added match makes every
+/// later rescan longer) while `match_one` stays flat at equal body size.
+#[test]
+#[ignore = "a match-dispatcher fuel-timeline probe; run it explicitly"]
+fn the_match_dispatcher_rescan_burn_is_traced_over_time() {
+    let ceiling = probe_ceiling();
+    let match_flat_source = |n: usize| {
+        let mut body = String::from("function probe(data: U64) returns U64:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str("  match U64.checked_add(acc, U64.literal(1)):\n");
+            body.push_str("    case ok(next):\n      set acc = next\n");
+            body.push_str("    case error(_):\n      set acc = U64.literal(0)\n");
+            body.push_str("  end match\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let match_one_source = |n: usize| {
+        let mut body = String::from("function probe(data: U64) returns U64:\n  let acc = data\n");
+        for _ in 1..n {
+            body.push_str("  set acc = acc\n");
+        }
+        body.push_str("  match U64.checked_add(acc, U64.literal(1)):\n");
+        body.push_str("    case ok(next):\n      set acc = next\n");
+        body.push_str("    case error(_):\n      set acc = U64.literal(0)\n");
+        body.push_str("  end match\n");
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let families: [SourceFamily; 2] = [
+        ("match_flat", Box::new(match_flat_source)),
+        ("match_one", Box::new(match_one_source)),
+    ];
+    let sizes = [4usize, 8, 16];
+    for (name, build) in families {
+        for &n in &sizes {
+            let source = build(n);
+            let ir = match rust_ir(&source) {
+                Ok(ir) => ir,
+                Err(reason) => {
+                    println!("M22_FUEL_CURVE family={name} n={n} oracle_refused={reason}");
+                    continue;
+                }
+            };
+            let (emission, trace, elapsed) = guest_emission_with_timeline(&ir, ceiling);
+            let verdict = match &emission {
+                GuestFuelEmission::Component(hex) => {
+                    format!("emitted component_bytes={}", hex.len() / 2)
+                }
+                GuestFuelEmission::FuelExhausted => "FuelExhausted".to_owned(),
+                GuestFuelEmission::Refusal(identity) => {
+                    panic!("{name} n={n} refused: {identity}")
+                }
+                GuestFuelEmission::Trap { reason } => {
+                    panic!("{name} n={n} trapped: {reason}")
+                }
+            };
+            println!(
+                "M22_FUEL_CURVE family={name} n={n} ir_bytes={} ceiling={ceiling} verdict={verdict}",
+                ir.len()
+            );
+            print_fuel_curve(&format!("family={name} n={n}"), &trace, elapsed);
+        }
+    }
+}
+
+/// The `text_concat` assembly curve.
+///
+/// A `text.concat` chain of length N in one function (the STEP-0606 assembly
+/// cost center). If the cost is per-op assembly (each concat copies the
+/// accumulator built so far), the curve accelerates: the later concats each carry
+/// more work per op charged. If the cost were per-op constant, the curve stays
+/// flat regardless of N.
+#[test]
+#[ignore = "a text_concat fuel-timeline probe; run it explicitly"]
+fn the_text_concat_assembly_burn_is_traced_over_time() {
+    let ceiling = probe_ceiling();
+    let concat_source = |n: usize| {
+        let mut body = String::from("function probe(data: Text) returns Text:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str("  set acc = sico.text.concat(acc, \"0123456789abcdef\")\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let sizes = [8usize, 16, 32, 64];
+    for &n in &sizes {
+        let source = concat_source(n);
+        let ir = match rust_ir(&source) {
+            Ok(ir) => ir,
+            Err(reason) => {
+                println!("M22_FUEL_CURVE family=text_concat n={n} oracle_refused={reason}");
+                continue;
+            }
+        };
+        let (emission, trace, elapsed) = guest_emission_with_timeline(&ir, ceiling);
+        let verdict = match &emission {
+            GuestFuelEmission::Component(hex) => {
+                format!("emitted component_bytes={}", hex.len() / 2)
+            }
+            GuestFuelEmission::FuelExhausted => "FuelExhausted".to_owned(),
+            GuestFuelEmission::Refusal(identity) => {
+                panic!("text_concat n={n} refused: {identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                panic!("text_concat n={n} trapped: {reason}")
+            }
+        };
+        println!(
+            "M22_FUEL_CURVE family=text_concat n={n} ir_bytes={} ceiling={ceiling} verdict={verdict}",
+            ir.len()
+        );
+        print_fuel_curve(&format!("family=text_concat n={n}"), &trace, elapsed);
     }
 }
