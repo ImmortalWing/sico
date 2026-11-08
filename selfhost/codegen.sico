@@ -4110,7 +4110,7 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
       set crih_instruction = cgj_array_next(bytes, crih_instruction)
     end while
     if U64.equal(crih_terms, U64.literal(1)):
-      let crih_terminator = cgs_block_terminator_hex(bytes, crih_run, crih_block, vindex)
+      let crih_terminator = cgs_block_terminator_hex(bytes, crih_run, crih_block, crih_dispatcher, vindex)
       if sico.text.starts_with(crih_terminator, "ERR:"):
         return crih_terminator
       end if
@@ -6484,7 +6484,7 @@ end function
 // the dispatcher check, the arm's condition, the arm's dispatch store and the
 // two closing `end`s, and finally the unreachable guard and the `br 1`, so
 // the guest writes the same bytes in the same order.
-function cgs_match_hex(bytes: Bytes, fn: U64, term: U64, vindex: List[U64]) returns Text:
+function cgs_match_hex(bytes: Bytes, fn: U64, term: U64, dispatcher: U64, vindex: List[U64]) returns Text:
   let cgmh_data = cgj_member(bytes, term, "data")
   if U64.equal(cgmh_data, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
@@ -6497,7 +6497,7 @@ function cgs_match_hex(bytes: Bytes, fn: U64, term: U64, vindex: List[U64]) retu
   if U64.equal(cgmh_arms, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let cgmh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  let cgmh_dispatcher = dispatcher
   if U64.equal(cgmh_dispatcher, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -6549,7 +6549,7 @@ end function
 // and that return is written by the result-area path, so a terminator for the
 // `run` function is refused here. A terminator kind outside the set above is
 // refused instead of approximated.
-function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64, vindex: List[U64]) returns Text:
+function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64, dispatcher: U64, vindex: List[U64]) returns Text:
   let cbth_term = cgj_member(bytes, block, "terminator")
   if U64.equal(cbth_term, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
@@ -6570,7 +6570,7 @@ function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64, vindex: Lis
     return cgs_jump_hex(bytes, fn, cbth_term)
   end if
   if cg_is_word(cbth_kind, "match"):
-    return cgs_match_hex(bytes, fn, cbth_term, vindex)
+    return cgs_match_hex(bytes, fn, cbth_term, dispatcher, vindex)
   end if
   if cg_is_word(cbth_kind, "unreachable"):
     return "00"
