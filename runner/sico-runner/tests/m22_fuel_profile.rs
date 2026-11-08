@@ -1136,3 +1136,268 @@ fn the_text_concat_assembly_burn_is_traced_over_time() {
         print_fuel_curve(&format!("family=text_concat n={n}"), &trace, elapsed);
     }
 }
+
+// ---------------------------------------------------------------------------
+// STEP-0608: exact finite-difference fuel attribution (segmented measurement).
+//
+// The timeline probes proved the burn RATE is flat (~21M fuel/ms at every n),
+// so fuel is a deterministic per-op count and the wall is "per-op constant x op
+// count". A flat rate cannot NAME the op, and the epoch watchdog fires only
+// every 5 ms (no per-opcode hook exists in the public API). But an exact
+// fuel-per-region distribution does not need either: fuel is deterministic in
+// the injected IR, so running ONE emitting run per shape and reading
+// `FuelTrace::consumed` gives the exact total, and finite differences across a
+// ladder of shapes isolate the marginal fuel of ONE added operator.
+//
+// The named hypothesis (from `cg_concat_helper_body_hex`, codegen.sico:156):
+// every `sico.text.concat` emits a fixed-shape body that arena-allocates the
+// result and LINEARLY COPIES BOTH OPERANDS. A left-fold chain `acc = concat(acc,
+// lit)` therefore copies the whole accumulator every step: the k-th concat
+// copies ~16k bytes, so the total copied bytes over n steps is ~16*n(n+1)/2 =
+// O(n^2). A balanced tree concatenates small operands at every level, so the
+// total copied bytes grow near-linearly at equal output size. Both shapes
+// produce the SAME final component output bytes, so any fuel difference is the
+// assembly sub-step, not the output.
+//
+// Discriminator: if the quadratic term lives in the concat copy sub-step, the
+// left-fold's MARGINAL fuel per added concat grows linearly with position while
+// the balanced tree's marginal stays near-flat. That names the sub-step without
+// an opcode hook and without gcc.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "an exact finite-difference concat-assembly attribution; run it explicitly"]
+fn the_concat_quadratic_term_is_attributed_to_operand_copying_by_finite_difference() {
+    let ceiling = probe_ceiling();
+    let build_left = |n: usize| {
+        let mut body = String::from("function probe(data: Text) returns Text:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str("  set acc = sico.text.concat(acc, \"0123456789abcdef\")\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let build_balanced = |n: usize| {
+        let mut body = String::from("function probe(data: Text) returns Text:\n");
+        for i in 0..n {
+            body.push_str(&format!(
+                "  let l{i} = sico.text.concat(data, \"0123456789abcdef\")\n"
+            ));
+        }
+        let mut level: Vec<String> = (0..n).map(|i| format!("l{i}")).collect();
+        let mut idx = n;
+        while level.len() > 1 {
+            let mut next = Vec::new();
+            for pair in level.chunks(2) {
+                if pair.len() == 2 {
+                    body.push_str(&format!(
+                        "  let n{idx} = sico.text.concat({}, {})\n",
+                        pair[0], pair[1]
+                    ));
+                    next.push(format!("n{idx}"));
+                    idx += 1;
+                } else {
+                    next.push(pair[0].clone());
+                }
+            }
+            level = next;
+        }
+        body.push_str(&format!("  return {}\nend function\n", level[0]));
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let families: [SourceFamily; 2] = [
+        ("left_fold", Box::new(build_left)),
+        ("balanced_tree", Box::new(build_balanced)),
+    ];
+    // Sizes stay within one emitting run of the ceiling so `consumed` is exact
+    // (a FuelExhausted run reports only a lower bound, not a finite difference).
+    let sizes = [4usize, 8, 12, 16];
+    for (name, build) in families {
+        let mut previous: Option<(usize, u64)> = None;
+        for &n in &sizes {
+            let ir = match rust_ir(&build(n)) {
+                Ok(ir) => ir,
+                Err(reason) => {
+                    println!("M22_FUEL_ATTR family={name} n={n} oracle_refused={reason}");
+                    previous = None;
+                    continue;
+                }
+            };
+            let (emission, trace, _elapsed) = guest_emission_with_timeline(&ir, ceiling);
+            let (verdict, component_bytes) = match &emission {
+                GuestFuelEmission::Component(hex) => ("emitted", hex.len() / 2),
+                GuestFuelEmission::FuelExhausted => ("FuelExhausted", 0),
+                GuestFuelEmission::Refusal(identity) => {
+                    panic!("{name} n={n} refused: {identity}")
+                }
+                GuestFuelEmission::Trap { reason } => panic!("{name} n={n} trapped: {reason}"),
+            };
+            let Some(consumed) = trace.consumed else {
+                println!(
+                    "M22_FUEL_ATTR family={name} n={n} verdict={verdict} consumed=unavailable"
+                );
+                previous = None;
+                continue;
+            };
+            let marginal = previous.map(|(pn, pfuel)| {
+                let per_concat = consumed.saturating_sub(pfuel) / (n - pn) as u64;
+                format!("{per_concat}/concat")
+            });
+            let total_per_concat = consumed / n as u64;
+            println!(
+                "M22_FUEL_ATTR family={name} n={n} ir_bytes={} verdict={verdict} component_bytes={component_bytes} consumed={consumed} fuel_per_concat_total={total_per_concat} marginal={}",
+                ir.len(),
+                marginal.unwrap_or_else(|| "n/a".to_owned())
+            );
+            previous = Some((n, consumed));
+        }
+    }
+}
+
+/// Confirms the concat sub-step is byte-proportional copying, not a per-op
+/// constant. Holds the concat COUNT constant and grows the literal size: if the
+/// cost is the linear copy of both operands, total fuel scales with total bytes
+/// (fuel per concat rises with literal size); if it were a per-op constant, fuel
+/// per concat would stay flat.
+#[test]
+#[ignore = "a literal-size concat-copy confirmation; run it explicitly"]
+fn the_concat_cost_scales_with_copied_bytes_not_op_count() {
+    let ceiling = probe_ceiling();
+    let build = |n: usize, literal: &str| {
+        let mut body = String::from("function probe(data: Text) returns Text:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str(&format!(
+                "  set acc = sico.text.concat(acc, \"{literal}\")\n"
+            ));
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let n = 8usize;
+    for (label, literal) in [
+        ("8B", "01234567"),
+        ("32B", "0123456789abcdef0123456789abcdef"),
+        (
+            "64B",
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+    ] {
+        let ir = match rust_ir(&build(n, literal)) {
+            Ok(ir) => ir,
+            Err(reason) => {
+                println!("M22_FUEL_ATTR_BYTES literal={label} n={n} oracle_refused={reason}");
+                continue;
+            }
+        };
+        let (emission, trace, _elapsed) = guest_emission_with_timeline(&ir, ceiling);
+        let consumed = match (trace.consumed, &emission) {
+            (Some(consumed), GuestFuelEmission::Component(_)) => consumed,
+            (Some(_), GuestFuelEmission::FuelExhausted) => {
+                println!(
+                    "M22_FUEL_ATTR_BYTES literal={label} n={n} FuelExhausted (lower bound only)"
+                );
+                continue;
+            }
+            _ => {
+                println!("M22_FUEL_ATTR_BYTES literal={label} n={n} consumed=unavailable");
+                continue;
+            }
+        };
+        let bytes = literal.len();
+        let per_concat = consumed / n as u64;
+        let per_byte = per_concat / bytes as u64;
+        println!(
+            "M22_FUEL_ATTR_BYTES literal={label} n={n} ir_bytes={} consumed={consumed} fuel_per_concat={per_concat} literal_bytes={bytes} fuel_per_concat_per_literal_byte={per_byte}",
+            ir.len()
+        );
+    }
+}
+
+/// Applies the same exact finite-difference method to the match-dispatcher
+/// hypothesis. `match_flat` = M independent matches in one function (each adds a
+/// dispatcher + one `cgs_dispatcher_slot` full-body rescan);
+/// `match_nested_error` = M matches nested inside the `error` arm (same match
+/// count, but the dispatchers are emitted once and the run body each scans is
+/// the small fixed `probe` body, not a body that grows with M).
+///
+/// If the quadratic term is the per-match full-body rescan, `match_flat`'s
+/// marginal fuel per added match grows linearly with M (each added match makes
+/// every body longer and every rescan costlier) while the nested arm's marginal
+/// stays near-flat. Equal match count, discriminating body growth.
+#[test]
+#[ignore = "a match-dispatcher finite-difference attribution; run it explicitly"]
+fn the_match_quadratic_term_is_attributed_to_dispatcher_body_rescan_by_finite_difference() {
+    let ceiling = probe_ceiling();
+    let build_flat = |m: usize| {
+        let mut body = String::from("function probe(data: U64) returns U64:\n  let acc = data\n");
+        for _ in 0..m {
+            body.push_str("  match U64.checked_add(acc, U64.literal(1)):\n");
+            body.push_str("    case ok(next):\n      set acc = next\n");
+            body.push_str("    case error(_):\n      set acc = U64.literal(0)\n");
+            body.push_str("  end match\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let build_nested = |m: usize| {
+        // M-1 matches nested in the error arm (fixed small body each), plus one
+        // outer match: M matches total, but no match sits in a body that grows
+        // with M.
+        let mut body = String::from("function probe(data: U64) returns U64:\n");
+        for _ in 0..m.saturating_sub(1) {
+            body.push_str("  match U64.checked_add(data, U64.literal(1)):\n");
+            body.push_str("    case ok(next):\n      return next\n");
+            body.push_str("    case error(_):\n");
+        }
+        body.push_str("  return U64.literal(0)\n");
+        for _ in 0..m.saturating_sub(1) {
+            body.push_str("  end match\n");
+        }
+        body.push_str("end function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let families: [SourceFamily; 2] = [
+        ("match_flat", Box::new(build_flat)),
+        ("match_nested_error", Box::new(build_nested)),
+    ];
+    let sizes = [2usize, 4, 6, 8];
+    for (name, build) in families {
+        let mut previous: Option<(usize, u64)> = None;
+        for &m in &sizes {
+            let ir = match rust_ir(&build(m)) {
+                Ok(ir) => ir,
+                Err(reason) => {
+                    println!("M22_FUEL_ATTR family={name} m={m} oracle_refused={reason}");
+                    previous = None;
+                    continue;
+                }
+            };
+            let (emission, trace, _elapsed) = guest_emission_with_timeline(&ir, ceiling);
+            let (verdict, component_bytes) = match &emission {
+                GuestFuelEmission::Component(hex) => ("emitted", hex.len() / 2),
+                GuestFuelEmission::FuelExhausted => ("FuelExhausted", 0),
+                GuestFuelEmission::Refusal(identity) => {
+                    panic!("{name} m={m} refused: {identity}")
+                }
+                GuestFuelEmission::Trap { reason } => panic!("{name} m={m} trapped: {reason}"),
+            };
+            let Some(consumed) = trace.consumed else {
+                println!(
+                    "M22_FUEL_ATTR family={name} m={m} verdict={verdict} consumed=unavailable"
+                );
+                previous = None;
+                continue;
+            };
+            let marginal = previous.map(|(pm, pfuel)| {
+                let per_match = consumed.saturating_sub(pfuel) / (m - pm) as u64;
+                format!("{per_match}/match")
+            });
+            let total_per_match = consumed / m as u64;
+            println!(
+                "M22_FUEL_ATTR family={name} m={m} ir_bytes={} verdict={verdict} component_bytes={component_bytes} consumed={consumed} fuel_per_match_total={total_per_match} marginal={}",
+                ir.len(),
+                marginal.unwrap_or_else(|| "n/a".to_owned())
+            );
+            previous = Some((m, consumed));
+        }
+    }
+}
