@@ -148,3 +148,35 @@ after the arm（`[A:main]`/`[B:run]` → `unsupported codegen source shape`；re
 - `docs/steps/STEP-0610-m22-w3a-is-utf8-emitter-arm.md`（this file）+ one `docs/steps/README.md` row.
 
 No `docs/STATUS.md` change（coordinator-owned）. No gate flipped.
+## 7. Addendum（2026-11-08，只读侦察片订正）——「两侧共享缺口」判读不成立，W3-a 是 guest-only 缺口
+
+本节为事后订正，正文保留原文。只读 scoping 片对 §5 的「Both the guest and the oracle refuse a branched
+`run`」做了证据复核，结论：**该判读不成立**。
+
+- **决定性证据（本片之前已有、被误读）**：STEP-0608 测量日志 `target/tmp/step0608/formatter-component-measurement.log`
+  第 1/8/49 行记录 `oracle_bytes_A_main = 28459`、`oracle_bytes_B_run = 28459`、
+  `oracle_size_delta_B_minus_A = 0` —— **oracle 对整份 `formatter.sico`（含 multi-block `run`）成功发射了
+  28459 字节完整 Component**。oracle 从未拒绝过真实 formatter 的 branched `run`。
+- **`stdlib helper layout` 拒绝的真实根因（fixture 伪信号）**：`sico.bytes.is_utf8` 的发射臂
+  （`crates/sico-codegen-wasm/src/lib.rs:4499-4508`）调用 `helper("sico.bytes.utf8_decode")`，但
+  `helper_dependencies`（`lib.rs:510-556`）**没有 `is_utf8` 条目**（其 match 落到默认臂返回 `&[]`）⇒
+  只用 `is_utf8` 而从不直接调用 `utf8_decode` 的模块会缺 helper 注册。本片的手写 fixture
+  `IS_UTF8_GATE_FIXTURE_SOURCE` 恰好如此；**真实 `formatter.sico:819` 直接调用 `sico.bytes.utf8_decode`**，
+  helper 已注册 ⇒ oracle 顺利发射。新钉测试中断言的 oracle `is_err` 是**helper 依赖缺口的产物，
+  不是 multi-block 限制**。
+- **oracle 侧 multi-block `run` 语义（已存在）**：`compile_function`（`lib.rs:1691-1748`）对所有函数统一走
+  dispatcher 循环（block/loop + 每块 `dispatcher==block_id` 分派头）；`compile_terminator`
+  （`lib.rs:2263-2323`）已实现 Return/Jump/**Branch**/Match/Unreachable 五种终止子；`emit_script_return`
+  （`lib.rs:3373-3463`）在每个 `Return` 终止子处各发一份 result-area 序列，共用同一对 scratch 局部。
+  契约文档 `script-component-emission-v0.md` §4/§6 已冻结该形状，**无任何「run 必须单块」条款** ⇒
+  **W3-a 关缺是既有契约内的 guest 实现缺口，不需要 RFC/ADR**。
+- **修正后的 W3-a 挡板清单（guest-only，4 处）**：① `cgs_result_return_hex:4798-4800` 多块硬拒；
+  ② `cgs_run_return_value:4388-4417` 只读块 0 的返回值；③ `cgs_block_terminator_hex:6630-6632`
+  run 终止子一律拒；④ `cgs_run_instr_hex:4121-4128` 以 `terms=0` 发射、每块 `if` 无收口。
+- **oracle 侧唯一卫生项（1 行，非 W3-a 必需）**：`helper_dependencies` 补
+  `"sico.bytes.is_utf8" => &["sico.bytes.utf8_decode"]`，并把本片钉测试的 oracle 断言由 `is_err`
+  改为发射成功（该 fixture 才能作为 G1 多块刀的字节锚）。详见后续侦察 STEP 记录与切片规划
+  （O1 卫生 → G1 最小多块 `if+两臂 return` → G2 formatter 实形 2 分支+3 return → G3 W3-a 收口，
+  预计 3–4 片）。
+- **本 addendum 不改变的事实**：`is_utf8` 臂已落地且必要（真实 formatter 的 run 体确实发射该指令）；
+  W3-a 仍 open；M22 overall 仍 NO-GO；未翻任何门。

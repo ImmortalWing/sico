@@ -60,7 +60,7 @@
 //! bracket on the real site.
 
 use sico_ir::{canonical_json, lower_core};
-use sico_runner::{CancelToken, FuelTrace, RunOutcome, RunnerLimits, ScriptInput};
+use sico_runner::{CancelToken, FuelOpFrame, FuelTrace, RunOutcome, RunnerLimits, ScriptInput};
 use sico_source::{SourceFile, SourceId};
 
 #[path = "support/selfhost_common.rs"]
@@ -1400,4 +1400,383 @@ fn the_match_quadratic_term_is_attributed_to_dispatcher_body_rescan_by_finite_di
             previous = Some((m, consumed));
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0611: op-level fuel attribution via the exhaustion op-location hook.
+//
+// STEP-0606 attributed the fuel wall to two named emitter operators
+// (match-dispatcher rescan + text_concat assembly) through bracket-midpoint
+// fuel only (a ±12.5% band). STEP-0608 proved the burn rate is flat (~21M
+// fuel/ms), i.e. fuel is a deterministic per-wasm-op count, but no hook existed
+// to NAME the op. This probe adds the naming: `PreparedProgram::run_with_fuel`
+// now carries `FuelTrace::exhaustion` -- the captured wasm backtrace at the
+// moment a fuel-limited run exhausted its budget. Because guest execution is
+// deterministic, running the SAME input under a ladder of budgets exhausts at
+// the SAME op sequence every time, so the top frame of each run names the
+// (function, instruction) that op #budget landed on. A ladder is therefore a
+// fuel-vs-op-sequence attribution with no engine opcode hook and no gcc.
+//
+// The probes are `#[ignore]`d like the other measurement probes: they advance
+// no exit gate, raise no ceiling, and touch no production crate beyond the
+// additive `FuelTrace::exhaustion` field and no frozen guest source. M22 stays
+// NO-GO.
+// ---------------------------------------------------------------------------
+
+/// Runs the emit-only injection fixture under `fuel` and returns the classified
+/// outcome plus the FULL production fuel trace (including the exhaustion op
+/// stack). Same fixture and limits as [`guest_emission_with_fuel`], through
+/// `PreparedProgram::run_with_fuel`.
+fn guest_emission_with_trace(ir: &str, fuel: u64) -> (GuestFuelEmission, FuelTrace) {
+    static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
+    let pool = POOL.get_or_init(|| {
+        let component: Vec<u8> = injection_component().to_vec();
+        PreparedPool::new(default_pool_slots(), move || prepare_slot(&component))
+    });
+    let prepared = pool.acquire();
+    let result = prepared.run_with_fuel(
+        &ScriptInput {
+            arguments: Vec::new(),
+            stdin: ir.as_bytes().to_vec(),
+        },
+        &RunnerLimits {
+            fuel,
+            timeout: std::time::Duration::from_secs(300),
+            memory_bytes: 2560 * 1024 * 1024,
+            hostcall_fuel: 8 << 30,
+        },
+        &CancelToken::new(),
+    );
+    pool.release(prepared);
+    let (outcome, trace) = result.expect("the injected IR bounds hold");
+    let emission = match outcome {
+        RunOutcome::Output(output) => {
+            assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+            GuestFuelEmission::Component(
+                String::from_utf8(output.stdout).expect("the hex is utf-8"),
+            )
+        }
+        RunOutcome::Domain { code, message } => {
+            assert_eq!(code, "invalid-input", "the injection fixture refuses");
+            GuestFuelEmission::Refusal(message)
+        }
+        RunOutcome::FuelExhausted => GuestFuelEmission::FuelExhausted,
+        RunOutcome::Trap(reason) => GuestFuelEmission::Trap { reason },
+        other => panic!("unexpected outcome under a fuel budget: {:?}", other),
+    };
+    (emission, trace)
+}
+
+/// Formats one op frame as `name[fn=<index> @ <offset>]`, dropping parts the
+/// engine did not provide (an anonymous function or a missing offset is the
+/// honest unknown, never a fabricated value).
+fn format_op_frame(frame: &FuelOpFrame) -> String {
+    match (&frame.function_name, frame.instruction_offset) {
+        (Some(name), Some(offset)) => {
+            format!("{name}[fn={} @ {offset}]", frame.function_index)
+        }
+        (Some(name), None) => format!("{name}[fn={}]", frame.function_index),
+        (None, Some(offset)) => format!("fn{}@{}", frame.function_index, offset),
+        (None, None) => format!("fn{}", frame.function_index),
+    }
+}
+
+/// The real `FuelExhausted` site, attributed op-by-op through a geometric
+/// ladder of fuel budgets.
+///
+/// Each ladder budget `k` runs the same deterministic emit-only input; the
+/// guest exhausts at op #k every time, so [`FuelTrace::exhaustion`]'s top
+/// frame names the (function, instruction) op #k landed on. The resulting
+/// per-function histogram ranks which emitter function the fuel is charged to,
+/// and the call stacks show the emitter path the fuel travels through.
+#[test]
+#[ignore = "a real-site op-level fuel attribution ladder; run it explicitly"]
+fn the_real_site_fuel_exhaustion_ops_are_attributed_by_ladder() {
+    let (path, function) = ANCHOR_SITE;
+    let closure = sico_closure(PARSER_SOURCE, function, 256, 1_048_576)
+        .unwrap_or_else(|reason| panic!("{path}:{function} closure {reason}"));
+    let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+    let ir = rust_ir(&source)
+        .unwrap_or_else(|reason| panic!("{path}:{function} must lower to canonical IR: {reason}"));
+    let ceiling = probe_ceiling();
+    let mut budget = 100_000_000u64;
+    let mut histogram: std::collections::BTreeMap<String, usize> =
+        std::collections::BTreeMap::new();
+    let mut with_location = 0usize;
+    let mut total = 0usize;
+    while budget <= ceiling {
+        let (emission, trace) = guest_emission_with_trace(&ir, budget);
+        match &emission {
+            GuestFuelEmission::Component(hex) => {
+                println!(
+                    "M22_FUEL_OP site={path}:{function} budget={budget} emitted component_bytes={}",
+                    hex.len() / 2
+                );
+                break;
+            }
+            GuestFuelEmission::Refusal(identity) => {
+                panic!("{path}:{function} refused at {budget}: {identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                panic!("{path}:{function} trapped at {budget}: {reason}")
+            }
+            GuestFuelEmission::FuelExhausted => {}
+        }
+        let Some(top) = trace.exhaustion.first() else {
+            println!(
+                "M22_FUEL_OP site={path}:{function} budget={budget} verdict=FuelExhausted exhaustion=empty"
+            );
+            if budget >= ceiling {
+                break;
+            }
+            budget = budget.saturating_mul(2).min(ceiling);
+            continue;
+        };
+        total += 1;
+        with_location += usize::from(top.instruction_offset.is_some());
+        let name = top
+            .function_name
+            .clone()
+            .unwrap_or_else(|| format!("fn{}", top.function_index));
+        *histogram.entry(name).or_default() += 1;
+        let stack: Vec<String> = trace
+            .exhaustion
+            .iter()
+            .take(5)
+            .map(format_op_frame)
+            .collect();
+        println!(
+            "M22_FUEL_OP site={path}:{function} budget={budget} verdict=FuelExhausted top={} stack=[{}]",
+            format_op_frame(top),
+            stack.join(" <- ")
+        );
+        if budget >= ceiling {
+            break;
+        }
+        budget = budget.saturating_mul(2).min(ceiling);
+    }
+    println!(
+        "M22_FUEL_OP site={path}:{function} samples={total} with_instruction_offset={with_location} histogram={:?}",
+        histogram
+    );
+    assert!(
+        total > 0,
+        "the ladder must produce at least one exhaustion sample"
+    );
+}
+
+/// The two synthetic operator families from STEP-0606, attributed op-by-op.
+///
+/// `match_flat` and `text_concat` exhaust under the ceiling at small sizes
+/// (STEP-0606: n=16 / n=64). Running each at an exhausting size and reading the
+/// exhaustion op location ties the real-site attribution back to the named
+/// operator: if the match-dispatcher rescan is the quadratic term, the
+/// `match_flat` exhaustion lands inside the dispatcher/body-scan path, and if
+/// the concat copy is the term, the `text_concat` exhaustion lands inside the
+/// concat helper.
+#[test]
+#[ignore = "an operator op-location attribution probe; run it explicitly"]
+fn the_named_operators_are_attributed_to_op_locations() {
+    let ceiling = probe_ceiling();
+    let match_flat_source = |n: usize| {
+        let mut body = String::from("function probe(data: U64) returns U64:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str("  match U64.checked_add(acc, U64.literal(1)):\n");
+            body.push_str("    case ok(next):\n      set acc = next\n");
+            body.push_str("    case error(_):\n      set acc = U64.literal(0)\n");
+            body.push_str("  end match\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    let concat_source = |n: usize| {
+        let mut body = String::from("function probe(data: Text) returns Text:\n  let acc = data\n");
+        for _ in 0..n {
+            body.push_str("  set acc = sico.text.concat(acc, \"0123456789abcdef\")\n");
+        }
+        body.push_str("  return acc\nend function\n");
+        format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}")
+    };
+    // The match family emits under the ceiling at n=16 (STEP-0606 measured its
+    // flip near 748e9), so a sub-flip budget gives an exhaustion op location
+    // that ties the match quadratic to the same scan path as the real site.
+    if let Ok(ir) = rust_ir(&match_flat_source(16)) {
+        let (emission, trace) = guest_emission_with_trace(&ir, 400_000_000_000);
+        if let GuestFuelEmission::FuelExhausted = &emission {
+            let stack: Vec<String> = trace
+                .exhaustion
+                .iter()
+                .take(5)
+                .map(format_op_frame)
+                .collect();
+            println!(
+                "M22_FUEL_OP family=match_flat n=16 budget=400e9 verdict=FuelExhausted consumed={:?} stack=[{}]",
+                trace.consumed,
+                stack.join(" <- ")
+            );
+        }
+    }
+    for (name, build, sizes) in [
+        (
+            "match_flat",
+            Box::new(match_flat_source) as Box<dyn Fn(usize) -> String>,
+            &[8usize, 16][..],
+        ),
+        (
+            "text_concat",
+            Box::new(concat_source) as Box<dyn Fn(usize) -> String>,
+            &[32usize, 64][..],
+        ),
+    ] {
+        for &n in sizes {
+            let ir = match rust_ir(&build(n)) {
+                Ok(ir) => ir,
+                Err(reason) => {
+                    println!("M22_FUEL_OP family={name} n={n} oracle_refused={reason}");
+                    continue;
+                }
+            };
+            let (emission, trace) = guest_emission_with_trace(&ir, ceiling);
+            match &emission {
+                GuestFuelEmission::Refusal(identity) => {
+                    panic!("{name} n={n} refused: {identity}")
+                }
+                GuestFuelEmission::Trap { reason } => panic!("{name} n={n} trapped: {reason}"),
+                _ => {}
+            }
+            let verdict = match &emission {
+                GuestFuelEmission::Component(hex) => {
+                    format!("emitted component_bytes={}", hex.len() / 2)
+                }
+                GuestFuelEmission::FuelExhausted => "FuelExhausted".to_owned(),
+                _ => unreachable!(),
+            };
+            let stack: Vec<String> = trace
+                .exhaustion
+                .iter()
+                .take(5)
+                .map(format_op_frame)
+                .collect();
+            println!(
+                "M22_FUEL_OP family={name} n={n} ir_bytes={} ceiling={ceiling} verdict={verdict} consumed={:?} stack=[{}]",
+                ir.len(),
+                trace.consumed,
+                stack.join(" <- ")
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// STEP-0611 (name resolution): map the exhaustion wasm func_index/offset to a
+// Sico function name.
+//
+// The guest module carries no wasm name section, so `FuelOpFrame::function_name`
+// is `None`. The exhaustion op locations are still exact (func_index +
+// module_offset), and the injection component is byte-stable, so the codegen
+// core module's function bodies can be laid out once and the exhausted offset
+// looked up in it. The codegen emits Sico functions in `FunctionId` order; this
+// probe verifies that the defined wasm function count matches the Sico
+// top-level function count and, when it does, prints the Sico function name for
+// each exhausted offset of interest.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "a wasm function-layout name-resolution probe; run it explicitly"]
+fn the_exhaustion_offsets_are_resolved_to_sico_function_names() {
+    let component = injection_component();
+    let mut resolved: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    let mut module_index = 0usize;
+    for payload in wasmparser::Parser::new(0).parse_all(component) {
+        let Ok(wasmparser::Payload::ModuleSection {
+            unchecked_range, ..
+        }) = payload
+        else {
+            continue;
+        };
+        let module_bytes = &component[unchecked_range];
+        let mut defined = 0u32;
+        let mut import_count = 0u32;
+        for payload in wasmparser::Parser::new(0).parse_all(module_bytes) {
+            match payload {
+                Ok(wasmparser::Payload::ImportSection(reader)) => {
+                    for imports in reader.into_iter().flatten() {
+                        for import in imports {
+                            if let Ok((
+                                _,
+                                wasmparser::Import {
+                                    ty: wasmparser::TypeRef::Func(_),
+                                    ..
+                                },
+                            )) = import
+                            {
+                                import_count += 1;
+                            }
+                        }
+                    }
+                }
+                Ok(wasmparser::Payload::FunctionSection(reader)) => {
+                    defined = reader.count();
+                }
+                _ => {}
+            }
+        }
+        let sico_functions = sico_functions(CODEGEN_SOURCE);
+        println!(
+            "M22_FUEL_NAME module={module_index} import_count={import_count} defined={defined} sico_functions={}",
+            sico_functions.len()
+        );
+        // Map each defined wasm function to its body byte range and find the body
+        // that contains each exhausted offset. The Sico correlation is printed
+        // separately because the module carries adapter shims (defined > Sico
+        // count), so a 1:1 index mapping is only a hypothesis to be verified.
+        let mut body_index = 0usize;
+        let mut body_offsets: Vec<(u32, usize, usize)> = Vec::new();
+        for payload in wasmparser::Parser::new(0).parse_all(module_bytes) {
+            if let Ok(wasmparser::Payload::CodeSectionEntry(body)) = payload {
+                let range = body.range();
+                body_offsets.push((import_count + body_index as u32, range.start, range.end));
+                body_index += 1;
+            }
+        }
+        println!(
+            "M22_FUEL_NAME module={module_index} bodies={} (first body starts at {})",
+            body_offsets.len(),
+            body_offsets
+                .first()
+                .map(|(_, start, _)| *start)
+                .unwrap_or(0)
+        );
+        for target in [13549u64, 13726, 12998, 15000, 20027, 11485, 11539, 13333] {
+            let hit = body_offsets
+                .iter()
+                .find(|(_, start, end)| (*start as u64) <= target && target < (*end as u64));
+            let label = match hit {
+                Some((index, start, end)) => {
+                    format!("func#{index} body[{start}..{end}]")
+                }
+                None => "no-body".to_owned(),
+            };
+            resolved.insert(format!("offset-{target}"), label.clone());
+            println!("M22_FUEL_NAME module={module_index} target_offset={target} {label}");
+        }
+        // Dump the Sico declaration order and the wasm body sizes side by side
+        // so the func# indices can be correlated with the Sico function names
+        // (FunctionId order hypothesis) AND checked against the actual wasm
+        // layout (shim count hypothesis) in one view.
+        if module_index == 0 {
+            for (i, function) in sico_functions.iter().enumerate() {
+                let body = body_offsets
+                    .get(i)
+                    .map(|(_, start, end)| format!("[{start}..{end}]"))
+                    .unwrap_or_else(|| "<no-body>".to_owned());
+                println!(
+                    "M22_FUEL_NAME sico_order index={i} function={} wasm_body={body}",
+                    function.name
+                );
+            }
+        }
+        module_index += 1;
+    }
+    assert!(!resolved.is_empty(), "at least one module must lay out");
 }

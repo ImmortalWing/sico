@@ -349,6 +349,38 @@ pub struct FuelSample {
     pub remaining: u64,
 }
 
+/// One bounded, read-only op location captured where a fuel-limited run
+/// exhausted its budget. This is the op-level sampling hook for the M22 fuel
+/// wall: `function_name` names the guest function and `instruction_offset` is
+/// the exact module byte offset of the wasm instruction that consumed the
+/// last fuel unit.
+///
+/// The measurement technique is a **ladder of fuel budgets**: because guest
+/// execution is deterministic, running the same input under budgets
+/// `k_1 < k_2 < ...` exhausts at the same op sequence each time, so the top
+/// frame of each [`FuelOpFrame`] stack names the (function, instruction) that
+/// op `k_i` landed on. A stack of these across a ladder is therefore a
+/// fuel-vs-op-sequence attribution without any engine opcode hook. Only
+/// [`PreparedProgram::run_with_fuel`] and
+/// [`PreparedProgram::run_with_fuel_timeline`] populate it (a plain run has no
+/// fuel readout at all).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FuelOpFrame {
+    /// The module the executing instruction belongs to, when the engine names
+    /// it (a guest core module in a component run).
+    pub module: Option<String>,
+    /// The wasm function index within the module.
+    pub function_index: u64,
+    /// The guest function name, when the module carries a name section (Sico
+    /// guest functions are named; `None` is the honest unknown rather than a
+    /// fabricated identifier).
+    pub function_name: Option<String>,
+    /// The exact module byte offset of the wasm instruction that was executing
+    /// when the engine charged the last fuel unit. This is the op-level
+    /// location the ladder sampling attributes fuel to.
+    pub instruction_offset: Option<u64>,
+}
+
 /// Production-side fuel readout for one execution. This is a **side channel**
 /// only: it never becomes a [`RunOutcome`] field, and the plain
 /// [`PreparedProgram::run`]/[`PreparedProgram::run_observed`] paths behave
@@ -372,6 +404,12 @@ pub struct FuelTrace {
     /// Watchdog-tick fuel samples; empty unless
     /// [`PreparedProgram::run_with_fuel_timeline`] armed sampling.
     pub timeline: Vec<FuelSample>,
+    /// The wasm call stack at the moment the run exhausted its fuel budget,
+    /// when the run ended in a fuel trap with a captured backtrace. Empty
+    /// otherwise. The first entry is the innermost (top) frame: the exact
+    /// instruction that consumed the last fuel unit. This is the op-level
+    /// sampling hook; see [`FuelOpFrame`].
+    pub exhaustion: Vec<FuelOpFrame>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2760,6 +2798,9 @@ impl PreparedProgram {
                     // The epoch-sampling timeline (when armed) is adopted by
                     // `run_with_fuel_timeline` after the guest worker joins.
                     timeline: Vec::new(),
+                    // A successful run never exhausted its budget, so there is
+                    // no exhaustion op location to sample.
+                    exhaustion: Vec::new(),
                 };
                 execution
             }
@@ -2770,9 +2811,29 @@ impl PreparedProgram {
                 let remaining = store.get_fuel().ok();
                 let rearmed = remaining.is_some_and(|remaining| remaining > limits.fuel);
                 let consumed = remaining.map(|remaining| limits.fuel.saturating_sub(remaining));
+                let outcome = classify_error(store, &error);
+                let frames = engine_frames(&error);
+                // Op-level sampling hook: when the run exhausted its fuel
+                // budget, the captured backtrace names the exact (function,
+                // instruction) that consumed the last fuel unit. Only a fuel
+                // trap carries this; any other error has no fuel position.
+                let exhaustion = if matches!(outcome, RunOutcome::FuelExhausted) {
+                    frames
+                        .iter()
+                        .take(16)
+                        .map(|frame| FuelOpFrame {
+                            module: frame.module.clone(),
+                            function_index: frame.component_function,
+                            function_name: frame.function_name.clone(),
+                            instruction_offset: frame.instruction_offset,
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
                 Execution {
-                    outcome: classify_error(store, &error),
-                    frames: engine_frames(&error),
+                    outcome,
+                    frames,
                     cancellation_source: None,
                     fuel: FuelTrace {
                         initial: limits.fuel,
@@ -2780,6 +2841,7 @@ impl PreparedProgram {
                         consumed,
                         fuel_rearmed: rearmed,
                         timeline: Vec::new(),
+                        exhaustion,
                     },
                 }
             }
@@ -2884,6 +2946,7 @@ impl Execution {
 struct RawEngineFrame {
     module: Option<String>,
     component_function: u64,
+    function_name: Option<String>,
     instruction_offset: Option<u64>,
 }
 
@@ -2898,6 +2961,7 @@ fn engine_frames(error: &wasmtime::Error) -> Vec<RawEngineFrame> {
                 .map(|frame| RawEngineFrame {
                     module: frame.module().name().map(str::to_owned),
                     component_function: u64::from(frame.func_index()),
+                    function_name: frame.func_name().map(str::to_owned),
                     instruction_offset: frame
                         .module_offset()
                         .and_then(|offset| u64::try_from(offset).ok()),
