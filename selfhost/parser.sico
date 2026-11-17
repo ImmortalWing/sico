@@ -11122,8 +11122,413 @@ end function
 //
 // 0 when the field value is not a call shape. A call without arguments still
 // consumes one id, so the two cases never collide.
-function construct_field_call_count(words: List[Text], value_first: U64, value_end: U64, name_idx: U64) returns U64:
+// STEP-0613f co-gap: a construct field value may also be a fully-qualified
+// `sico.*` intrinsic call or a bare let-bound identifier. The host oracle
+// lowers these through its general expression resolver
+// (crates/sico-ir/src/lower.rs `expression`), so these helpers give the
+// construct context the same recursive value lowering without changing the
+// existing string/projection/literal field-value shapes.
+function construct_intrinsic_kind(words: List[Text], value_first: U64, value_end: U64) returns Text:
+  let cik_second = next_index(value_first, value_end)
+  let cik_third = next_index(cik_second, value_end)
+  let cik_fourth = next_index(cik_third, value_end)
+  let cik_fifth = next_index(cik_fourth, value_end)
+  let cik_sixth = next_index(cik_fifth, value_end)
+  let cik_kind = ""
+  if is_word(word_at(words, value_first), "sico"):
+    if is_word(word_at(words, cik_second), "."):
+      let cik_family = word_at(words, cik_third)
+      if is_word(word_at(words, cik_fourth), "."):
+        let cik_member = word_at(words, cik_fifth)
+        if is_word(word_at(words, cik_sixth), "("):
+          if is_word(cik_family, "text"):
+            if is_word(cik_member, "encode"):
+              set cik_kind = "bytes"
+            else:
+              if is_word(cik_member, "concat"):
+                set cik_kind = "string"
+              else:
+                if is_word(cik_member, "length"):
+                  set cik_kind = "u64"
+                end if
+              end if
+            end if
+          else:
+            if is_word(cik_family, "bytes"):
+              if is_word(cik_member, "utf8_decode"):
+                set cik_kind = "string"
+              else:
+                if is_word(cik_member, "length"):
+                  set cik_kind = "u64"
+                end if
+              end if
+            else:
+              if is_word(cik_family, "u64"):
+                if is_word(cik_member, "to_text"):
+                  set cik_kind = "string"
+                end if
+              end if
+            end if
+          end if
+        end if
+      end if
+    end if
+  end if
+  return cik_kind
+end function
+
+function construct_project_instruction_json(result_id: U64, field_kind: Text, base_idx: U64, field_name: Text, dot_offset: U64, field_end: U64) returns Text:
+  let cpij_json = "{\"result\":"
+  set cpij_json = sico.text.concat(cpij_json, sico.u64.to_text(result_id))
+  set cpij_json = sico.text.concat(cpij_json, ",\"ty\":{\"kind\":\"")
+  set cpij_json = sico.text.concat(cpij_json, field_kind)
+  set cpij_json = sico.text.concat(cpij_json, "\"},\"operation\":{\"op\":\"project\",\"data\":{\"base\":")
+  set cpij_json = sico.text.concat(cpij_json, sico.u64.to_text(base_idx))
+  set cpij_json = sico.text.concat(cpij_json, ",\"field\":\"")
+  set cpij_json = sico.text.concat(cpij_json, field_name)
+  set cpij_json = sico.text.concat(cpij_json, "\"}},\"range\":{\"start\":")
+  set cpij_json = sico.text.concat(cpij_json, sico.u64.to_text(dot_offset))
+  set cpij_json = sico.text.concat(cpij_json, ",\"end\":")
+  set cpij_json = sico.text.concat(cpij_json, sico.u64.to_text(field_end))
+  return sico.text.concat(cpij_json, "}}")
+end function
+
+function construct_local_index(words: List[Text], name_idx: U64, cursor: U64, binding: Text) returns U64:
+  let cli_words_len = sico.list.length(words)
+  let cli_body = next_index(name_idx, cli_words_len)
+  let cli_idx = cli_body
+  let cli_cell_count = U64.literal(0)
+  let cli_seen_names = sico.text.split_lines("")
+  let cli_seen_indexes = sico.list.empty[U64]()
+  let cli_bind = ""
+  while U64.less_than(cli_idx, cursor):
+    let cli_word = word_at(words, cli_idx)
+    if is_word(cli_word, "<nl>"):
+      set cli_idx = next_index(cli_idx, cursor)
+    else:
+      if is_word(cli_word, "let"):
+        set cli_bind = word_at(words, next_index(cli_idx, cursor))
+        if is_word(cli_bind, binding):
+          return cli_cell_count
+        end if
+        set cli_seen_names = sico.list.append(cli_seen_names, cli_bind)
+        set cli_seen_indexes = sico.list.append[U64](cli_seen_indexes, cli_cell_count)
+        set cli_cell_count = next_index(cli_cell_count, cli_cell_count)
+      else:
+        if is_word(cli_word, "set"):
+          set cli_bind = word_at(words, next_index(cli_idx, cursor))
+          if is_word(cli_bind, binding):
+            let cli_existing = local_binding_index(cli_seen_names, cli_bind)
+            if U64.less_than(cli_existing, cli_words_len):
+              return u64_list_at(cli_seen_indexes, cli_existing, U64.literal(0))
+            end if
+          end if
+        end if
+      end if
+      set cli_idx = next_index(line_end(words, cli_idx), cursor)
+    end if
+  end while
+  return cli_words_len
+end function
+
+function construct_local_kind(words: List[Text], name_idx: U64, parameter_count: U64, cursor: U64, binding: Text) returns Text:
+  let clk_words_len = sico.list.length(words)
+  let clk_body = next_index(name_idx, clk_words_len)
+  let clk_idx = clk_body
+  while U64.less_than(clk_idx, cursor):
+    let clk_word = word_at(words, clk_idx)
+    if is_word(clk_word, "<nl>"):
+      set clk_idx = next_index(clk_idx, cursor)
+    else:
+      if is_word(clk_word, "let"):
+        let clk_bind = word_at(words, next_index(clk_idx, cursor))
+        if is_word(clk_bind, binding):
+          let clk_line_end = line_end(words, clk_idx)
+          let clk_assign = next_index(next_index(clk_idx, clk_words_len), clk_words_len)
+          let clk_rhs_first = clk_assign
+          let clk_rhs_second = next_index(clk_rhs_first, clk_line_end)
+          if U64.equal(clk_rhs_second, clk_line_end):
+            let clk_rhs_atom = word_at(words, clk_rhs_first)
+            let clk_rhs_param = binding_parameter_index(words, name_idx, clk_rhs_atom)
+            if U64.less_than(clk_rhs_param, parameter_count):
+              let clk_rhs_param_ok = I64.literal(1)
+            else:
+              let clk_rhs_cell = construct_local_index(words, name_idx, cursor, clk_rhs_atom)
+              if U64.less_than(clk_rhs_cell, clk_words_len):
+                return ""
+              end if
+            end if
+          end if
+          return construct_expression_kind(words, name_idx, parameter_count, clk_rhs_first, clk_line_end, cursor)
+        end if
+      end if
+      set clk_idx = next_index(line_end(words, clk_idx), cursor)
+    end if
+  end while
+  return ""
+end function
+
+function construct_expression_kind(words: List[Text], name_idx: U64, parameter_count: U64, expr_first: U64, expr_end: U64, cursor: U64) returns Text:
+  let cek_second = next_index(expr_first, expr_end)
+  let cek_param = U64.literal(0)
+  if U64.equal(cek_second, expr_end):
+    let cek_atom = word_at(words, expr_first)
+    if is_string_token(cek_atom):
+      return "string"
+    end if
+    if is_canonical_magnitude(cek_atom):
+      return "int"
+    end if
+    if is_word(cek_atom, "true"):
+      return "bool"
+    end if
+    if is_word(cek_atom, "false"):
+      return "bool"
+    end if
+    set cek_param = binding_parameter_index(words, name_idx, cek_atom)
+    if U64.less_than(cek_param, parameter_count):
+      return binding_parameter_kind(words, name_idx, cek_atom)
+    end if
+    let cek_cell = construct_local_index(words, name_idx, cursor, cek_atom)
+    if U64.less_than(cek_cell, sico.list.length(words)):
+      return construct_local_kind(words, name_idx, parameter_count, cursor, cek_atom)
+    end if
+    return ""
+  end if
+  let cek_third = next_index(cek_second, expr_end)
+  if U64.equal(next_index(cek_third, expr_end), expr_end):
+    if is_word(word_at(words, cek_second), "."):
+      let cek_base = word_at(words, expr_first)
+      let cek_field = word_at(words, cek_third)
+      set cek_param = binding_parameter_index(words, name_idx, cek_base)
+      if U64.less_than(cek_param, parameter_count):
+        let cek_record = parameter_type_word(words, name_idx, cek_param)
+        if record_named_type(cek_record):
+          return record_field_kind(words, cek_record, cek_field)
+        end if
+      end if
+      return ""
+    end if
+  end if
+  return construct_intrinsic_kind(words, expr_first, expr_end)
+end function
+
+function construct_expression_parts(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, expr_first: U64, expr_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64, cursor: U64) returns Text:
+  let cep_second = next_index(expr_first, expr_end)
+  let cep_param = U64.literal(0)
+  let cep_json = ""
+  if U64.equal(cep_second, expr_end):
+    let cep_atom = word_at(words, expr_first)
+    let cep_offset = word_span_offset(words, src, anchor_offset, anchor_idx, expr_first)
+    let cep_after = cep_offset
+    match U64.checked_add(cep_offset, sico.bytes.length(sico.text.encode(cep_atom))):
+      case ok(cep_after_added):
+        set cep_after = cep_after_added
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    if is_string_token(cep_atom):
+      set cep_json = scalar_const_instruction_json(result_id, "string", json_string_token(cep_atom), cep_offset, cep_after)
+      return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+    end if
+    if is_canonical_magnitude(cep_atom):
+      let cep_mag_json = sico.text.concat("\"", sico.text.concat(cep_atom, "\""))
+      set cep_json = scalar_const_instruction_json(result_id, "int", cep_mag_json, cep_offset, cep_after)
+      return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+    end if
+    if is_word(cep_atom, "true"):
+      set cep_json = scalar_const_instruction_json(result_id, "bool", "true", cep_offset, cep_after)
+      return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+    end if
+    if is_word(cep_atom, "false"):
+      set cep_json = scalar_const_instruction_json(result_id, "bool", "false", cep_offset, cep_after)
+      return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+    end if
+    set cep_param = binding_parameter_index(words, name_idx, cep_atom)
+    if U64.less_than(cep_param, parameter_count):
+      return sico.text.concat("0\n", sico.text.concat(sico.u64.to_text(cep_param), "\n-"))
+    end if
+    let cep_cell = construct_local_index(words, name_idx, cursor, cep_atom)
+    if U64.less_than(cep_cell, sico.list.length(words)):
+      let cep_cell_kind = construct_local_kind(words, name_idx, parameter_count, cursor, cep_atom)
+      if U64.less_than(U64.literal(0), sico.text.length(cep_cell_kind)):
+        set cep_json = read_local_instruction_json(result_id, cep_cell_kind, cep_cell, cep_offset, cep_after)
+        return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+      end if
+    end if
+    return "ERR:E-SH-IR-EXPRESSION"
+  end if
+  let cep_third = next_index(cep_second, expr_end)
+  if U64.equal(next_index(cep_third, expr_end), expr_end):
+    if is_word(word_at(words, cep_second), "."):
+      let cep_base = word_at(words, expr_first)
+      let cep_field = word_at(words, cep_third)
+      set cep_param = binding_parameter_index(words, name_idx, cep_base)
+      if U64.less_than(cep_param, parameter_count):
+        let cep_record = parameter_type_word(words, name_idx, cep_param)
+        if record_named_type(cep_record):
+          let cep_field_kind = record_field_kind(words, cep_record, cep_field)
+          if U64.less_than(U64.literal(0), sico.text.length(cep_field_kind)):
+            let cep_dot_offset = word_span_offset(words, src, anchor_offset, anchor_idx, cep_second)
+            let cep_field_offset = word_span_offset(words, src, anchor_offset, anchor_idx, cep_third)
+            let cep_field_end = cep_field_offset
+            match U64.checked_add(cep_field_offset, sico.bytes.length(sico.text.encode(cep_field))):
+              case ok(cep_after_field):
+                set cep_field_end = cep_after_field
+              case error(_):
+                return "ERR:E-SH-IR-RANGE"
+            end match
+            set cep_json = construct_project_instruction_json(result_id, cep_field_kind, cep_param, cep_field, cep_dot_offset, cep_field_end)
+            return sico.text.concat("1\n", sico.text.concat(sico.text.concat(sico.u64.to_text(result_id), "\n"), cep_json))
+          end if
+        end if
+      end if
+      return "ERR:E-SH-IR-EXPRESSION"
+    end if
+  end if
+  let cep_intr = construct_intrinsic_parts(words, src, name_idx, parameter_count, expr_first, expr_end, result_id, anchor_idx, anchor_offset, cursor)
+  if sico.text.starts_with(cep_intr, "ERR:"):
+    return cep_intr
+  end if
+  if U64.less_than(U64.literal(0), sico.text.length(cep_intr)):
+    return cep_intr
+  end if
+  return "ERR:E-SH-IR-EXPRESSION"
+end function
+
+function construct_intrinsic_parts(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, value_first: U64, value_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64, cursor: U64) returns Text:
+  let cip_kind = construct_intrinsic_kind(words, value_first, value_end)
+  if U64.equal(sico.text.length(cip_kind), U64.literal(0)):
+    return ""
+  end if
+  let cip_words_len = sico.list.length(words)
+  let cip_open = next_index(next_index(next_index(next_index(next_index(value_first, value_end), value_end), value_end), value_end), value_end)
+  if is_word(word_at(words, cip_open), "("):
+    let cip_open_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let cip_close = matching_close(words, cip_open, value_end)
+  if U64.equal(next_index(cip_close, value_end), value_end):
+    let cip_tail_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-SHAPE"
+  end if
+  let cip_family = word_at(words, next_index(next_index(value_first, value_end), value_end))
+  let cip_member = word_at(words, next_index(next_index(next_index(next_index(value_first, value_end), value_end), value_end), value_end))
+  let cip_expected = U64.literal(1)
+  if is_word(cip_family, "text"):
+    if is_word(cip_member, "concat"):
+      set cip_expected = U64.literal(2)
+    end if
+  end if
+  let cip_args_start = next_index(cip_open, value_end)
+  let cip_args_json = "["
+  let cip_instr = ""
+  let cip_value_base = result_id
+  let cip_arg_position = U64.literal(0)
+  let cip_instr_count = U64.literal(0)
+  let cip_seg_start = cip_args_start
+  while U64.less_than(cip_seg_start, cip_close):
+    let cip_seg_end = cip_close
+    let cip_scan = cip_seg_start
+    while U64.less_than(cip_scan, cip_close):
+      if is_word(word_at(words, cip_scan), "("):
+        set cip_scan = next_index(matching_close(words, cip_scan, cip_close), cip_close)
+      else:
+        if is_word(word_at(words, cip_scan), ","):
+          set cip_seg_end = cip_scan
+          set cip_scan = cip_close
+        else:
+          set cip_scan = next_index(cip_scan, cip_close)
+        end if
+      end if
+    end while
+    let cip_arg_pack = construct_expression_parts(words, src, name_idx, parameter_count, cip_seg_start, cip_seg_end, cip_value_base, anchor_idx, anchor_offset, cursor)
+    if sico.text.starts_with(cip_arg_pack, "ERR:"):
+      return cip_arg_pack
+    end if
+    let cip_arg_parts = sico.text.split_lines(cip_arg_pack)
+    let cip_arg_count = gw_decimal_value(word_at(cip_arg_parts, U64.literal(0)))
+    let cip_arg_value = gw_decimal_value(word_at(cip_arg_parts, U64.literal(1)))
+    let cip_arg_instr = word_at(cip_arg_parts, U64.literal(2))
+    if U64.less_than(U64.literal(0), cip_arg_position):
+      set cip_args_json = sico.text.concat(cip_args_json, ",")
+    end if
+    set cip_args_json = sico.text.concat(cip_args_json, sico.u64.to_text(cip_arg_value))
+    if is_word(cip_arg_instr, "-"):
+      let cip_no_instr = I64.literal(1)
+    else:
+      if U64.less_than(U64.literal(0), sico.text.length(cip_instr)):
+        set cip_instr = sico.text.concat(cip_instr, ",")
+      end if
+      set cip_instr = sico.text.concat(cip_instr, cip_arg_instr)
+    end if
+    match U64.checked_add(cip_value_base, cip_arg_count):
+      case ok(cip_advanced):
+        set cip_value_base = cip_advanced
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    match U64.checked_add(cip_instr_count, cip_arg_count):
+      case ok(cip_counted):
+        set cip_instr_count = cip_counted
+      case error(_):
+        return "ERR:E-SH-IR-RANGE"
+    end match
+    set cip_arg_position = next_index(cip_arg_position, cip_arg_position)
+    if U64.equal(cip_seg_end, cip_close):
+      set cip_seg_start = cip_close
+    else:
+      set cip_seg_start = next_index(cip_seg_end, cip_close)
+    end if
+  end while
+  set cip_args_json = sico.text.concat(cip_args_json, "]")
+  if U64.equal(cip_expected, cip_arg_position):
+    let cip_arity_ok = I64.literal(1)
+  else:
+    return "ERR:E-SH-IR-CALL-ARITY"
+  end if
+  let cip_intr_id = cip_value_base
+  let cip_name = sico.text.concat(word_at(words, value_first), ".")
+  set cip_name = sico.text.concat(cip_name, cip_family)
+  set cip_name = sico.text.concat(cip_name, ".")
+  set cip_name = sico.text.concat(cip_name, cip_member)
+  let cip_offset = word_span_offset(words, src, anchor_offset, anchor_idx, value_first)
+  let cip_close_offset = word_span_offset(words, src, anchor_offset, anchor_idx, cip_close)
+  let cip_range_end = cip_close_offset
+  match U64.checked_add(cip_close_offset, U64.literal(1)):
+    case ok(cip_after_close):
+      set cip_range_end = cip_after_close
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  let cip_intr = intrinsic_instruction_json(cip_intr_id, cip_kind, cip_name, cip_args_json, cip_offset, cip_range_end)
+  let cip_out = cip_instr
+  if U64.less_than(U64.literal(0), sico.text.length(cip_out)):
+    set cip_out = sico.text.concat(cip_out, ",")
+  end if
+  set cip_out = sico.text.concat(cip_out, cip_intr)
+  let cip_total = cip_instr_count
+  match U64.checked_add(cip_instr_count, U64.literal(1)):
+    case ok(cip_total_added):
+      set cip_total = cip_total_added
+    case error(_):
+      return "ERR:E-SH-IR-RANGE"
+  end match
+  return sico.text.concat(sico.text.concat(sico.text.concat(sico.u64.to_text(cip_total), "\n"), sico.text.concat(sico.u64.to_text(cip_intr_id), "\n")), cip_out)
+end function
+
+function construct_field_call_count(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, value_first: U64, value_end: U64, anchor_idx: U64, anchor_offset: U64) returns U64:
   let cfcc_words_len = sico.list.length(words)
+  let cfcc_intr = construct_intrinsic_parts(words, src, name_idx, parameter_count, value_first, value_end, U64.literal(0), anchor_idx, anchor_offset, value_first)
+  if sico.text.starts_with(cfcc_intr, "ERR:"):
+    return U64.literal(1)
+  end if
+  if U64.less_than(U64.literal(0), sico.text.length(cfcc_intr)):
+    let cfcc_intr_parts = sico.text.split_lines(cfcc_intr)
+    return gw_decimal_value(word_at(cfcc_intr_parts, U64.literal(0)))
+  end if
   let cfcc_open = next_index(value_first, value_end)
   if U64.equal(cfcc_open, value_end):
     return U64.literal(0)
@@ -11152,6 +11557,14 @@ end function
 // call is outside the supported subset.
 function construct_field_call_ir(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, value_first: U64, value_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64) returns Text:
   let cfcl_words_len = sico.list.length(words)
+  let cfcl_intr = construct_intrinsic_parts(words, src, name_idx, parameter_count, value_first, value_end, result_id, anchor_idx, anchor_offset, value_first)
+  if sico.text.starts_with(cfcl_intr, "ERR:"):
+    return cfcl_intr
+  end if
+  if U64.less_than(U64.literal(0), sico.text.length(cfcl_intr)):
+    let cfcl_intr_parts = sico.text.split_lines(cfcl_intr)
+    return word_at(cfcl_intr_parts, U64.literal(2))
+  end if
   let cfcl_open = next_index(value_first, value_end)
   if U64.equal(cfcl_open, value_end):
     return ""
@@ -11227,6 +11640,21 @@ function construct_field_value_ir(words: List[Text], src: Bytes, name_idx: U64, 
         case error(_):
           return "ERR:E-SH-IR-RANGE"
       end match
+    end if
+    let cfv_cell = construct_local_index(words, name_idx, value_first, cfv_first)
+    if U64.less_than(cfv_cell, sico.list.length(words)):
+      let cfv_cell_kind = construct_local_kind(words, name_idx, parameter_count, value_first, cfv_first)
+      if U64.less_than(U64.literal(0), sico.text.length(cfv_cell_kind)):
+        let cfv_ident_offset = word_span_offset(words, src, anchor_offset, anchor_idx, value_first)
+        let cfv_ident_end = cfv_ident_offset
+        match U64.checked_add(cfv_ident_offset, sico.bytes.length(sico.text.encode(cfv_first))):
+          case ok(cfv_after_ident):
+            set cfv_ident_end = cfv_after_ident
+          case error(_):
+            return "ERR:E-SH-IR-RANGE"
+        end match
+        return read_local_instruction_json(result_id, cfv_cell_kind, cfv_cell, cfv_ident_offset, cfv_ident_end)
+      end if
     end if
     return "ERR:E-SH-IR-CONSTRUCT-VALUE"
   end if
@@ -11361,7 +11789,7 @@ function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parame
         let cl_value_json = ""
         let cl_value_id = cl_next_result
         let cl_value_ids = U64.literal(1)
-        let cl_call_count = construct_field_call_count(words, cl_value_first, cl_seg_end, name_idx)
+        let cl_call_count = construct_field_call_count(words, src, name_idx, parameter_count, cl_value_first, cl_seg_end, anchor_idx, anchor_offset)
         if U64.less_than(U64.literal(0), cl_call_count):
           set cl_value_json = construct_field_call_ir(words, src, name_idx, parameter_count, cl_value_first, cl_seg_end, cl_next_result, anchor_idx, anchor_offset)
           if sico.text.starts_with(cl_value_json, "ERR:"):
