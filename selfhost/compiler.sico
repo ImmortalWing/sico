@@ -878,7 +878,7 @@ function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
       let cch_words = parser.lex_words(input.stdin)
       let cch_ir = parser.scalar_ir(cch_words, input.stdin)
       if sico.text.starts_with(cch_ir, "ERR:"):
-        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: "unsupported codegen source shape"))
+        return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: cch_ir))
       end if
       let component_hex = codegen.component_hex_for_ir(sico.text.encode(cch_ir))
       if U64.equal(sico.text.length(component_hex), U64.literal(0)):

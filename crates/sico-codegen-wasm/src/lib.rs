@@ -538,6 +538,12 @@ fn helper_dependencies(name: &str) -> &'static [&'static str] {
         // RFC-0045 stdlib batch 2 (STEP-0174). `list.sort`/`min`/`max`
         // share the `sico.text.compare` helper via cross-helper calls.
         "sico.bytes.equal" => &["sico.bytes.equal"],
+        // STEP-0613 O1: the inline `is_utf8` arm (STEP-0610) calls the
+        // `utf8_decode` runtime helper, so a module that uses only `is_utf8`
+        // (and never calls `utf8_decode` directly) must still register the
+        // helper. Without this entry the backend reported the phantom
+        // `stdlib helper layout` refusal for the W3-a fixture (STEP-0612 §2).
+        "sico.bytes.is_utf8" => &["sico.bytes.utf8_decode"],
         "sico.text.compare" => &["sico.text.compare"],
         "sico.text.char_at" => &["sico.text.char_loc"],
         "sico.text.format" => &["sico.text.format"],

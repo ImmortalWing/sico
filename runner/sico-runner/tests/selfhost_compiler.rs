@@ -3943,50 +3943,146 @@ fn sico_codegen_guest_emits_the_host_call_component_byte_exactly() {
 const IS_UTF8_GATE_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  if sico.bytes.is_utf8(input.stdin):\n    return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\n  end if\n  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"not utf8\"))\nend function\n";
 
 #[test]
-fn sico_is_utf8_lowers_byte_exactly_but_the_gated_run_emission_is_refused() {
-    // STEP-0610, codegen knife, HONEST OUTCOME. This slice added the missing
-    // `sico.bytes.is_utf8` arm to the guest's intrinsic dispatcher
-    // `cgs_intrinsic_hex` (the backend's inline arm reusing the
-    // `sico.bytes.utf8_decode` runtime helper: `local.get <ptr>` /
-    // `local.get <len>` / `call utf8_decode` / `local.set <bool>`). But the arm
-    // **does not by itself unlock whole-`formatter.sico` component emission**,
-    // because the W3-a blocker is a *different, pre-existing* gap:
+fn sico_is_utf8_gated_run_lowers_byte_exactly() {
+    // STEP-0613, O1 + G1. STEP-0610 landed the guest `sico.bytes.is_utf8` arm,
+    // but the W3-a fixture still refused component emission on both sides.
+    // STEP-0612 re-qualified the gap as guest-only and named the two fixes
+    // this slice makes:
     //
-    //   * The only context the guest frontend accepts `is_utf8` in -- and the
-    //     one the real `formatter.sico` `main` uses -- is an `if`-condition in
-    //     the entry `run`. That makes `run` **multi-block**.
-    //   * The component emitter derives the Script `run` body through
-    //     `cgs_result_return_hex`, which refuses a multi-block `run` outright
-    //     (`if U64.less_than(0, cgj_array_item(blocks, 1)): return
-    //     "ERR:E-SH-CG-IR-EMIT"`), so it refuses before the `is_utf8`
-    //     instruction is ever emitted.
+    //   * O1 (oracle hygiene): the inline `is_utf8` arm calls the
+    //     `sico.bytes.utf8_decode` runtime helper, but `helper_dependencies`
+    //     had no `is_utf8` entry, so a module using only `is_utf8` failed with
+    //     the phantom `stdlib helper layout` refusal. The one-line dependency
+    //     mapping is added now.
+    //   * G1 (guest capability): the guest's run emitter refused a multi-block
+    //     `run` outright (the four named blockers in STEP-0612 §4). The
+    //     per-block terminator and per-return-point result-area derivation is
+    //     added now.
     //
-    // So this test pins the localization: for the `is_utf8`-gated entry `run`
-    // (the W3-a shape), **both** the Rust oracle and the guest refuse component
-    // emission, because a branched `run` is multi-block and neither side yet
-    // derives a result-area layout for it. The `is_utf8` arm this slice added
-    // is a necessary prerequisite, but it cannot be exercised end-to-end until
-    // multi-block-`run` emission exists on both sides. (That the `is_utf8`
-    // shape lowers through the guest frontend is already pinned by
-    // `sico_compiler_lowers_ok_return_construct_byte_exactly`.)
-    let module = rust_module(IS_UTF8_GATE_FIXTURE_SOURCE);
-    assert!(
-        codegen_oracle::compile_script_program(&module).is_err(),
-        "the oracle also refuses the multi-block is_utf8-gated run: W3-a is blocked \
-         by a shared multi-block-run limitation, not by the missing is_utf8 arm alone"
+    // So this fixture -- an `is_utf8`-gated `if` with a `return` in each arm,
+    // the W3-a minimal multi-block shape -- now lowers byte for byte on both
+    // sides.
+    let source_file = SourceFile::from_text(
+        SourceId::new(0),
+        "run.sico",
+        IS_UTF8_GATE_FIXTURE_SOURCE.to_owned(),
+    )
+    .unwrap();
+    let module = lower_core(&source_file).unwrap();
+    let expected = codegen_oracle::compile_script_program(&module).expect(
+        "O1: the oracle registers utf8_decode for the inline is_utf8 arm, so it emits the fixture",
     );
+    let RunOutcome::Output(output) = run_guest_with_args(
+        IS_UTF8_GATE_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("G1: the guest must emit the minimal multi-block run");
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
     assert_eq!(
-        run_guest_with_args(
-            IS_UTF8_GATE_FIXTURE_SOURCE,
-            vec!["--emit-component-hex".into()]
-        ),
-        RunOutcome::Domain {
-            code: "invalid-input".into(),
-            message: "unsupported codegen source shape".into(),
-        },
-        "the guest refuses the is_utf8-gated run because it is multi-block \
-         (the multi-block-run gap), not because is_utf8 lacks an arm"
+        actual, expected,
+        "guest-emitted is_utf8-gated multi-block run component must equal the Rust backend exactly"
     );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted component must pass the real Wasm validator");
+}
+
+#[test]
+fn sico_run_emits_the_minimal_multiblock_run_component_byte_exactly() {
+    // STEP-0613, G1 capability pin (red-first contract). The W3-a minimal
+    // multi-block `run` is an `if` with a `return` in each arm: block 0
+    // branches on the `is_utf8` condition, block 1 returns the ok result,
+    // block 2 returns the error result. The guest's emitter now derives it
+    // per block (`branch` -> `cgs_branch_hex`, `return` -> a per-return-point
+    // Script result area) and must produce the Rust backend's bytes exactly.
+    let source_file = SourceFile::from_text(
+        SourceId::new(0),
+        "run.sico",
+        IS_UTF8_GATE_FIXTURE_SOURCE.to_owned(),
+    )
+    .unwrap();
+    let module = lower_core(&source_file).unwrap();
+    let expected = codegen_oracle::compile_script_program(&module).unwrap();
+    let RunOutcome::Output(output) = run_guest_with_args(
+        IS_UTF8_GATE_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    ) else {
+        panic!("the minimal multi-block run must compile through the guest emitter");
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted minimal multi-block run component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted component must pass the real Wasm validator");
+
+    // The frontend face of the same shape must also be byte-exact: G1 is a
+    // codegen fix, so the canonical IR (frontend) was already identical.
+    let expected_ir = rust_ir(IS_UTF8_GATE_FIXTURE_SOURCE);
+    let RunOutcome::Output(ir_output) = run_guest(IS_UTF8_GATE_FIXTURE_SOURCE) else {
+        panic!("the minimal multi-block run must lower through the guest frontend");
+    };
+    assert_eq!(ir_output.exit_code, 0, "{:?}", ir_output.stderr);
+    assert_bytes_equal(&ir_output.stdout, expected_ir.as_bytes());
+
+    // Typed-refusal contrast: a Script `run` that does not return
+    // Result[ScriptOutput, ScriptError] is outside the Script profile. Both
+    // the oracle and the guest must still refuse it (fail-closed), so G1 does
+    // not silently widen the accepted source surface.
+    let out_of_profile = "record ScriptOutput:\n  field stdout: Bytes\nend record\n\nfunction run() returns I64:\n  if U64.equal(U64.literal(1), U64.literal(1)):\n    return I64.literal(0)\n  end if\n  return I64.literal(1)\nend function\n";
+    assert!(
+        codegen_oracle::compile_script_program(&rust_module(out_of_profile)).is_err(),
+        "the oracle still refuses a non-Result run"
+    );
+    assert!(
+        matches!(
+            run_guest_with_args(out_of_profile, vec!["--emit-component-hex".into()]),
+            RunOutcome::Domain { .. }
+        ),
+        "the guest still refuses a non-Result run"
+    );
+}
+
+const TEXT_TRIM_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  let raw_text = sico.bytes.utf8_decode(input.stdin)\n  return ok(ScriptOutput(stdout: sico.text.encode(raw_text), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\nend function\n";
+
+#[test]
+#[ignore = "blocked on co-gaps: any `run` fixture needs utf8_decode + text.encode to carry a Text through the Bytes stdout, and BOTH refuse with `unsupported codegen source shape` in this context (verified: a no-text.trim fixture refuses identically), so text.trim byte-exactness cannot be isolated yet. The cgs_text_trim_hex arm itself compiles and is guard-safe (fails closed). Revisit after the utf8_decode/text.encode arms are proven."]
+fn sico_compiler_lowers_the_text_trim_intrinsic_byte_exactly() {
+    // STEP-0613d, G3 first arm. `sico.text.trim` is a runtime helper in the
+    // oracle (the trim call-site arm plus the stdlib `emit_trim` helper body),
+    // and the guest's `cgs_intrinsic_hex` had no arm for it, so any module
+    // calling it refused with ERR:E-SH-CG-IR-EMIT. This pin proves the guest
+    // now emits a `text.trim` module byte for byte equal to the Rust backend.
+    let source_file = SourceFile::from_text(
+        SourceId::new(0),
+        "trim.sico",
+        TEXT_TRIM_FIXTURE_SOURCE.to_owned(),
+    )
+    .unwrap();
+    let module = lower_core(&source_file).unwrap();
+    let expected = codegen_oracle::compile_script_program(&module).unwrap();
+    let outcome = run_guest_with_args(
+        TEXT_TRIM_FIXTURE_SOURCE,
+        vec!["--emit-component-hex".into()],
+    );
+    let output = match outcome {
+        RunOutcome::Output(o) => o,
+        other => panic!("the guest must emit the text.trim module; got {:?}", other),
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted text.trim component must equal the Rust backend exactly"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted component must pass the real Wasm validator");
 }
 
 #[test]

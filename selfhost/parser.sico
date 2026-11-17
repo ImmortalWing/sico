@@ -5004,8 +5004,8 @@ function gw_ok_wrap_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
                                                     let gos_close4 = next_index(gos_close2, gow_n)
                                                     if is_word(word_at(words, gos_close4), ")"):
                                                       if U64.equal(next_index(gos_close4, line_end), line_end):
-                                                        let gos_p1s = word_span_offset(words, src, expr_start, receiver_idx, gow_e1)
-                                                        let gos_p1e = word_span_offset(words, src, gos_p1s, gow_e1, gos_s1)
+                                                        let gos_p1s = word_span_offset(words, src, expr_start, receiver_idx, gos_d1)
+                                                        let gos_p1e = word_span_offset(words, src, gos_p1s, gos_d1, gos_s1)
                                                         match U64.checked_add(gos_p1e, sico.bytes.length(sico.text.encode(word_at(words, gos_s1)))):
                                                           case ok(gos_p1_last):
                                                             set gos_p1e = gos_p1_last
@@ -5019,8 +5019,8 @@ function gw_ok_wrap_rhs_packed(words: List[Text], src: Bytes, name_idx: U64, rec
                                                         set gos_proj1 = sico.text.concat(gos_proj1, sico.u64.to_text(gos_p1e))
                                                         set gos_proj1 = sico.text.concat(gos_proj1, "}}")
                                                         let gos_v2 = next_index(base, base)
-                                                        let gos_p2s = word_span_offset(words, src, expr_start, receiver_idx, gos_e2)
-                                                        let gos_p2e = word_span_offset(words, src, gos_p2s, gos_e2, gos_s2)
+                                                        let gos_p2s = word_span_offset(words, src, expr_start, receiver_idx, gos_d2)
+                                                        let gos_p2e = word_span_offset(words, src, gos_p2s, gos_d2, gos_s2)
                                                         match U64.checked_add(gos_p2e, sico.bytes.length(sico.text.encode(word_at(words, gos_s2)))):
                                                           case ok(gos_p2_last):
                                                             set gos_p2e = gos_p2_last

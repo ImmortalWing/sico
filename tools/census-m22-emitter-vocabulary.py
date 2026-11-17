@@ -78,6 +78,7 @@ GUEST_HELPER_BODIES = {
     "sico.text.join": "cg_text_join_helper_body_hex",
     "sico.text.split_lines": "cg_split_lines_helper_body_hex",
     "sico.text.starts_with": "cg_starts_with_helper_body_hex",
+    "sico.text.trim": "cg_text_trim_helper_body_hex",
     "sico.u64.to_text": "cg_u64_to_text_helper_body_hex",
 }
 
