@@ -131,6 +131,33 @@ removing the unbacked `read_local`. Scope spans `straight_cell_function_ir`
 already-oracle-shaped dead code (`straight_let_function_ir` `:22886`,
 `chained_let_function_ir` `:23140`) into `scalar_ir`'s ladder (`:21744`).
 
+**Byte anchor (oracle canonical IR for B4, dumped via
+`crates/sico-ir/tests/dump_oracle_ir.rs` with `ORACLE_SOURCE`, this session):**
+
+```
+fn[0] locals=0                                  // no locals member
+block 0:
+  1 Bytes Project { base: ValueId(0), field: "stdin" }   // let raw = input.stdin
+  2 Bytes Project { base: ValueId(0), field: "stdin" }   // stderr: input.stdin
+  3 I64 ConstI64(0)
+  4 Construct ScriptOutput { stdout: ValueId(1), stderr: ValueId(2), exit_code: ValueId(3) }
+  5 Variant { name: "ok", payload: [ValueId(4)] }
+  -> return ValueId(5)
+```
+
+So the oracle lowers `let raw = input.stdin` to **one `project` instruction**
+(result 1) and binds `raw` as a plain value binding = `ValueId(1)`; the
+construct's `stdout` field references `ValueId(1)` **directly**. There is **no
+`read_local`, no `write_local`, no `locals`**. The guest already has a working
+`project` emitter (`cgs_project_hex`; the B0 control's `input.stdin` field
+lowers through it), so `project` is not the gap — the sole frontend gap is that
+the guest lowers the `let` to an unbacked `read_local local:0` instead of
+materializing the `project` and referencing its value id at the use site. The
+targeted B4 fix is therefore: lower the leading `let` in
+`record_variant_function_ir` to the `project` instruction (result id 1) and make
+the construct's `stdout` field reference that value id — matching the anchor
+byte for byte and dropping the `read_local` entirely.
+
 ## 5. Validation
 
 - Full `selfhost_compiler` suite, single-threaded, `--locked --offline`:
