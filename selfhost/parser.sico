@@ -11617,7 +11617,36 @@ function construct_field_call_ir(words: List[Text], src: Bytes, name_idx: U64, p
   return ""
 end function
 
-function construct_field_value_ir(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, value_first: U64, value_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64) returns Text:
+// A leading `let <name> = <param>.<field>` is materializable when the right
+// hand side is exactly a parameter field projection of a named record. Only
+// these lets become `project` instructions ahead of the construction; every
+// other leading statement ends the leading-let region.
+function construct_let_materializable(words: List[Text], name_idx: U64, parameter_count: U64, let_idx: U64, line_end_idx: U64) returns Bool:
+  let clm_second = next_index(let_idx, line_end_idx)
+  let clm_third = next_index(clm_second, line_end_idx)
+  let clm_fourth = next_index(clm_third, line_end_idx)
+  let clm_fifth = next_index(clm_fourth, line_end_idx)
+  if U64.equal(clm_fifth, line_end_idx):
+    return false
+  end if
+  if is_word(word_at(words, clm_fourth), "."):
+    let clm_base = word_at(words, clm_third)
+    let clm_base_idx = binding_parameter_index(words, name_idx, clm_base)
+    if U64.less_than(clm_base_idx, parameter_count):
+      let clm_record = parameter_type_word(words, name_idx, clm_base_idx)
+      if record_named_type(clm_record):
+        let clm_field = word_at(words, clm_fifth)
+        let clm_kind = record_field_kind(words, clm_record, clm_field)
+        if U64.less_than(U64.literal(0), sico.text.length(clm_kind)):
+          return true
+        end if
+      end if
+    end if
+  end if
+  return false
+end function
+
+function construct_field_value_ir(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, value_first: U64, value_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64, let_names: List[Text], let_ids: List[U64]) returns Text:
   let cfv_json = ""
   let cfv_first = word_at(words, value_first)
   let cfv_second = next_index(value_first, value_end)
@@ -11640,6 +11669,10 @@ function construct_field_value_ir(words: List[Text], src: Bytes, name_idx: U64, 
         case error(_):
           return "ERR:E-SH-IR-RANGE"
       end match
+    end if
+    let cfv_let_pos = local_binding_index(let_names, cfv_first)
+    if U64.less_than(cfv_let_pos, sico.list.length(let_names)):
+      return ""
     end if
     let cfv_cell = construct_local_index(words, name_idx, value_first, cfv_first)
     if U64.less_than(cfv_cell, sico.list.length(words)):
@@ -11765,15 +11798,18 @@ end function
 // The instructions come with the construction's own result id, because a
 // field value may take more than one id (a call takes one per argument plus
 // its own), so the caller cannot derive the id from the field count.
-function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, expr_first: U64, expr_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64) returns Text:
+function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parameter_count: U64, expr_first: U64, expr_end: U64, result_id: U64, anchor_idx: U64, anchor_offset: U64, let_names: List[Text], let_ids: List[U64], let_instructions: Text) returns Text:
   let cl_record_name = word_at(words, expr_first)
   let cl_open_idx = next_index(expr_first, expr_end)
   let cl_close_idx = expr_end
   let cl_fields_json = "["
   let cl_field_count = U64.literal(0)
   let cl_next_result = result_id
-  let cl_instructions = ""
+  let cl_instructions = let_instructions
   let cl_emitted = U64.literal(0)
+  if U64.less_than(U64.literal(0), sico.text.length(let_instructions)):
+    set cl_emitted = U64.literal(1)
+  end if
   let cl_provided = sico.text.split_lines("")
   let cl_seg_start = next_index(cl_open_idx, expr_end)
   let cl_segment_ok = true
@@ -11812,9 +11848,14 @@ function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parame
           set cl_value_id = cl_call_id
           set cl_value_ids = cl_call_count
         else:
-          set cl_value_json = construct_field_value_ir(words, src, name_idx, parameter_count, cl_value_first, cl_seg_end, cl_next_result, anchor_idx, anchor_offset)
+          set cl_value_json = construct_field_value_ir(words, src, name_idx, parameter_count, cl_value_first, cl_seg_end, cl_next_result, anchor_idx, anchor_offset, let_names, let_ids)
           if sico.text.starts_with(cl_value_json, "ERR:"):
             return cl_value_json
+          end if
+          if U64.equal(sico.text.length(cl_value_json), U64.literal(0)):
+            let cl_let_pos = local_binding_index(let_names, word_at(words, cl_value_first))
+            set cl_value_id = u64_list_at(let_ids, cl_let_pos, U64.literal(0))
+            set cl_value_ids = U64.literal(0)
           end if
         end if
         let cl_field_record = record_field_type_word(words, cl_record_name, cl_field_name)
@@ -11822,11 +11863,13 @@ function construct_lowering(words: List[Text], src: Bytes, name_idx: U64, parame
         if U64.equal(cl_field_record_len, U64.literal(0)):
           return "ERR:E-SH-IR-CONSTRUCT-FIELD"
         end if
-        if U64.less_than(U64.literal(0), cl_emitted):
-          set cl_instructions = sico.text.concat(cl_instructions, ",")
+        if U64.less_than(U64.literal(0), sico.text.length(cl_value_json)):
+          if U64.less_than(U64.literal(0), cl_emitted):
+            set cl_instructions = sico.text.concat(cl_instructions, ",")
+          end if
+          set cl_instructions = sico.text.concat(cl_instructions, cl_value_json)
+          set cl_emitted = next_index(cl_emitted, cl_emitted)
         end if
-        set cl_instructions = sico.text.concat(cl_instructions, cl_value_json)
-        set cl_emitted = next_index(cl_emitted, cl_emitted)
         if U64.less_than(U64.literal(0), cl_field_count):
           set cl_fields_json = sico.text.concat(cl_fields_json, ",")
         end if
@@ -12038,7 +12081,7 @@ function record_construct_function_ir(words: List[Text], src: Bytes, name_idx: U
         end if
         if is_word(rcf_return_name, rcf_record_name):
           let rcf_expr_bytes = return_expression_start(src, fn_start)
-          let rcf_body = construct_lowering(words, src, name_idx, parameter_count, rcf_expr_first, rcf_close_idx, parameter_count, rcf_expr_first, rcf_expr_bytes)
+          let rcf_body = construct_lowering(words, src, name_idx, parameter_count, rcf_expr_first, rcf_close_idx, parameter_count, rcf_expr_first, rcf_expr_bytes, sico.text.split_lines(""), sico.list.empty[U64](), "")
           if sico.text.starts_with(rcf_body, "ERR:"):
             return rcf_body
           end if
@@ -12162,6 +12205,75 @@ function record_variant_function_ir(words: List[Text], src: Bytes, name_idx: U64
           return rvf_payload_type
         end if
         if is_word(rvf_payload_type, rvf_arm_json):
+          let rvf_let_names = sico.text.split_lines("")
+          let rvf_let_ids = sico.list.empty[U64]()
+          let rvf_let_json = ""
+          let rvf_body_anchor_offset = find_text_from(src, word_at(words, body_from), fn_start)
+          let rvf_let_scan = body_from
+          let rvf_let_next_id = parameter_count
+          let rvf_let_depth = U64.literal(0)
+          let rvf_let_prev = "<body>"
+          while U64.less_than(rvf_let_scan, body_end):
+            if U64.less_than(rvf_let_scan, rvf_return_idx):
+              let rvf_let_word = word_at(words, rvf_let_scan)
+              if is_word(rvf_let_word, "if"):
+                set rvf_let_depth = next_index(rvf_let_depth, rvf_let_depth)
+              else:
+                if is_word(rvf_let_word, "end"):
+                  match U64.checked_sub(rvf_let_depth, U64.literal(1)):
+                    case ok(rvf_let_popped):
+                      set rvf_let_depth = rvf_let_popped
+                    case error(_):
+                      set rvf_let_depth = U64.literal(0)
+                  end match
+                else:
+                  if U64.equal(rvf_let_depth, U64.literal(0)):
+                    if is_word(rvf_let_word, "let"):
+                      if is_word(rvf_let_prev, "<nl>"):
+                        let rvf_let_line = line_end(words, rvf_let_scan)
+                        if construct_let_materializable(words, name_idx, parameter_count, rvf_let_scan, rvf_let_line):
+                          set rvf_let_names = sico.list.append(rvf_let_names, word_at(words, next_index(rvf_let_scan, rvf_let_line)))
+                          set rvf_let_ids = sico.list.append[U64](rvf_let_ids, rvf_let_next_id)
+                          let rvf_lj_base_idx = next_index(next_index(rvf_let_scan, rvf_let_line), rvf_let_line)
+                          let rvf_lj_dot_idx = next_index(rvf_lj_base_idx, rvf_let_line)
+                          let rvf_lj_field_idx = next_index(rvf_lj_dot_idx, rvf_let_line)
+                          let rvf_lj_base = word_at(words, rvf_lj_base_idx)
+                          let rvf_lj_field = word_at(words, rvf_lj_field_idx)
+                          let rvf_lj_param = binding_parameter_index(words, name_idx, rvf_lj_base)
+                          let rvf_lj_record = parameter_type_word(words, name_idx, rvf_lj_param)
+                          let rvf_lj_kind = record_field_kind(words, rvf_lj_record, rvf_lj_field)
+                          let rvf_lj_dot_off = word_span_offset(words, src, rvf_body_anchor_offset, body_from, rvf_lj_dot_idx)
+                          let rvf_lj_field_off = word_span_offset(words, src, rvf_body_anchor_offset, body_from, rvf_lj_field_idx)
+                          let rvf_lj_field_end = rvf_lj_field_off
+                          match U64.checked_add(rvf_lj_field_off, sico.bytes.length(sico.text.encode(rvf_lj_field))):
+                            case ok(rvf_lj_after_field):
+                              set rvf_lj_field_end = rvf_lj_after_field
+                            case error(_):
+                              return "ERR:E-SH-IR-RANGE"
+                          end match
+                          if U64.less_than(U64.literal(0), sico.text.length(rvf_let_json)):
+                            set rvf_let_json = sico.text.concat(rvf_let_json, ",")
+                          end if
+                          set rvf_let_json = sico.text.concat(rvf_let_json, construct_project_instruction_json(rvf_let_next_id, rvf_lj_kind, rvf_lj_param, rvf_lj_field, rvf_lj_dot_off, rvf_lj_field_end))
+                          set rvf_let_next_id = next_index(rvf_let_next_id, rvf_let_next_id)
+                        end if
+                      end if
+                    end if
+                  end if
+                end if
+              end if
+              set rvf_let_prev = word_at(words, rvf_let_scan)
+            end if
+            set rvf_let_scan = next_index(rvf_let_scan, body_end)
+          end while
+          let rvf_let_count = sico.list.length(rvf_let_names)
+          let rvf_construct_first = parameter_count
+          match U64.checked_add(parameter_count, rvf_let_count):
+            case ok(rvf_first_summed):
+              set rvf_construct_first = rvf_first_summed
+            case error(_):
+              return "ERR:E-SH-IR-RANGE"
+          end match
           let rvf_payload_body = ""
           let rvf_payload_result = parameter_count
           let rvf_payload_word = word_at(words, rvf_payload_first)
@@ -12171,9 +12283,9 @@ function record_variant_function_ir(words: List[Text], src: Bytes, name_idx: U64
             if record_declared(words, rvf_payload_word):
               let rvf_payload_open = next_index(rvf_payload_first, rvf_expr_end)
               let rvf_payload_close = matching_close(words, rvf_payload_open, rvf_expr_end)
-              set rvf_payload_body = construct_lowering(words, src, name_idx, parameter_count, rvf_payload_first, rvf_payload_close, parameter_count, rvf_expr_first, rvf_expr_bytes)
+              set rvf_payload_body = construct_lowering(words, src, name_idx, parameter_count, rvf_payload_first, rvf_payload_close, rvf_construct_first, rvf_expr_first, rvf_expr_bytes, rvf_let_names, rvf_let_ids, rvf_let_json)
             else:
-              set rvf_payload_body = construct_field_value_ir(words, src, name_idx, parameter_count, rvf_payload_first, rvf_payload_end, parameter_count, rvf_expr_first, rvf_expr_bytes)
+              set rvf_payload_body = construct_field_value_ir(words, src, name_idx, parameter_count, rvf_payload_first, rvf_payload_end, parameter_count, rvf_expr_first, rvf_expr_bytes, sico.text.split_lines(""), sico.list.empty[U64]())
             end if
           else:
             set rvf_payload_body = rvf_enum_json

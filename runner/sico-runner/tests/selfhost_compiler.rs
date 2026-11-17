@@ -9941,8 +9941,25 @@ fn match_measure_groups(
     byte_limit: usize,
     report_name: &str,
 ) -> Vec<(String, String, MatchSiteOutcome)> {
+    // STEP-0623: a surgical re-freeze probe may restrict the measurement to a
+    // few enclosing functions via `SICO_M22_MATCH_GROUPS` (comma-separated).
+    // The census script merges measured outcomes per group and keeps the
+    // recorded verdict of every group the probe did not measure, so a partial
+    // report refreshes only the touched groups without re-paying the ~130 min
+    // whole-ledger closure.  The default (unset) measures every group.
+    let selected: Option<Vec<String>> = std::env::var("SICO_M22_MATCH_GROUPS").ok().map(|raw| {
+        raw.split(',')
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    });
     let mut actuals: Vec<(String, String, MatchSiteOutcome)> = Vec::new();
     for (path, function, _members) in groups {
+        if let Some(names) = &selected
+            && !names.iter().any(|name| name == function)
+        {
+            continue;
+        }
         let outcome = match_compare_site(path, function, function_limit, byte_limit);
         actuals.push((path.clone(), function.clone(), outcome));
         // STEP-0550 (P2): flush after every group so an interrupted recompute
@@ -9973,8 +9990,8 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
     );
     assert_eq!(
         ledger.sites.len(),
-        403,
-        "the ledger registers the 403 candidate sites"
+        405,
+        "the ledger registers the 405 candidate sites"
     );
 
     // The site list itself must stay derived from the frozen S: every entry
@@ -10115,8 +10132,8 @@ fn every_match_site_is_measured_on_the_component_axis() {
         serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
     assert_eq!(
         ledger.sites.len(),
-        403,
-        "the ledger registers the 403 candidate sites"
+        405,
+        "the ledger registers the 405 candidate sites"
     );
     let skipped: Vec<&str> = ledger
         .sites

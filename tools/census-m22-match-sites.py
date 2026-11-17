@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import sys
@@ -52,7 +53,10 @@ SCHEMA = "sico.m22.match-coverage.v1"
 # the `construct_expression_parts` / `construct_intrinsic_parts` /
 # `construct_field_value_ir` routes to the frozen S, seven of whose `match`
 # statements are `checked_add` heads; the candidate set is now the whole 403.
-EXPECTED_SITES = 403
+# STEP-0623 closed the W3-a variant-construct leading-`let` gap, adding a
+# `construct_let_materializable` scan to `record_variant_function_ir` whose
+# `checked_add` field-offset guard adds two more; the candidate set is 405.
+EXPECTED_SITES = 405
 
 # The files whose whole-file canonical IR differential is pinned by the
 # firmware; a site whose closure is too large leans on that pin.
@@ -169,9 +173,15 @@ def load_ledger() -> dict[str, dict[str, object]]:
 
 
 def load_actuals() -> dict[tuple[str, str], dict[str, str]]:
-    if not ACTUAL.exists():
+    # STEP-0623: a surgical re-freeze probe writes its report under a distinct
+    # name (SICO_M22_MATCH_ACTUAL) so it never clobbers the whole-ledger
+    # actual.json the default recompute produces.  Merge semantics are per
+    # group, so a partial report refreshes only the groups it measured.
+    name = os.environ.get("SICO_M22_MATCH_ACTUAL", "actual.json")
+    report = ACTUAL.with_name(name)
+    if not report.exists():
         return {}
-    data = json.loads(ACTUAL.read_text(encoding="utf-8"))
+    data = json.loads(report.read_text(encoding="utf-8"))
     return {(entry["path"], entry["function"]): entry for entry in data}
 
 
@@ -239,8 +249,9 @@ def main() -> int:
         "source_set": "selfhost/*.sico (frozen S)",
         "rule": (
             "a `match` statement whose head is U64.checked_add, at any parameter "
-            "count -- the 403 candidate sites of the frozen S (the 396 of "
-            "STEP-0536 plus the 7 added by the STEP-0619 construct routes)"
+            "count -- the 405 candidate sites of the frozen S (the 396 of "
+            "STEP-0536 plus the 7 added by the STEP-0619 construct routes and "
+            "the 2 added by the STEP-0623 variant-construct leading-let scan)"
         ),
         "sites": records,
     }
