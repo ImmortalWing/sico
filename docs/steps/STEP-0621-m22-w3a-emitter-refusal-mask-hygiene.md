@@ -62,13 +62,37 @@ Cross-check against the Rust oracle: the oracle's `LocalPlan` builds
 and its `ReadLocal` lowering errors `missing local cell` when
 `cell_slots.get(local)` is absent (`:2722-2723`). So a `read_local` whose cell
 is not backed by a declared `locals` entry is refused by **both** sides — the
-gap is a **guest frontend IR-shape divergence**, not a guest-only emitter hole:
-the guest parser emits cell-indexed `read_local`/`write_local` for `let`
-bindings (tracked in an internal `cell_locals` list, `parser.sico:8098-8102`)
-but never serializes a `locals` member into the canonical IR, so the emitter
-cannot resolve the cell. The oracle frontend, for a straight-line body, lowers
-`let` to a **plain value binding** with no cell at all
-(`sico-ir/src/lower.rs:2739-2746`, `lower_straight_line`).
+gap is a **guest frontend IR-shape divergence**, not a guest-only emitter hole.
+
+**CORRECTION (read-only scout, this session — supersedes the narrower
+"emits a cell but omits the `locals` member" reading):** a deeper scout of
+`parser.sico` shows the divergence is **two compounding defects**, and the
+`let`-statement story is worse than "unbacked cell":
+
+1. The guest is **unconditionally cell-based** — `grep -c '"locals"'
+   parser.sico` = **0**: no route (straight-line or control-flow) ever
+   serializes a `locals` member. Two functions written to the oracle's
+   plain-binding semantics (`straight_let_function_ir` `:22886`,
+   `chained_let_function_ir` `:23140`) exist but have **zero call sites** (dead
+   code).
+2. **The leading `let` in B2/B3/B4 is not cell-backed — it is dropped
+   entirely.** All three take the same `record_variant_function_ir`
+   (`parser.sico:12101`), whose only gate is "exactly one `return` whose
+   expression starts with `ok`/`error`"; it does **not** require a
+   single-statement body, so a leading `let` is accepted and then **silently
+   ignored**. The B4 IR dump confirms it: the `let raw = input.stdin` produces
+   **no instruction at all** (no `write_local`, no `project` for the `let`
+   itself) — only the *use site* emits an unbacked `read_local local:0`.
+
+So B2/B3 are **not** green because the intrinsic result id is referenced
+directly (an assumption this STEP previously recorded); they are green because
+**the bound name is never read back** — the value is silently lost, and their
+IR is **also byte-divergent from the oracle**, just silently. Any fix must
+cover the construct/variant routes (`record_construct_function_ir` `:12009`,
+`record_variant_function_ir` `:12101`, `construct_local_index` `:11196`,
+`construct_local_kind` `:11234`, `construct_expression_parts` `:11316`,
+`construct_field_value_ir` `:11620`), not only `straight_cell_function_ir`
+(`:10164`).
 
 ## 4. Next knife (design grounding, not yet landed)
 
@@ -77,7 +101,8 @@ weighed and the oracle evidence picks one:
 
 - **(a) serialize the tracked cells as the function's `locals` member** —
   rejected. The oracle's straight-line path never puts a `let` in a cell at
-  all: `lower_straight_line` (`sico-ir/src/lower.rs:2739-2746`) does
+  all: `lower_straight_line` (`sico-ir/src/lower.rs:2146-2153`; note the
+  `lower.rs:2739` cited earlier in this STEP was the wrong line) does
   `builder.bindings.insert(name, (value, ty))` and **never touches
   `builder.locals`** (confirmed: zero `builder.locals` references in that
   function), so an oracle straight-line `let` produces **no cell and no
@@ -89,14 +114,22 @@ weighed and the oracle evidence picks one:
   no `write_local`/`read_local`, no `locals` declaration) — **this is the
   aligned direction**. Only general-CFG `let`s (loop body / arm / join) keep
   the cell + `locals` representation, matching `lower_function`'s general path
-  (`:998-1020`).
+  (`:998-1020`) — and note the guest's control-flow routes **also** never
+  serialize `locals`, a second, wider divergence left to a separate slice.
 
-Either way the IR shape must stay byte-equal to the oracle for every frozen
-shape — the 132 byte-exact guards (including cell-based B2/B3, currently green)
-pin this, so the change is a dedicated frontend slice with oracle-differential
-validation, not a drive-by. B4's specific shape (`let raw = input.stdin`, a
-parameter projection bound once and read once on a straight line) must lower to
-a plain binding referencing the projected value id, exactly as the oracle does.
+The IR shape must stay byte-equal to the oracle for every frozen shape — the
+byte-exact guards pin this, so the change is a dedicated frontend slice with
+oracle-differential validation, not a drive-by. B4's specific shape (`let raw =
+input.stdin`, a parameter projection bound once and read once on a straight
+line) must lower to a plain binding referencing the projected value id, exactly
+as the oracle does; and because the binding is currently **dropped**, the fix
+must also make the bound value actually flow to the use site rather than only
+removing the unbacked `read_local`. Scope spans `straight_cell_function_ir`
+(`:10164`), `record_construct_function_ir` (`:12009`),
+`record_variant_function_ir` (`:12101`), the `construct_local_*` /
+`construct_expression_parts` / `construct_field_value_ir` family, and wiring the
+already-oracle-shaped dead code (`straight_let_function_ir` `:22886`,
+`chained_let_function_ir` `:23140`) into `scalar_ir`'s ladder (`:21744`).
 
 ## 5. Validation
 
