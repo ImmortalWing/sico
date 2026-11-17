@@ -398,33 +398,33 @@ end function
 function cg_core_module_hex(ir: Bytes) returns Text:
   let cgmh_functions = cgj_member(ir, U64.literal(0), "functions")
   if U64.equal(cgmh_functions, U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-FUNCTIONS"
   end if
   let cgmh_count = cgs_function_count(ir)
   if U64.equal(cgmh_count, U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-COUNT"
   end if
   let cgmh_data = cgs_data_hex(ir)
   let cgmh_data_len = U64.shr(sico.text.length(cgmh_data), U64.literal(1))
   let cgmh_arena = cgs_arena_base(cgmh_data_len)
   let cgmh_types = cgs_core_types_hex(ir)
   if U64.equal(sico.text.length(cgmh_types), U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-TYPES"
   end if
   let cgmh_funcs = cgs_core_funcs_hex(ir)
   if U64.equal(sico.text.length(cgmh_funcs), U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-FUNCS"
   end if
   let cgmh_exports = cgs_core_exports_hex(ir)
   if U64.equal(sico.text.length(cgmh_exports), U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-EXPORTS"
   end if
   let cgmh_code = cgs_core_code_hex(ir, cgmh_arena)
   if sico.text.starts_with(cgmh_code, "ERR:"):
     return cgmh_code
   end if
   if U64.equal(sico.text.length(cgmh_code), U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-CODE"
   end if
   let core = "0061736d01000000"
   set core = sico.text.concat(core, cg_section_hex(U64.literal(1), cgmh_types))
@@ -448,7 +448,7 @@ function cg_component_hex(ir: Bytes) returns Text:
     return core
   end if
   if U64.equal(sico.text.length(core), U64.literal(0)):
-    return ""
+    return "ERR:E-SH-CG-IR-CORE-MODULE"
   end if
   let component = "0061736d0d000100"
   set component = sico.text.concat(component, cg_section_hex(U64.literal(7), cg_types_script_hex()))
