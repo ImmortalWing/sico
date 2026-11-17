@@ -48,8 +48,11 @@ SCHEMA = "sico.m22.match-coverage.v1"
 # The number of `U64.checked_add` match statements in the frozen S, at any
 # parameter count.  STEP-0534 measured 354 of them behind the parameter-count
 # gate and 42 below it; STEP-0536 removed the gate, so the candidate set is
-# the whole 396.
-EXPECTED_SITES = 396
+# the whole 396.  STEP-0619 closed the W3-a frontend construct gap and added
+# the `construct_expression_parts` / `construct_intrinsic_parts` /
+# `construct_field_value_ir` routes to the frozen S, seven of whose `match`
+# statements are `checked_add` heads; the candidate set is now the whole 403.
+EXPECTED_SITES = 403
 
 # The files whose whole-file canonical IR differential is pinned by the
 # firmware; a site whose closure is too large leans on that pin.
@@ -236,8 +239,8 @@ def main() -> int:
         "source_set": "selfhost/*.sico (frozen S)",
         "rule": (
             "a `match` statement whose head is U64.checked_add, at any parameter "
-            "count -- the 396 candidate sites of the frozen S (42 below the "
-            "removed parameter-count gate and 354 behind it)"
+            "count -- the 403 candidate sites of the frozen S (the 396 of "
+            "STEP-0536 plus the 7 added by the STEP-0619 construct routes)"
         ),
         "sites": records,
     }

@@ -9973,8 +9973,8 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
     );
     assert_eq!(
         ledger.sites.len(),
-        396,
-        "the ledger registers the 396 candidate sites"
+        403,
+        "the ledger registers the 403 candidate sites"
     );
 
     // The site list itself must stay derived from the frozen S: every entry
@@ -10115,8 +10115,8 @@ fn every_match_site_is_measured_on_the_component_axis() {
         serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
     assert_eq!(
         ledger.sites.len(),
-        396,
-        "the ledger registers the 396 candidate sites"
+        403,
+        "the ledger registers the 403 candidate sites"
     );
     let skipped: Vec<&str> = ledger
         .sites
