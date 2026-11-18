@@ -3366,6 +3366,9 @@ function cgs_intrinsic_bit(name: Text) returns U64:
   if cg_is_word(name, "sico.text.trim"):
     return U64.literal(8192)
   end if
+  if cg_is_word(name, "sico.map.empty[Text,U64]"):
+    return U64.literal(32768)
+  end if
   if cg_is_word(name, "sico.u64.to_text"):
     return U64.literal(16384)
   end if
@@ -3517,6 +3520,12 @@ function cgs_helper_index(bytes: Bytes, wanted: Text) returns U64:
   if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.length[U64]"), U64.literal(1)):
     set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
   end if
+  if cg_is_word(wanted, "sico.map.empty[Text,U64]"):
+    return cgs_add(cchi_base, cchi_rank)
+  end if
+  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.map.empty[Text,U64]"), U64.literal(1)):
+    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  end if
   if cg_is_word(wanted, "sico.text.concat"):
     return cgs_add(cchi_base, cchi_rank)
   end if
@@ -3653,6 +3662,10 @@ function cgs_collection_call_hex(bytes: Bytes, run: U64, instr: U64, data: U64, 
   let ccch_known = U64.literal(0)
   let ccch_arg_count = U64.literal(0)
   if cg_is_word(name, "sico.list.empty[U64]"):
+    set ccch_known = U64.literal(1)
+    set ccch_arg_count = U64.literal(0)
+  end if
+  if cg_is_word(name, "sico.map.empty[Text,U64]"):
     set ccch_known = U64.literal(1)
     set ccch_arg_count = U64.literal(0)
   end if
@@ -4050,6 +4063,9 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
     return cgs_u64_to_text_hex(bytes, run, instr, data, result0, vindex)
   end if
   if cg_is_word(cih_name, "sico.list.empty[U64]"):
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+  end if
+  if cg_is_word(cih_name, "sico.map.empty[Text,U64]"):
     return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
   end if
   if cg_is_word(cih_name, "sico.list.get[U64]"):
@@ -7011,6 +7027,10 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_list_length_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
+  let cccsh_map_empty = cgs_intrinsic_present(cccsh_mask, "sico.map.empty[Text,U64]")
+  if U64.equal(cccsh_map_empty, U64.literal(1)):
+    set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
+  end if
   let cccsh_text_join = cgs_intrinsic_present(cccsh_mask, "sico.text.join")
   if U64.equal(cccsh_text_join, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
@@ -7110,6 +7130,14 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_list_length_u64, U64.literal(1)):
     set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_length_u64_hex)
     set cccsh_parts = sico.list.append(cccsh_parts, cccsh_list_length_u64_helper)
+  end if
+  let cccsh_map_empty_helper = cg_collection_empty_helper_body_hex()
+  let cccsh_map_empty_len = sico.text.length(cccsh_map_empty_helper)
+  let cccsh_map_empty_size = U64.shr(cccsh_map_empty_len, U64.literal(1))
+  let cccsh_map_empty_hex = cg_leb_hex(cccsh_map_empty_size)
+  if U64.equal(cccsh_map_empty, U64.literal(1)):
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_map_empty_hex)
+    set cccsh_parts = sico.list.append(cccsh_parts, cccsh_map_empty_helper)
   end if
   let cccsh_helper = cg_concat_helper_body_hex(cccsh_count)
   let cccsh_helper_len = sico.text.length(cccsh_helper)
