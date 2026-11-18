@@ -4048,6 +4048,126 @@ fn sico_run_emits_the_minimal_multiblock_run_component_byte_exactly() {
     );
 }
 
+#[test]
+fn sico_codegen_guest_emits_map_and_list_cell_component_byte_exactly() {
+    let source = concat!(
+        "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\n",
+        "record ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\n",
+        "enum ScriptErrorCode:\n  case InvalidInput\nend enum\n\n",
+        "record ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\n",
+        "function add(left: U64, right: U64) returns U64:\n",
+        "  match U64.checked_add(left, right):\n",
+        "    case ok(value):\n",
+        "      return value\n",
+        "    case error(_):\n",
+        "      return left\n",
+        "  end match\n",
+        "end function\n\n",
+        "function probe_map(src: Text, limit: U64) returns U64:\n",
+        "  let output = sico.text.split_lines(src)\n",
+        "  let blocks = sico.map.empty[Text,U64]()\n",
+        "  let cursor = U64.literal(0)\n",
+        "  let count = U64.literal(0)\n",
+        "  while U64.less_than(cursor, limit):\n",
+        "    let key = sico.u64.to_text(cursor)\n",
+        "    set blocks = sico.map.put[Text,U64](blocks, key, U64.literal(6))\n",
+        "    set output = sico.list.append(output, key)\n",
+        "    match sico.map.get[Text,U64](blocks, key):\n",
+        "      case ok(value):\n",
+        "        set count = add(count, value)\n",
+        "      case error(_):\n",
+        "        set count = count\n",
+        "    end match\n",
+        "    set cursor = add(cursor, U64.literal(1))\n",
+        "  end while\n",
+        "  return count\n",
+        "end function\n\n",
+        "function run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n",
+        "  if U64.equal(probe_map(\"a\", U64.literal(1)), U64.literal(6)):\n",
+        "    return ok(ScriptOutput(stdout: input.stdin, stderr: input.stdin, exit_code: I64.literal(0)))\n",
+        "  end if\n",
+        "  return error(ScriptError(code: ScriptErrorCode.InvalidInput, message: \"bad\"))\n",
+        "end function\n",
+    );
+    let source_file =
+        SourceFile::from_text(SourceId::new(0), "map_probe.sico", source.to_owned()).unwrap();
+    let module = lower_core(&source_file).unwrap();
+    let expected = codegen_oracle::compile_script_program(&module).unwrap();
+    let RunOutcome::Output(output) =
+        run_guest_with_args(source, vec!["--emit-component-hex".into()])
+    else {
+        let diag = run_guest_with_args(source, vec!["--emit-component-hex".into()]);
+        panic!("map and list cell fixture must compile through guest emitter: {diag:?}");
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted map.empty/map.put/map.get + list/map local cell component must equal the Rust backend byte-for-byte"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted map component must pass wasmparser::Validator");
+}
+
+#[test]
+fn sico_compiler_emits_the_whole_formatter_component_byte_exactly() {
+    // M22 W3-a exit gate (AGENTS.md §10.7): the guest compiler emits the
+    // Component for the whole `selfhost/formatter.sico` (827 lines, 30
+    // functions, entry `main`) within the standard guest budget, byte-for-byte
+    // equal to the Rust production compiler output (`sico build --profile
+    // script-v0`), and the emitted Component passes `wasmparser::Validator`.
+    let directory = std::env::temp_dir().join(format!("sico-w3a-formatter-{}", std::process::id()));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir(&directory).unwrap();
+    let source_path = directory.join("formatter.sico");
+    let component_path = directory.join("formatter.component.wasm");
+    std::fs::write(&source_path, FORMATTER_SOURCE).unwrap();
+    let mut cli_stdout = Vec::new();
+    let mut cli_stderr = Vec::new();
+    let exit = sico_cli::run(
+        [
+            std::ffi::OsString::from("sico"),
+            std::ffi::OsString::from("build"),
+            std::ffi::OsString::from("--profile"),
+            std::ffi::OsString::from("script-v0"),
+            std::ffi::OsString::from("--output"),
+            component_path.as_os_str().to_owned(),
+            source_path.as_os_str().to_owned(),
+        ],
+        &mut std::io::empty(),
+        &mut cli_stdout,
+        &mut cli_stderr,
+    );
+    assert_eq!(exit, 0, "{}", String::from_utf8_lossy(&cli_stderr));
+    let expected = std::fs::read(&component_path).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert_eq!(
+        expected.len(),
+        28459,
+        "pinned Rust oracle formatter component size"
+    );
+
+    let RunOutcome::Output(output) =
+        run_guest_with_args(FORMATTER_SOURCE, vec!["--emit-component-hex".into()])
+    else {
+        panic!(
+            "the whole formatter.sico must compile through the guest emitter within the standard budget"
+        );
+    };
+    assert_eq!(output.exit_code, 0, "{:?}", output.stderr);
+    let actual = decode_hex(&output.stdout);
+    assert_eq!(
+        actual, expected,
+        "guest-emitted whole formatter.sico Component must equal the Rust production output byte-for-byte"
+    );
+    wasmparser::Validator::new()
+        .validate_all(&actual)
+        .expect("guest-emitted formatter.sico Component must pass wasmparser::Validator");
+}
+
 const TEXT_TRIM_FIXTURE_SOURCE: &str = "record ScriptInput:\n  field arguments: List[Text]\n  field stdin: Bytes\nend record\n\nrecord ScriptOutput:\n  field stdout: Bytes\n  field stderr: Bytes\n  field exit_code: I64\nend record\n\nenum ScriptErrorCode:\n  case InvalidInput\nend enum\n\nrecord ScriptError:\n  field code: ScriptErrorCode\n  field message: Text\nend record\n\nfunction run(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:\n  let raw_text = sico.bytes.utf8_decode(input.stdin)\n  return ok(ScriptOutput(stdout: sico.text.encode(raw_text), stderr: sico.text.encode(\"\"), exit_code: I64.literal(0)))\nend function\n";
 
 #[test]
@@ -6587,6 +6707,8 @@ fn sico_compiler_lowers_the_step0519_codegen_functions_byte_exactly() {
         "cg_list_append_scalar_helper_body_hex",
         "cg_collection_empty_helper_body_hex",
         "cg_list_get_scalar_helper_body_hex",
+        "cg_map_get_text_u64_helper_body_hex",
+        "cg_map_put_text_u64_helper_body_hex",
         "cg_text_join_helper_body_hex",
         "cg_split_lines_helper_body_hex",
         "cgs_collection_arg_is",

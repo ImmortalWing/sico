@@ -6,6 +6,8 @@
 
 | Step | 状态 | 阶段 | 标题 |
 |---|---|---|---|
+| [STEP-0626](./STEP-0626-m22-w3a-formatter-component-closure-and-hidden-issues-audit.md) | complete / W3-a closed | M22 | W3-a 整份 `formatter.sico` 组件 28,459 B 逐字节等同闭环（486.2e9 fuel）+ MS-081..084 翻转 + 全仓隐藏缺陷与优化方向审计 |
+| [STEP-0625](./STEP-0625-m22-w3a-intrinsic-mask-lowers-fuel-reveals-map-arm-gap.md) | complete | M22 | W3-a intrinsic-membership mask 预计算降燃料 + 揭开 map 系 helper 发射缺口 |
 | [STEP-0573](./STEP-0573-steps-readme-registry-backfill.md) | doc-registry | M22 | steps README 登记欠账补齐（117 行；460↔460 全覆盖校验） |
 | [STEP-0572](./STEP-0572-m22-op-level-fuel-profiling.md) | measurement + tooling | M22 | op 级燃料剖析解阻：编译矩阵裁定（gcc 只挡 check/clippy）+ 函数级采样钩落地 |
 | [STEP-0571](./STEP-0571-m22-w2-nested-generic-list-get-fix.md) | recipe-validated / not-landed | M22 | parser.sico 嵌套泛型 list.get 修复配方验证（2/4 钉转绿）但冻结账本联动门槛未跨，已回退 |

@@ -1289,16 +1289,15 @@ fn five_file_layouts() -> Vec<ModuleLayout> {
         for payload in wasmparser::Parser::new(0).parse_all(module_bytes) {
             match payload {
                 Ok(wasmparser::Payload::CustomSection(custom)) => {
-                    layout
-                        .custom_sections
-                        .push(custom.name().to_owned());
+                    layout.custom_sections.push(custom.name().to_owned());
                     if custom.name() != "name" {
                         continue;
                     }
-                    let mut names = wasmparser::NameSectionReader::new(
-                        wasmparser::BinaryReader::new(custom.data(), 0),
-                    );
-                    while let Some(entry) = names.next() {
+                    let names = wasmparser::NameSectionReader::new(wasmparser::BinaryReader::new(
+                        custom.data(),
+                        0,
+                    ));
+                    for entry in names {
                         let Ok(entry) = entry else {
                             continue;
                         };
@@ -1307,10 +1306,10 @@ fn five_file_layouts() -> Vec<ModuleLayout> {
                                 layout.name = Some(name.to_owned());
                             }
                             wasmparser::Name::Function(map) => {
-                                for naming in map {
-                                    if let Ok(naming) = naming {
-                                        layout.func_names.insert(naming.index, naming.name.to_owned());
-                                    }
+                                for naming in map.into_iter().flatten() {
+                                    layout
+                                        .func_names
+                                        .insert(naming.index, naming.name.to_owned());
                                 }
                             }
                             _ => {}
@@ -1320,10 +1319,13 @@ fn five_file_layouts() -> Vec<ModuleLayout> {
                 Ok(wasmparser::Payload::ImportSection(reader)) => {
                     for group in reader.into_iter().flatten() {
                         for import in group {
-                            if let Ok((_, wasmparser::Import {
-                                ty: wasmparser::TypeRef::Func(_),
-                                ..
-                            })) = import
+                            if let Ok((
+                                _,
+                                wasmparser::Import {
+                                    ty: wasmparser::TypeRef::Func(_),
+                                    ..
+                                },
+                            )) = import
                             {
                                 layout.import_count += 1;
                             }
@@ -1334,22 +1336,16 @@ fn five_file_layouts() -> Vec<ModuleLayout> {
                     layout.defined = reader.count();
                 }
                 Ok(wasmparser::Payload::ExportSection(reader)) => {
-                    for export in reader {
-                        if let Ok(export) = export {
-                            if let wasmparser::ExternalKind::Func = export.kind {
-                                layout
-                                    .exports
-                                    .insert(export.name.to_owned(), export.index);
-                            }
+                    for export in reader.into_iter().flatten() {
+                        if let wasmparser::ExternalKind::Func = export.kind {
+                            layout.exports.insert(export.name.to_owned(), export.index);
                         }
                     }
                 }
                 Ok(wasmparser::Payload::CodeSectionEntry(body)) => {
                     let range = body.range();
                     let func_index = layout.import_count + layout.bodies.len() as u32;
-                    layout
-                        .bodies
-                        .push((func_index, range.start, range.end));
+                    layout.bodies.push((func_index, range.start, range.end));
                 }
                 _ => {}
             }
@@ -1429,7 +1425,10 @@ fn m22_w3a_five_file_code_section_layout() {
             functions.len()
         );
         for (position, function) in functions.iter().enumerate() {
-            println!("M22_W3A_SICO_FILE file={name} order={position} function={}", function.name);
+            println!(
+                "M22_W3A_SICO_FILE file={name} order={position} function={}",
+                function.name
+            );
         }
     }
 }
@@ -1452,7 +1451,10 @@ fn sico_top_functions(text: &str) -> Vec<SicoTopFunction> {
                 end += 1;
             }
             if end < lines.len() && !name.is_empty() {
-                out.push(SicoTopFunction { name, text: lines[index..=end].join("\n") });
+                out.push(SicoTopFunction {
+                    name,
+                    text: lines[index..=end].join("\n"),
+                });
                 index = end + 1;
                 continue;
             }
@@ -1475,7 +1477,7 @@ struct SicoTopFunction {
 #[ignore = "W3-a disassembly probe: exhaustion-frame call targets; run with --ignored"]
 fn m22_w3a_exhaustion_frame_call_targets() {
     let layouts = five_file_layouts();
-    let layout = layouts
+    let _layout = layouts
         .first()
         .expect("the five-file component has one core module");
     let module_bytes = guest_compiler_component();
@@ -1517,9 +1519,7 @@ fn m22_w3a_exhaustion_frame_call_targets() {
             continue;
         }
         let callees = wasm_call_targets(core, core_index);
-        println!(
-            "M22_W3A_CALL frame={frame_index} core#={core_index} callees={callees:?}"
-        );
+        println!("M22_W3A_CALL frame={frame_index} core#={core_index} callees={callees:?}");
     }
 }
 
@@ -1566,10 +1566,7 @@ fn m22_w3a_scan_family_call_graph() {
     // The first body's range (where the defined-function code begins).
     for payload in wasmparser::Parser::new(0).parse_all(core) {
         if let Ok(wasmparser::Payload::CodeSectionEntry(body)) = payload {
-            println!(
-                "M22_W3A_SCAN first_body_range={:?}",
-                body.range()
-            );
+            println!("M22_W3A_SCAN first_body_range={:?}", body.range());
             break;
         }
     }
@@ -1596,16 +1593,12 @@ fn wasm_call_targets(core: &[u8], func_index: u32) -> Vec<u32> {
                             // Tail call: the frame still nests in a backtrace.
                             targets.push(function_index);
                         }
-                        wasmparser::Operator::CallIndirect {
-                            type_index, ..
-                        } => {
+                        wasmparser::Operator::CallIndirect { type_index, .. } => {
                             // Indirect calls carry a type, not a direct target;
                             // record it as a sentinel so the shape is visible.
                             targets.push(u32::MAX - type_index);
                         }
-                        wasmparser::Operator::ReturnCallIndirect {
-                            type_index, ..
-                        } => {
+                        wasmparser::Operator::ReturnCallIndirect { type_index, .. } => {
                             targets.push(u32::MAX - type_index);
                         }
                         _ => {}
@@ -1655,7 +1648,6 @@ fn m22_w3a_fuel_vs_size_curve() {
     }
 }
 
-#[test]
 /// instruction counts, const_string literals, and the canonical IR text size.
 /// This bounds the `cgs_data_offset` O(n²) rescan cost.
 #[test]
@@ -1708,12 +1700,9 @@ fn m22_w3a_whole_formatter_resolve_exhaustion_names() {
     );
     let sources = compiler_sources();
     let (entry_name, entry_text) = sources[0];
-    let entry = sico_source::SourceFile::from_text(
-        sico_source::SourceId::new(0),
-        entry_name,
-        entry_text,
-    )
-    .expect("compiler.sico is a legal source");
+    let entry =
+        sico_source::SourceFile::from_text(sico_source::SourceId::new(0), entry_name, entry_text)
+            .expect("compiler.sico is a legal source");
     let mut import_order: Vec<(&str, &str)> = sources[1..].to_vec();
     import_order.sort_by(|left, right| left.0.cmp(right.0));
     let import_files: Vec<(&str, sico_source::SourceFile)> = import_order
@@ -1733,14 +1722,21 @@ fn m22_w3a_whole_formatter_resolve_exhaustion_names() {
         .collect();
     let imports: Vec<sico_ir::ModuleImport> = import_files
         .iter()
-        .map(|(name, source)| sico_ir::ModuleImport { name: *name, source })
+        .map(|(name, source)| sico_ir::ModuleImport { name, source })
         .collect();
-    let module = sico_ir::lower_core_modules(&entry, &imports, &[])
-        .expect("the five-file program lowers");
+    let module =
+        sico_ir::lower_core_modules(&entry, &imports, &[]).expect("the five-file program lowers");
     let mut by_id: Vec<&sico_ir::Function> = module.functions.iter().collect();
     by_id.sort_by_key(|function| function.id.0);
-    let names: Vec<&str> = by_id.iter().map(|function| function.name.as_str()).collect();
-    println!("M22_W3A_NAME ir_functions={} names={}", names.len(), names.len());
+    let names: Vec<&str> = by_id
+        .iter()
+        .map(|function| function.name.as_str())
+        .collect();
+    println!(
+        "M22_W3A_NAME ir_functions={} names={}",
+        names.len(),
+        names.len()
+    );
     // Anchor check: the exported entry function's core index must equal the IR
     // index of that function IF the wasm emits in FunctionId order with ids
     // 1..N mapping to core indices 0..N-1.
@@ -1813,12 +1809,9 @@ fn m22_w3a_whole_formatter_resolve_exhaustion_names() {
 fn m22_w3a_five_file_ir_function_order() {
     let sources = compiler_sources();
     let (entry_name, entry_text) = sources[0];
-    let entry = sico_source::SourceFile::from_text(
-        sico_source::SourceId::new(0),
-        entry_name,
-        entry_text,
-    )
-    .expect("compiler.sico is a legal source");
+    let entry =
+        sico_source::SourceFile::from_text(sico_source::SourceId::new(0), entry_name, entry_text)
+            .expect("compiler.sico is a legal source");
     // Imports in the CLI's deterministic order. The linker stores discovered
     // files in a `BTreeMap` keyed by module name, so the CLI's `imports` order
     // is the sorted module-name order, not the `use` statement order.
@@ -1843,10 +1836,10 @@ fn m22_w3a_five_file_ir_function_order() {
         .collect();
     let imports: Vec<sico_ir::ModuleImport> = import_files
         .iter()
-        .map(|(name, source)| sico_ir::ModuleImport { name: *name, source })
+        .map(|(name, source)| sico_ir::ModuleImport { name, source })
         .collect();
-    let module = sico_ir::lower_core_modules(&entry, &imports, &[])
-        .expect("the five-file program lowers");
+    let module =
+        sico_ir::lower_core_modules(&entry, &imports, &[]).expect("the five-file program lowers");
     println!("M22_W3A_IR functions={}", module.functions.len());
     // FunctionId order (authoritative for the wasm layout if codegen emits in
     // FunctionId order); sorted so the probe is robust to Vec order.
@@ -1907,16 +1900,19 @@ fn m22_w3a_whole_formatter_fuel_ladder() {
         pool.release(prepared);
         let (outcome, trace) = result.expect("input bounds hold");
         let mut top = String::from("none");
-        if let RunOutcome::FuelExhausted = outcome {
-            if let Some(frame) = trace.exhaustion.first() {
-                let index = frame.function_index as usize;
-                let name = names
-                    .get(index)
-                    .cloned()
-                    .unwrap_or_else(|| format!("core#{index}"));
-                top = format!("{name} (core#{index}) offset={:?}", frame.instruction_offset);
-                *histogram.entry(name).or_insert(0) += 1;
-            }
+        if let RunOutcome::FuelExhausted = outcome
+            && let Some(frame) = trace.exhaustion.first()
+        {
+            let index = frame.function_index as usize;
+            let name = names
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| format!("core#{index}"));
+            top = format!(
+                "{name} (core#{index}) offset={:?}",
+                frame.instruction_offset
+            );
+            *histogram.entry(name).or_insert(0) += 1;
         }
         println!(
             "M22_W3A_LADDER budget={budget} consumed={:?} wall={wall:.3?} outcome={} top={top}",
@@ -1968,9 +1964,7 @@ fn m22_w3a_emission_fuel_for_completing_module() {
         pool.release(prepared);
         let (outcome, trace) = result.expect("input bounds hold");
         let emitted = match &outcome {
-            RunOutcome::Output(output) if output.exit_code == 0 => {
-                decode_hex(&output.stdout).len()
-            }
+            RunOutcome::Output(output) if output.exit_code == 0 => decode_hex(&output.stdout).len(),
             _ => 0,
         };
         println!(
