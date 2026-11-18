@@ -5477,12 +5477,13 @@ function cgs_core_types_hex(bytes: Bytes) returns Text:
   if U64.equal(cctsh_count, U64.literal(0)):
     return ""
   end if
-  let cctsh_equal = cgs_module_has_intrinsic(bytes, "sico.bytes.equal")
-  let cctsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.utf8_decode")
+  let cctsh_mask = cgs_intrinsic_mask(bytes)
+  let cctsh_equal = cgs_intrinsic_present(cctsh_mask, "sico.bytes.equal")
+  let cctsh_utf8 = cgs_intrinsic_present(cctsh_mask, "sico.bytes.utf8_decode")
   if U64.equal(cctsh_utf8, U64.literal(0)):
-    set cctsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.is_utf8")
+    set cctsh_utf8 = cgs_intrinsic_present(cctsh_mask, "sico.bytes.is_utf8")
   end if
-  let cctsh_concat = cgs_module_has_intrinsic(bytes, "sico.text.concat")
+  let cctsh_concat = cgs_intrinsic_present(cctsh_mask, "sico.text.concat")
   let cctsh_total = cgs_add(cctsh_count, U64.literal(3))
   if U64.equal(cctsh_equal, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
@@ -5493,47 +5494,47 @@ function cgs_core_types_hex(bytes: Bytes) returns Text:
   if U64.equal(cctsh_concat, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_length = cgs_module_has_intrinsic(bytes, "sico.text.length")
+  let cctsh_length = cgs_intrinsic_present(cctsh_mask, "sico.text.length")
   if U64.equal(cctsh_length, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_starts = cgs_module_has_intrinsic(bytes, "sico.text.starts_with")
+  let cctsh_starts = cgs_intrinsic_present(cctsh_mask, "sico.text.starts_with")
   if U64.equal(cctsh_starts, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_trim = cgs_module_has_intrinsic(bytes, "sico.text.trim")
+  let cctsh_trim = cgs_intrinsic_present(cctsh_mask, "sico.text.trim")
   if U64.equal(cctsh_trim, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_u64 = cgs_module_has_intrinsic(bytes, "sico.u64.to_text")
+  let cctsh_u64 = cgs_intrinsic_present(cctsh_mask, "sico.u64.to_text")
   if U64.equal(cctsh_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  let cctsh_list_append = cgs_intrinsic_present(cctsh_mask, "sico.list.append")
   if U64.equal(cctsh_list_append, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  let cctsh_list_append_u64 = cgs_intrinsic_present(cctsh_mask, "sico.list.append[U64]")
   if U64.equal(cctsh_list_append_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  let cctsh_list_empty_u64 = cgs_intrinsic_present(cctsh_mask, "sico.list.empty[U64]")
   if U64.equal(cctsh_list_empty_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  let cctsh_list_get_u64 = cgs_intrinsic_present(cctsh_mask, "sico.list.get[U64]")
   if U64.equal(cctsh_list_get_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_list_length_u64 = cgs_module_has_intrinsic(bytes, "sico.list.length[U64]")
+  let cctsh_list_length_u64 = cgs_intrinsic_present(cctsh_mask, "sico.list.length[U64]")
   if U64.equal(cctsh_list_length_u64, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  let cctsh_text_join = cgs_intrinsic_present(cctsh_mask, "sico.text.join")
   if U64.equal(cctsh_text_join, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
-  let cctsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  let cctsh_split_lines = cgs_intrinsic_present(cctsh_mask, "sico.text.split_lines")
   if U64.equal(cctsh_split_lines, U64.literal(1)):
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
@@ -5606,12 +5607,13 @@ function cgs_core_funcs_hex(bytes: Bytes) returns Text:
   if U64.equal(ccfsh_count, U64.literal(0)):
     return ""
   end if
-  let ccfsh_equal = cgs_module_has_intrinsic(bytes, "sico.bytes.equal")
-  let ccfsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.utf8_decode")
+  let ccfsh_mask = cgs_intrinsic_mask(bytes)
+  let ccfsh_equal = cgs_intrinsic_present(ccfsh_mask, "sico.bytes.equal")
+  let ccfsh_utf8 = cgs_intrinsic_present(ccfsh_mask, "sico.bytes.utf8_decode")
   if U64.equal(ccfsh_utf8, U64.literal(0)):
-    set ccfsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.is_utf8")
+    set ccfsh_utf8 = cgs_intrinsic_present(ccfsh_mask, "sico.bytes.is_utf8")
   end if
-  let ccfsh_concat = cgs_module_has_intrinsic(bytes, "sico.text.concat")
+  let ccfsh_concat = cgs_intrinsic_present(ccfsh_mask, "sico.text.concat")
   let ccfsh_total = cgs_add(ccfsh_count, U64.literal(3))
   if U64.equal(ccfsh_equal, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
@@ -5622,47 +5624,47 @@ function cgs_core_funcs_hex(bytes: Bytes) returns Text:
   if U64.equal(ccfsh_concat, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_length = cgs_module_has_intrinsic(bytes, "sico.text.length")
+  let ccfsh_length = cgs_intrinsic_present(ccfsh_mask, "sico.text.length")
   if U64.equal(ccfsh_length, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_starts = cgs_module_has_intrinsic(bytes, "sico.text.starts_with")
+  let ccfsh_starts = cgs_intrinsic_present(ccfsh_mask, "sico.text.starts_with")
   if U64.equal(ccfsh_starts, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_trim = cgs_module_has_intrinsic(bytes, "sico.text.trim")
+  let ccfsh_trim = cgs_intrinsic_present(ccfsh_mask, "sico.text.trim")
   if U64.equal(ccfsh_trim, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_u64 = cgs_module_has_intrinsic(bytes, "sico.u64.to_text")
+  let ccfsh_u64 = cgs_intrinsic_present(ccfsh_mask, "sico.u64.to_text")
   if U64.equal(ccfsh_u64, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  let ccfsh_list_append = cgs_intrinsic_present(ccfsh_mask, "sico.list.append")
   if U64.equal(ccfsh_list_append, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  let ccfsh_list_append_u64 = cgs_intrinsic_present(ccfsh_mask, "sico.list.append[U64]")
   if U64.equal(ccfsh_list_append_u64, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  let ccfsh_list_empty_u64 = cgs_intrinsic_present(ccfsh_mask, "sico.list.empty[U64]")
   if U64.equal(ccfsh_list_empty_u64, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  let ccfsh_list_get_u64 = cgs_intrinsic_present(ccfsh_mask, "sico.list.get[U64]")
   if U64.equal(ccfsh_list_get_u64, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_list_length_u64 = cgs_module_has_intrinsic(bytes, "sico.list.length[U64]")
+  let ccfsh_list_length_u64 = cgs_intrinsic_present(ccfsh_mask, "sico.list.length[U64]")
   if U64.equal(ccfsh_list_length_u64, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  let ccfsh_text_join = cgs_intrinsic_present(ccfsh_mask, "sico.text.join")
   if U64.equal(ccfsh_text_join, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
-  let ccfsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  let ccfsh_split_lines = cgs_intrinsic_present(ccfsh_mask, "sico.text.split_lines")
   if U64.equal(ccfsh_split_lines, U64.literal(1)):
     set ccfsh_total = cgs_add(ccfsh_total, U64.literal(1))
   end if
@@ -6956,12 +6958,13 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_count, U64.literal(0)):
     return ""
   end if
-  let cccsh_equal = cgs_module_has_intrinsic(bytes, "sico.bytes.equal")
-  let cccsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.utf8_decode")
+  let cccsh_mask = cgs_intrinsic_mask(bytes)
+  let cccsh_equal = cgs_intrinsic_present(cccsh_mask, "sico.bytes.equal")
+  let cccsh_utf8 = cgs_intrinsic_present(cccsh_mask, "sico.bytes.utf8_decode")
   if U64.equal(cccsh_utf8, U64.literal(0)):
-    set cccsh_utf8 = cgs_module_has_intrinsic(bytes, "sico.bytes.is_utf8")
+    set cccsh_utf8 = cgs_intrinsic_present(cccsh_mask, "sico.bytes.is_utf8")
   end if
-  let cccsh_concat = cgs_module_has_intrinsic(bytes, "sico.text.concat")
+  let cccsh_concat = cgs_intrinsic_present(cccsh_mask, "sico.text.concat")
   let cccsh_total = cgs_add(cccsh_count, U64.literal(3))
   if U64.equal(cccsh_equal, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
@@ -6972,47 +6975,47 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   if U64.equal(cccsh_concat, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_length = cgs_module_has_intrinsic(bytes, "sico.text.length")
+  let cccsh_length = cgs_intrinsic_present(cccsh_mask, "sico.text.length")
   if U64.equal(cccsh_length, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_starts = cgs_module_has_intrinsic(bytes, "sico.text.starts_with")
+  let cccsh_starts = cgs_intrinsic_present(cccsh_mask, "sico.text.starts_with")
   if U64.equal(cccsh_starts, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_trim = cgs_module_has_intrinsic(bytes, "sico.text.trim")
+  let cccsh_trim = cgs_intrinsic_present(cccsh_mask, "sico.text.trim")
   if U64.equal(cccsh_trim, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_u64 = cgs_module_has_intrinsic(bytes, "sico.u64.to_text")
+  let cccsh_u64 = cgs_intrinsic_present(cccsh_mask, "sico.u64.to_text")
   if U64.equal(cccsh_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_list_append = cgs_module_has_intrinsic(bytes, "sico.list.append")
+  let cccsh_list_append = cgs_intrinsic_present(cccsh_mask, "sico.list.append")
   if U64.equal(cccsh_list_append, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_list_append_u64 = cgs_module_has_intrinsic(bytes, "sico.list.append[U64]")
+  let cccsh_list_append_u64 = cgs_intrinsic_present(cccsh_mask, "sico.list.append[U64]")
   if U64.equal(cccsh_list_append_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_list_empty_u64 = cgs_module_has_intrinsic(bytes, "sico.list.empty[U64]")
+  let cccsh_list_empty_u64 = cgs_intrinsic_present(cccsh_mask, "sico.list.empty[U64]")
   if U64.equal(cccsh_list_empty_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_list_get_u64 = cgs_module_has_intrinsic(bytes, "sico.list.get[U64]")
+  let cccsh_list_get_u64 = cgs_intrinsic_present(cccsh_mask, "sico.list.get[U64]")
   if U64.equal(cccsh_list_get_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_list_length_u64 = cgs_module_has_intrinsic(bytes, "sico.list.length[U64]")
+  let cccsh_list_length_u64 = cgs_intrinsic_present(cccsh_mask, "sico.list.length[U64]")
   if U64.equal(cccsh_list_length_u64, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_text_join = cgs_module_has_intrinsic(bytes, "sico.text.join")
+  let cccsh_text_join = cgs_intrinsic_present(cccsh_mask, "sico.text.join")
   if U64.equal(cccsh_text_join, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
-  let cccsh_split_lines = cgs_module_has_intrinsic(bytes, "sico.text.split_lines")
+  let cccsh_split_lines = cgs_intrinsic_present(cccsh_mask, "sico.text.split_lines")
   if U64.equal(cccsh_split_lines, U64.literal(1)):
     set cccsh_total = cgs_add(cccsh_total, U64.literal(1))
   end if
