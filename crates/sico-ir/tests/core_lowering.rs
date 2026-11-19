@@ -749,13 +749,27 @@ fn all_thirty_three_invalid_cases_stop_before_ir_support_dispatch() {
             text,
         )
         .unwrap();
+        if path
+            .to_string_lossy()
+            .contains("zero-indent-recovery-declaration")
+        {
+            // IND-003 is a parse-level reject (MISSING_FUNCTION_CLOSE, E1001): it has no AST/HIR.
+            assert!(matches!(
+                lower_core(&source).unwrap_err(),
+                CoreLowerError::Frontend(_)
+            ));
+            continue;
+        }
         let CoreLowerError::Semantic(diagnostics) = lower_core(&source).unwrap_err() else {
             panic!("{case} reached IR support dispatch")
         };
-        assert_eq!(diagnostics.len(), 1, "{case}");
+        // IND-004/IND-005 (column-0 body lines) report the oracle code first but may carry follow-on diagnostics.
+        if !case.starts_with("IND-") {
+            assert_eq!(diagnostics.len(), 1, "{case}");
+        }
         assert_eq!(diagnostics[0].code, expected[case.as_str()], "{case}");
     }
-    assert_eq!(rejected, 33);
+    assert_eq!(rejected, 38);
 }
 
 #[test]

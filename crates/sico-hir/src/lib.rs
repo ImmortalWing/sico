@@ -412,6 +412,14 @@ mod tests {
                 &fs::read(path).unwrap(),
             )
             .unwrap();
+            if path
+                .to_string_lossy()
+                .contains("zero-indent-recovery-declaration")
+            {
+                // IND-003 is a parse-level reject (MISSING_FUNCTION_CLOSE, E1001): it has no AST/HIR.
+                assert!(lower(&source).is_err());
+                continue;
+            }
             let module = lower(&source).unwrap();
             assert_eq!(module, lower(&source).unwrap());
             let ids: Vec<_> = module.source_map().keys().map(|id| id.get()).collect();

@@ -5096,7 +5096,16 @@ mod tests {
                 &fs::read(path).unwrap(),
             )
             .unwrap();
+            if path_text.contains("zero-indent-recovery-declaration") {
+                // IND-003 is a parse-level reject (MISSING_FUNCTION_CLOSE, E1001): it has no AST/HIR.
+                assert!(analyze(&source).is_err());
+                continue;
+            }
             let analysis = analyze(&source).unwrap();
+            if path_text.contains("indentation") && path_text.contains("invalid") {
+                // IND-004/IND-005 are owned by the semantic oracle (E4001/E7002).
+                continue;
+            }
             if !path_text.contains("numbers-units") && !path_text.contains("nominal-invariants") {
                 assert!(
                     analysis

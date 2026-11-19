@@ -1202,6 +1202,15 @@ mod tests {
             )
             .unwrap();
             let parsed = parse(&source);
+            if path
+                .to_string_lossy()
+                .contains("zero-indent-recovery-declaration")
+            {
+                // IND-003 is a parse-level reject (MISSING_FUNCTION_CLOSE, E1001): it has no AST/HIR.
+                assert!(!parsed.is_success(), "{}", path.display());
+                designed_reject += 1;
+                continue;
+            }
             assert!(
                 parsed.is_success(),
                 "{}: {:?}",
@@ -1231,7 +1240,7 @@ mod tests {
                 designed_reject += 1;
             }
         }
-        assert_eq!((designed_accept, designed_reject), (25, 33));
+        assert_eq!((designed_accept, designed_reject), (28, 38));
         let snapshot = format!("{}\n", shapes.join("\n"));
         if std::env::var_os("SICO_DUMP_SHAPES").is_some() {
             print!("{snapshot}");

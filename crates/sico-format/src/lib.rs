@@ -303,6 +303,14 @@ mod tests {
                 &fs::read(path).unwrap(),
             )
             .unwrap();
+            if path
+                .to_string_lossy()
+                .contains("zero-indent-recovery-declaration")
+            {
+                // IND-003 is a parse-level reject (MISSING_FUNCTION_CLOSE, E1001): it has no AST/HIR.
+                assert!(format(&original).is_err());
+                continue;
+            }
             let original_shape = parse(&original).ast().unwrap().shape();
             let formatted = format(&original).unwrap();
             let canonical = SourceFile::from_text(

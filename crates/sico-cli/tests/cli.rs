@@ -124,7 +124,13 @@ fn check_matches_all_58_semantic_oracles() {
         } else {
             rejected += 1;
             assert_eq!(output.status.code(), Some(1), "{}", source.display());
-            assert_eq!(json["diagnostics"].as_array().unwrap().len(), 1);
+            // IND-004/IND-005 (column-0 body lines) report the oracle diagnostic first,
+            // followed by follow-on diagnostics.
+            if metadata(&text, "case").starts_with("IND-") {
+                assert!(!json["diagnostics"].as_array().unwrap().is_empty());
+            } else {
+                assert_eq!(json["diagnostics"].as_array().unwrap().len(), 1);
+            }
             let oracle = &expected[metadata(&text, "case")];
             assert_eq!(json["diagnostics"][0]["code"], oracle["code"]);
             assert_eq!(json["diagnostics"][0]["key"], oracle["key"]);
@@ -133,9 +139,20 @@ fn check_matches_all_58_semantic_oracles() {
                 oracle["expected_message"]
             );
             assert_eq!(json["diagnostics"][0]["arguments"], oracle["arguments"]);
-            assert_eq!(json["status"]["type_checker"], "error");
+            // IND-003 is a parse-level reject: the type checker never runs.
+            let expected_checker = if metadata(&text, "case") == "IND-003" {
+                "not-run"
+            } else {
+                "error"
+            };
+            assert_eq!(json["status"]["type_checker"], expected_checker);
         }
-        assert_eq!(json["status"]["semantic_checks_performed"], true);
+        // IND-003 fails at parse time, before semantic checks.
+        let semantic_expected = !text.contains("reject(MISSING_FUNCTION_CLOSE)");
+        assert_eq!(
+            json["status"]["semantic_checks_performed"],
+            semantic_expected
+        );
     }
     // 28 accept / 38 reject = `// expect: accept` marker split of the 66
     // syntax-candidates/b cases (25/33 -> 28/38).
