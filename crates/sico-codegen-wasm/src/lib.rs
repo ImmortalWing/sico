@@ -473,6 +473,7 @@ fn component_extern_name(name: &str) -> String {
 
 /// Script program emission context: the WIT-driven ABI plus the module-wide
 /// static data segment and bounded arena layout.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ScriptEmit {
     abi: ScriptAbi,
     data_offsets: BTreeMap<Vec<u8>, u32>,
@@ -498,6 +499,22 @@ pub(crate) struct ScriptEmit {
     /// Absolute data-segment address of the http-error case-name table
     /// (eight pointer+length pairs in WIT declaration order), when used.
     http2_error_table: Option<u32>,
+    /// STEP-0627: the program calls a `sico.picker.*` intrinsic (path-picker).
+    picker: bool,
+    /// Core function indices of the used `sico.picker.*` imports, by intrinsic.
+    picker_indices: BTreeMap<&'static str, u32>,
+    /// Absolute data-segment address of the picker-error case-name table
+    /// (four pointer+length pairs in WIT declaration order), when used.
+    picker_error_table: Option<u32>,
+    /// STEP-0628: the program calls a `sico.ui.*` intrinsic (ui@1.0.0).
+    ui: bool,
+    /// Core function indices of the used `sico.ui.*` imports, by intrinsic.
+    ui_indices: BTreeMap<&'static str, u32>,
+    /// Absolute data-segment address of the ui-error case-name table
+    /// (six pointer+length pairs in WIT declaration order), when used.
+    ui_error_table: Option<u32>,
+    /// Absolute data-segment address of the `poll_event` event-kind table
+    /// (four pointer+length pairs), when used.
     /// RFC-0039 §2.4 (STEP-0147): user-WIT package imports, deterministic
     /// (instance-name, function-name) order, with their core indices.
     user_imports: Vec<canonical::UserImport>,
@@ -659,6 +676,8 @@ fn compile_script_program_parts(
     let mut streams = canonical::StreamUse::default();
     let mut http = false;
     let mut http2 = false;
+    let mut picker = false;
+    let mut ui = false;
     let mut user_call_names = std::collections::BTreeSet::new();
     for function in &module.functions {
         for block in &function.blocks {
@@ -679,6 +698,20 @@ fn compile_script_program_parts(
                         "sico.stream.close_output" => streams.close_output = true,
                         "sico.http.request" => http = true,
                         "sico.http2.request" => http2 = true,
+                        "sico.picker.open" | "sico.picker.save" => picker = true,
+                        "sico.ui.window"
+                        | "sico.ui.column"
+                        | "sico.ui.row"
+                        | "sico.ui.text"
+                        | "sico.ui.button"
+                        | "sico.ui.dropdown"
+                        | "sico.ui.image_preview"
+                        | "sico.ui.progress"
+                        | "sico.ui.set_text"
+                        | "sico.ui.set_progress"
+                        | "sico.ui.draw_image"
+                        | "sico.ui.poll_event"
+                        | "sico.ui.run" => ui = true,
                         _ => {}
                     }
                     // RFC-0039 §2.4 (STEP-0147): user-WIT package imports
@@ -774,14 +807,67 @@ fn compile_script_program_parts(
         }
         http2_error_table = Some(base);
     }
+    // The picker-error case-name table mirrors the http2 table: four
+    // absolute pointer+length pairs in WIT declaration order, then the
+    // case-name bytes, aligned to 4.
+    let mut picker_error_table = None;
+    if picker {
+        let base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 3) & !3;
+        while u64::try_from(data_bytes.len()).unwrap_or(u64::MAX) < u64::from(base) {
+            data_bytes.push(0);
+        }
+        let mut cursor = base
+            + u32::try_from(canonical::PICKER_ERROR_TEXTS.len() * 8)
+                .map_err(|_| unsupported("run", "picker error table exceeds arena"))?;
+        for text in canonical::PICKER_ERROR_TEXTS {
+            data_bytes.extend_from_slice(&cursor.to_le_bytes());
+            data_bytes.extend_from_slice(&u32::try_from(text.len()).unwrap_or(0).to_le_bytes());
+            cursor += u32::try_from(text.len()).unwrap_or(0);
+        }
+        for text in canonical::PICKER_ERROR_TEXTS {
+            data_bytes.extend_from_slice(text.as_bytes());
+        }
+        picker_error_table = Some(base);
+    }
+    // The ui-error case-name table and the poll_event event-kind table mirror
+    // the picker table: absolute pointer+length pairs in wire order, then the
+    // bytes, aligned to 4.
+    let mut ui_error_table = None;
+    if ui {
+        let base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 3) & !3;
+        while u64::try_from(data_bytes.len()).unwrap_or(u64::MAX) < u64::from(base) {
+            data_bytes.push(0);
+        }
+        let mut cursor = base
+            + u32::try_from(canonical::UI_ERROR_TEXTS.len() * 8)
+                .map_err(|_| unsupported("run", "ui error table exceeds arena"))?;
+        for text in canonical::UI_ERROR_TEXTS {
+            data_bytes.extend_from_slice(&cursor.to_le_bytes());
+            data_bytes.extend_from_slice(&u32::try_from(text.len()).unwrap_or(0).to_le_bytes());
+            cursor += u32::try_from(text.len()).unwrap_or(0);
+        }
+        for text in canonical::UI_ERROR_TEXTS {
+            data_bytes.extend_from_slice(text.as_bytes());
+        }
+        ui_error_table = Some(base);
+        // RFC-0056 D7 (STEP-0632): the poll_event event-kind Text table is
+        // retired — the emitter binds the canonical ABI area into the typed
+        // `Option[ui_event]` union directly (no guest-visible Text vocab).
+    }
     let arena_base = (u32::try_from(data_bytes.len()).unwrap_or(0) + 7) & !7;
-    let import_count =
-        u32::from(fs.any() || streams.any() || http || http2 || !user_imports.is_empty())
-            + (fs.import_count() - u32::from(fs.any()))
-            + streams.import_count()
-            + u32::from(http)
-            + u32::from(http2)
-            + user_function_count;
+    let import_count = u32::from(
+        fs.any() || streams.any() || http || http2 || picker || ui || !user_imports.is_empty(),
+    ) + (fs.import_count() - u32::from(fs.any()))
+        + streams.import_count()
+        + u32::from(http)
+        + u32::from(http2)
+        + u32::try_from(canonical::PICKER_IMPORTS.len())
+            .map_err(|_| unsupported("run", "picker import table exceeds arena"))?
+            * u32::from(picker)
+        + u32::try_from(canonical::UI_IMPORTS.len())
+            .map_err(|_| unsupported("run", "ui import table exceeds arena"))?
+            * u32::from(ui)
+        + user_function_count;
     let function_indices = module
         .functions
         .iter()
@@ -802,6 +888,8 @@ fn compile_script_program_parts(
     let mut stream_indices = BTreeMap::new();
     let mut http_index = None;
     let mut http2_index = None;
+    let mut picker_indices: BTreeMap<&'static str, u32> = BTreeMap::new();
+    let mut ui_indices: BTreeMap<&'static str, u32> = BTreeMap::new();
     let mut user_indices: BTreeMap<String, u32> = BTreeMap::new();
     {
         let mut next = 1_u32; // core import 0 is the transport realloc
@@ -824,6 +912,24 @@ fn compile_script_program_parts(
         if http2 {
             http2_index = Some(next);
             next += 1;
+        }
+        if picker {
+            for (index, name) in ["sico.picker.open", "sico.picker.save"]
+                .into_iter()
+                .enumerate()
+            {
+                picker_indices.insert(name, next + u32::try_from(index).unwrap_or(u32::MAX));
+            }
+            next += u32::try_from(canonical::PICKER_IMPORTS.len()).unwrap_or(u32::MAX);
+        }
+        if ui {
+            for (index, import) in canonical::UI_IMPORTS.iter().enumerate() {
+                ui_indices.insert(
+                    import.intrinsic,
+                    next + u32::try_from(index).unwrap_or(u32::MAX),
+                );
+            }
+            next += u32::try_from(canonical::UI_IMPORTS.len()).unwrap_or(u32::MAX);
         }
         for import in &user_imports {
             for function in &import.functions {
@@ -873,12 +979,21 @@ fn compile_script_program_parts(
         http2,
         http2_index,
         http2_error_table,
+        picker,
+        picker_indices,
+        picker_error_table,
+        ui,
+        ui_indices,
+        ui_error_table,
         user_imports,
         user_indices,
     };
     // RFC-0047 D4 (STEP-0272): user record declarations flatten to their
     // field sequence before any layout planning consumes the ABI.
     emit.abi.register_user_records(&module.records);
+    // RFC-0056 D2: user enum declarations register their internal union
+    // layout (tag + widest payload). Boundary flattening is unaffected.
+    emit.abi.register_user_enums(&module.enums);
     let variant_tags = VariantTags::new(module, Some(&emit.abi))?;
     let core = build_script_core(module, run, &emit, &function_indices, &variant_tags)?;
     let component = canonical::wrap_script_component(
@@ -887,9 +1002,11 @@ fn compile_script_program_parts(
         streams,
         http,
         http2,
+        picker,
+        ui,
         &emit.user_imports,
         arena_base,
-    );
+    )?;
     Ok((core, component))
 }
 
@@ -943,11 +1060,21 @@ fn build_script_core(
             || emit.streams.any()
             || emit.http
             || emit.http2
+            || emit.picker
+            || emit.ui
             || !emit.user_imports.is_empty(),
     ) + (emit.fs.import_count() - u32::from(emit.fs.any()))
         + emit.streams.import_count()
         + u32::from(emit.http)
         + u32::from(emit.http2)
+        + u32::try_from(canonical::PICKER_IMPORTS.len())
+            .map_err(|_| unsupported("run", "picker import table exceeds arena"))
+            .unwrap_or(u32::MAX)
+            * u32::from(emit.picker)
+        + u32::try_from(canonical::UI_IMPORTS.len())
+            .map_err(|_| unsupported("run", "ui import table exceeds arena"))
+            .unwrap_or(u32::MAX)
+            * u32::from(emit.ui)
         + emit
             .user_imports
             .iter()
@@ -957,6 +1084,8 @@ fn build_script_core(
         || emit.streams.any()
         || emit.http
         || emit.http2
+        || emit.picker
+        || emit.ui
         || !emit.user_imports.is_empty()
     {
         // Import types occupy type indices 0..import_count so the
@@ -1019,6 +1148,36 @@ fn build_script_core(
                     .collect::<Vec<_>>(),
                 [],
             );
+        }
+        if emit.picker {
+            for import in canonical::PICKER_IMPORTS {
+                types.ty().function(
+                    import
+                        .core_params
+                        .iter()
+                        .map(|flat| match flat {
+                            Flat::I32 => ValType::I32,
+                            Flat::I64 => ValType::I64,
+                        })
+                        .collect::<Vec<_>>(),
+                    [],
+                );
+            }
+        }
+        if emit.ui {
+            for import in canonical::UI_IMPORTS {
+                types.ty().function(
+                    import
+                        .core_params
+                        .iter()
+                        .map(|flat| match flat {
+                            Flat::I32 => ValType::I32,
+                            Flat::I64 => ValType::I64,
+                        })
+                        .collect::<Vec<_>>(),
+                    [],
+                );
+            }
         }
         // RFC-0039 §2.4 (STEP-0147): one core type per user import —
         // flattened params plus the caller-allocated return-area pointer;
@@ -1134,6 +1293,8 @@ fn build_script_core(
         || emit.streams.any()
         || emit.http
         || emit.http2
+        || emit.picker
+        || emit.ui
         || !emit.user_imports.is_empty()
     {
         // The transport module owns the memory and the bump allocator; the
@@ -1213,6 +1374,8 @@ fn build_script_core(
         || emit.streams.any()
         || emit.http
         || emit.http2
+        || emit.picker
+        || emit.ui
         || !emit.user_imports.is_empty();
     if transport && arena_used {
         return Err(unsupported(
@@ -1253,6 +1416,8 @@ fn finish_script_core(
         || emit.streams.any()
         || emit.http
         || emit.http2
+        || emit.picker
+        || emit.ui
         || !emit.user_imports.is_empty();
     let imports = transport.then(|| script_transport_imports(emit));
     let mut memories = MemorySection::new();
@@ -1388,6 +1553,26 @@ fn script_transport_imports(emit: &ScriptEmit) -> ImportSection {
             EntityType::Function(type_index),
         );
         type_index += 1;
+    }
+    if emit.picker {
+        for import in canonical::PICKER_IMPORTS {
+            imports.import(
+                canonical::PICKER_INTERFACE,
+                import.function,
+                EntityType::Function(type_index),
+            );
+            type_index += 1;
+        }
+    }
+    if emit.ui {
+        for import in canonical::UI_IMPORTS {
+            imports.import(
+                canonical::UI_INTERFACE,
+                import.function,
+                EntityType::Function(type_index),
+            );
+            type_index += 1;
+        }
     }
     for import in &emit.user_imports {
         for function in &import.functions {
@@ -2023,7 +2208,16 @@ fn inferred_local_layout(
             };
             layout.types = lower_local_types(&function.name, &decl.ty, script)?;
             apply_result_fields(&mut layout, script, &decl.ty);
-            layout.variant = matches!(&decl.ty, Type::Result { .. } | Type::Option(_));
+            apply_option_fields(&mut layout, script, &decl.ty);
+            apply_enum_fields(&mut layout, script, &decl.ty);
+            // A spilled user-enum subject (the `#match` binding cell or the
+            // STEP-0137 subject cell) reads back as a variant: match
+            // dispatch reads its discriminant through `tag()`.
+            layout.variant = matches!(&decl.ty, Type::Result { .. } | Type::Option(_))
+                || matches!(
+                    (&decl.ty, script),
+                    (Type::Named(name), Some(abi)) if abi.user_enums.contains_key(name)
+                );
         }
         Operation::Construct { fields, .. } if matches!(&instruction.ty, Type::List(_)) => {
             // A collect list is a (table, count) pair in the bounded arena,
@@ -2077,6 +2271,19 @@ fn inferred_local_layout(
                     );
                 }
             }
+            // RFC-0056: a projection result that is itself an Option or a
+            // user enum carries the same synthetic field maps as a cell
+            // read, so nested matches (`some(ev)` then `ev`'s cases) and
+            // payload projections keep resolving by slot range. Variants
+            // keep the `variant` flag so match dispatch can read the
+            // discriminant.
+            apply_option_fields(&mut layout, script, &instruction.ty);
+            apply_enum_fields(&mut layout, script, &instruction.ty);
+            layout.variant = matches!(&instruction.ty, Type::Result { .. } | Type::Option(_))
+                || matches!(
+                    (&instruction.ty, script),
+                    (Type::Named(name), Some(abi)) if abi.user_enums.contains_key(name)
+                );
         }
         Operation::Variant { name, payload } => {
             layout.types.push(ValType::I32);
@@ -2094,8 +2301,30 @@ fn inferred_local_layout(
             // Result variants in the Script profile occupy the full flat
             // width (tag + ok payload + error payload) so values crossing
             // helper-function boundaries match the declared signature; the
-            // inactive payload region is zero-filled at construction.
-            let shift = if let (Some(abi), Type::Result { ok, error }) = (script, &instruction.ty) {
+            // inactive payload region is zero-filled at construction. User
+            // enum variants take the same full-union width (tag + widest
+            // case payload, RFC-0056) so a payload-less `Stop` value and the
+            // `Notice`-typed spill cell share one slot count.
+            let shift = if let (Some(abi), Type::Named(enum_name)) = (script, &instruction.ty)
+                && let Some(enumeration) = abi.user_enums.get(enum_name)
+            {
+                let widest = enumeration
+                    .cases
+                    .iter()
+                    .map(|case| case.payload.len())
+                    .max()
+                    .unwrap_or(0);
+                if let Some(widest_case) = enumeration
+                    .cases
+                    .iter()
+                    .find(|case| case.payload.len() == widest)
+                {
+                    layout
+                        .types
+                        .extend(widest_case.payload.iter().copied().map(flat_local_type));
+                }
+                1
+            } else if let (Some(abi), Type::Result { ok, error }) = (script, &instruction.ty) {
                 match (abi.flat_ir_types(ok), abi.flat_ir_types(error)) {
                     (Some(ok_flat), Some(_error_flat)) if name == "error" => {
                         layout
@@ -2130,10 +2359,27 @@ fn inferred_local_layout(
                     );
                 }
             }
-            // Synthetic variant-payload field for `case ok(x)` projection.
+            // Synthetic variant-payload field for `case ok(x)` projection,
+            // plus the RFC-0056 D3 bare-case and per-slot fields for user
+            // enum projections (`case Notice.Message(t)` -> "Message";
+            // `case Pair(a, b)` -> "Pair.0"/"Pair.1"). The bare names are
+            // unambiguous because each value carries its own field map.
             layout
                 .fields
                 .insert(name.clone(), (shift..shift + payload_types.len()).collect());
+            let bare_case = name
+                .rsplit_once('.')
+                .map_or(name.as_str(), |(_, case)| case);
+            layout.fields.insert(
+                bare_case.to_owned(),
+                (shift..shift + payload_types.len()).collect(),
+            );
+            for (index, _) in payload_types.iter().enumerate() {
+                layout.fields.insert(
+                    format!("{bare_case}.{index}"),
+                    ((shift + index)..=(shift + index)).collect(),
+                );
+            }
         }
         _ => {
             layout.variant = matches!(&instruction.ty, Type::Result { .. } | Type::Option(_));
@@ -2191,6 +2437,61 @@ fn record_fields<'a>(abi: &'a ScriptAbi, ty: &Type) -> Option<&'a canonical::Rec
     match ty {
         Type::Named(name) => abi.record(name),
         _ => None,
+    }
+}
+
+/// Adds the RFC-0056 D4 `some` field map to an Option-typed value layout so
+/// payload projections off a spilled Option subject resolve by slot range.
+/// The inner may be an internal user enum (`Option[ui_event]`, D5).
+fn apply_option_fields(layout: &mut ValueLayout, script: Option<&ScriptAbi>, ty: &Type) {
+    let (Some(abi), Type::Option(inner)) = (script, ty) else {
+        return;
+    };
+    if let Some(flat) = abi.flat_ir_types(inner) {
+        layout
+            .fields
+            .insert("some".to_owned(), (1..=flat.len()).collect());
+        return;
+    }
+    if let Type::Named(name) = inner.as_ref()
+        && let Some(enumeration) = abi.user_enums.get(name)
+    {
+        // `some` projects the whole inner enum value: discriminant slot
+        // plus the widest payload.
+        let widest = enumeration
+            .cases
+            .iter()
+            .map(|case| case.payload.len())
+            .max()
+            .unwrap_or(0);
+        layout
+            .fields
+            .insert("some".to_owned(), (1..=(1 + widest)).collect());
+    }
+}
+
+/// Adds the RFC-0056 D3 bare-case field maps to a user-enum value layout so
+/// payload projections off a spilled match subject (`ReadLocal` of the
+/// `#match` cell) resolve by slot range. Payload-less cases get no fields;
+/// the verifier already rejects their projections.
+fn apply_enum_fields(layout: &mut ValueLayout, script: Option<&ScriptAbi>, ty: &Type) {
+    if let (Some(abi), Type::Named(name)) = (script, ty)
+        && let Some(enumeration) = abi.user_enums.get(name)
+    {
+        for case in &enumeration.cases {
+            if case.payload.is_empty() {
+                continue;
+            }
+            layout
+                .fields
+                .insert(case.name.clone(), (1..=case.payload.len()).collect());
+            for (index, _) in case.payload.iter().enumerate() {
+                layout.fields.insert(
+                    format!("{}.{index}", case.name),
+                    (1 + index..2 + index).collect(),
+                );
+            }
+        }
     }
 }
 
@@ -2947,6 +3248,82 @@ fn lower_local_types(
         Type::Task(inner) => lower_async_local(function, inner, script, "Task"),
         Type::Future(inner) => lower_async_local(function, inner, script, "Future"),
         Type::Stream(_) => Err(async_unsupported(function, "Stream")),
+        // RFC-0056 D4: an Option local is the tag slot plus the inner
+        // payload's flat layout (internal only; the boundary keeps refusing
+        // Option-typed signatures in v0). The inner may itself be an
+        // internal user enum (`Option[ui_event]`, D5) — flatten through the
+        // enum's widest case payload.
+        Type::Option(inner) => {
+            let Some(abi) = script else {
+                return Err(unsupported(function, "non-scalar local"));
+            };
+            let mut types = vec![ValType::I32];
+            if let Some(flat) = abi.flat_ir_types(inner) {
+                types.extend(flat.iter().map(|flat| match flat {
+                    Flat::I32 => ValType::I32,
+                    Flat::I64 => ValType::I64,
+                }));
+                return Ok(types);
+            }
+            if let Type::Named(name) = inner.as_ref()
+                && let Some(enumeration) = abi.user_enums.get(name)
+            {
+                // The inner enum value carries its own discriminant: the
+                // cell is `[option tag, enum tag, widest payload...]`.
+                types.push(ValType::I32);
+                let widest = enumeration
+                    .cases
+                    .iter()
+                    .map(|case| case.payload.len())
+                    .max()
+                    .unwrap_or(0);
+                if let Some(widest_case) = enumeration
+                    .cases
+                    .iter()
+                    .find(|case| case.payload.len() == widest)
+                {
+                    types.extend(widest_case.payload.iter().copied().map(flat_local_type));
+                    return Ok(types);
+                }
+            }
+            Err(unsupported(function, "non-scalar local"))
+        }
+        // RFC-0056 D2: a user enum local is the internal union — tag slot
+        // plus the widest case payload (left-aligned per case). The table
+        // is internal-only; boundary flattening still refuses user enums.
+        Type::Named(name) => {
+            if let Some(abi) = script
+                && let Some(enumeration) = abi.user_enums.get(name)
+            {
+                let mut types = vec![ValType::I32];
+                let widest = enumeration
+                    .cases
+                    .iter()
+                    .map(|case| case.payload.len())
+                    .max()
+                    .unwrap_or(0);
+                if let Some(widest_case) = enumeration
+                    .cases
+                    .iter()
+                    .find(|case| case.payload.len() == widest)
+                {
+                    types.extend(widest_case.payload.iter().copied().map(flat_local_type));
+                }
+                return Ok(types);
+            }
+            if let Some(abi) = script
+                && let Some(flat) = abi.flat_ir_types(ty)
+            {
+                return Ok(flat
+                    .iter()
+                    .map(|flat| match flat {
+                        Flat::I32 => ValType::I32,
+                        Flat::I64 => ValType::I64,
+                    })
+                    .collect());
+            }
+            Err(unsupported(function, "non-scalar local"))
+        }
         _ => {
             if let Some(abi) = script
                 && let Some(flat) = abi.flat_ir_types(ty)
@@ -3883,6 +4260,439 @@ fn emit_user_call(
     Ok(())
 }
 
+/// Lowers one `sico.ui.*` call (STEP-0628, RFC-0052 §2 + Amendment A1) over
+/// the 12 `result<_, ui-error>` functions of `sico:script/ui@1.0.0`. The
+/// result area is caller-allocated and zeroed. The tree-construction family
+/// (`window`/`column`/`row`/`text`/`button`/`dropdown`/`image-preview`/
+/// `progress`) returns `result<ui-handle, ui-error>` (16 bytes: the
+/// `result` tag byte @0, the payload union @8 — the u64 handle id on ok, the
+/// `ui-error` discriminant byte on err, the union aligning to 8); the state
+/// and frame family (`set-text`/`set-progress`/`draw-image`/`run`) returns
+/// `result<bool, ui-error>` (tag @0, the payload union @1 — a 1-byte bool and
+/// a 1-byte enum). The discriminant maps to the static case-name table in
+/// the data segment; the enum is stored as a single byte per the Canonical
+/// ABI variant rule.
+#[allow(clippy::too_many_lines)]
+fn emit_ui_call(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    name: &str,
+    arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "ui call outside script profile",
+        ));
+    };
+    let Some((return_area, _copy_destination)) = context.scratch else {
+        return Err(unsupported(&function.name, "ui call scratch layout"));
+    };
+    let import = emit
+        .ui_indices
+        .get(name)
+        .copied()
+        .ok_or_else(|| unsupported(&function.name, "ui import layout"))?;
+    let error_table = emit
+        .ui_error_table
+        .ok_or_else(|| unsupported(&function.name, "ui error table layout"))?;
+    let mem = |offset: u64, align: u32| MemArg {
+        offset,
+        align,
+        memory_index: 0,
+    };
+
+    let is_bool_family = matches!(
+        name,
+        "sico.ui.set_text" | "sico.ui.set_progress" | "sico.ui.draw_image" | "sico.ui.run"
+    );
+    let result_size = if is_bool_family {
+        canonical::UI_BOOL_RESULT_SIZE
+    } else {
+        canonical::UI_HANDLE_RESULT_SIZE
+    };
+    let payload_offset = if is_bool_family { 1_u64 } else { 8_u64 };
+
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(result_size).map_err(|_| unsupported(&function.name, "ui result area"))?,
+    ));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(return_area));
+    for offset in (0..result_size).step_by(4) {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Store(mem(u64::from(offset), 2)));
+    }
+    // Wire order per WIT: the flattened params in declaration order, then the
+    // result-area pointer. String params cross as (ptr, len) pairs; the
+    // ui-handle crosses as one i64.
+    for argument in arguments {
+        for slot in layout.get(&function.name, *argument)? {
+            body.instruction(&Instruction::LocalGet(*slot));
+        }
+    }
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::Call(import));
+
+    let result = layout.get(&function.name, instruction.result)?;
+    let [tag, ok_payload, err_pointer, err_length] = result else {
+        return Err(unsupported(&function.name, "ui result layout"));
+    };
+    // tag byte @0
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load8U(mem(0, 0)));
+    body.instruction(&Instruction::LocalSet(*tag));
+    // ok payload: the u64 handle id @8 (handle family) or the bool byte @1.
+    if is_bool_family {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Load8U(mem(payload_offset, 0)));
+        body.instruction(&Instruction::LocalSet(*ok_payload));
+    } else {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I64Load(mem(payload_offset, 3)));
+        body.instruction(&Instruction::LocalSet(*ok_payload));
+    }
+    // ui-error discriminant byte @payload_offset; force 0 on the ok side so
+    // the bounds check below never fires when there is no error. The tag
+    // (0 = ok, 1 = err) is the Select condition directly: a non-zero tag
+    // keeps the discriminant, an ok result selects the forced 0.
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load8U(mem(payload_offset, 0)));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::LocalGet(*tag));
+    body.instruction(&Instruction::Select);
+    body.instruction(&Instruction::LocalSet(return_area));
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(canonical::UI_ERROR_TEXTS.len())
+            .map_err(|_| unsupported(&function.name, "ui error table length"))?,
+    ));
+    body.instruction(&Instruction::I32GeU);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    body.instruction(&Instruction::Unreachable);
+    body.instruction(&Instruction::End);
+    let table = i32::try_from(error_table)
+        .map_err(|_| unsupported(&function.name, "ui error table layout"))?;
+    for instruction in [
+        Instruction::LocalGet(return_area),
+        Instruction::I32Const(3),
+        Instruction::I32Shl,
+        Instruction::I32Const(table),
+        Instruction::I32Add,
+        Instruction::LocalSet(return_area),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(0, 2)),
+        Instruction::LocalSet(*err_pointer),
+        Instruction::LocalGet(return_area),
+        Instruction::I32Load(mem(4, 2)),
+        Instruction::LocalSet(*err_length),
+    ] {
+        body.instruction(&instruction);
+    }
+    // Select the live side by the tag: on ok keep the payload and zero the
+    // error text; on err zero the payload and keep the error text.
+    if is_bool_family {
+        body.instruction(&Instruction::LocalGet(*ok_payload));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::LocalGet(*tag));
+        body.instruction(&Instruction::I32Eqz);
+        body.instruction(&Instruction::Select);
+        body.instruction(&Instruction::LocalSet(*ok_payload));
+    } else {
+        body.instruction(&Instruction::LocalGet(*ok_payload));
+        body.instruction(&Instruction::I64Const(0));
+        body.instruction(&Instruction::LocalGet(*tag));
+        body.instruction(&Instruction::I32Eqz);
+        body.instruction(&Instruction::Select);
+        body.instruction(&Instruction::LocalSet(*ok_payload));
+    }
+    for (source, destination) in [(*err_pointer, err_pointer), (*err_length, err_length)] {
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::LocalGet(source));
+        body.instruction(&Instruction::LocalGet(*tag));
+        body.instruction(&Instruction::I32Eqz);
+        body.instruction(&Instruction::Select);
+        body.instruction(&Instruction::LocalSet(*destination));
+    }
+    Ok(())
+}
+
+/// Lowers `sico.ui.poll_event` (RFC-0056 D5/D7, STEP-0632). The host
+/// returns the frozen WIT `option<ui-event>` in the 32-byte canonical area
+/// (`option` tag @0, `ui-event` variant tag @8, payload union @16); the
+/// emitter binds it into the typed guest `Option[ui_event]` union — tag
+/// slot plus the widest case payload (`select`'s two u64s), inactive slots
+/// zero-filled. The case tags come from the module's `VariantTags` (the
+/// same table match dispatch uses), so no guest-visible Text vocab exists
+/// and `wit/script-ui-v1/ui.wit` stays byte-identical. Unknown option or
+/// variant discriminants trap (fail-closed; the WIT case set is closed).
+#[allow(clippy::too_many_lines)]
+fn emit_ui_poll_event(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    _arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "ui call outside script profile",
+        ));
+    };
+    let Some((return_area, _copy_destination)) = context.scratch else {
+        return Err(unsupported(&function.name, "ui call scratch layout"));
+    };
+    let import = emit
+        .ui_indices
+        .get("sico.ui.poll_event")
+        .copied()
+        .ok_or_else(|| unsupported(&function.name, "ui import layout"))?;
+    let mem = |offset: u64, align: u32| MemArg {
+        offset,
+        align,
+        memory_index: 0,
+    };
+
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(canonical::UI_EVENT_RESULT_SIZE)
+            .map_err(|_| unsupported(&function.name, "ui event result area"))?,
+    ));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(return_area));
+    for offset in (0..canonical::UI_EVENT_RESULT_SIZE).step_by(4) {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Store(mem(u64::from(offset), 2)));
+    }
+    // No params; just the result-area pointer.
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::Call(import));
+
+    // The typed union: [option tag, inner enum tag, payload0, payload1]
+    // (widest = `select`; the inner enum keeps its own discriminant so
+    // nested match dispatch on the `some` payload works).
+    let value_layout = layout.layout(&function.name, instruction.result)?;
+    let slots = &value_layout.slots;
+    if slots.len() < 4 {
+        return Err(unsupported(&function.name, "ui poll event result layout"));
+    }
+    let tag_slot = slots[0];
+    let inner_tag_slot = slots[1];
+    let payload_slots = &slots[2..];
+    // Zero the whole union first; conditional writes below fill the taken
+    // case (inactive payload slots stay defined zero).
+    for (slot, ty) in slots.iter().zip(&value_layout.types) {
+        match ty {
+            ValType::I32 => body.instruction(&Instruction::I32Const(0)),
+            ValType::I64 => body.instruction(&Instruction::I64Const(0)),
+            _ => return Err(unsupported(&function.name, "ui poll event result layout")),
+        };
+        body.instruction(&Instruction::LocalSet(*slot));
+    }
+    let click = context.variant_tags.get(&function.name, "ui_event.click")?;
+    let select = context
+        .variant_tags
+        .get(&function.name, "ui_event.select")?;
+    let closed = context
+        .variant_tags
+        .get(&function.name, "ui_event.closed")?;
+    let none_tag = context.variant_tags.get(&function.name, "none")?;
+
+    // option tag @0: 0 = none, 1 = some (canonical ABI).
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load8U(mem(0, 0)));
+    body.instruction(&Instruction::I32Const(1));
+    body.instruction(&Instruction::I32Eq);
+    body.instruction(&Instruction::If(BlockType::Empty));
+    {
+        // some: route on the ui-event variant tag @8.
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Load8U(mem(8, 0)));
+        // click (0).
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Eq);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        body.instruction(&Instruction::I32Const(click));
+        body.instruction(&Instruction::LocalSet(inner_tag_slot));
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I64Load(mem(16, 3)));
+        body.instruction(&Instruction::LocalSet(payload_slots[0]));
+        body.instruction(&Instruction::Else);
+        // select (1).
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Load8U(mem(8, 0)));
+        body.instruction(&Instruction::I32Const(1));
+        body.instruction(&Instruction::I32Eq);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        body.instruction(&Instruction::I32Const(select));
+        body.instruction(&Instruction::LocalSet(inner_tag_slot));
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I64Load(mem(16, 3)));
+        body.instruction(&Instruction::LocalSet(payload_slots[0]));
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I64Load(mem(24, 3)));
+        body.instruction(&Instruction::LocalSet(payload_slots[1]));
+        body.instruction(&Instruction::Else);
+        // closed (2); anything else traps (fail-closed on a closed WIT set).
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Load8U(mem(8, 0)));
+        body.instruction(&Instruction::I32Const(2));
+        body.instruction(&Instruction::I32Eq);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        body.instruction(&Instruction::I32Const(closed));
+        body.instruction(&Instruction::LocalSet(inner_tag_slot));
+        body.instruction(&Instruction::Else);
+        body.instruction(&Instruction::Unreachable);
+        body.instruction(&Instruction::End);
+        body.instruction(&Instruction::End);
+        body.instruction(&Instruction::End);
+    }
+    body.instruction(&Instruction::Else);
+    {
+        // none: the canonical ABI option tag is 0 here; anything other
+        // than 0/1 would have failed the some arm's equality and lands in
+        // the none arm — the WIT only produces 0/1, and the variant-tag
+        // trap above guards the closed case set.
+        body.instruction(&Instruction::I32Const(none_tag));
+        body.instruction(&Instruction::LocalSet(tag_slot));
+    }
+    body.instruction(&Instruction::End);
+    Ok(())
+}
+
+/// Lowers one `sico.picker.*` call (STEP-0627, RFC-0055). The guest-facing
+/// result is the flattened `Result[Text, Text]`: tag byte @0; the union
+/// start @4 (string pointer on ok, picker-error discriminant on error) and
+/// @8 (string length on ok). Mirrors the stream.read pattern: load the
+/// union word into `copy_destination` and the length into `return_area`
+/// (which overwrites it), then select by tag; the error table lookup is
+/// guarded by `If(tag==1)` so the bounds check never fires on the ok side.
+#[allow(clippy::too_many_lines)]
+fn emit_picker_call(
+    context: &CompileContext<'_>,
+    body: &mut Function,
+    instruction: &sico_ir::Instruction,
+    name: &str,
+    arguments: &[ValueId],
+) -> Result<(), CodegenError> {
+    let function = context.function;
+    let layout = context.layout;
+    let Some(emit) = context.script else {
+        return Err(unsupported(
+            &function.name,
+            "picker call outside script profile",
+        ));
+    };
+    let Some((return_area, copy_destination)) = context.scratch else {
+        return Err(unsupported(&function.name, "picker call scratch layout"));
+    };
+    let import = emit
+        .picker_indices
+        .get(name)
+        .copied()
+        .ok_or_else(|| unsupported(&function.name, "picker import layout"))?;
+    let error_table = emit
+        .picker_error_table
+        .ok_or_else(|| unsupported(&function.name, "picker error table layout"))?;
+    let mem = |offset: u64, align: u32| MemArg {
+        offset,
+        align,
+        memory_index: 0,
+    };
+
+    // Allocate and zero the 12-byte result area, push args + result pointer,
+    // and call the import.
+    body.instruction(&Instruction::I32Const(
+        i32::try_from(canonical::PICKER_RESULT_SIZE)
+            .map_err(|_| unsupported(&function.name, "picker result area"))?,
+    ));
+    body.instruction(&Instruction::Call(emit.alloc_index));
+    body.instruction(&Instruction::LocalSet(return_area));
+    for offset in [0_u64, 4, 8] {
+        body.instruction(&Instruction::LocalGet(return_area));
+        body.instruction(&Instruction::I32Const(0));
+        body.instruction(&Instruction::I32Store(mem(offset, 2)));
+    }
+    for argument in arguments {
+        for slot in layout.get(&function.name, *argument)? {
+            body.instruction(&Instruction::LocalGet(*slot));
+        }
+    }
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::Call(import));
+
+    let result = layout.get(&function.name, instruction.result)?;
+    let [tag, ok_pointer, ok_length, err_pointer, err_length] = result else {
+        return Err(unsupported(&function.name, "picker result layout"));
+    };
+    // tag byte @0
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load8U(mem(0, 0)));
+    body.instruction(&Instruction::LocalSet(*tag));
+    // Union start @4: on ok the string pointer; on error the discriminant.
+    // Load this into copy_destination BEFORE return_area is overwritten.
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load(mem(4, 2)));
+    body.instruction(&Instruction::LocalSet(copy_destination));
+    // @8: the string length on ok. Load into return_area (overwrites the
+    // result-area pointer — the stream.read pattern).
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Load(mem(8, 2)));
+    body.instruction(&Instruction::LocalSet(return_area));
+
+    // Select the ok side by tag (tag == 0 keeps the loaded values).
+    body.instruction(&Instruction::LocalGet(copy_destination));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::LocalGet(*tag));
+    body.instruction(&Instruction::I32Eqz);
+    body.instruction(&Instruction::Select);
+    body.instruction(&Instruction::LocalSet(*ok_pointer));
+    body.instruction(&Instruction::LocalGet(return_area));
+    body.instruction(&Instruction::I32Const(0));
+    body.instruction(&Instruction::LocalGet(*tag));
+    body.instruction(&Instruction::I32Eqz);
+    body.instruction(&Instruction::Select);
+    body.instruction(&Instruction::LocalSet(*ok_length));
+
+    // Error side: map the discriminant (in copy_destination) through the
+    // static case-name table.
+    body.instruction(&Instruction::LocalGet(*tag));
+    body.instruction(&Instruction::If(BlockType::Empty));
+    {
+        // bounds check: disc must be < 4 (cancelled/no-window/limit/authority-denied)
+        body.instruction(&Instruction::LocalGet(copy_destination));
+        body.instruction(&Instruction::I32Const(
+            i32::try_from(canonical::PICKER_ERROR_TEXTS.len())
+                .map_err(|_| unsupported(&function.name, "picker error table length"))?,
+        ));
+        body.instruction(&Instruction::I32GeU);
+        body.instruction(&Instruction::If(BlockType::Empty));
+        body.instruction(&Instruction::Unreachable);
+        body.instruction(&Instruction::End);
+        let table = i32::try_from(error_table)
+            .map_err(|_| unsupported(&function.name, "picker error table layout"))?;
+        body.instruction(&Instruction::LocalGet(copy_destination));
+        body.instruction(&Instruction::I32Const(3));
+        body.instruction(&Instruction::I32Shl);
+        body.instruction(&Instruction::I32Const(table));
+        body.instruction(&Instruction::I32Add);
+        body.instruction(&Instruction::LocalSet(copy_destination));
+        body.instruction(&Instruction::LocalGet(copy_destination));
+        body.instruction(&Instruction::I32Load(mem(0, 2)));
+        body.instruction(&Instruction::LocalSet(*err_pointer));
+        body.instruction(&Instruction::LocalGet(copy_destination));
+        body.instruction(&Instruction::I32Load(mem(4, 2)));
+        body.instruction(&Instruction::LocalSet(*err_length));
+    }
+    body.instruction(&Instruction::End);
+    Ok(())
+}
+
 /// Lowers `sico.http2.request` (STEP-0136, RFC-0037): the buffered one-shot
 /// over `sico:script/http@0.2.0` with Host-default options (empty headers,
 /// no redirect follow, no retry, Host-default timeout). The 32-byte result
@@ -4423,6 +5233,26 @@ fn emit_intrinsic(
         }
         "sico.http2.request" => {
             emit_http2_call(context, body, instruction, arguments)?;
+        }
+        "sico.picker.open" | "sico.picker.save" => {
+            emit_picker_call(context, body, instruction, name, arguments)?;
+        }
+        "sico.ui.window"
+        | "sico.ui.column"
+        | "sico.ui.row"
+        | "sico.ui.text"
+        | "sico.ui.button"
+        | "sico.ui.dropdown"
+        | "sico.ui.image_preview"
+        | "sico.ui.progress"
+        | "sico.ui.set_text"
+        | "sico.ui.set_progress"
+        | "sico.ui.draw_image"
+        | "sico.ui.run" => {
+            emit_ui_call(context, body, instruction, name, arguments)?;
+        }
+        "sico.ui.poll_event" => {
+            emit_ui_poll_event(context, body, instruction, arguments)?;
         }
         _ if name.starts_with("sico:user/") => {
             emit_user_call(context, body, instruction, name, arguments)?;

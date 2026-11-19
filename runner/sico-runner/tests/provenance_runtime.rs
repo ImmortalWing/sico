@@ -169,9 +169,12 @@ fn minimal_guest(mode: GuestMode) -> Vec<u8> {
         sico_codegen_wasm::StreamUse::default(),
         false,
         false,
+        false,
+        false,
         &[],
         0,
     )
+    .expect("hand-built minimal guest has no user imports to refuse")
 }
 
 #[test]

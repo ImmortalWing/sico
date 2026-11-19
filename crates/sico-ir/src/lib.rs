@@ -115,6 +115,13 @@ pub struct Module {
     /// List boundary).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub records: BTreeMap<String, Vec<RecordField>>,
+    /// RFC-0056 D2: declared enum types with per-variant payload types, in
+    /// canonical declaration order. Populated for programs declaring
+    /// payload-carrying (or plain) enums; empty for programs without enum
+    /// declarations, so frozen serializations are byte-identical. The
+    /// verifier checks variant payload projections against this table.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub enums: BTreeMap<String, Vec<EnumVariant>>,
 }
 
 /// RFC-0047 D4: one declared record field, in canonical declaration order.
@@ -122,6 +129,16 @@ pub struct Module {
 pub struct RecordField {
     pub name: String,
     pub ty: Type,
+}
+
+/// RFC-0056 D2: one declared enum variant with its payload types, in
+/// canonical declaration order. Carried in `Module.enums` so the verifier
+/// can check variant payload projections without re-reading source.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EnumVariant {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub payload: Vec<Type>,
 }
 
 impl Module {
@@ -135,6 +152,7 @@ impl Module {
             task_scopes: None,
             import_signatures: BTreeMap::new(),
             records: BTreeMap::new(),
+            enums: BTreeMap::new(),
         }
     }
 }
@@ -863,12 +881,41 @@ impl<'a> Verifier<'a> {
                 named || list
             }
             Operation::Project { base, field } => match available.get(base) {
-                Some(Type::Named(_)) => !field.is_empty(),
                 // Variant payload projection (`case ok(x)` lowering, STEP-0083).
                 Some(Type::Result { ok, error }) => {
                     (field == "ok" && ok.as_ref() == &instruction.ty)
                         || (field == "error" && error.as_ref() == &instruction.ty)
                 }
+                // RFC-0056 D4: `case some(x)` off an `Option[T]` subject.
+                Some(Type::Option(inner)) => field == "some" && inner.as_ref() == &instruction.ty,
+                // RFC-0056 D3: a payload projection off a declared enum value
+                // is checked against the module's enum table — `"<case>"` for
+                // arity-1 payloads, `"<case>.<index>"` for arity-N. Enums
+                // without payload have no valid projections.
+                Some(Type::Named(name)) => match self.module.enums.get(name) {
+                    Some(variants) => variants.iter().any(|variant| {
+                        if variant.payload.is_empty() {
+                            return false;
+                        }
+                        if variant.payload.len() == 1 {
+                            return field == &variant.name && variant.payload[0] == instruction.ty;
+                        }
+                        field
+                            .strip_prefix(variant.name.as_str())
+                            .and_then(|rest| rest.strip_prefix('.'))
+                            .and_then(|index| index.parse::<usize>().ok())
+                            .is_some_and(|index| {
+                                variant.payload.get(index) == Some(&instruction.ty)
+                                // `"Pair.1x"` must not parse as index 1 with a
+                                // trailing suffix sneaking past the digits.
+                                    && index.to_string()
+                                        == field[variant.name.len() + 1..]
+                            })
+                    }),
+                    // Record field access (RFC-0047) stays name-unchecked here,
+                    // exactly as before this table existed.
+                    None => !field.is_empty(),
+                },
                 _ => false,
             },
             Operation::Variant { name, .. } => {
@@ -1559,6 +1606,113 @@ pub fn intrinsic_signature(name: &str) -> Option<(Vec<Type>, Type)> {
         ),
         "sico.stream.close_input" => (vec![Type::Named("InputStream".to_owned())], Type::Bool),
         "sico.stream.close_output" => (vec![Type::Named("OutputStream".to_owned())], Type::Bool),
+        // STEP-0627 (RFC-0055, flattened source binding mirroring the
+        // poll_event Option-A precedent): the dialog returns a path only. The
+        // ok side carries the user-selected path; the EMPTY string is the
+        // `cancelled` discriminant (a dialog never selects an empty path, so
+        // this is unambiguous and keeps cancellation a non-error); the error
+        // side carries the typed picker-error case name. Zero grammar growth —
+        // the WIT `result<option<string>, picker-error>` stays on the
+        // host-provider surface, flattened at the guest boundary.
+        "sico.picker.open" => (
+            vec![Type::String, list_of(Type::String)],
+            Type::Result {
+                ok: Box::new(Type::String),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.picker.save" => (
+            vec![Type::String, Type::String, list_of(Type::String)],
+            Type::Result {
+                ok: Box::new(Type::String),
+                error: Box::new(Type::String),
+            },
+        ),
+        // STEP-0628 (RFC-0052 §2 + Amendment A1): the source-visible
+        // `sico:script/ui@1.0.0` surface. The WIT `ui-handle` record
+        // flattens to its u64 node id and the typed `ui-error` variant
+        // surfaces as its case-name Text — the same guest-boundary
+        // flattening as the STEP-0627 path-picker binding, so the
+        // source-visible surface grows no record or variant type.
+        //
+        // `poll_event` is the STEP-0628 §1 residual: the strict
+        // `option<ui-event>` result is not representable in Sico source
+        // (`some`/`none` are not variant case names — both arms parse to
+        // the empty pattern key and are rejected as an unreachable arm —
+        // and payload-carrying variant arms are refused by the source→IR
+        // lowering). The host keeps `option<ui-event>`; codegen decodes it
+        // to the event-kind Text (`""` = none, `click`, `select`, `closed`).
+        "sico.ui.window" => (
+            vec![Type::String, Type::I64, Type::I64],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.column" | "sico.ui.row" | "sico.ui.progress" => (
+            vec![Type::U64],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.text" | "sico.ui.button" => (
+            vec![Type::U64, Type::String],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.dropdown" => (
+            vec![Type::U64, list_of(Type::String)],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.image_preview" => (
+            vec![Type::U64, Type::U64, Type::U64],
+            Type::Result {
+                ok: Box::new(Type::U64),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.set_text" => (
+            vec![Type::U64, Type::String],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.set_progress" => (
+            vec![Type::U64, Type::U64, Type::U64],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.draw_image" => (
+            vec![Type::U64, Type::U64, Type::U64, Type::Bytes],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.run" => (
+            vec![],
+            Type::Result {
+                ok: Box::new(Type::Bool),
+                error: Box::new(Type::String),
+            },
+        ),
+        "sico.ui.poll_event" => (
+            vec![],
+            // RFC-0056 D5/D7 (STEP-0632): the typed source signature. The
+            // host WIT keeps `option<ui-event>` unchanged; the guest program
+            // declares `enum ui_event` with the pinned shape and the emitter
+            // binds the canonical ABI area into the typed union.
+            Type::Option(Box::new(Type::Named("ui_event".into()))),
+        ),
         _ => match collection_intrinsic(name) {
             Some(CollectionIntrinsic {
                 operation,

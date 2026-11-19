@@ -256,9 +256,12 @@ fn grow_past_one_mib() -> Vec<u8> {
         sico_codegen_wasm::StreamUse::default(),
         false,
         false,
+        false,
+        false,
         &[],
         0,
     )
+    .expect("hand-built minimal guest has no user imports to refuse")
 }
 
 /// Fault-injection transport: every `write_output` fails with a typed

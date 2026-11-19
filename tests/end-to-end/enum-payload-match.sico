@@ -1,0 +1,56 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+enum Notice:
+  case Message(text: Text)
+  case Stop
+end enum
+
+enum PairBox:
+  case Pair(left: U64, right: U64)
+  case Empty
+end enum
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  let out = ""
+  match Notice.Message("x"):
+    case Notice.Message(t):
+      set out = sico.text.concat(out, sico.text.concat(t, "|"))
+    case Notice.Stop:
+      set out = sico.text.concat(out, "stop|")
+  end match
+  match PairBox.Pair(U64.literal(7), U64.literal(9)):
+    case PairBox.Pair(a, b):
+      set out = sico.text.concat(out, sico.text.concat(sico.u64.to_text(a), sico.text.concat(":", sico.text.concat(sico.u64.to_text(b), "|"))))
+    case PairBox.Empty:
+      set out = sico.text.concat(out, "empty|")
+  end match
+  let bound = match Notice.Message("hello"):
+    case Notice.Message(t):
+      t
+    case Notice.Stop:
+      "stopped"
+  end match
+  set out = sico.text.concat(out, bound)
+  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+end function

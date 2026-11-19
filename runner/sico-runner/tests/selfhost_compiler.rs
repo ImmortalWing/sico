@@ -9055,6 +9055,11 @@ fn the_match_construct_truth_is_measured_and_pinned() {
             "function size(a: U64, b: U64) returns U64:\n  match U64.checked_add(a, b):\n    case ok(total):\n      return total\n    case error(_):\n      return U64.literal(0)\n  end match\nend function",
             3547,
         ),
+        (
+            "bytes-slice",
+            "function size(data: Bytes, start: U64, length: U64) returns Bytes:\n  let out = data\n  match sico.bytes.slice(data, start, length):\n    case ok(piece):\n      set out = piece\n    case error(_):\n      set out = data\n  end match\n  return out\nend function",
+            4555,
+        ),
     ] {
         let source = match_fixture(body);
         let expected = rust_ir(&source);
@@ -9073,9 +9078,13 @@ fn the_match_construct_truth_is_measured_and_pinned() {
     // removed the match route's parameter-count gate, so the three-parameter
     // and the twelve-parameter shapes moved from this list to the lowered list
     // above -- the gate was the only thing that refused them.  The operator
-    // whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a second, different gate; a
-    // head no match route claims at all falls through to the general route
-    // (`ERR:E-SH-IR-STATEMENT`).
+    // whitelist (`ERR:E-SH-IR-CALL-TARGET`) is a different gate that these
+    // three shapes hit inside the checked-arithmetic match route, so they stay
+    // refused with that identity.  B1 removed the last fall-through: a body
+    // no narrow route claims is now handed to the general instruction-flow
+    // degrader instead of landing on `ERR:E-SH-IR-STATEMENT`, which is why
+    // the no-`while` `let`/`match`/`set` body (`bytes-slice`) moved to the
+    // lowered list above.
     for (label, body, identity, ir_bytes) in [
         (
             "checked-sub",
@@ -9094,12 +9103,6 @@ fn the_match_construct_truth_is_measured_and_pinned() {
             "function size(a: U64, b: U64) returns U64:\n  let out = U64.literal(0)\n  match U64.checked_mul(a, b):\n    case ok(total):\n      set out = total\n    case error(_):\n      return U64.literal(0)\n  end match\n  return out\nend function",
             "ERR:E-SH-IR-CALL-TARGET",
             4511,
-        ),
-        (
-            "bytes-slice",
-            "function size(data: Bytes, start: U64, length: U64) returns Bytes:\n  let out = data\n  match sico.bytes.slice(data, start, length):\n    case ok(piece):\n      set out = piece\n    case error(_):\n      set out = data\n  end match\n  return out\nend function",
-            "ERR:E-SH-IR-STATEMENT",
-            4555,
         ),
     ] {
         let source = match_fixture(body);
@@ -10112,8 +10115,8 @@ fn sico_compiler_reproduces_the_frozen_match_site_ledger() {
     );
     assert_eq!(
         ledger.sites.len(),
-        405,
-        "the ledger registers the 405 candidate sites"
+        406,
+        "the ledger registers the 406 candidate sites"
     );
 
     // The site list itself must stay derived from the frozen S: every entry
@@ -10254,8 +10257,8 @@ fn every_match_site_is_measured_on_the_component_axis() {
         serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
     assert_eq!(
         ledger.sites.len(),
-        405,
-        "the ledger registers the 405 candidate sites"
+        406,
+        "the ledger registers the 406 candidate sites"
     );
     let skipped: Vec<&str> = ledger
         .sites
@@ -12574,4 +12577,59 @@ fn the_component_emission_fuel_of_a_real_match_group_through_the_compiler_is_mea
             started.elapsed().as_millis()
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// A1 (audit item): the per-instruction helper-index emission fuel.
+//
+// `cgs_helper_index(bytes, wanted)` re-ran `cgs_function_count` AND
+// `cgs_intrinsic_mask` on every intrinsic-call instruction -- a full-module
+// scan per emitted intrinsic call. A module chaining N `sico.text.concat`
+// calls therefore costs O(N * M) module scans. This probe brackets the
+// emit-only fuel of such a module, so the A1 refactor (thread the precomputed
+// count/mask down the emission path) is measured like for like: the injection
+// fixture runs the emitter directly, so the guest frontend (parser) is not in
+// the measured cost, and the delta is exactly the A1 layer's contribution.
+//
+// It is a measurement probe (`#[ignore]`): the byte-exactness gates are the
+// exit evidence; this only brackets fuel and must be run explicitly.
+// ---------------------------------------------------------------------------
+#[test]
+#[ignore = "an emit-only fuel bracket for the A1 helper-index rescan; run it explicitly"]
+fn a1_intrinsic_heavy_emission_fuel_is_bracketed() {
+    // N chained sico.text.concat calls in one function: N intrinsic-call
+    // instructions, so the per-instruction full-module rescan is exercised N
+    // times per emission.
+    let n: usize = 64;
+    let mut body = String::from("function probe(src: Text) returns Text:\n");
+    body.push_str("  let a0 = sico.text.concat(src, src)\n");
+    for i in 1..n {
+        body.push_str(&format!("  let a{i} = sico.text.concat(a{}, src)\n", i - 1));
+    }
+    body.push_str(&format!("  return a{}\nend function\n", n - 1));
+    let source = format!("{HOST_CALL_SHAPE_PRELUDE}{body}\n{HOST_CALL_SHAPE_RUN}");
+    let ir = rust_ir(&source);
+    let ceiling: u64 = 200_000_000_000;
+    let mut emits = |fuel: u64| match guest_emission_with_fuel(&ir, fuel) {
+        GuestFuelEmission::Component(_) => true,
+        GuestFuelEmission::FuelExhausted => false,
+        GuestFuelEmission::Refusal(identity) => {
+            panic!("the intrinsic-heavy module was refused at {fuel}: {identity}")
+        }
+        GuestFuelEmission::Trap { reason } => {
+            panic!("the intrinsic-heavy module trapped at {fuel}: {reason}")
+        }
+    };
+    let bracket = fuel_bracket(&mut emits, ceiling, 10_000_000)
+        .expect("the intrinsic-heavy module emits within the probe ceiling");
+    println!(
+        "A1_INTRINSIC_EMIT_FUEL n={n} ir_bytes={} bracket={}..{}",
+        ir.len(),
+        bracket.0,
+        bracket.1
+    );
+    assert!(
+        bracket.1 <= ceiling,
+        "the bracket must stay within the ceiling"
+    );
 }

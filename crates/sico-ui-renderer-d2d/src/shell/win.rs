@@ -68,6 +68,17 @@ struct ShellState {
     client: (u32, u32),
     /// True once `WM_NCDESTROY` arrived (the window is gone).
     destroyed: bool,
+    /// The held GDI DIB used to present frames.
+    ///
+    /// Owned here so the static `WndProc` — which reaches this state through
+    /// `GWLP_USERDATA`, not through [`WinShell`] — can re-present the cached
+    /// frame on `WM_PAINT` without the guest calling `run()` again (audit item
+    /// D3). [`WinShell`] reaches the DIB through this state; both live on the
+    /// shell thread, so thread affinity is preserved. The DIB's raw `bits`
+    /// pointer makes this state `!Send + !Sync`, which (together with the
+    /// deliberate marker on [`WinShell`]) pins the shell's thread affinity even
+    /// when no frame has been presented yet.
+    dib: Option<Dib>,
 }
 
 impl ShellState {
@@ -77,6 +88,7 @@ impl ShellState {
             overflow: false,
             client: (0, 0),
             destroyed: false,
+            dib: None,
         }
     }
 
@@ -131,6 +143,125 @@ impl ShellState {
 
     fn take_overflow(&mut self) -> bool {
         std::mem::take(&mut self.overflow)
+    }
+
+    /// Ensures a DIB of `width`×`height` exists, creating one if the held DIB
+    /// has a different size.
+    fn ensure_dib(
+        &mut self,
+        width: u32,
+        height: u32,
+        window_dc: HDC,
+    ) -> Result<(), UiBackendError> {
+        if let Some(dib) = &self.dib
+            && dib.width == width
+            && dib.height == height
+        {
+            return Ok(());
+        }
+        self.recreate_dib(width, height, window_dc)
+    }
+
+    /// Replaces the held DIB with a freshly created `width`×`height` one.
+    fn recreate_dib(
+        &mut self,
+        width: u32,
+        height: u32,
+        window_dc: HDC,
+    ) -> Result<(), UiBackendError> {
+        self.dib = None;
+        let mem_dc = unsafe { CreateCompatibleDC(window_dc) };
+        if mem_dc.0 == 0 {
+            return Err(UiBackendError::RenderFailed {
+                detail: "CreateCompatibleDC returned a null DC".to_owned(),
+            });
+        }
+        let info = BitmapInfoV5::new(
+            i32::try_from(width).map_err(|_| UiBackendError::InvalidArgument {
+                which: "frame-size",
+            })?,
+            i32::try_from(height).map_err(|_| UiBackendError::InvalidArgument {
+                which: "frame-size",
+            })?,
+        );
+        let bmi: *const BITMAPINFO = (&raw const info.header).cast::<BITMAPINFO>();
+        let mut bits: *mut c_void = std::ptr::null_mut();
+        let bitmap =
+            unsafe { CreateDIBSection(mem_dc, bmi, DIB_USAGE(0), &raw mut bits, HANDLE(0), 0) };
+        let bitmap = match bitmap {
+            Ok(bitmap) => bitmap,
+            Err(error) => {
+                unsafe {
+                    DeleteDC(mem_dc);
+                }
+                return Err(render_error("CreateDIBSection", &error));
+            }
+        };
+        unsafe {
+            SelectObject(mem_dc, HGDIOBJ(bitmap.0));
+        }
+        self.dib = Some(Dib {
+            dc: mem_dc,
+            bitmap,
+            bits,
+            width,
+            height,
+        });
+        Ok(())
+    }
+
+    /// Blits the held DIB into `window_dc` verbatim (`SRCCOPY`), restoring the
+    /// cached frame.
+    ///
+    /// This is the re-present path used by the `WndProc` on `WM_PAINT` (audit
+    /// item D3): an uncovered or resized window is repainted immediately from
+    /// the already-rendered DIB, without the guest calling `run()` again. When
+    /// nothing has been presented yet (`dib` is `None`) it is a no-op success:
+    /// the caller still validates the damaged region so `WM_PAINT` does not
+    /// re-fire.
+    fn blit_to(&self, window_dc: HDC) -> Result<(), UiBackendError> {
+        let Some(dib) = &self.dib else {
+            // No cached frame yet; nothing to restore, the caller validates.
+            return Ok(());
+        };
+        // SAFETY: the DIB is alive and its `bits` buffer is `width*height*4`
+        // bytes, which is exactly what `BitBlt` reads from it (`SRCCOPY`, no
+        // scaling — the same verbatim present path as `present_frame_into`).
+        unsafe {
+            BitBlt(
+                window_dc,
+                0,
+                0,
+                i32::try_from(dib.width).map_err(|_| UiBackendError::InvalidArgument {
+                    which: "frame-size",
+                })?,
+                i32::try_from(dib.height).map_err(|_| UiBackendError::InvalidArgument {
+                    which: "frame-size",
+                })?,
+                dib.dc,
+                0,
+                0,
+                SRCCOPY,
+            )
+            .map_err(|error| render_error("BitBlt", &error))
+        }
+    }
+
+    /// Reads back the last presented frame from the held DIB.
+    fn read_presented_frame(&self) -> Result<Frame, UiBackendError> {
+        let dib = self.dib.as_ref().ok_or(UiBackendError::NoWindow)?;
+        let byte_len = (dib.width as usize)
+            .checked_mul(dib.height as usize)
+            .and_then(|area| area.checked_mul(4))
+            .ok_or(UiBackendError::RenderFailed {
+                detail: "present frame size overflow".to_owned(),
+            })?;
+        // SAFETY: the DIB is alive and its `bits` buffer is `byte_len` bytes
+        // (the exact payload a `Frame` of this size holds).
+        let pixels =
+            unsafe { std::slice::from_raw_parts(dib.bits.cast::<u8>(), byte_len).to_vec() };
+        Frame::new(dib.width, dib.height, pixels)
+            .map_err(|detail| UiBackendError::RenderFailed { detail })
     }
 }
 
@@ -254,6 +385,23 @@ unsafe extern "system" fn wnd_proc(
                 let mut ps = PAINTSTRUCT::default();
                 let paint_dc = BeginPaint(hwnd, &raw mut ps);
                 if paint_dc.0 != 0 {
+                    // Re-present the held DIB into the paint DC so an
+                    // uncovered or resized window restores the cached frame
+                    // immediately, without the guest calling `run()` again
+                    // (audit item D3). The blit runs between `BeginPaint` and
+                    // `EndPaint`, while the paint DC is valid, and `EndPaint`
+                    // below validates the region in the same step.
+                    with_state(hwnd, |state| {
+                        // A failed re-present is best-effort and intentionally
+                        // not surfaced: a static `WndProc` has no typed error
+                        // channel back to the caller, the region is still
+                        // validated by `EndPaint` below, and the next
+                        // invalidation/present restores the pixels (AGENTS §7:
+                        // the failure is documented as ignorable here). When
+                        // nothing has been presented yet, `blit_to` is a
+                        // no-op and the region is simply validated.
+                        let _ = state.blit_to(paint_dc);
+                    });
                     // SAFETY: `EndPaint` pairs with a successful `BeginPaint`
                     // on the same window and `PAINTSTRUCT`; the returned paint
                     // DC is released by `EndPaint` (never released again here).
@@ -356,16 +504,19 @@ fn register_class_inner() -> Result<u16, ()> {
 /// STEP-0577 independent safety review): a Win32 window's message pump must
 /// run on the thread that created the window, so the shell must never cross a
 /// thread. The `windows` 0.52 handle types (`HWND`, `HDC`, `HBITMAP`, ...)
-/// are `pub struct(pub isize)` and are themselves `Send + Sync`, so the
-/// affinity must **not** rest on an accidental field (the DIB's raw `bits`
-/// pointer once carried it; a refactor that swaps the DIB to owned storage
-/// would silently make the shell `Send + Sync`). [`PhantomData<*mut ()>`] is
-/// `!Send + !Sync` and pins the invariant, and the test module asserts both
-/// the pin and that a marker-free mirror would be `Send + Sync`.
+/// are `pub struct(pub isize)` and are themselves `Send + Sync`, and the DIB
+/// is owned by the per-window [`ShellState`] reached through `GWLP_USERDATA`
+/// (audit item D3), so the affinity must **not** rest on an accidental field
+/// alone. The DIB's raw `bits` pointer is one such field (it makes
+/// [`ShellState`] — and therefore this shell — `!Send + !Sync` even before
+/// any frame is presented), and a refactor that swaps the DIB to owned storage
+/// would leave only the marker. [`PhantomData<*mut ()>`] is `!Send + !Sync`
+/// and pins the invariant regardless of the DIB representation, and the test
+/// module asserts both the pin and that a marker-free, owned-storage mirror
+/// would be `Send + Sync`.
 pub(crate) struct WinShell {
     hwnd: Option<HWND>,
     state: Option<Box<ShellState>>,
-    dib: Option<Dib>,
     quit: bool,
     /// Deliberate `!Send + !Sync` pin; never read, never leaves the thread.
     _not_send_sync: PhantomData<*mut ()>,
@@ -384,7 +535,6 @@ impl WinShell {
         Ok(Self {
             hwnd: None,
             state: None,
-            dib: None,
             quit: false,
             _not_send_sync: PhantomData,
         })
@@ -539,8 +689,9 @@ impl WinShell {
     }
 
     fn present_frame_into(&mut self, window_dc: HDC, frame: &Frame) -> Result<(), UiBackendError> {
-        self.ensure_dib(frame.width(), frame.height(), window_dc)?;
-        let dib = self.dib.as_ref().ok_or(UiBackendError::RenderFailed {
+        let state = self.state.as_mut().ok_or(UiBackendError::NoWindow)?;
+        state.ensure_dib(frame.width(), frame.height(), window_dc)?;
+        let dib = state.dib.as_ref().ok_or(UiBackendError::RenderFailed {
             detail: "present DIB missing".to_owned(),
         })?;
         let dib_dc = dib.dc;
@@ -572,82 +723,11 @@ impl WinShell {
         }
     }
 
-    fn ensure_dib(
-        &mut self,
-        width: u32,
-        height: u32,
-        window_dc: HDC,
-    ) -> Result<(), UiBackendError> {
-        if let Some(dib) = &self.dib
-            && dib.width == width
-            && dib.height == height
-        {
-            return Ok(());
-        }
-        self.recreate_dib(width, height, window_dc)
-    }
-
-    fn recreate_dib(
-        &mut self,
-        width: u32,
-        height: u32,
-        window_dc: HDC,
-    ) -> Result<(), UiBackendError> {
-        self.dib = None;
-        let mem_dc = unsafe { CreateCompatibleDC(window_dc) };
-        if mem_dc.0 == 0 {
-            return Err(UiBackendError::RenderFailed {
-                detail: "CreateCompatibleDC returned a null DC".to_owned(),
-            });
-        }
-        let info = BitmapInfoV5::new(
-            i32::try_from(width).map_err(|_| UiBackendError::InvalidArgument {
-                which: "frame-size",
-            })?,
-            i32::try_from(height).map_err(|_| UiBackendError::InvalidArgument {
-                which: "frame-size",
-            })?,
-        );
-        let bmi: *const BITMAPINFO = (&raw const info.header).cast::<BITMAPINFO>();
-        let mut bits: *mut c_void = std::ptr::null_mut();
-        let bitmap =
-            unsafe { CreateDIBSection(mem_dc, bmi, DIB_USAGE(0), &raw mut bits, HANDLE(0), 0) };
-        let bitmap = match bitmap {
-            Ok(bitmap) => bitmap,
-            Err(error) => {
-                unsafe {
-                    DeleteDC(mem_dc);
-                }
-                return Err(render_error("CreateDIBSection", &error));
-            }
-        };
-        unsafe {
-            SelectObject(mem_dc, HGDIOBJ(bitmap.0));
-        }
-        self.dib = Some(Dib {
-            dc: mem_dc,
-            bitmap,
-            bits,
-            width,
-            height,
-        });
-        Ok(())
-    }
-
     pub(crate) fn read_presented_frame(&self) -> Result<Frame, UiBackendError> {
-        let dib = self.dib.as_ref().ok_or(UiBackendError::NoWindow)?;
-        let byte_len = (dib.width as usize)
-            .checked_mul(dib.height as usize)
-            .and_then(|area| area.checked_mul(4))
-            .ok_or(UiBackendError::RenderFailed {
-                detail: "present frame size overflow".to_owned(),
-            })?;
-        // SAFETY: the DIB is alive and its `bits` buffer is `byte_len` bytes
-        // (the exact payload a `Frame` of this size holds).
-        let pixels =
-            unsafe { std::slice::from_raw_parts(dib.bits.cast::<u8>(), byte_len).to_vec() };
-        Frame::new(dib.width, dib.height, pixels)
-            .map_err(|detail| UiBackendError::RenderFailed { detail })
+        self.state
+            .as_ref()
+            .ok_or(UiBackendError::NoWindow)?
+            .read_presented_frame()
     }
 
     pub(crate) fn close(&self) -> Result<(), UiBackendError> {
@@ -682,10 +762,11 @@ impl WinShell {
             // The window is already gone (the `WM_CLOSE` → `DestroyWindow`
             // path destroyed it and `WM_NCDESTROY` orphaned the boxed state);
             // destroy is idempotent, so clear the shell and report success
-            // instead of double-destroying the handle.
+            // instead of double-destroying the handle. Dropping the boxed
+            // state here tears down the held DIB (via `Dib::drop`) exactly
+            // once.
             self.hwnd = None;
             self.state = None;
-            self.dib = None;
             return Ok(());
         }
         // On success, `DestroyWindow` synchronously sends `WM_DESTROY` and
@@ -697,9 +778,9 @@ impl WinShell {
         unsafe { DestroyWindow(hwnd) }.map_err(|error| render_error("DestroyWindow", &error))?;
         self.hwnd = None;
         // The `WM_NCDESTROY` has nulled the user-data pointer; the boxed state
-        // is no longer reachable and can be freed here.
+        // is no longer reachable and can be freed here. Dropping it tears down
+        // the held DIB (via `Dib::drop`) exactly once.
         self.state = None;
-        self.dib = None;
         Ok(())
     }
 }
@@ -724,8 +805,10 @@ impl Drop for WinShell {
                     // dangling `GWLP_USERDATA` dereference (UB). A later
                     // `DestroyWindow` on the still-live window is the only
                     // correct teardown; leaking the small boxed state is the
-                    // memory-safe choice. The DIB and the handle are plain
-                    // owned values and drop normally.
+                    // memory-safe choice. The boxed state owns the DIB (audit
+                    // item D3), so the DIB is leaked together with it — the
+                    // window must not be left referencing a freed DIB either.
+                    // The handle is a plain owned value and drops normally.
                     std::mem::forget(self.state.take());
                 }
             }
@@ -886,21 +969,34 @@ mod tests {
     // makes it `Send` or `Sync`, this fails the build (STEP-0585).
     assert_not_impl_any!(WinShell: Send, Sync);
 
+    /// The field set `ShellState` would have if a refactor swapped the DIB's
+    /// raw `bits` pointer for owned storage (`Vec<u8>`). Every field is `Send + Sync`
+    /// (the `windows` 0.52 handles are `pub struct(pub isize)` wrappers that are
+    /// themselves `Send + Sync`), so this state mirror is `Send + Sync`.
+    #[allow(dead_code)]
+    struct ShellStateMarkerFreeMirror {
+        queue: VecDeque<WindowEvent>,
+        overflow: bool,
+        client: (u32, u32),
+        destroyed: bool,
+        pixels: Option<Vec<u8>>,
+    }
+
     /// The field set `WinShell` would have if a refactor swapped the DIB's raw
     /// `bits` pointer for owned storage (`Vec<u8>`/`usize`) **and** the
     /// deliberate `!Send + !Sync` marker were absent. Every field is `Send +
     /// Sync` (the `windows` 0.52 handles are `pub struct(pub isize)` wrappers
-    /// that are themselves `Send + Sync`), so this mirror is `Send + Sync` —
-    /// exactly the silent soundness regression the STEP-0577 review flagged. It
-    /// is the compile-time proof that the deliberate marker, not an accidental
-    /// pointer field, carries the thread-affinity invariant. The fields are
-    /// never read (the mirror is used only as a `Send + Sync` witness), so
+    /// that are themselves `Send + Sync`, and the mirrored state above is too),
+    /// so this mirror is `Send + Sync` — exactly the silent soundness
+    /// regression the STEP-0577 review flagged. It is the compile-time proof
+    /// that the deliberate marker, not an accidental pointer field, carries the
+    /// thread-affinity invariant once the DIB becomes owned storage. The fields
+    /// are never read (the mirror is used only as a `Send + Sync` witness), so
     /// `dead_code` is allowed deliberately.
     #[allow(dead_code)]
     struct WinShellMarkerFreeMirror {
         hwnd: Option<HWND>,
-        state: Option<Box<ShellState>>,
-        pixels: Option<Vec<u8>>,
+        state: Option<Box<ShellStateMarkerFreeMirror>>,
         quit: bool,
     }
 

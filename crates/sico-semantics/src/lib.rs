@@ -2628,12 +2628,21 @@ fn infer_try(
 }
 
 #[derive(Clone, Debug)]
+// The head-kind flags mirror the surface grammar's keyword heads
+// (else/ok/error/some/none); they are intentionally flat — the match
+// checks read them in combinations that a packed enum would obscure.
+#[allow(clippy::struct_excessive_bools)]
 struct MatchPattern {
     key: String,
     variants: Vec<(String, String)>,
     wildcard: bool,
     result_ok: bool,
     result_error: bool,
+    /// RFC-0056 D4: `some`/`none` arms take the Result-match slot — the
+    /// sealed-exhaustiveness demand does not apply to Option matches in v0
+    /// (same precedent as Result matches).
+    option_some: bool,
+    option_none: bool,
     range: TextRange,
 }
 
@@ -2674,6 +2683,9 @@ fn check_match(
     let is_result_match = patterns
         .iter()
         .any(|pattern| pattern.result_ok || pattern.result_error);
+    let is_option_match = patterns
+        .iter()
+        .any(|pattern| pattern.option_some || pattern.option_none);
     let enum_names = ordered_enum_names(&patterns);
     let wildcard = patterns.iter().find(|pattern| pattern.wildcard);
 
@@ -2687,7 +2699,7 @@ fn check_match(
         return;
     }
 
-    if is_result_match {
+    if is_result_match || is_option_match {
         return;
     }
     check_match_exhaustiveness(line, &patterns, &enum_names, &covered, model, diagnostics);
@@ -2878,6 +2890,12 @@ fn parse_match_pattern(line: &Line) -> MatchPattern {
     let result_error = tokens
         .first()
         .is_some_and(|token| token.kind == TokenKind::ErrorKeyword);
+    let option_some = tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::SomeKeyword);
+    let option_none = tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::None);
     let variants: Vec<_> = tokens
         .windows(3)
         .filter(|window| window[1].kind == TokenKind::Dot)
@@ -2892,6 +2910,10 @@ fn parse_match_pattern(line: &Line) -> MatchPattern {
                 .last()
                 .map_or("<unknown>", |(_, variant)| variant.as_str())
         )
+    } else if option_some {
+        "some".to_owned()
+    } else if option_none {
+        "none".to_owned()
     } else if variants.is_empty()
         && let Some(token) = tokens
             .iter()
@@ -2911,6 +2933,8 @@ fn parse_match_pattern(line: &Line) -> MatchPattern {
         wildcard,
         result_ok,
         result_error,
+        option_some,
+        option_none,
         range: line.range,
     }
 }
@@ -3234,6 +3258,18 @@ fn infer_expression(
                 range,
                 integer: None,
             },
+            // RFC-0056 D4: bare `none` is the payload-less Option case; the
+            // inner type is constrained by the binding/return context at
+            // lowering (`unconstrained none` refusal, the ok/error
+            // precedent).
+            TokenKind::None => Value {
+                ty: Type::Generic {
+                    name: "Option".to_owned(),
+                    arguments: vec![Type::Unknown],
+                },
+                range,
+                integer: None,
+            },
             TokenKind::Identifier if token.text == "Unit" => Value {
                 ty: Type::named("Unit"),
                 range,
@@ -3472,6 +3508,11 @@ fn infer_call(
     }
 
     if let Some(value) = infer_stdlib_call(&callee, &values, range, diagnostics) {
+        if callee == "sico.ui.poll_event" {
+            // RFC-0056 D5: the host-surface enum must be declared with the
+            // pinned shape before the typed binding is usable.
+            check_ui_event_shape(model, diagnostics, range);
+        }
         return value;
     }
 
@@ -3569,6 +3610,50 @@ fn infer_call(
         range,
     );
     unknown(range)
+}
+
+/// RFC-0056 D5: the `ui_event` host-surface enum must be declared with the
+/// pinned shape `click(U64) | select(U64, U64) | closed` (name, order and
+/// payload types exactly). A missing declaration or any mismatch is the
+/// typed refusal `E2028 HOST_ENUM_SHAPE_MISMATCH`; nothing is guessed.
+fn check_ui_event_shape(
+    model: &Model,
+    diagnostics: &mut Vec<SemanticDiagnostic>,
+    range: TextRange,
+) {
+    const PINNED: [(&str, &[&str]); 3] = [
+        ("click", &["U64"]),
+        ("select", &["U64", "U64"]),
+        ("closed", &[]),
+    ];
+    let valid = match model.types.get("ui_event") {
+        Some(TypeDefinition::Enum { variants }) => {
+            variants.len() == PINNED.len()
+                && variants
+                    .iter()
+                    .zip(PINNED)
+                    .all(|(declared, (name, payload))| {
+                        declared.name == *name
+                            && declared.payload.len() == payload.len()
+                            && declared.payload.iter().zip(payload.iter()).all(
+                                |(ty, expected)| matches!(ty, Type::Named(got) if got == expected),
+                            )
+                    })
+        }
+        _ => false,
+    };
+    if !valid {
+        push_diagnostic(
+            diagnostics,
+            "E2028",
+            "HOST_ENUM_SHAPE_MISMATCH",
+            "enum ui_event must be declared with the pinned host shape: \
+             case click(id: U64), case select(handle: U64, index: U64), case closed"
+                .to_owned(),
+            [("enum", "ui_event")],
+            range,
+        );
+    }
 }
 
 fn infer_collect_tasks(
@@ -4124,6 +4209,101 @@ fn infer_stdlib_call(
                 arguments: vec![named("Http2Response"), named("Text")],
             },
         ),
+        // STEP-0627 (RFC-0055): flattened picker source binding — the dialog
+        // returns a path only. ok side = user-selected path, EMPTY string =
+        // `cancelled` (unambiguous: a dialog never selects an empty path);
+        // error side = typed picker-error case name.
+        "sico.picker.open" => (
+            vec![named("Text"), list_text()],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Text"), named("Text")],
+            },
+        ),
+        "sico.picker.save" => (
+            vec![named("Text"), named("Text"), list_text()],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Text"), named("Text")],
+            },
+        ),
+        // STEP-0628 (RFC-0052 §2 + Amendment A1): the source-visible
+        // `sico:script/ui@1.0.0` surface, mirroring the IR table. The
+        // `ui-handle` record flattens to its u64 node id and the typed
+        // `ui-error` variant surfaces as its case-name Text.
+        // RFC-0056 D5/D7 (STEP-0632): `poll_event` recovers its typed
+        // source signature `Option[ui_event]`; the host keeps the WIT
+        // `option<ui-event>` bytes unchanged (ui.wit/runner untouched).
+        "sico.ui.window" => (
+            vec![named("Text"), named("I64"), named("I64")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.ui.column" | "sico.ui.row" | "sico.ui.progress" => (
+            vec![named("U64")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.ui.text" | "sico.ui.button" => (
+            vec![named("U64"), named("Text")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.ui.dropdown" => (
+            vec![named("U64"), list_text()],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.ui.image_preview" => (
+            vec![named("U64"), named("U64"), named("U64")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("U64"), named("Text")],
+            },
+        ),
+        "sico.ui.set_text" => (
+            vec![named("U64"), named("Text")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.ui.set_progress" => (
+            vec![named("U64"), named("U64"), named("U64")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.ui.draw_image" => (
+            vec![named("U64"), named("U64"), named("U64"), named("Bytes")],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.ui.run" => (
+            vec![],
+            Type::Generic {
+                name: "Result".to_owned(),
+                arguments: vec![named("Bool"), named("Text")],
+            },
+        ),
+        "sico.ui.poll_event" => (
+            vec![],
+            Type::Generic {
+                name: "Option".to_owned(),
+                arguments: vec![named("ui_event")],
+            },
+        ),
         "sico.stream.stdin" => (vec![], named("InputStream")),
         "sico.stream.stdout" | "sico.stream.stderr" => (vec![], named("OutputStream")),
         "sico.stream.read" => (
@@ -4172,6 +4352,19 @@ fn infer_result_constructor(callee: &str, values: &[Value], range: TextRange) ->
     let value_type = values
         .first()
         .map_or(Type::Unknown, |value| value.ty.clone());
+    if callee == "some" {
+        // RFC-0056 D4: `some(x)` mirrors `ok(x)` — the payload type comes
+        // from the argument; the Option's full type is constrained by the
+        // binding/return context at lowering.
+        return Some(Value {
+            ty: Type::Generic {
+                name: "Option".to_owned(),
+                arguments: vec![value_type],
+            },
+            range,
+            integer: None,
+        });
+    }
     let arguments = match callee {
         "ok" => vec![value_type, Type::Unknown],
         "error" => vec![Type::Unknown, value_type],

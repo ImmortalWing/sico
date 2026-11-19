@@ -9,6 +9,12 @@ crate-type = ["cdylib"]
 
 [dependencies]
 png = "=0.18.1"
+# RFC-0050 A2 (accepted 2026-11-06): JPEG decode/encode.
+# `jpeg-decoder` drops its optional `rayon` feature (default-features = false)
+# so the guest core stays single-threaded, deterministic and free of wasm
+# atomics; `jpeg-encoder` keeps its default `std` feature.
+jpeg-decoder = { version = "=0.3.2", default-features = false }
+jpeg-encoder = "=0.7.1"
 
 # ADR-0019 §2: release profile fixed for byte-reproducible core production.
 [profile.release]

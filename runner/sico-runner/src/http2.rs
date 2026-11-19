@@ -627,6 +627,14 @@ pub(crate) fn link_http2(
                     return Ok((Err(HttpError::Protocol),));
                 }
             };
+            // `table.delete` removes the request-body resource without running
+            // its destructor, so decrement the live-body counter here to mirror
+            // the `request-body` resource destructor; otherwise every completed
+            // upload permanently consumes one of the `MAX_LIVE_BODIES` slots.
+            {
+                let http2 = &mut store.data_mut().http2;
+                http2.bodies_live = http2.bodies_live.saturating_sub(1);
+            }
             let Some(pipe) = pipe else {
                 complete_operation(&mut store, operation, 0)?;
                 return Ok((Err(HttpError::Protocol),));

@@ -61,7 +61,10 @@ RFC 记录语言语义、表层语法、标准库、WIT 接口、诊断协议和
 | [`RFC-0052`](./RFC-0052-native-ui-source-binding-v0.md) | draft（owner acceptance required；配对 ADR-0018 proposed） | Sico 语言原生 UI 库源侧绑定：`sico:user/ui@1` 版本化包（window/column/row/text/button/dropdown/image_preview/progress + poll_event/run），零语法增长；对话框组合既有 file 能力；封闭 UiError + 节点/深度 limit+1 typed；帧=UI 状态纯函数 |
 | [`RFC-0053`](./RFC-0053-pdf-structural-reading-v0.md) | draft（owner acceptance required；实现另等 M25 v1.0 release GO） | M26 PDF 结构阅读子集 v0：`sico:user/pdf@1` open() 结构阅读（classic xref table/trailer/catalog/page tree/MediaBox//Rotate 继承），stream 有 /Filter 即 typed 拒绝，加密拒绝；xref stream/object stream/incremental update 各自扩展语料另列 |
 | [`RFC-0054`](./RFC-0054-pdf-limits-refusals-writer-v0.md) | draft（owner acceptance required；实现另等 M25 v1.0 release GO） | M26 PDF 限额/拒绝分类 v0：八项限额先检后分配（+1 typed）、封闭 PdfError 十四码带字节 span、字节级稳定 writer 契约（classic xref、规范重编号、幂等探测） |
+| [`RFC-0055`](./RFC-0055-native-ui-file-open-save-picker-v0.md) | accepted（owner 2026-11-04；2026-11-18 ported to `dev` from `codex/m24-vision-ui-v2` `6274ae6` under owner porting authorization；实现另立 STEP-0627，证据另登记）+ [`A1`](./RFC-0055-amendment-A1-root-relative-picker-path.md) **accepted（owner 2026-11-06，contract-only，明确未实现）** | M24 §8.6.1 源侧 UI 文件打开/保存路径选择 v0：新增 host-provider `sico:script/path-picker` 面（`open`/`save` → `result<option<string>, picker-error>`，`filters` 为**扁平 `list<string>`** `"name|pattern"`/条），**只选路径不做 IO**，读写权限仍归既有 `fs-read`/`fs-write`（默认拒绝、两能力独立分解）；封闭 `picker-error` 四码、filters limit+1 typed、零语法增长；A1 改为**根相对路径**返回 + 第 5 个 typed case `outside-grant`（合同，未实现）；由 STEP-0555 收尾 §8.4 对话框残差时量出「既有 file 能力无用户选路径原语」这一缺口后提出 |
 
-下一可用编号：`RFC-0055`。
+| [`RFC-0056`](./RFC-0056-language-v1-batch4-enum-payload-match-option.md) | **accepted（owner 2026-11-19）** | 语言 v1 batch 4：已声明 payload enum 的单层 payload 绑定 match 臂泛化（`Named` enum + `Option` subject、多绑定、`Module.enums` 声明表 + project `"<case>"/"<case>.<index>"` 约定）+ `Option[T]`/`some`/`none` + 宿主面 enum 约定（程序按钉死形状声明 `ui-event`，不符 `E2028`）；依 STEP-0629 八探针实测（p3/p4 lower 哨兵、p1/p2 non-scalar 边界拒、p7 瞬态形状已通）；使 `sico.ui.poll_event` 源签名回 `Option[ui-event]` 并回收 STEP-0628 Text 面；嵌套绑定/函数边界 first-class/RFC-0039 值集为 v0 非目标 |
+
+下一可用编号：`RFC-0057`。
 
 创建时使用 [`RFC template`](../templates/RFC.md)，并在本页登记状态和替代关系。

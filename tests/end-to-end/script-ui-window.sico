@@ -1,0 +1,148 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+/// RFC-0056 D5: the host-surface event enum, pinned shape (name/order/
+/// payload types). Referenced by `sico.ui.poll_event`'s typed signature;
+/// semantics validates it against the pin (E2028 on mismatch).
+enum ui_event:
+  case click(id: U64)
+  case select(handle: U64, index: U64)
+  case closed
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  return ok(ScriptOutput(stdout: sico.text.encode(message), stderr: sico.text.encode(""), exit_code: I64.literal(1)))
+end function
+
+function build_tree() returns Result[ScriptOutput, ScriptError]:
+  match sico.ui.window("sico ui window", I64.literal(800), I64.literal(600)):
+    case ok(window):
+      match sico.ui.column(window):
+        case ok(column):
+          match sico.ui.text(column, "hello ui"):
+            case ok(node):
+              match sico.ui.button(column, "press"):
+                case ok(button):
+                  let out = sico.text.concat("window=", sico.u64.to_text(window))
+                  set out = sico.text.concat(out, sico.text.concat("|column=", sico.u64.to_text(column)))
+                  set out = sico.text.concat(out, sico.text.concat("|text=", sico.u64.to_text(node)))
+                  set out = sico.text.concat(out, sico.text.concat("|button=", sico.u64.to_text(button)))
+                  match sico.ui.row(window):
+                    case ok(row):
+                      set out = sico.text.concat(out, sico.text.concat("|row=", sico.u64.to_text(row)))
+                    case error(name):
+                      return fail(sico.text.concat("row:", name))
+                  end match
+                  match sico.ui.progress(column):
+                    case ok(progress):
+                      set out = sico.text.concat(out, sico.text.concat("|progress=", sico.u64.to_text(progress)))
+                    case error(name):
+                      return fail(sico.text.concat("progress:", name))
+                  end match
+                  match sico.ui.dropdown(window, sico.text.split_words("one|two")):
+                    case ok(dropdown):
+                      set out = sico.text.concat(out, sico.text.concat("|dropdown=", sico.u64.to_text(dropdown)))
+                    case error(name):
+                      return fail(sico.text.concat("dropdown:", name))
+                  end match
+                  match sico.ui.image_preview(column, U64.literal(64), U64.literal(64)):
+                    case ok(preview):
+                      set out = sico.text.concat(out, sico.text.concat("|preview=", sico.u64.to_text(preview)))
+                    case error(name):
+                      return fail(sico.text.concat("image_preview:", name))
+                  end match
+                  match sico.ui.set_text(node, "updated"):
+                    case ok(flag):
+                      match flag:
+                        case true:
+                          set out = sico.text.concat(out, "|set_text=1")
+                        case false:
+                          set out = sico.text.concat(out, "|set_text=0")
+                      end match
+                    case error(name):
+                      return fail(sico.text.concat("set_text:", name))
+                  end match
+                  match sico.ui.set_progress(button, U64.literal(3), U64.literal(8)):
+                    case ok(flag):
+                      match flag:
+                        case true:
+                          set out = sico.text.concat(out, "|set_progress=1")
+                        case false:
+                          set out = sico.text.concat(out, "|set_progress=0")
+                      end match
+                    case error(name):
+                      return fail(sico.text.concat("set_progress:", name))
+                  end match
+                  match sico.ui.draw_image(node, U64.literal(2), U64.literal(2), sico.text.encode("rgba")):
+                    case ok(flag):
+                      match flag:
+                        case true:
+                          set out = sico.text.concat(out, "|draw_image=1")
+                        case false:
+                          set out = sico.text.concat(out, "|draw_image=0")
+                      end match
+                    case error(name):
+                      return fail(sico.text.concat("draw_image:", name))
+                  end match
+                  match sico.ui.run():
+                    case ok(flag):
+                      match flag:
+                        case true:
+                          set out = sico.text.concat(out, "|run=1")
+                        case false:
+                          set out = sico.text.concat(out, "|run=0")
+                      end match
+                    case error(name):
+                      return fail(sico.text.concat("run:", name))
+                  end match
+                  match sico.ui.poll_event():
+                    case some(ev):
+                      match ev:
+                        case ui_event.click(h):
+                          set out = sico.text.concat(out, sico.text.concat("|poll=click:", sico.u64.to_text(h)))
+                        case ui_event.select(h, i):
+                          set out = sico.text.concat(out, sico.text.concat("|poll=select:", sico.text.concat(sico.u64.to_text(h), sico.text.concat(":", sico.u64.to_text(i)))))
+                        case ui_event.closed:
+                          set out = sico.text.concat(out, "|poll=closed")
+                      end match
+                    case none:
+                      set out = sico.text.concat(out, "|poll=none")
+                  end match
+                  return ok(ScriptOutput(stdout: sico.text.encode(out), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+                case error(name):
+                  return fail(sico.text.concat("button:", name))
+              end match
+            case error(name):
+              return fail(sico.text.concat("text:", name))
+          end match
+        case error(name):
+          return fail(sico.text.concat("column:", name))
+      end match
+    case error(name):
+      return fail(sico.text.concat("window:", name))
+  end match
+end function
+
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  return build_tree()
+end function

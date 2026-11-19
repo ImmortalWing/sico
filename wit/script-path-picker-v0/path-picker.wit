@@ -1,0 +1,53 @@
+// The `sico:script/path-picker@1.0.0` host-provider import (RFC-0055).
+//
+// Like `sico:script/ui@1.0.0` (RFC-0052 + Amendment A1), this interface lives
+// on the **host-provider import surface**, where records/enums are permitted
+// and `interface_value_offender`/E8017 does not apply. Sico source imports it
+// exactly like `ui@1` — zero grammar growth.
+//
+// The dialog is **pure path selection**: it grants no read/write authority by
+// itself. The caller persists/reads through the existing default-deny
+// `fs-read`/`fs-write` capability, which independently fails closed.
+//
+// STEP-0627 correction (against the codex draft): `filters` is the FLATTENED
+// `list<string>` — one `"name|pattern"` entry per filter — matching what the
+// runner binding, the codegen and the guest all use. The codex WIT text said
+// `list<tuple<string,string>>`, which no implementation emitted.
+
+package sico:script@1.0.0;
+
+interface path-picker {
+  enum picker-error {
+    // The user dismissed the dialog (surfaced on the ok side as an empty
+    // path in the flattened source binding — not an error to report).
+    cancelled,
+    // No native dialog host on this platform.
+    no-window,
+    // A filter/option budget limit+1 case (typed before allocation).
+    limit,
+    // The default-deny picker capability was not granted.
+    authority-denied,
+  }
+
+  /// Ask the user to choose an existing file to open. `filters` is the
+  /// flattened `list<string>`: one `"name|pattern"` entry per filter (for
+  /// example `"PNG image|*.png"`); the count is bounded (RFC-0055 §5).
+  /// Returns the user-selected path, or an empty path when the user
+  /// cancelled (see the flattened-binding note below).
+  open: func(title: string, filters: list<string>)
+        -> result<string, picker-error>;
+
+  /// Ask the user to choose a save destination. Does NOT write; the caller
+  /// persists through `fs-write` under the existing write grant. Returns the
+  /// user-selected path, or an empty path when the user cancelled.
+  save: func(title: string, suggested-name: string, filters: list<string>)
+        -> result<string, picker-error>;
+
+  // Flattened-binding note (STEP-0557). RFC-0055 §3 wrote the return as
+  // `result<option<string>, picker-error>`. The host-provider surface keeps
+  // `option` as a *host-seam* type and encodes it here as the flattened
+  // guest representation: `cancelled` = `ok("")` (a dialog never selects an
+  // empty path, so the empty string is unambiguous and cancellation stays a
+  // non-error). This mirrors the `poll-event` Option-A flattening accepted in
+  // STEP-0556 and adds no grammar to the source surface.
+}

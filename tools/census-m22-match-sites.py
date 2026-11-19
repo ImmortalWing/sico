@@ -56,7 +56,10 @@ SCHEMA = "sico.m22.match-coverage.v1"
 # STEP-0623 closed the W3-a variant-construct leading-`let` gap, adding a
 # `construct_let_materializable` scan to `record_variant_function_ir` whose
 # `checked_add` field-offset guard adds two more; the candidate set is 405.
-EXPECTED_SITES = 405
+# STEP-0627 closed the B1 no-`while` general-route gap, adding a `gw_*`
+# fallback gate to `scalar_ir` whose `checked_add` end-offset guard adds one
+# more; the candidate set is 406.
+EXPECTED_SITES = 406
 
 # The files whose whole-file canonical IR differential is pinned by the
 # firmware; a site whose closure is too large leans on that pin.
@@ -249,9 +252,10 @@ def main() -> int:
         "source_set": "selfhost/*.sico (frozen S)",
         "rule": (
             "a `match` statement whose head is U64.checked_add, at any parameter "
-            "count -- the 405 candidate sites of the frozen S (the 396 of "
-            "STEP-0536 plus the 7 added by the STEP-0619 construct routes and "
-            "the 2 added by the STEP-0623 variant-construct leading-let scan)"
+            "count -- the 406 candidate sites of the frozen S (the 396 of "
+            "STEP-0536 plus the 7 added by the STEP-0619 construct routes, "
+            "the 2 added by the STEP-0623 variant-construct leading-let scan "
+            "and the 1 added by the STEP-0627 no-while general-route gate)"
         ),
         "sites": records,
     }

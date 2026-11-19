@@ -42,6 +42,13 @@ struct Definitions {
     functions: BTreeMap<String, Signature>,
     constructors: BTreeMap<String, Type>,
     variants: BTreeMap<String, Type>,
+    /// RFC-0056 D1: declared per-variant payload types, keyed by
+    /// `(enum name, case name)`. Mirrors the `variants` registry's
+    /// unqualified-name scope (import-file variant constructors are not
+    /// qualified-callable today either). Filled mid-walk with raw
+    /// `parse_type` results; the semantic layer owns the authoritative
+    /// shape check (RFC-0056 D5).
+    variant_payloads: BTreeMap<(String, String), Vec<Type>>,
     fields: BTreeMap<(String, String), Type>,
     capabilities: BTreeSet<String>,
     resources: BTreeSet<String>,
@@ -295,6 +302,7 @@ pub fn lower_core_modules(
     let mut task_scopes = BTreeMap::new();
     let mut module_import_signatures = BTreeMap::new();
     let mut module_records: BTreeMap<String, Vec<crate::RecordField>> = BTreeMap::new();
+    let mut module_enums: BTreeMap<String, Vec<crate::EnumVariant>> = BTreeMap::new();
     for (index, ((prefix, decls), base)) in declarations.iter().zip(&bases).enumerate() {
         let mut definitions = Definitions::from_declarations(decls, *prefix, *base);
         for package in packages {
@@ -404,6 +412,53 @@ pub fn lower_core_modules(
             };
             module_records.insert(key, fields);
         }
+        // RFC-0056 D2: declared enum types enter the module contract with
+        // per-variant payload types in canonical declaration order, so the
+        // verifier can check payload projections without re-reading source.
+        // Both payload-carrying (`case Pair(left: U64, right: U64)`) and
+        // plain (`case Stop`) variants collect; import-file enums take the
+        // qualified `module.Name` key (the records pattern above).
+        for declaration in decls {
+            if declaration.kind != DeclarationKind::Enum {
+                continue;
+            }
+            let mut variants: Vec<crate::EnumVariant> = Vec::new();
+            for line in &declaration.lines {
+                if line.kind != LineKind::Variant || line.tokens.len() < 2 {
+                    continue;
+                }
+                let name = line.tokens[1].text.clone();
+                let payload = line
+                    .tokens
+                    .iter()
+                    .position(|token| token.kind == TokenKind::LeftParen)
+                    .and_then(|left| matching_close(&line.tokens, left).map(|right| (left, right)))
+                    .map_or_else(Vec::new, |(left, right)| {
+                        split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                            .into_iter()
+                            .filter(|tokens| !tokens.is_empty())
+                            .filter_map(|tokens| {
+                                tokens.iter().position(|t| t.kind == TokenKind::Colon).map(
+                                    |colon| {
+                                        definitions.resolve_type(parse_type(&tokens[colon + 1..]))
+                                    },
+                                )
+                            })
+                            .collect()
+                    });
+                variants.push(crate::EnumVariant { name, payload });
+            }
+            let key = if index > 0 {
+                format!(
+                    "{}.{}",
+                    prefix.expect("import files carry a module prefix"),
+                    declaration.name
+                )
+            } else {
+                declaration.name.clone()
+            };
+            module_enums.insert(key, variants);
+        }
     }
 
     let mut module = Module::new(entry.name(), entry.len().into());
@@ -420,6 +475,9 @@ pub fn lower_core_modules(
     module.import_signatures = module_import_signatures;
     if !module_records.is_empty() {
         module.records = module_records;
+    }
+    if !module_enums.is_empty() {
+        module.enums = module_enums;
     }
     if !task_scopes.is_empty() {
         module.task_scopes = Some(task_scopes);
@@ -508,6 +566,29 @@ impl Definitions {
                             definitions.variants.insert(
                                 format!("{}.{}", declaration.name, line.tokens[1].text),
                                 Type::Named(declaration.name.clone()),
+                            );
+                            let payload = line
+                                .tokens
+                                .iter()
+                                .position(|token| token.kind == TokenKind::LeftParen)
+                                .and_then(|left| {
+                                    matching_close(&line.tokens, left).map(|right| (left, right))
+                                })
+                                .map_or_else(Vec::new, |(left, right)| {
+                                    split_top_level(&line.tokens[left + 1..right], TokenKind::Comma)
+                                        .into_iter()
+                                        .filter(|tokens| !tokens.is_empty())
+                                        .filter_map(|tokens| {
+                                            tokens
+                                                .iter()
+                                                .position(|t| t.kind == TokenKind::Colon)
+                                                .map(|colon| parse_type(&tokens[colon + 1..]))
+                                        })
+                                        .collect()
+                                });
+                            definitions.variant_payloads.insert(
+                                (declaration.name.clone(), line.tokens[1].text.clone()),
+                                payload,
                             );
                         }
                     }
@@ -1800,7 +1881,10 @@ impl GeneralLowering<'_, '_> {
                     // plain-value matches (e.g. recursive functions
                     // returning scalars). Programs that compiled before
                     // either took the parameter path or already spilled, so
-                    // no previously accepted shape changes.
+                    // no previously accepted shape changes. RFC-0056 D1
+                    // widens the detector from ok/error-only to any
+                    // single-pattern payload binding (byte-identical on
+                    // legacy programs).
                     let binds_payload = arm_ranges.iter().any(|(arm_index, _)| {
                         let arm_line = &lines[*arm_index];
                         let pattern_tokens =
@@ -1809,13 +1893,7 @@ impl GeneralLowering<'_, '_> {
                             .into_iter()
                             .map(parse_pattern)
                             .collect();
-                        patterns.len() == 1
-                            && matches!(
-                                &patterns[0],
-                                Pattern::Variant { name, payload }
-                                    if matches!(name.as_str(), "ok" | "error")
-                                        && matches!(payload.as_slice(), [Pattern::Binding(_)])
-                            )
+                        arm_has_payload_binding(&patterns)
                     });
                     let needs_spill = binds_payload
                         && values
@@ -1854,33 +1932,12 @@ impl GeneralLowering<'_, '_> {
                             .into_iter()
                             .map(parse_pattern)
                             .collect();
-                        let mut payload_binding = None;
-                        let mut payload_variant = String::new();
-                        for pattern in &patterns {
-                            let single_result_binding = match pattern {
-                                Pattern::Variant { name, payload }
-                                    if matches!(name.as_str(), "ok" | "error") =>
-                                {
-                                    payload_variant.clone_from(name);
-                                    match payload.as_slice() {
-                                        [Pattern::Binding(name)] => Some(name.clone()),
-                                        _ => None,
-                                    }
-                                }
-                                _ => None,
-                            };
-                            match single_result_binding {
-                                Some(binding)
-                                    if patterns.len() == 1 && payload_binding.is_none() =>
-                                {
-                                    payload_binding = Some(binding);
-                                }
-                                _ if pattern_binds(pattern) => {
-                                    return unsupported("match payload binding", arm_line.range);
-                                }
-                                _ => {}
-                            }
-                        }
+                        let payload_binding = scan_arm_payload_binding(
+                            &patterns,
+                            value_types.first(),
+                            self.builder.definitions,
+                            arm_line.range,
+                        )?;
                         let arm_block = self.new_block(arm_line.range);
                         arms.push(MatchArm {
                             patterns,
@@ -1890,12 +1947,6 @@ impl GeneralLowering<'_, '_> {
                         self.set_current(arm_block);
                         let arm_snapshot = self.builder.bindings.clone();
                         if let Some(binding) = payload_binding {
-                            let Some(Type::Result { ok, error }) = value_types.first() else {
-                                return unsupported(
-                                    "match payload binding on non-Result",
-                                    arm_line.range,
-                                );
-                            };
                             let base = if let Some(local) = spill_cell {
                                 let Some(subject_type) = value_types.first().cloned() else {
                                     return unsupported("match payload binding", arm_line.range);
@@ -1915,44 +1966,102 @@ impl GeneralLowering<'_, '_> {
                                 }
                                 base
                             };
-                            let payload_type = if payload_variant == "ok" {
-                                (**ok).clone()
-                            } else {
-                                (**error).clone()
-                            };
-                            let payload = self.builder.emit(
-                                payload_type.clone(),
-                                Operation::Project {
-                                    base,
-                                    field: payload_variant,
-                                },
-                                arm_line.range,
-                                &mut self.blocks[arm_block].instructions,
-                            );
                             // A payload binding may be read after the match
-                            // joins (IR values are block-scoped), so it spills
-                            // into a compiler-generated cell; the binding then
-                            // resolves through `ReadLocal` in every block.
-                            let cell_name = format!("#match{binding}");
-                            let local = u32::try_from(self.builder.locals.len())
-                                .map_err(|_| unsupported_error("local limit", arm_line.range))?;
-                            self.builder.locals.push(Local {
-                                name: cell_name,
-                                ty: payload_type.clone(),
-                                range: source_range(arm_line.range),
-                            });
-                            self.builder
-                                .cells
-                                .insert(binding, (local, payload_type.clone()));
-                            self.builder.emit(
-                                Type::Unit,
-                                Operation::WriteLocal {
-                                    local,
-                                    value: payload,
-                                },
-                                arm_line.range,
-                                &mut self.blocks[arm_block].instructions,
-                            );
+                            // joins (IR values are block-scoped), so each
+                            // bound slot spills into a compiler-generated
+                            // cell; the binding then resolves through
+                            // `ReadLocal` in every block. RFC-0056 D1: the
+                            // Result arm keeps the STEP-0083 emission
+                            // byte-identically; the Enum arm applies the same
+                            // cell treatment per bound slot.
+                            let spill_binding =
+                                |this: &mut Self,
+                                 binding: &str,
+                                 payload_type: Type,
+                                 base: ValueId,
+                                 field: String| {
+                                    let payload = this.builder.emit(
+                                        payload_type.clone(),
+                                        Operation::Project { base, field },
+                                        arm_line.range,
+                                        &mut this.blocks[arm_block].instructions,
+                                    );
+                                    let cell_name = format!("#match{binding}");
+                                    let local =
+                                        u32::try_from(this.builder.locals.len()).map_err(|_| {
+                                            unsupported_error("local limit", arm_line.range)
+                                        })?;
+                                    this.builder.locals.push(Local {
+                                        name: cell_name,
+                                        ty: payload_type.clone(),
+                                        range: source_range(arm_line.range),
+                                    });
+                                    this.builder
+                                        .cells
+                                        .insert(binding.to_owned(), (local, payload_type.clone()));
+                                    this.builder.emit(
+                                        Type::Unit,
+                                        Operation::WriteLocal {
+                                            local,
+                                            value: payload,
+                                        },
+                                        arm_line.range,
+                                        &mut this.blocks[arm_block].instructions,
+                                    );
+                                    Ok::<(), CoreLowerError>(())
+                                };
+                            match binding {
+                                PayloadBinding::Result { variant, binding } => {
+                                    let Some(Type::Result { ok, error }) = value_types.first()
+                                    else {
+                                        return unsupported(
+                                            "match payload binding on non-Result",
+                                            arm_line.range,
+                                        );
+                                    };
+                                    let payload_type = if variant == "ok" {
+                                        (**ok).clone()
+                                    } else {
+                                        (**error).clone()
+                                    };
+                                    spill_binding(self, &binding, payload_type, base, variant)?;
+                                }
+                                PayloadBinding::Some { binding, inner } => {
+                                    spill_binding(
+                                        self,
+                                        &binding,
+                                        inner.clone(),
+                                        base,
+                                        "some".into(),
+                                    )?;
+                                }
+                                PayloadBinding::Enum {
+                                    case,
+                                    bindings,
+                                    payload_types,
+                                } => {
+                                    for (index, bound) in bindings.iter().enumerate() {
+                                        let Some(binding) = bound else {
+                                            continue;
+                                        };
+                                        // RFC-0056 D3: arity-1 payloads project
+                                        // by case name (the `"ok"` precedent);
+                                        // arity-N uses `"<case>.<i>"`.
+                                        let field = if payload_types.len() == 1 {
+                                            case.clone()
+                                        } else {
+                                            format!("{case}.{index}")
+                                        };
+                                        spill_binding(
+                                            self,
+                                            binding,
+                                            payload_types[index].clone(),
+                                            base,
+                                            field,
+                                        )?;
+                                    }
+                                }
+                            }
                         }
                         self.nested += 1;
                         self.run(lines, arm_index + 1, body_end)?;
@@ -2295,13 +2404,7 @@ impl GeneralLowering<'_, '_> {
                 .into_iter()
                 .map(parse_pattern)
                 .collect();
-            patterns.len() == 1
-                && matches!(
-                    &patterns[0],
-                    Pattern::Variant { name, payload }
-                        if matches!(name.as_str(), "ok" | "error")
-                            && matches!(payload.as_slice(), [Pattern::Binding(_)])
-                )
+            arm_has_payload_binding(&patterns)
         });
         let needs_spill = binds_payload
             && values
@@ -2342,31 +2445,12 @@ impl GeneralLowering<'_, '_> {
                 .into_iter()
                 .map(parse_pattern)
                 .collect();
-            let mut payload_binding = None;
-            let mut payload_variant = String::new();
-            for pattern in &patterns {
-                let single_result_binding = match pattern {
-                    Pattern::Variant { name, payload }
-                        if matches!(name.as_str(), "ok" | "error") =>
-                    {
-                        payload_variant.clone_from(name);
-                        match payload.as_slice() {
-                            [Pattern::Binding(binding)] => Some(binding.clone()),
-                            _ => None,
-                        }
-                    }
-                    _ => None,
-                };
-                match single_result_binding {
-                    Some(binding) if patterns.len() == 1 && payload_binding.is_none() => {
-                        payload_binding = Some(binding);
-                    }
-                    _ if pattern_binds(pattern) => {
-                        return unsupported("match payload binding", arm_line.range);
-                    }
-                    _ => {}
-                }
-            }
+            let payload_binding = scan_arm_payload_binding(
+                &patterns,
+                value_types.first(),
+                self.builder.definitions,
+                arm_line.range,
+            )?;
             let arm_block = self.new_block(arm_line.range);
             arms.push(MatchArm {
                 patterns,
@@ -2376,9 +2460,6 @@ impl GeneralLowering<'_, '_> {
             self.set_current(arm_block);
             let arm_snapshot = self.builder.bindings.clone();
             if let Some(binding) = payload_binding {
-                let Some(Type::Result { ok, error }) = value_types.first() else {
-                    return unsupported("match payload binding on non-Result", arm_line.range);
-                };
                 let base = if let Some(local) = spill_cell {
                     let Some(subject_type) = value_types.first().cloned() else {
                         return unsupported("match payload binding", arm_line.range);
@@ -2398,40 +2479,83 @@ impl GeneralLowering<'_, '_> {
                     }
                     base
                 };
-                let payload_type = if payload_variant == "ok" {
-                    (**ok).clone()
-                } else {
-                    (**error).clone()
+                // RFC-0056 D1: same cell-per-bound-slot treatment as the
+                // statement match (the Result arm is byte-identical legacy).
+                let spill_binding = |this: &mut Self,
+                                     binding: &str,
+                                     payload_type: Type,
+                                     base: ValueId,
+                                     field: String| {
+                    let payload = this.builder.emit(
+                        payload_type.clone(),
+                        Operation::Project { base, field },
+                        arm_line.range,
+                        &mut this.blocks[arm_block].instructions,
+                    );
+                    let cell_name = format!("#match{binding}");
+                    let local = u32::try_from(this.builder.locals.len())
+                        .map_err(|_| unsupported_error("local limit", arm_line.range))?;
+                    this.builder.locals.push(Local {
+                        name: cell_name,
+                        ty: payload_type.clone(),
+                        range: source_range(arm_line.range),
+                    });
+                    this.builder
+                        .cells
+                        .insert(binding.to_owned(), (local, payload_type.clone()));
+                    this.builder.emit(
+                        Type::Unit,
+                        Operation::WriteLocal {
+                            local,
+                            value: payload,
+                        },
+                        arm_line.range,
+                        &mut this.blocks[arm_block].instructions,
+                    );
+                    Ok::<(), CoreLowerError>(())
                 };
-                let payload = self.builder.emit(
-                    payload_type.clone(),
-                    Operation::Project {
-                        base,
-                        field: payload_variant,
-                    },
-                    arm_line.range,
-                    &mut self.blocks[arm_block].instructions,
-                );
-                let cell_name = format!("#match{binding}");
-                let local = u32::try_from(self.builder.locals.len())
-                    .map_err(|_| unsupported_error("local limit", arm_line.range))?;
-                self.builder.locals.push(Local {
-                    name: cell_name,
-                    ty: payload_type.clone(),
-                    range: source_range(arm_line.range),
-                });
-                self.builder
-                    .cells
-                    .insert(binding, (local, payload_type.clone()));
-                self.builder.emit(
-                    Type::Unit,
-                    Operation::WriteLocal {
-                        local,
-                        value: payload,
-                    },
-                    arm_line.range,
-                    &mut self.blocks[arm_block].instructions,
-                );
+                match binding {
+                    PayloadBinding::Result { variant, binding } => {
+                        let Some(Type::Result { ok, error }) = value_types.first() else {
+                            return unsupported(
+                                "match payload binding on non-Result",
+                                arm_line.range,
+                            );
+                        };
+                        let payload_type = if variant == "ok" {
+                            (**ok).clone()
+                        } else {
+                            (**error).clone()
+                        };
+                        spill_binding(self, &binding, payload_type, base, variant)?;
+                    }
+                    PayloadBinding::Some { binding, inner } => {
+                        spill_binding(self, &binding, inner.clone(), base, "some".into())?;
+                    }
+                    PayloadBinding::Enum {
+                        case,
+                        bindings,
+                        payload_types,
+                    } => {
+                        for (index, bound) in bindings.iter().enumerate() {
+                            let Some(binding) = bound else {
+                                continue;
+                            };
+                            let field = if payload_types.len() == 1 {
+                                case.clone()
+                            } else {
+                                format!("{case}.{index}")
+                            };
+                            spill_binding(
+                                self,
+                                binding,
+                                payload_types[index].clone(),
+                                base,
+                                field,
+                            )?;
+                        }
+                    }
+                }
             }
             let (arm_value, arm_ty) = self.builder.expression(
                 &arm_body.tokens,
@@ -2852,6 +2976,143 @@ fn lower_straight_line(
     })
 }
 
+/// One resolved payload binding for a match arm (RFC-0056 D1).
+enum PayloadBinding {
+    /// Result ok/error — the STEP-0083 legacy path; emission stays
+    /// byte-identical to the pre-RFC-0056 shape.
+    Result { variant: String, binding: String },
+    /// Option `some(x)` (RFC-0056 D4): single-slot payload projection off
+    /// an `Option[T]` subject, field `"some"`.
+    Some { binding: String, inner: Type },
+    /// A declared enum variant: `bindings[i] = Some(name)` marks the slots
+    /// to project (`None` = wildcard slot). `payload_types` comes from
+    /// `Definitions::variant_payloads`.
+    Enum {
+        case: String,
+        bindings: Vec<Option<String>>,
+        payload_types: Vec<Type>,
+    },
+}
+
+/// Whether an arm's single pattern carries a payload binding (RFC-0056 D1:
+/// any single-pattern variant binding, not just ok/error). Drives the
+/// subject-spill decision for computed subjects; byte-identical to the
+/// ok/error-only heuristic on legacy programs.
+fn arm_has_payload_binding(patterns: &[Pattern]) -> bool {
+    patterns.len() == 1
+        && matches!(&patterns[0], Pattern::Variant { .. })
+        && pattern_binds(&patterns[0])
+}
+
+/// Scans one arm's patterns and resolves its payload binding, if any.
+/// Refusal identities follow the frozen STEP-0629 probe table.
+fn scan_arm_payload_binding(
+    patterns: &[Pattern],
+    subject: Option<&Type>,
+    definitions: &Definitions,
+    range: TextRange,
+) -> Result<Option<PayloadBinding>, CoreLowerError> {
+    let mut payload_binding = None;
+    for pattern in patterns {
+        if !pattern_binds(pattern) {
+            continue;
+        }
+        let Pattern::Variant { name, payload } = pattern else {
+            return unsupported("match payload binding", range);
+        };
+        if payload
+            .iter()
+            .any(|slot| matches!(slot, Pattern::Variant { .. }))
+        {
+            return unsupported("nested match pattern", range);
+        }
+        // A binding arm stands alone: no tuple/multi-pattern arm carries a
+        // payload binding (same rule the ok/error path has today).
+        if patterns.len() != 1 || payload_binding.is_some() {
+            return unsupported("match payload binding", range);
+        }
+        payload_binding = Some(resolve_payload_binding(
+            name,
+            payload,
+            subject,
+            definitions,
+            range,
+        )?);
+    }
+    Ok(payload_binding)
+}
+
+/// Resolves one binding match pattern against the match subject type.
+/// Refusal identities follow the frozen STEP-0629 probe table.
+fn resolve_payload_binding(
+    name: &str,
+    payload: &[Pattern],
+    subject: Option<&Type>,
+    definitions: &Definitions,
+    range: TextRange,
+) -> Result<PayloadBinding, CoreLowerError> {
+    let mut bindings = Vec::with_capacity(payload.len());
+    for slot in payload {
+        match slot {
+            Pattern::Binding(binding) => bindings.push(Some(binding.clone())),
+            Pattern::Wildcard => bindings.push(None),
+            _ => return unsupported("match payload binding", range),
+        }
+    }
+    match subject {
+        Some(Type::Result { .. }) if name == "ok" || name == "error" => {
+            // Legacy shape: exactly one bound slot (`ok(x)`/`error(x)`).
+            if payload.len() != 1 {
+                return unsupported("match payload binding", range);
+            }
+            let Some(binding) = bindings[0].clone() else {
+                return unsupported("match payload binding", range);
+            };
+            Ok(PayloadBinding::Result {
+                variant: name.to_owned(),
+                binding,
+            })
+        }
+        Some(Type::Option(inner)) if name == "some" => {
+            // RFC-0056 D4: `case some(x)` binds the single Option payload;
+            // `case none` never binds (payload-less).
+            if payload.len() != 1 {
+                return unsupported("match payload binding", range);
+            }
+            let Some(binding) = bindings[0].clone() else {
+                return unsupported("match payload binding", range);
+            };
+            Ok(PayloadBinding::Some {
+                binding,
+                inner: inner.as_ref().clone(),
+            })
+        }
+        Some(Type::Named(enum_name)) => {
+            // The pattern must be fully qualified with the subject's type
+            // name (`case Notice.Message(t)` over a `Notice` subject).
+            let Some((enum_part, case)) = name.rsplit_once('.') else {
+                return unsupported("match payload binding on non-Result", range);
+            };
+            if enum_part != enum_name {
+                return unsupported("match payload binding on non-Result", range);
+            }
+            let key = (enum_name.clone(), case.to_owned());
+            let Some(payload_types) = definitions.variant_payloads.get(&key) else {
+                return unsupported("match payload binding", range);
+            };
+            if payload_types.len() != bindings.len() {
+                return unsupported("match payload binding arity", range);
+            }
+            Ok(PayloadBinding::Enum {
+                case: case.to_owned(),
+                bindings,
+                payload_types: payload_types.clone(),
+            })
+        }
+        _ => unsupported("match payload binding on non-Result", range),
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn lower_match(
     declaration: &Declaration,
@@ -2895,13 +3156,7 @@ fn lower_match(
                     .into_iter()
                     .map(parse_pattern)
                     .collect();
-                patterns.len() == 1
-                    && matches!(
-                        &patterns[0],
-                        Pattern::Variant { name, payload }
-                            if matches!(name.as_str(), "ok" | "error")
-                                && matches!(payload.as_slice(), [Pattern::Binding(_)])
-                    )
+                arm_has_payload_binding(&patterns)
             });
         let subject_computed = values
             .first()
@@ -2953,29 +3208,17 @@ fn lower_match(
             .map(parse_pattern)
             .collect();
         // `case ok(x)` / `case error(x)` bind the variant payload through a
-        // Project instruction; every other binding shape stays refused.
-        let mut payload_binding = None;
-        for pattern in &patterns {
-            let single_result_binding = match pattern {
-                Pattern::Variant { name, payload } if matches!(name.as_str(), "ok" | "error") => {
-                    match payload.as_slice() {
-                        [Pattern::Binding(name)] => Some((pattern, name.clone())),
-                        _ => None,
-                    }
-                }
-                _ => None,
-            };
-            match single_result_binding {
-                Some((pattern, name)) if patterns.len() == 1 && payload_binding.is_none() => {
-                    let _ = pattern;
-                    payload_binding = Some(name);
-                }
-                _ if pattern_binds(pattern) => {
-                    return unsupported("match payload binding", line.range);
-                }
-                _ => {}
-            }
-        }
+        // Project instruction; RFC-0056 D1 extends the same lowering to
+        // declared payload enums (`case Notice.Message(t)`, multi-slot
+        // `case Pair(a, b)`). Nested patterns stay refused in v0 (the
+        // semantics layer expands non-binding nested arms as a cross
+        // product, STEP-0629 p4b; binding+nested needs its own ruling).
+        let payload_binding = scan_arm_payload_binding(
+            &patterns,
+            value_types.first(),
+            builder.definitions,
+            line.range,
+        )?;
         cursor += 1;
         let Some(body) = declaration.lines.get(cursor) else {
             return unsupported("empty match arm", line.range);
@@ -2984,20 +3227,24 @@ fn lower_match(
             return unsupported("non-return match arm", body.range);
         }
         let mut instructions = Vec::new();
-        if let Some(binding) = payload_binding {
-            let [Pattern::Variant { name: variant, .. }] = patterns.as_slice() else {
-                return unsupported("match payload binding", line.range);
-            };
-            let (Some(Type::Result { ok, error }), [base]) =
-                (value_types.first(), values.as_slice())
-            else {
+        // Enum-arm bindings are arm-scoped: they enter `builder.bindings` for
+        // the arm body and are withdrawn afterwards, so a later arm cannot
+        // observe them. The legacy Result path intentionally keeps its
+        // pre-RFC-0056 behavior (no withdrawal) to stay byte-identical on
+        // frozen fixtures.
+        let mut withdraw: Option<std::collections::BTreeMap<String, (ValueId, Type)>> = None;
+        if let Some(binding) = &payload_binding {
+            // Legacy shape: exactly one match subject carried the binding
+            // arms (a tuple subject failed the old `[base]` destructure with
+            // "match payload binding on non-Result"; keep that identity).
+            if values.len() != 1 {
                 return unsupported("match payload binding on non-Result", line.range);
-            };
+            }
             // IR values are block-scoped: a match subject that is a function
             // parameter stays visible inside the arm block; a computed
             // subject reads the entry-block spill cell (allocated before the
             // arm loop so value ids stay canonical; STEP-0137).
-            let base = if base.0 >= builder.parameter_count {
+            let base = if values[0].0 >= builder.parameter_count {
                 let Some(local) = spill else {
                     return unsupported("match payload binding", line.range);
                 };
@@ -3008,25 +3255,80 @@ fn lower_match(
                     &mut instructions,
                 )
             } else {
-                *base
+                values[0]
             };
-            let payload_type = match variant.as_str() {
-                "ok" => ok.as_ref().clone(),
-                _ => error.as_ref().clone(),
-            };
-            let value = builder.emit(
-                payload_type.clone(),
-                Operation::Project {
-                    base,
-                    field: variant.clone(),
-                },
-                line.range,
-                &mut instructions,
-            );
-            builder.bindings.insert(binding, (value, payload_type));
+            match binding {
+                PayloadBinding::Result { variant, binding } => {
+                    let Some(Type::Result { ok, error }) = value_types.first() else {
+                        return unsupported("match payload binding on non-Result", line.range);
+                    };
+                    let payload_type = match variant.as_str() {
+                        "ok" => ok.as_ref().clone(),
+                        _ => error.as_ref().clone(),
+                    };
+                    let value = builder.emit(
+                        payload_type.clone(),
+                        Operation::Project {
+                            base,
+                            field: variant.clone(),
+                        },
+                        line.range,
+                        &mut instructions,
+                    );
+                    builder
+                        .bindings
+                        .insert(binding.clone(), (value, payload_type));
+                }
+                PayloadBinding::Some { binding, inner } => {
+                    // Like the Enum arm, the binding is arm-scoped.
+                    withdraw = Some(builder.bindings.clone());
+                    let value = builder.emit(
+                        inner.clone(),
+                        Operation::Project {
+                            base,
+                            field: "some".into(),
+                        },
+                        line.range,
+                        &mut instructions,
+                    );
+                    builder
+                        .bindings
+                        .insert(binding.clone(), (value, inner.clone()));
+                }
+                PayloadBinding::Enum {
+                    case,
+                    bindings,
+                    payload_types,
+                } => {
+                    withdraw = Some(builder.bindings.clone());
+                    for (index, bound) in bindings.iter().enumerate() {
+                        let Some(name) = bound else {
+                            continue;
+                        };
+                        // RFC-0056 D3: arity-1 payloads project by case name
+                        // (the `"ok"` precedent); arity-N uses `"<case>.<i>"`.
+                        let field = if payload_types.len() == 1 {
+                            case.clone()
+                        } else {
+                            format!("{case}.{index}")
+                        };
+                        let payload_type = payload_types[index].clone();
+                        let value = builder.emit(
+                            payload_type.clone(),
+                            Operation::Project { base, field },
+                            line.range,
+                            &mut instructions,
+                        );
+                        builder.bindings.insert(name.clone(), (value, payload_type));
+                    }
+                }
+            }
         }
         let (value, _) =
             builder.expression(&body.tokens[1..], Some(return_type), &mut instructions)?;
+        if let Some(saved) = withdraw {
+            builder.bindings = saved;
+        }
         let target = BlockId(u32::try_from(blocks.len() + 1).expect("source limits bound blocks"));
         arms.push(MatchArm {
             patterns,
@@ -3266,6 +3568,25 @@ impl FunctionBuilder<'_> {
                         output,
                     );
                     Ok((value, Type::Bool))
+                }
+                // RFC-0056 D4: bare `none` lowers to the payload-less
+                // Option variant; the expected type must be a concrete
+                // `Option[T]` (the `unconstrained ok` precedent).
+                TokenKind::None => {
+                    let Some(Type::Option(_)) = expected else {
+                        return Err(unsupported_error("unconstrained none", token.range));
+                    };
+                    let ty = expected.expect("checked above").clone();
+                    let value = self.emit(
+                        ty.clone(),
+                        Operation::Variant {
+                            name: "none".into(),
+                            payload: Vec::new(),
+                        },
+                        token.range,
+                        output,
+                    );
+                    Ok((value, ty))
                 }
                 TokenKind::Identifier => self.resolve_name(&token.text, token.range, output),
                 _ => Err(unsupported_error("atomic expression", token.range)),
@@ -3797,6 +4118,31 @@ impl FunctionBuilder<'_> {
             );
             return Ok((value, ty));
         }
+        if callee == "some" {
+            // RFC-0056 D4: `some(x)` mirrors `ok(x)` — the expected type
+            // must be a concrete `Option[T]` (the `unconstrained ok`
+            // precedent).
+            let Some(Type::Option(inner)) = expected else {
+                return unsupported("unconstrained some", token_range(tokens));
+            };
+            let [argument] = arguments.as_slice() else {
+                return unsupported("some arity", token_range(tokens));
+            };
+            let argument = self
+                .expression(argument_value(argument), Some(inner), output)?
+                .0;
+            let ty = expected.expect("checked above").clone();
+            let value = self.emit(
+                ty.clone(),
+                Operation::Variant {
+                    name: "some".into(),
+                    payload: vec![argument],
+                },
+                token_range(tokens),
+                output,
+            );
+            return Ok((value, ty));
+        }
         if callee == "error" {
             let Some(Type::Result { error, .. }) = expected else {
                 return unsupported("unconstrained error", token_range(tokens));
@@ -4057,6 +4403,11 @@ fn parse_pattern(tokens: &[HirToken]) -> Pattern {
             TokenKind::Ignore | TokenKind::Underscore => Pattern::Wildcard,
             TokenKind::True => Pattern::Bool(true),
             TokenKind::False => Pattern::Bool(false),
+            // RFC-0056 D4: bare `none` is the payload-less Option case.
+            TokenKind::None => Pattern::Variant {
+                name: "none".into(),
+                payload: Vec::new(),
+            },
             _ => Pattern::Binding(tokens[0].text.clone()),
         };
     }

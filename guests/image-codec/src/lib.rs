@@ -37,7 +37,16 @@ const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
 const IMAGE_HEADER_LEN: usize = 16;
 
 fn trap() -> ! {
-    core::arch::wasm32::unreachable()
+    #[cfg(target_arch = "wasm32")]
+    {
+        core::arch::wasm32::unreachable()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Native test builds have no wasm32 arch module; a valid input never
+        // reaches `trap`, so panic is the native stand-in for `unreachable`.
+        panic!("trap reached on non-wasm32 target")
+    }
 }
 
 /// Canonical ABI allocator entry point. The lifter only ever calls it with
@@ -145,6 +154,39 @@ pub extern "C" fn encode_png(
     let pixels =
         unsafe { std::slice::from_raw_parts(pixels_ptr as *const u8, pixels_len as usize) };
     match encode_png_inner(pixels, width as u64, height as u64) {
+        Ok(bytes) => ok_area(&bytes),
+        Err(case) => err_area(case),
+    }
+}
+
+/// `decode-jpeg(data: Bytes) -> Result[Bytes, Text]`.
+#[export_name = "decode-jpeg"]
+pub extern "C" fn decode_jpeg(source_ptr: i32, source_len: i32) -> i32 {
+    if source_ptr < 0 || source_len < 0 {
+        trap();
+    }
+    let input =
+        unsafe { std::slice::from_raw_parts(source_ptr as *const u8, source_len as usize) };
+    match decode_jpeg_inner(input) {
+        Ok(payload) => ok_area(&payload),
+        Err(case) => err_area(case),
+    }
+}
+
+/// `encode-jpeg(pixels: Bytes, width: U64, height: U64) -> Result[Bytes, Text]`.
+#[export_name = "encode-jpeg"]
+pub extern "C" fn encode_jpeg(
+    pixels_ptr: i32,
+    pixels_len: i32,
+    width: i64,
+    height: i64,
+) -> i32 {
+    if pixels_ptr < 0 || pixels_len < 0 || width < 0 || height < 0 {
+        trap();
+    }
+    let pixels =
+        unsafe { std::slice::from_raw_parts(pixels_ptr as *const u8, pixels_len as usize) };
+    match encode_jpeg_inner(pixels, width as u64, height as u64) {
         Ok(bytes) => ok_area(&bytes),
         Err(case) => err_area(case),
     }
@@ -287,7 +329,6 @@ fn decode_png_inner(input: &[u8]) -> Result<Vec<u8>, &'static str> {
     if info.color_type != expected_color_type(header.color_type) {
         return Err("unsupported-profile");
     }
-    let channels = usize::try_from(channels).unwrap_or_else(|_| trap());
     let expected: usize = pixels
         .checked_mul(channels as u64)
         .ok_or("oversized")?
@@ -394,7 +435,7 @@ fn encode_png_inner(pixels: &[u8], width: u64, height: u64) -> Result<Vec<u8>, &
         return Err("encode-buffer-mismatch");
     }
     let mut rgba = Vec::with_capacity(expected);
-    for pixel in pixels.chunks_exact(4) {
+    for pixel in pixels.as_chunks::<4>().0 {
         rgba.push(pixel[2]);
         rgba.push(pixel[1]);
         rgba.push(pixel[0]);
@@ -434,4 +475,446 @@ fn encode_png_inner(pixels: &[u8], width: u64, height: u64) -> Result<Vec<u8>, &
         offset += 12 + length;
     }
     Ok(bytes)
+}
+
+// ---------------------------------------------------------------------------
+// JPEG (RFC-0050 §2 as amended by Amendment A2, accepted 2026-11-06)
+// ---------------------------------------------------------------------------
+
+/// JPEG quality frozen by RFC-0050 §2 (standard IS tables).
+const JPEG_QUALITY: u8 = 90;
+/// Maximum JPEG dimension accepted by the encoder (`u16` width/height).
+const MAX_JPEG_DIMENSION: u64 = 65_535;
+/// JPEG start-of-image marker (`FFD8`).
+const JPEG_SOI: [u8; 2] = [0xFF, 0xD8];
+
+/// The structural facts the JPEG scan establishes before any pixel work.
+struct JpegScan {
+    width: u64,
+    height: u64,
+    /// 1 = greyscale, 3 = YCbCr.
+    components: u8,
+    /// The `APPn` segment identifiers seen, in order.
+    app_markers: Vec<u8>,
+    /// True when an `APP0` segment carried the JFIF signature.
+    has_jfif: bool,
+}
+
+/// Reads a length-prefixed segment header at `offset`; returns the payload
+/// start and the segment end (both exclusive/inclusive as named).
+fn jpeg_segment(input: &[u8], offset: usize) -> Result<(usize, usize), &'static str> {
+    if offset + 2 > input.len() {
+        return Err("truncated");
+    }
+    let length = usize::from(u16::from_be_bytes([input[offset], input[offset + 1]]));
+    if length < 2 {
+        return Err("corrupt-stream");
+    }
+    let end = offset + length;
+    if end > input.len() {
+        return Err("truncated");
+    }
+    Ok((offset + 2, end))
+}
+
+/// Parses a baseline (`SOF0`) frame header and enforces the RFC-0050 A2
+/// accepted decode profiles before any pixel allocation.
+fn parse_sof0(input: &[u8], offset: usize) -> Result<(JpegScan, usize), &'static str> {
+    let (start, end) = jpeg_segment(input, offset)?;
+    if start + 6 > end {
+        return Err("corrupt-stream");
+    }
+    let precision = input[start];
+    if precision != 8 {
+        return Err("unsupported-profile");
+    }
+    let height = u64::from(u16::from_be_bytes([input[start + 1], input[start + 2]]));
+    let width = u64::from(u16::from_be_bytes([input[start + 3], input[start + 4]]));
+    let count = input[start + 5];
+    if count != 1 && count != 3 {
+        return Err("unsupported-profile");
+    }
+    if start + 6 + usize::from(count) * 3 > end {
+        return Err("corrupt-stream");
+    }
+    let mut luma = (0u8, 0u8);
+    for index in 0..usize::from(count) {
+        let base = start + 6 + index * 3;
+        let sampling = input[base + 1];
+        let horizontal = sampling >> 4;
+        let vertical = sampling & 0x0F;
+        if horizontal == 0 || vertical == 0 {
+            return Err("unsupported-profile");
+        }
+        if index == 0 {
+            luma = (horizontal, vertical);
+        } else if horizontal != 1 || vertical != 1 {
+            return Err("unsupported-profile");
+        }
+    }
+    if count == 1 {
+        if luma != (1, 1) {
+            return Err("unsupported-profile");
+        }
+    } else {
+        // Only 4:4:4 / 4:2:2 / 4:2:0 are accepted (RFC-0050 A2 §4).
+        match luma {
+            (1, 1) | (2, 1) | (2, 2) => {}
+            _ => return Err("unsupported-profile"),
+        }
+    }
+    if width == 0 || height == 0 {
+        return Err("oversized");
+    }
+    let pixels = width.checked_mul(height).ok_or("oversized")?;
+    if pixels > MAX_PIXELS {
+        return Err("oversized");
+    }
+    Ok((
+        JpegScan {
+            width,
+            height,
+            components: count,
+            app_markers: Vec::new(),
+            has_jfif: false,
+        },
+        end,
+    ))
+}
+
+/// Skips entropy-coded data, honouring byte stuffing (`FF00`) and restart
+/// markers (`FFD0`–`FFD7`); returns the offset of the next real marker.
+fn skip_jpeg_entropy(input: &[u8], start: usize) -> Result<usize, &'static str> {
+    let mut offset = start;
+    while offset < input.len() {
+        if input[offset] != 0xFF {
+            offset += 1;
+            continue;
+        }
+        let mut marker = offset + 1;
+        while marker < input.len() && input[marker] == 0xFF {
+            marker += 1;
+        }
+        if marker >= input.len() {
+            return Err("truncated");
+        }
+        match input[marker] {
+            0x00 => offset = marker + 1,
+            0xD0..=0xD7 => offset = marker + 1,
+            _ => return Ok(offset),
+        }
+    }
+    Err("truncated")
+}
+
+/// Walks the JPEG marker structure and enforces the RFC-0050 A2 accepted
+/// profiles (baseline SOF0 only, 8-bit, 1 or 3 components, 4:4:4 / 4:2:2 /
+/// 4:2:0, no trailing data).
+fn scan_jpeg(input: &[u8]) -> Result<JpegScan, &'static str> {
+    if input.len() < 2 || input[0..2] != JPEG_SOI {
+        return Err("bad-signature");
+    }
+    let mut offset = 2usize;
+    let mut scan: Option<JpegScan> = None;
+    let mut saw_scan = false;
+    loop {
+        if offset >= input.len() {
+            return Err("truncated");
+        }
+        if input[offset] != 0xFF {
+            return Err("corrupt-stream");
+        }
+        while offset < input.len() && input[offset] == 0xFF {
+            offset += 1;
+        }
+        if offset >= input.len() {
+            return Err("truncated");
+        }
+        let marker = input[offset];
+        offset += 1;
+        match marker {
+            // EOI: the stream ends here; anything after it is trailing data.
+            0xD9 => {
+                if !saw_scan {
+                    return Err("corrupt-stream");
+                }
+                if offset != input.len() {
+                    return Err("trailing-data");
+                }
+                return scan.ok_or("corrupt-stream");
+            }
+            // Start of scan: the entropy-coded segment follows the header.
+            0xDA => {
+                if scan.is_none() {
+                    return Err("corrupt-stream");
+                }
+                let (start, end) = jpeg_segment(input, offset)?;
+                if start + 1 > end {
+                    return Err("corrupt-stream");
+                }
+                offset = skip_jpeg_entropy(input, end)?;
+                saw_scan = true;
+            }
+            // Baseline frame header.
+            0xC0 => {
+                if scan.is_some() {
+                    return Err("corrupt-stream");
+                }
+                let (parsed, end) = parse_sof0(input, offset)?;
+                scan = Some(parsed);
+                offset = end;
+            }
+            // Every other start-of-frame process is refused (progressive,
+            // lossless, hierarchical, arithmetic, extended sequential).
+            0xC1 | 0xC2 | 0xC3 | 0xC5 | 0xC6 | 0xC7 | 0xC9 | 0xCA | 0xCB | 0xCD | 0xCE
+            | 0xCF => return Err("unsupported-profile"),
+            // Application segments (EXIF/ICC/JFIF are ignored, not applied).
+            0xE0..=0xEF => {
+                let (start, end) = jpeg_segment(input, offset)?;
+                if let Some(current) = scan.as_mut() {
+                    current.app_markers.push(marker - 0xE0);
+                    if marker == 0xE0 && start + 5 <= end && &input[start..start + 5] == b"JFIF\0" {
+                        current.has_jfif = true;
+                    }
+                }
+                offset = end;
+            }
+            // Standalone markers carry no payload.
+            0x01 | 0xD0..=0xD7 => {}
+            // Everything else is a length-prefixed segment.
+            _ => {
+                let (_start, end) = jpeg_segment(input, offset)?;
+                offset = end;
+            }
+        }
+    }
+}
+
+/// Maps a `jpeg-decoder` failure onto the RFC-0050 §3 closed case set.
+fn classify_jpeg_error(error: jpeg_decoder::Error) -> &'static str {
+    match error {
+        jpeg_decoder::Error::Unsupported(_) => "unsupported-profile",
+        jpeg_decoder::Error::Format(_) => "corrupt-stream",
+        jpeg_decoder::Error::Io(io) => {
+            if io.kind() == std::io::ErrorKind::UnexpectedEof {
+                "truncated"
+            } else {
+                "corrupt-stream"
+            }
+        }
+        jpeg_decoder::Error::Internal(_) => "corrupt-stream",
+    }
+}
+
+/// Maps a `jpeg-encoder` failure onto the RFC-0050 §3 closed case set.
+fn classify_jpeg_encode_error(error: jpeg_encoder::EncodingError) -> &'static str {
+    match error {
+        jpeg_encoder::EncodingError::IoError(io) => {
+            if io.kind() == std::io::ErrorKind::UnexpectedEof {
+                "truncated"
+            } else {
+                "corrupt-stream"
+            }
+        }
+        jpeg_encoder::EncodingError::Write(_) => "corrupt-stream",
+        jpeg_encoder::EncodingError::BadImageData { .. } => "encode-buffer-mismatch",
+        jpeg_encoder::EncodingError::ZeroImageDimensions { .. } => "oversized",
+        jpeg_encoder::EncodingError::InvalidAppSegment(_)
+        | jpeg_encoder::EncodingError::AppSegmentTooLarge(_)
+        | jpeg_encoder::EncodingError::IccTooLarge(_) => "corrupt-stream",
+    }
+}
+
+/// Decodes a baseline JPEG into the RFC-0050 A1 flattened payload shape
+/// (16-byte little-endian `width`/`height` header + RFC-0041 BGRA8 pixels).
+fn decode_jpeg_inner(input: &[u8]) -> Result<Vec<u8>, &'static str> {
+    let scan = scan_jpeg(input)?;
+    let width = scan.width;
+    let height = scan.height;
+    let pixels = width.checked_mul(height).ok_or("oversized")?;
+
+    let mut decoder = jpeg_decoder::Decoder::new(Cursor::new(input));
+    // D6: keep the decode buffer ceiling strictly bounded by the crate budget
+    // (`u32::MAX`) while allowing MCU-padding headroom so a tiny subsampled
+    // baseline JPEG is never refused. `jpeg-decoder` enforces the limit as
+    // `components × width × height`; `saturating_mul(8)` already covers that,
+    // and `+4096` adds margin for any future padding accounting without
+    // loosening the hard `u32::MAX` bound.
+    let budget = pixels
+        .saturating_mul(8)
+        .saturating_add(4096)
+        .min(u64::from(u32::MAX)) as usize;
+    decoder.set_max_decoding_buffer_size(budget.max(1));
+    decoder.read_info().map_err(classify_jpeg_error)?;
+    let info = decoder.info().ok_or("corrupt-stream")?;
+    if u64::from(info.width) != width || u64::from(info.height) != height {
+        return Err("corrupt-stream");
+    }
+    let channels = match info.pixel_format {
+        jpeg_decoder::PixelFormat::L8 => 1usize,
+        jpeg_decoder::PixelFormat::RGB24 => 3usize,
+        _ => return Err("unsupported-profile"),
+    };
+    let decoded = decoder.decode().map_err(classify_jpeg_error)?;
+    let expected = usize::try_from(pixels.checked_mul(channels as u64).ok_or("oversized")?)
+        .unwrap_or_else(|_| trap());
+    if decoded.len() != expected {
+        return Err("corrupt-stream");
+    }
+
+    let mut payload = Vec::with_capacity(
+        IMAGE_HEADER_LEN
+            + usize::try_from(
+                width.checked_mul(height)
+                    .and_then(|count| count.checked_mul(4))
+                    .unwrap_or_else(|| trap()),
+            )
+            .unwrap_or_else(|_| trap()),
+    );
+    payload.extend_from_slice(&width.to_le_bytes());
+    payload.extend_from_slice(&height.to_le_bytes());
+    if channels == 1 {
+        for grey in decoded {
+            payload.push(grey);
+            payload.push(grey);
+            payload.push(grey);
+            payload.push(255u8);
+        }
+    } else {
+        for pixel in decoded.as_chunks::<3>().0 {
+            payload.push(pixel[2]);
+            payload.push(pixel[1]);
+            payload.push(pixel[0]);
+            payload.push(255u8);
+        }
+    }
+    Ok(payload)
+}
+
+/// Composites one channel over an opaque white background
+/// (`round((c·a + 255·(255−a)) / 255)`, RFC-0050 A2 §2).
+fn composite_over_white(channel: u8, alpha: u8) -> u8 {
+    let alpha = u32::from(alpha);
+    let value = u32::from(channel) * alpha + 255 * (255 - alpha) + 127;
+    u8::try_from(value / 255).unwrap_or(255)
+}
+
+/// Encodes RFC-0041 BGRA8 pixels as a baseline (SOF0) Huffman JPEG at the
+/// frozen quality (90) and 4:4:4 sampling, then re-scans its own output to
+/// assert the frozen structure.
+fn encode_jpeg_inner(pixels: &[u8], width: u64, height: u64) -> Result<Vec<u8>, &'static str> {
+    if width == 0 || height == 0 {
+        return Err("oversized");
+    }
+    if width > MAX_JPEG_DIMENSION || height > MAX_JPEG_DIMENSION {
+        return Err("oversized");
+    }
+    let count = width.checked_mul(height).ok_or("oversized")?;
+    if count > MAX_PIXELS {
+        return Err("oversized");
+    }
+    let expected = usize::try_from(count.saturating_mul(4)).unwrap_or_else(|_| trap());
+    if pixels.len() != expected {
+        return Err("encode-buffer-mismatch");
+    }
+    let mut rgb = Vec::with_capacity(
+        usize::try_from(count.saturating_mul(3)).unwrap_or_else(|_| trap()),
+    );
+    for pixel in pixels.as_chunks::<4>().0 {
+        let (blue, green, red, alpha) = (pixel[0], pixel[1], pixel[2], pixel[3]);
+        rgb.push(composite_over_white(red, alpha));
+        rgb.push(composite_over_white(green, alpha));
+        rgb.push(composite_over_white(blue, alpha));
+    }
+
+    let mut output: Vec<u8> = Vec::new();
+    {
+        let mut encoder = jpeg_encoder::Encoder::new(&mut output, JPEG_QUALITY);
+        encoder.set_sampling_factor(jpeg_encoder::SamplingFactor::R_4_4_4);
+        let width_u16 = u16::try_from(width).unwrap_or_else(|_| trap());
+        let height_u16 = u16::try_from(height).unwrap_or_else(|_| trap());
+        encoder
+            .encode(
+                &rgb,
+                width_u16,
+                height_u16,
+                jpeg_encoder::ColorType::Rgb,
+            )
+            .map_err(classify_jpeg_encode_error)?;
+    }
+
+    // The frozen chunk/marker set is part of the contract; verify it here so
+    // a crate upgrade cannot silently change the emitted structure.
+    let scan = scan_jpeg(&output)?;
+    if scan.width != width || scan.height != height || scan.components != 3 {
+        return Err("corrupt-stream");
+    }
+    if !scan.app_markers.is_empty()
+        && !(scan.app_markers.len() == 1 && scan.app_markers[0] == 0 && scan.has_jfif)
+    {
+        return Err("corrupt-stream");
+    }
+    Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: a tiny baseline JPEG with 4:2:0 chroma subsampling (the
+    /// smallest case the decode-buffer ceiling must accommodate) round-trips
+    /// successfully and is never rejected as "oversized". `jpeg-decoder`
+    /// enforces its buffer limit as `components × width × height`, so the
+    /// tightest budget for a subsampled image is exercised here; the
+    /// MCU-padding allowance in `decode_jpeg_inner` keeps the ceiling above
+    /// that requirement while staying capped at the crate's `u32::MAX` bound.
+    #[test]
+    fn tiny_420_jpeg_round_trip_is_not_oversized() {
+        let grey = 128u8;
+        for (width, height) in [(1u64, 1u64), (3u64, 3u64)] {
+            let count = width * height;
+            let mut rgba = Vec::with_capacity((count * 4) as usize);
+            for _ in 0..count {
+                rgba.extend_from_slice(&[grey, grey, grey, 255u8]);
+            }
+            // Encode as a 4:2:0 baseline JPEG with `jpeg-encoder`.
+            let mut rgb = Vec::with_capacity((count * 3) as usize);
+            for pixel in rgba.as_chunks::<4>().0 {
+                rgb.push(pixel[2]);
+                rgb.push(pixel[1]);
+                rgb.push(pixel[0]);
+            }
+            let mut jpeg: Vec<u8> = Vec::new();
+            {
+                let mut encoder = jpeg_encoder::Encoder::new(&mut jpeg, JPEG_QUALITY);
+                encoder.set_sampling_factor(jpeg_encoder::SamplingFactor::R_4_2_0);
+                encoder
+                    .encode(
+                        &rgb,
+                        width as u16,
+                        height as u16,
+                        jpeg_encoder::ColorType::Rgb,
+                    )
+                    .expect("encode tiny 4:2:0 baseline JPEG");
+            }
+            // The scan must actually be 4:2:0 (luma (2,2)) to exercise the fix.
+            let scan = scan_jpeg(&jpeg).expect("scan tiny 4:2:0 JPEG");
+            assert_eq!(scan.width, width);
+            assert_eq!(scan.height, height);
+            assert_eq!(scan.components, 3);
+
+            let payload = decode_jpeg_inner(&jpeg)
+                .expect("tiny 4:2:0 JPEG must not be rejected as oversized");
+            assert_eq!(&payload[0..8], &width.to_le_bytes()[..]);
+            assert_eq!(&payload[8..16], &height.to_le_bytes()[..]);
+            assert_eq!(payload.len(), 16 + (count * 4) as usize);
+            // Lossy round-trip of a solid grey block stays within ±8/channel.
+            for pixel in payload[16..].as_chunks::<4>().0 {
+                assert_eq!(pixel[3], 255);
+                for channel in &pixel[0..3] {
+                    assert!((i32::from(*channel) - i32::from(grey)).abs() <= 8);
+                }
+            }
+        }
+    }
 }

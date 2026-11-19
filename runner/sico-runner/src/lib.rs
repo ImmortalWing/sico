@@ -12,6 +12,8 @@
 pub mod bootstrap;
 mod dap;
 pub mod http2;
+pub mod picker;
+pub mod picker_d2d;
 pub mod scheduler;
 pub mod stream_provider;
 pub mod ui;
@@ -1253,6 +1255,10 @@ struct RunState {
     /// Per-Store `ui@1.0.0` state (RFC-0052 A1): frozen default-deny UI
     /// capability plus the shared renderer backend; dies with the Store.
     ui: crate::ui::Ui1State,
+    /// Per-Store `path-picker@1.0.0` state (RFC-0055, STEP-0627): frozen
+    /// default-deny picker capability plus the shared dialog backend; dies
+    /// with the Store.
+    picker: crate::picker::PickerState,
     /// Per-run stream provider transport (RFC-0030): the real stdio workers
     /// by default, or a caller-substituted typed transport through the
     /// [`StreamTransportFactory`] seam (STEP-0587).
@@ -1546,6 +1552,12 @@ pub struct Runner {
     /// so `sico:script/ui@1.0.0` is not linked and a guest importing it fails
     /// to instantiate (an honest "UI backend unavailable" outcome).
     ui: crate::ui::UiHost,
+    /// Host-level picker capability (RFC-0055, STEP-0627): the default-deny
+    /// grants plus the optional path-picker backend. The default carries no
+    /// backend, so `sico:script/path-picker@1.0.0` is not linked and a guest
+    /// importing it fails to instantiate (an honest "picker backend
+    /// unavailable" outcome).
+    picker: crate::picker::PickerHost,
     /// Stream-provider transport factory (RFC-0030, STEP-0587): the default is
     /// the real stdio [`RealStreamTransportFactory`]; a caller may substitute
     /// a typed implementation through [`Runner::with_stream_transport`]. This
@@ -1652,6 +1664,7 @@ impl Runner {
             debug_enabled: debug,
             run_counter: Arc::new(AtomicU64::new(0)),
             ui: crate::ui::UiHost::default(),
+            picker: crate::picker::PickerHost::default(),
             stream_factory: Arc::new(RealStreamTransportFactory),
         })
     }
@@ -1683,6 +1696,50 @@ impl Runner {
     ) -> Self {
         self.ui = crate::ui::UiHost::with_backend(grants, renderer);
         self
+    }
+
+    /// Returns a runner with the host picker capability wired to a
+    /// path-picker backend (RFC-0055, STEP-0627). Only with a backend present
+    /// is `sico:script/path-picker@1.0.0` linked; the grant still defaults to
+    /// deny, so every call fails closed with `authority-denied` until `grants`
+    /// allows it. The production backend is the native Win32 file-dialog
+    /// adapter (STEP-0627).
+    #[must_use]
+    pub fn with_picker_backend(
+        mut self,
+        grants: crate::picker::PickerGrants,
+        backend: std::sync::Arc<dyn crate::picker::PathPicker>,
+    ) -> Self {
+        self.picker = crate::picker::PickerHost::with_backend(grants, backend);
+        self
+    }
+
+    /// Returns a runner with the host picker capability wired to the native
+    /// Win32 file-dialog backend (RFC-0055, STEP-0627) for the given grants.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::picker::PickerError::NoWindow`] when the platform has no
+    /// usable file-dialog stack — including every non-Windows host, where
+    /// ADR-0018 §Consequences leaves v0 unimplemented.
+    #[cfg(windows)]
+    pub fn with_native_picker_backend(
+        self,
+        grants: crate::picker::PickerGrants,
+    ) -> Result<Self, crate::picker::PickerError> {
+        let backend = std::sync::Arc::new(crate::picker_d2d::NativeFilePicker::native()?);
+        Ok(self.with_picker_backend(grants, backend))
+    }
+
+    /// Non-Windows answer for [`Runner::with_native_picker_backend`]: the
+    /// honest `NoWindow` refusal. Keeps the signature (and a hypothetical
+    /// `--picker` CLI surface) portable.
+    #[cfg(not(windows))]
+    pub fn with_native_picker_backend(
+        self,
+        _grants: crate::picker::PickerGrants,
+    ) -> Result<Self, crate::picker::PickerError> {
+        Err(crate::picker::PickerError::NoWindow)
     }
 
     /// True when the component imports `sico:script/streams@0.1.0` (RFC-0030
@@ -2003,6 +2060,17 @@ impl Runner {
         {
             return Err(RunOutcome::Launch(format!(
                 "ui@1.0.0 host setup failed: {error}"
+            )));
+        }
+        // RFC-0055, STEP-0627: only advertise `sico:script/path-picker@1.0.0`
+        // when a path-picker backend exists. Without one, a guest importing it
+        // fails to instantiate — an honest "picker backend unavailable", never
+        // a faked path.
+        if self.picker.has_backend()
+            && let Err(error) = crate::picker::link_picker(&mut linker)
+        {
+            return Err(RunOutcome::Launch(format!(
+                "path-picker@1.0.0 host setup failed: {error}"
             )));
         }
         link_packages(&mut linker, &component, &prepared_packages)?;
@@ -2331,6 +2399,7 @@ impl PreparedProgram {
                 }),
                 http2: crate::http2::Http2State::new(&self.http_policy),
                 ui: self.runner.ui.state(),
+                picker: self.runner.picker.state(),
                 package_instances: Vec::new(),
                 package_instances_capacity: self.packages.len(),
             },
@@ -2617,6 +2686,7 @@ impl PreparedProgram {
                 scheduler: SchedulerCore::new(identity),
                 http2: crate::http2::Http2State::new(&self.http_policy),
                 ui: self.runner.ui.state(),
+                picker: self.runner.picker.state(),
                 package_instances: Vec::new(),
                 package_instances_capacity: self.packages.len(),
             },
@@ -4405,6 +4475,7 @@ mod tests {
                 io: RealStreamTransportFactory.spawn_transport(),
                 http2: crate::http2::Http2State::new(&HttpPolicy::default()),
                 ui: crate::ui::UiHost::default().state(),
+                picker: crate::picker::PickerHost::default().state(),
                 scheduler: SchedulerCore::new(RunIdentity {
                     run_id: "debug-probe".to_owned(),
                     generation_id: 1,

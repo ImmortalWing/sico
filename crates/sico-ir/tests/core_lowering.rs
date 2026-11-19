@@ -1,8 +1,8 @@
 use std::{fs, path::Path};
 
 use sico_ir::{
-    BlockId, CoreLowerError, Operation, Terminator, Type, VerifyErrorKind, canonical_json,
-    lower_core, verify,
+    BlockId, CoreLowerError, EnumVariant, Instruction, Operation, Terminator, Type, ValueId,
+    VerifyErrorKind, canonical_json, lower_core, verify,
 };
 use sico_source::{SourceFile, SourceId};
 
@@ -828,6 +828,363 @@ fn intrinsic_try_and_match_mutations_are_rejected_independently() {
         verify(&result)
             .iter()
             .any(|error| error.kind == VerifyErrorKind::TypeMismatch)
+    );
+}
+
+#[test]
+fn option_some_none_constructors_and_arms_lower_to_verified_ir() {
+    // RFC-0056 D4: `some(x)`/`none` mirror the ok/error machinery; the
+    // producer/consumer here stays at IR level because the Script v0
+    // function-signature boundary refuses Option-typed signatures (same
+    // non-goal as user enums) — the guest-facing producer is the ui@1
+    // `poll_event` intrinsic (G3-R1).
+    let construct = "function probe() returns Option[I64]:\n  return some(I64.literal(3))\nend function\n\nfunction empty() returns Option[I64]:\n  return none\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "opt.sico", construct).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let some_variant = module.functions[0].blocks[0]
+        .instructions
+        .iter()
+        .find_map(|instruction| match &instruction.operation {
+            Operation::Variant { name, payload } if name == "some" => Some(payload.clone()),
+            _ => None,
+        })
+        .expect("some variant");
+    assert_eq!(some_variant.len(), 1);
+    assert!(matches!(
+        module.functions[1].blocks[0].instructions.iter().find_map(
+            |instruction| match &instruction.operation {
+                Operation::Variant { name, .. } if name == "none" => Some(()),
+                _ => None,
+            }
+        ),
+        Some(())
+    ));
+
+    let matched = "function value(opt: Option[I64]) returns I64:\n  match opt:\n    case some(v):\n      return v\n    case none:\n      return I64.literal(0)\n  end match\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(1), "opt-match.sico", matched).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let project = module.functions[0]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .find_map(|instruction| match &instruction.operation {
+            Operation::Project { field, .. } => Some(field.clone()),
+            _ => None,
+        })
+        .expect("some payload projection");
+    assert_eq!(project, "some");
+}
+
+#[test]
+fn option_constructor_refusal_boundaries_have_stable_identities() {
+    // Pipeline-level identities: return-position misuse is gated by
+    // semantics (E2001) now that `some`/`none` infer proper Option types;
+    // the lower `unconstrained some` refusal stands where semantics has no
+    // expectation to check — the RFC-0049 let-bound match subject.
+    for (source, expected) in [
+        (
+            "function probe() returns I64:\n  return some(I64.literal(3))\nend function\n",
+            "E2001",
+        ),
+        (
+            "function probe() returns I64:\n  return none\nend function\n",
+            "E2001",
+        ),
+        (
+            "function probe() returns Text:\n  let x = match some(\"hi\"):\n    case some(t):\n      t\n    case none:\n      \"empty\"\n  end match\n  return x\nend function\n",
+            "unconstrained some",
+        ),
+    ] {
+        let source = SourceFile::from_text(SourceId::new(0), "refusal.sico", source).unwrap();
+        let error = lower_core(&source).expect_err("unconstrained constructor must refuse");
+        let text = format!("{error:?}");
+        assert!(
+            text.contains(expected),
+            "expected identity containing {expected:?}, got {text}"
+        );
+    }
+}
+
+#[test]
+fn payload_binding_match_arms_lower_to_variant_projections() {
+    let text = "enum Notice:\n  case Message(text: Text)\n  case Stop\nend enum\n\nfunction text_of(notice: Notice) returns Text:\n  match notice:\n    case Notice.Message(t):\n      return t\n    case Notice.Stop:\n      return \"stopped\"\n  end match\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "bind.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let function = module
+        .functions
+        .iter()
+        .find(|function| function.name == "text_of")
+        .expect("text_of lowers");
+    let match_block = function
+        .blocks
+        .iter()
+        .find(|block| matches!(block.terminator, Terminator::Match { .. }))
+        .expect("match block");
+    let Terminator::Match { arms, .. } = &match_block.terminator else {
+        unreachable!()
+    };
+    assert_eq!(arms.len(), 2);
+    let bound = function
+        .blocks
+        .iter()
+        .find(|block| {
+            block
+                .instructions
+                .iter()
+                .any(|instruction| matches!(instruction.operation, Operation::Project { .. }))
+        })
+        .expect("binding arm block");
+    let project = bound
+        .instructions
+        .iter()
+        .find_map(|instruction| match &instruction.operation {
+            Operation::Project { base, field } => Some((*base, field.clone())),
+            _ => None,
+        })
+        .expect("payload projection");
+    assert_eq!(project.1, "Message");
+    let project_instruction = bound
+        .instructions
+        .iter()
+        .find(|instruction| matches!(instruction.operation, Operation::Project { .. }))
+        .expect("projection instruction");
+    assert_eq!(project_instruction.ty, Type::String);
+    // The arm body returns the projected binding value.
+    assert!(matches!(
+        bound.terminator,
+        Terminator::Return(Some(value)) if value == project_instruction.result
+    ));
+}
+
+#[test]
+fn multi_payload_binding_arms_use_indexed_projection_fields() {
+    let text = "enum PairBox:\n  case Pair(left: U64, right: U64)\n  case Empty\nend enum\n\nfunction first(box: PairBox) returns U64:\n  match box:\n    case PairBox.Pair(a, b):\n      return a\n    case PairBox.Empty:\n      return U64.literal(0)\n  end match\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "multi.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let function = module
+        .functions
+        .iter()
+        .find(|function| function.name == "first")
+        .expect("first lowers");
+    let fields: Vec<_> = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match &instruction.operation {
+            Operation::Project { field, .. } => Some(field.clone()),
+            _ => None,
+        })
+        .collect();
+    // Both slots are named bindings, so both project — including the arm
+    // body-unused `b` (the ok/error precedent emits its projection
+    // unconditionally too; determinism is what matters).
+    assert_eq!(fields, ["Pair.0", "Pair.1"]);
+}
+
+#[test]
+fn payload_binding_refusal_boundaries_have_stable_identities() {
+    // Arity mismatch and payload-less-case bindings refuse at lowering;
+    // unqualified case names are gated earlier by semantics (E3001 sees a
+    // one-segment pattern as a whole enum). Identities are pipeline-level:
+    // whichever layer gates first owns the frozen text (RFC-0056 §6).
+    for (source, expected) in [
+        (
+            "enum PairBox:\n  case Pair(left: U64, right: U64)\n  case Empty\nend enum\n\nfunction first(box: PairBox) returns U64:\n  match box:\n    case PairBox.Pair(a):\n      return a\n    case PairBox.Empty:\n      return U64.literal(0)\n  end match\nend function\n",
+            "match payload binding arity",
+        ),
+        (
+            "enum Notice:\n  case Message(text: Text)\n  case Stop\nend enum\n\nfunction text_of(notice: Notice) returns Text:\n  match notice:\n    case Message(t):\n      return t\n    case Notice.Stop:\n      return \"stopped\"\n  end match\nend function\n",
+            "E3001",
+        ),
+        (
+            "enum Notice:\n  case Message(text: Text)\n  case Stop\nend enum\n\nfunction text_of(notice: Notice) returns Text:\n  match notice:\n    case Notice.Stop(t):\n      return t\n    case Notice.Message(_):\n      return \"m\"\n  end match\nend function\n",
+            "match payload binding arity",
+        ),
+    ] {
+        let source = SourceFile::from_text(SourceId::new(0), "refusal.sico", source).unwrap();
+        let error = lower_core(&source).expect_err("binding arm must refuse");
+        let text = format!("{error:?}");
+        assert!(
+            text.contains(expected),
+            "expected identity containing {expected:?}, got {text}"
+        );
+    }
+}
+
+#[test]
+fn result_payload_binding_lowering_is_unchanged_by_the_generalization() {
+    // Regression anchor: the ok/error path must emit byte-identical IR to
+    // the pre-RFC-0056 shape (frozen corpus safety).
+    let text = "function half(value: U64) returns U64:\n  match U64.checked_div(value, U64.literal(2)):\n    case ok(h):\n      return h\n    case error(_):\n      return U64.literal(0)\n  end match\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "half.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty(), "{:?}", verify(&module));
+    let fields: Vec<_> = module.functions[0]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match &instruction.operation {
+            Operation::Project { field, .. } => Some(field.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fields, ["ok"]);
+}
+
+#[test]
+fn payload_enum_declarations_enter_the_module_contract() {
+    let text = "enum Notice:\n  case Message(text: Text)\n  case Stop\nend enum\n\nfunction main() returns Bool:\n  return true\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "enum.sico", text).unwrap();
+    let module = lower_core(&source).unwrap();
+    assert!(verify(&module).is_empty());
+    assert_eq!(
+        module.enums["Notice"],
+        vec![
+            EnumVariant {
+                name: "Message".into(),
+                payload: vec![Type::String],
+            },
+            EnumVariant {
+                name: "Stop".into(),
+                payload: vec![],
+            },
+        ]
+    );
+    // Enum-free programs keep the frozen serialization shape: the serde
+    // default skips the empty table, so the canonical JSON is byte-identical
+    // to a pre-RFC-0056 module (the RFC-0047 D4 `records` precedent).
+    let plain_text = "function main() returns Bool:\n  return true\nend function\n";
+    let plain = SourceFile::from_text(SourceId::new(1), "plain.sico", plain_text).unwrap();
+    let plain = lower_core(&plain).unwrap();
+    assert!(!canonical_json(&plain).unwrap().contains("\"enums\""));
+}
+
+#[test]
+fn verifier_checks_enum_payload_projection_against_the_enum_table() {
+    // The D5 host-surface shape, exercised at IR level: arity-1 uses the
+    // bare case name, arity-N uses "<case>.<index>", and every projection
+    // type is checked against the declared payload.
+    let text = "enum ui_event:\n  case click(id: U64)\n  case select(handle: U64, index: U64)\n  case closed\nend enum\n\nfunction mk() returns ui_event:\n  return ui_event.click(U64.literal(7))\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "event.sico", text).unwrap();
+    let mut module = lower_core(&source).unwrap();
+    let mk = module
+        .functions
+        .iter_mut()
+        .find(|function| function.name == "mk")
+        .expect("mk lowers");
+    let variant = mk.blocks[0]
+        .instructions
+        .iter()
+        .find(|instruction| matches!(instruction.operation, Operation::Variant { .. }))
+        .expect("variant construct")
+        .clone();
+    let mk_id = mk.id;
+    // Canonical value ids: parameters first (none here), then instructions in
+    // order — the projection takes the next id after the variant.
+    let next = u32::try_from(mk.blocks[0].instructions.len()).unwrap();
+    let project = |field: &str, ty: Type| Instruction {
+        result: ValueId(next),
+        ty,
+        operation: Operation::Project {
+            base: variant.result,
+            field: field.to_owned(),
+        },
+        range: variant.range,
+    };
+    let mut checked = module.clone();
+    {
+        let mk = checked
+            .functions
+            .iter_mut()
+            .find(|f| f.id == mk_id)
+            .unwrap();
+        mk.return_type = Type::U64;
+        mk.blocks[0].instructions.push(project("click", Type::U64));
+        mk.blocks[0].terminator = Terminator::Return(Some(ValueId(next)));
+    }
+    assert!(
+        verify(&checked).is_empty(),
+        "click payload projection: {:?}",
+        verify(&checked)
+    );
+
+    for (field, ty) in [("select.0", Type::U64), ("select.1", Type::U64)] {
+        let mut variant_check = module.clone();
+        let mk = variant_check
+            .functions
+            .iter_mut()
+            .find(|f| f.id == mk_id)
+            .unwrap();
+        mk.return_type = ty.clone();
+        mk.blocks[0].instructions.push(project(field, ty));
+        mk.blocks[0].terminator = Terminator::Return(Some(ValueId(next)));
+        assert!(
+            verify(&variant_check).is_empty(),
+            "select payload projection {field}: {:?}",
+            verify(&variant_check)
+        );
+    }
+
+    // Refusals: unknown case, indexed access on an arity-1 payload, payload
+    // index out of range, payload-less case, and wrong projection type.
+    for (field, return_ty) in [
+        ("Missing", Type::U64),
+        ("click.0", Type::U64),
+        ("select.2", Type::U64),
+        ("closed", Type::Unit),
+        ("click", Type::String),
+        ("select.0x", Type::U64),
+    ] {
+        let mut rejected = module.clone();
+        {
+            let mk = rejected
+                .functions
+                .iter_mut()
+                .find(|f| f.id == mk_id)
+                .unwrap();
+            mk.return_type = return_ty.clone();
+            mk.blocks[0].instructions.push(project(field, return_ty));
+            mk.blocks[0].terminator = Terminator::Return(Some(ValueId(next)));
+        }
+        assert!(
+            verify(&rejected)
+                .iter()
+                .any(|error| error.kind == VerifyErrorKind::TypeMismatch),
+            "expected TypeMismatch for {field}"
+        );
+    }
+}
+
+#[test]
+fn record_field_projection_stays_unvalidated_outside_the_enum_table() {
+    // Regression guard for the Project verifier arm: a Named base that is
+    // not a declared enum (here: a record) keeps the pre-RFC-0056
+    // name-unchecked behavior.
+    let text = "record Pair:\n  field left: Int\n  field right: Int\nend record\n\nfunction main() returns Pair:\n  return Pair(left: 1, right: 2)\nend function\n";
+    let source = SourceFile::from_text(SourceId::new(0), "pair.sico", text).unwrap();
+    let mut module = lower_core(&source).unwrap();
+    let construct = module.functions[0].blocks[0].instructions[2].clone();
+    module.functions[0].blocks[0]
+        .instructions
+        .push(Instruction {
+            result: ValueId(3),
+            ty: Type::Int,
+            operation: Operation::Project {
+                base: construct.result,
+                field: "left".to_owned(),
+            },
+            range: construct.range,
+        });
+    module.functions[0].blocks[0].terminator = Terminator::Return(Some(ValueId(3)));
+    module.functions[0].return_type = Type::Int;
+    assert!(
+        verify(&module).is_empty(),
+        "record projection must stay accepted: {:?}",
+        verify(&module)
     );
 }
 

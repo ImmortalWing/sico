@@ -15,6 +15,18 @@
 //! The corpus is platform-scoped: the native renderer exists on Windows
 //! only, so the assertions are skipped elsewhere instead of pretending the
 //! frame exists.
+//!
+//! # Re-frozen under owner authorization (2026-11-18, audit item D2)
+//!
+//! The `controls` and `row` digests were re-frozen because the D2 layout
+//! unification made the renderer consume [`sico_ui_renderer_d2d::layout::compute`]
+//! (the same deterministic token-proxy layout the runner hit-tests a click
+//! with) instead of its own DirectWrite-glyph-measured layout. Control
+//! positions shifted to the token-proxy widths, so the rendered pixels of the
+//! two scenes that contain width-dependent drawing changed; `empty` and
+//! `text` are unchanged (a vertical stack of leading-aligned text does not
+//! depend on the measured width). Per ADR-0018 §3 a digest change means a new
+//! renderer version; this re-freeze is deliberate and owner-authorized.
 
 use sico_ui_renderer_d2d::{D2dUiBackend, UiBackendError};
 
@@ -36,13 +48,13 @@ const CORPUS: [(&str, u32, u32, &str); 4] = [
         "controls",
         360,
         280,
-        "f407bcd035ae600ba65d0e0c9db37fb2777ba6745f176b5999aa1bbf8bbbed12",
+        "a797c72fa884bff8bee6ad53292eea84791c31597f130c20851bca60a4d0c8c0",
     ),
     (
         "row",
         320,
         120,
-        "9e28e6aa06d9995b46e87c57639fc128be3be04a57d7f65b2ba613402e6464b7",
+        "03a089b7726bd5c8c2f99d7c50fc208b31cf0a011da5cee7cf8ff3bce8224b45",
     ),
 ];
 

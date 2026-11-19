@@ -22269,6 +22269,31 @@ function scalar_ir(words: List[Text], src: Bytes) returns Text:
         end if
         if U64.less_than(U64.literal(0), body_statement_count):
           if U64.less_than(U64.literal(0), match_count):
+            if U64.equal(general_route_count, U64.literal(0)):
+              let unclaimed_body_json = general_while_function_ir(words, src, name_idx, body_from, body_end_word, fn_start, function_ordinal, return_type_kind, parameter_count)
+              if sico.text.starts_with(unclaimed_body_json, "ERR:"):
+                return unclaimed_body_json
+              end if
+              if sico.text.starts_with(unclaimed_body_json, "SKIP"):
+                return sico.text.concat("ERR:E-SH-IR-GWSKIP:", unclaimed_body_json)
+              end if
+              set function_chunks = sico.arena.push_chunk(function_chunks, unclaimed_body_json)
+              let unclaimed_body_end_offset = gw_find_code_text(src, "end function", fn_start)
+              let unclaimed_body_fn_end = fn_start
+              match U64.checked_add(unclaimed_body_end_offset, U64.literal(13)):
+                case ok(unclaimed_body_after_end):
+                  set unclaimed_body_fn_end = unclaimed_body_after_end
+                case error(_):
+                  return "ERR:E-SH-IR-RANGE"
+              end match
+              if U64.less_than(source_len, unclaimed_body_fn_end):
+                set unclaimed_body_fn_end = source_len
+              end if
+              set source_cursor = unclaimed_body_fn_end
+              set i = body_end_word
+              set prev = "function"
+              continue
+            end if
             return "ERR:E-SH-IR-STATEMENT"
           end if
           if U64.less_than(U64.literal(0), set_count):

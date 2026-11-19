@@ -2218,22 +2218,17 @@ end function
 
 // The IR type of the local cell `index` of the function `fn`; 0 when the cell
 // is absent.
-function cgs_cell_ty(bytes: Bytes, fn: U64, index: U64) returns U64:
-  let cct_locals = cgj_member(bytes, fn, "locals")
-  if U64.equal(cct_locals, U64.literal(0)):
-    return U64.literal(0)
-  end if
-  let cct_cell = cgj_array_item(bytes, cct_locals, index)
+function cgs_cell_ty(bytes: Bytes, cct_cell: U64) returns U64:
   if U64.equal(cct_cell, U64.literal(0)):
     return U64.literal(0)
   end if
   return cgj_member(bytes, cct_cell, "ty")
 end function
 
-// The number of Wasm slots the local cell `index` of the function `fn`
+// The number of Wasm slots the local cell node `cct_cell` of the function `fn`
 // occupies; 0 when the cell is absent or its type does not flatten.
-function cgs_cell_width(bytes: Bytes, fn: U64, index: U64) returns U64:
-  let ccw_ty = cgs_cell_ty(bytes, fn, index)
+function cgs_cell_width(bytes: Bytes, cct_cell: U64) returns U64:
+  let ccw_ty = cgs_cell_ty(bytes, cct_cell)
   if U64.equal(ccw_ty, U64.literal(0)):
     return U64.literal(0)
   end if
@@ -2254,20 +2249,14 @@ function cgs_cell_slots(bytes: Bytes, fn: U64) returns U64:
     return U64.literal(0)
   end if
   let ccsls_total = U64.literal(0)
-  let ccsls_index = U64.literal(0)
-  let ccsls_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), ccsls_more):
-    let ccsls_cell = cgj_array_item(bytes, ccsls_locals, ccsls_index)
-    if U64.equal(ccsls_cell, U64.literal(0)):
-      set ccsls_more = U64.literal(0)
-      continue
-    end if
-    let ccsls_width = cgs_cell_width(bytes, fn, ccsls_index)
+  let ccsls_cell = cgj_array_first(bytes, ccsls_locals)
+  while U64.less_than(U64.literal(0), ccsls_cell):
+    let ccsls_width = cgs_cell_width(bytes, ccsls_cell)
     if U64.equal(ccsls_width, U64.literal(0)):
       return U64.literal(0)
     end if
     set ccsls_total = cgs_add(ccsls_total, ccsls_width)
-    set ccsls_index = cg_next(ccsls_index)
+    set ccsls_cell = cgj_array_next(bytes, ccsls_cell)
   end while
   return ccsls_total
 end function
@@ -2320,15 +2309,13 @@ function cgs_dispatcher_slot(bytes: Bytes, run: U64) returns U64:
   end while
   let cds_cells = cgj_member(bytes, run, "locals")
   if U64.less_than(U64.literal(0), cds_cells):
-    let cds_cell_index = U64.literal(0)
     let cds_cell = cgj_array_first(bytes, cds_cells)
     while U64.less_than(U64.literal(0), cds_cell):
-      let cds_cell_width = cgs_cell_width(bytes, run, cds_cell_index)
+      let cds_cell_width = cgs_cell_width(bytes, cds_cell)
       if U64.equal(cds_cell_width, U64.literal(0)):
         return U64.literal(0)
       end if
       set cds_total = cgs_add(cds_total, cds_cell_width)
-      set cds_cell_index = cg_next(cds_cell_index)
       set cds_cell = cgj_array_next(bytes, cds_cell)
     end while
   end if
@@ -2354,22 +2341,18 @@ function cgs_cell_slot(bytes: Bytes, fn: U64, index: U64) returns U64:
   end if
   let ccsl_offset = ccsl_base
   let ccsl_index = U64.literal(0)
-  let ccsl_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), ccsl_more):
-    let ccsl_cell = cgj_array_item(bytes, ccsl_locals, ccsl_index)
-    if U64.equal(ccsl_cell, U64.literal(0)):
-      set ccsl_more = U64.literal(0)
-      continue
-    end if
+  let ccsl_cell = cgj_array_first(bytes, ccsl_locals)
+  while U64.less_than(U64.literal(0), ccsl_cell):
     if U64.equal(ccsl_index, index):
       return ccsl_offset
     end if
-    let ccsl_width = cgs_cell_width(bytes, fn, ccsl_index)
+    let ccsl_width = cgs_cell_width(bytes, ccsl_cell)
     if U64.equal(ccsl_width, U64.literal(0)):
       return U64.literal(0)
     end if
     set ccsl_offset = cgs_add(ccsl_offset, ccsl_width)
     set ccsl_index = cg_next(ccsl_index)
+    set ccsl_cell = cgj_array_next(bytes, ccsl_cell)
   end while
   return U64.literal(0)
 end function
@@ -2595,39 +2578,33 @@ function cgs_construct_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
   end if
   let cch_out = ""
   let cch_offset = U64.literal(0)
-  let cch_index = U64.literal(0)
-  let cch_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), cch_more):
-    let cch_item = cgj_array_item(bytes, cch_fields, cch_index)
-    if U64.equal(cch_item, U64.literal(0)):
-      set cch_more = U64.literal(0)
-    else:
-      let cch_value = cgj_value_text(bytes, cgj_member(bytes, cch_item, "value"))
-      let cch_src = cgs_value_slot(vindex, cch_value)
-      let cch_ty = cgs_value_ty(vindex, cch_value)
-      if U64.equal(cch_src, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      if U64.equal(cch_ty, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      let cch_count = cgs_type_slots(bytes, cch_ty)
-      if U64.equal(cch_count, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      let cch_src0 = cgs_sub(cch_src, U64.literal(1))
-      let cch_i = U64.literal(0)
-      while U64.less_than(cch_i, cch_count):
-        let cch_from = cgs_add(cch_src0, cch_i)
-        let cch_to_base = cgs_add(result0, cch_offset)
-        let cch_to = cgs_add(cch_to_base, cch_i)
-        set cch_out = sico.text.concat(cch_out, cgs_local_get_hex(cch_from))
-        set cch_out = sico.text.concat(cch_out, cgs_local_set_hex(cch_to))
-        set cch_i = cg_next(cch_i)
-      end while
-      set cch_offset = cgs_add(cch_offset, cch_count)
+  let cch_item = cgj_array_first(bytes, cch_fields)
+  while U64.less_than(U64.literal(0), cch_item):
+    let cch_value = cgj_value_text(bytes, cgj_member(bytes, cch_item, "value"))
+    let cch_src = cgs_value_slot(vindex, cch_value)
+    let cch_ty = cgs_value_ty(vindex, cch_value)
+    if U64.equal(cch_src, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
     end if
-    set cch_index = cg_next(cch_index)
+    if U64.equal(cch_ty, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let cch_count = cgs_type_slots(bytes, cch_ty)
+    if U64.equal(cch_count, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let cch_src0 = cgs_sub(cch_src, U64.literal(1))
+    let cch_i = U64.literal(0)
+    while U64.less_than(cch_i, cch_count):
+      let cch_from = cgs_add(cch_src0, cch_i)
+      let cch_to_base = cgs_add(result0, cch_offset)
+      let cch_to = cgs_add(cch_to_base, cch_i)
+      set cch_out = sico.text.concat(cch_out, cgs_local_get_hex(cch_from))
+      set cch_out = sico.text.concat(cch_out, cgs_local_set_hex(cch_to))
+      set cch_i = cg_next(cch_i)
+    end while
+    set cch_offset = cgs_add(cch_offset, cch_count)
+    set cch_item = cgj_array_next(bytes, cch_item)
   end while
   let cch_result_slots = cgs_type_slots(bytes, cgj_member(bytes, instr, "ty"))
   if U64.equal(cch_result_slots, cch_offset):
@@ -2684,25 +2661,19 @@ function cgs_variant_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
   let cvh_payload_len = U64.literal(0)
-  let cvhl_index = U64.literal(0)
-  let cvhl_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), cvhl_more):
-    let cvhl_item = cgj_array_item(bytes, cvh_payload, cvhl_index)
-    if U64.equal(cvhl_item, U64.literal(0)):
-      set cvhl_more = U64.literal(0)
-    else:
-      let cvhl_value = cgj_value_text(bytes, cvhl_item)
-      let cvhl_ty = cgs_value_ty(vindex, cvhl_value)
-      if U64.equal(cvhl_ty, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      let cvhl_count = cgs_type_slots(bytes, cvhl_ty)
-      if U64.equal(cvhl_count, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      set cvh_payload_len = cgs_add(cvh_payload_len, cvhl_count)
+  let cvhl_item = cgj_array_first(bytes, cvh_payload)
+  while U64.less_than(U64.literal(0), cvhl_item):
+    let cvhl_value = cgj_value_text(bytes, cvhl_item)
+    let cvhl_ty = cgs_value_ty(vindex, cvhl_value)
+    if U64.equal(cvhl_ty, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
     end if
-    set cvhl_index = cg_next(cvhl_index)
+    let cvhl_count = cgs_type_slots(bytes, cvhl_ty)
+    if U64.equal(cvhl_count, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    set cvh_payload_len = cgs_add(cvh_payload_len, cvhl_count)
+    set cvhl_item = cgj_array_next(bytes, cvhl_item)
   end while
   let cvh_dest = cgs_add(result0, U64.literal(1))
   let cvh_start = U64.literal(0)
@@ -2726,36 +2697,30 @@ function cgs_variant_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0:
     set cvh_zero = cg_next(cvh_zero)
   end while
   let cvh_offset = cvh_start
-  let cvh_pindex = U64.literal(0)
-  let cvh_pmore = U64.literal(1)
-  while U64.less_than(U64.literal(0), cvh_pmore):
-    let cvh_item = cgj_array_item(bytes, cvh_payload, cvh_pindex)
-    if U64.equal(cvh_item, U64.literal(0)):
-      set cvh_pmore = U64.literal(0)
-    else:
-      let cvh_value = cgj_value_text(bytes, cvh_item)
-      let cvh_src = cgs_value_slot(vindex, cvh_value)
-      let cvh_ty = cgs_value_ty(vindex, cvh_value)
-      if U64.equal(cvh_src, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      if U64.equal(cvh_ty, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      let cvh_count = cgs_type_slots(bytes, cvh_ty)
-      let cvh_src0 = cgs_sub(cvh_src, U64.literal(1))
-      let cvh_i = U64.literal(0)
-      while U64.less_than(cvh_i, cvh_count):
-        let cvh_from = cgs_add(cvh_src0, cvh_i)
-        let cvh_to_base = cgs_add(cvh_dest, cvh_offset)
-        let cvh_to = cgs_add(cvh_to_base, cvh_i)
-        set cvh_out = sico.text.concat(cvh_out, cgs_local_get_hex(cvh_from))
-        set cvh_out = sico.text.concat(cvh_out, cgs_local_set_hex(cvh_to))
-        set cvh_i = cg_next(cvh_i)
-      end while
-      set cvh_offset = cgs_add(cvh_offset, cvh_count)
+  let cvh_item = cgj_array_first(bytes, cvh_payload)
+  while U64.less_than(U64.literal(0), cvh_item):
+    let cvh_value = cgj_value_text(bytes, cvh_item)
+    let cvh_src = cgs_value_slot(vindex, cvh_value)
+    let cvh_ty = cgs_value_ty(vindex, cvh_value)
+    if U64.equal(cvh_src, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
     end if
-    set cvh_pindex = cg_next(cvh_pindex)
+    if U64.equal(cvh_ty, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let cvh_count = cgs_type_slots(bytes, cvh_ty)
+    let cvh_src0 = cgs_sub(cvh_src, U64.literal(1))
+    let cvh_i = U64.literal(0)
+    while U64.less_than(cvh_i, cvh_count):
+      let cvh_from = cgs_add(cvh_src0, cvh_i)
+      let cvh_to_base = cgs_add(cvh_dest, cvh_offset)
+      let cvh_to = cgs_add(cvh_to_base, cvh_i)
+      set cvh_out = sico.text.concat(cvh_out, cgs_local_get_hex(cvh_from))
+      set cvh_out = sico.text.concat(cvh_out, cgs_local_set_hex(cvh_to))
+      set cvh_i = cg_next(cvh_i)
+    end while
+    set cvh_offset = cgs_add(cvh_offset, cvh_count)
+    set cvh_item = cgj_array_next(bytes, cvh_item)
   end while
   while U64.less_than(cvh_offset, cvh_dest_len):
     let cvh_kind2 = cgs_flat_slot_kind(cvh_ok_flat, cvh_offset)
@@ -3450,7 +3415,8 @@ function cgs_intrinsic_present(mask: U64, name: Text) returns U64:
   return U64.literal(1)
 end function
 
-// The core function index of the standard-library helper named `wanted`.
+// The core function index of the standard-library helper named `wanted`,
+// with the module's function count and intrinsic mask supplied by the caller.
 //
 // The backend sorts the module's used helper set by name before it numbers the
 // helpers, so a helper's index is the module function count, plus the three
@@ -3459,122 +3425,139 @@ end function
 // guest does not know has no index here, and the intrinsic dispatch refuses
 // such a module before any index is computed.
 //
+// This is the A1 form: the per-instruction emission hot path threads the
+// precomputed `(fn_count, mask)` from the module-level segment builders instead
+// of re-running `cgs_function_count` and `cgs_intrinsic_mask` (each a
+// full-module scan) on every intrinsic-call instruction. The ranking chain is
+// byte-identical to the original `cgs_helper_index`.
+//
 // Returns 0 when the helper is outside the guest's vocabulary.
-function cgs_helper_index(bytes: Bytes, wanted: Text) returns U64:
-  let cchi_count = cgs_function_count(bytes)
-  if U64.equal(cchi_count, U64.literal(0)):
+function cgs_helper_index_masked(fn_count: U64, mask: U64, wanted: Text) returns U64:
+  if U64.equal(fn_count, U64.literal(0)):
     return U64.literal(0)
   end if
-  let cchi_base = cgs_add(cchi_count, U64.literal(3))
+  let cchm_base = cgs_add(fn_count, U64.literal(3))
   if cg_is_word(wanted, "sico.bytes.equal"):
-    return cchi_base
+    return cchm_base
   end if
-  let cchi_mask = cgs_intrinsic_mask(bytes)
-  let cchi_rank = U64.literal(0)
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.bytes.equal"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  let cchm_rank = U64.literal(0)
+  if U64.equal(cgs_intrinsic_present(mask, "sico.bytes.equal"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.bytes.utf8_decode"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  let cchi_utf8 = cgs_intrinsic_present(cchi_mask, "sico.bytes.utf8_decode")
-  if U64.equal(cchi_utf8, U64.literal(0)):
-    set cchi_utf8 = cgs_intrinsic_present(cchi_mask, "sico.bytes.is_utf8")
+  let cchm_utf8 = cgs_intrinsic_present(mask, "sico.bytes.utf8_decode")
+  if U64.equal(cchm_utf8, U64.literal(0)):
+    set cchm_utf8 = cgs_intrinsic_present(mask, "sico.bytes.is_utf8")
   end if
-  if U64.equal(cchi_utf8, U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cchm_utf8, U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.list.append"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.append"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.list.append"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.list.append[U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.append[U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.list.append[U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.list.empty[U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.empty[U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.list.empty[U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.list.get[U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.get[U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.list.get[U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.list.length[U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.list.length[U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.list.length[U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.map.empty[Text,U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.map.empty[Text,U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.map.empty[Text,U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.map.get[Text,U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.map.get[Text,U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.map.get[Text,U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.map.put[Text,U64]"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.map.put[Text,U64]"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.map.put[Text,U64]"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.concat"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.concat"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.concat"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.join"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.join"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.join"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.length"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.length"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.length"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.split_lines"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.split_lines"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.split_lines"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.starts_with"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.starts_with"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.starts_with"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.text.trim"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.text.trim"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.text.trim"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   if cg_is_word(wanted, "sico.u64.to_text"):
-    return cgs_add(cchi_base, cchi_rank)
+    return cgs_add(cchm_base, cchm_rank)
   end if
-  if U64.equal(cgs_intrinsic_present(cchi_mask, "sico.u64.to_text"), U64.literal(1)):
-    set cchi_rank = cgs_add(cchi_rank, U64.literal(1))
+  if U64.equal(cgs_intrinsic_present(mask, "sico.u64.to_text"), U64.literal(1)):
+    set cchm_rank = cgs_add(cchm_rank, U64.literal(1))
   end if
   return U64.literal(0)
+end function
+
+// The core function index of the standard-library helper named `wanted`,
+// precomputing the module's function count and intrinsic mask once.
+//
+// This two-argument form keeps the original `cgs_helper_index` signature so
+// any caller without a precomputed `(fn_count, mask)` still behaves exactly as
+// before. The emission hot path uses `cgs_helper_index_masked` directly with
+// the caller's precomputed pair (A1).
+function cgs_helper_index(bytes: Bytes, wanted: Text) returns U64:
+  let cchi_count = cgs_function_count(bytes)
+  let cchi_mask = cgs_intrinsic_mask(bytes)
+  return cgs_helper_index_masked(cchi_count, cchi_mask, wanted)
 end function
 
 // Whether the argument at `index` of the intrinsic `data` has the kind
@@ -3660,7 +3643,7 @@ end function
 // The gates fail closed: the helper name, the argument count, every
 // argument's kind and the result's slot count are checked before a single
 // byte is emitted.
-function cgs_collection_call_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, name: Text, vindex: List[U64]) returns Text:
+function cgs_collection_call_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, name: Text, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let ccch_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(ccch_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -3780,7 +3763,7 @@ function cgs_collection_call_hex(bytes: Bytes, run: U64, instr: U64, data: U64, 
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let ccch_helper = cgs_helper_index(bytes, name)
+  let ccch_helper = cgs_helper_index_masked(fn_count, mask, name)
   if U64.equal(ccch_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -3825,7 +3808,7 @@ end function
 // U64 result slot (the backend's `emit_collection_call` ListLength arm). The
 // dropped table is abandoned on the operand stack at the return, exactly as
 // the backend leaves it.
-function cgs_list_length_u64_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_list_length_u64_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let clluh_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(clluh_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -3854,7 +3837,7 @@ function cgs_list_length_u64_hex(bytes: Bytes, run: U64, instr: U64, data: U64, 
   if U64.equal(clluh_slot, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let clluh_helper = cgs_helper_index(bytes, "sico.list.length[U64]")
+  let clluh_helper = cgs_helper_index_masked(fn_count, mask, "sico.list.length[U64]")
   if U64.equal(clluh_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -3875,7 +3858,7 @@ function cgs_list_length_u64_hex(bytes: Bytes, run: U64, instr: U64, data: U64, 
   return clluh_out
 end function
 
-function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let cih_name_off = cgj_member(bytes, data, "name")
   if U64.equal(cih_name_off, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -3990,7 +3973,7 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
     let cihc_a_ptr_slot = cgs_sub(cihc_a_slot, U64.literal(1))
     let cihc_b_ptr_slot = cgs_sub(cihc_b_slot, U64.literal(1))
     let cihc_len_slot = cgs_add(result0, U64.literal(1))
-    let cihc_helper = cgs_helper_index(bytes, "sico.text.concat")
+    let cihc_helper = cgs_helper_index_masked(fn_count, mask, "sico.text.concat")
     if U64.equal(cihc_helper, U64.literal(0)):
       return "ERR:E-SH-CG-IR-EMIT"
     end if
@@ -4051,7 +4034,7 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
     end if
     let cihl_ptr_slot = cgs_sub(cihl_slot, U64.literal(1))
     let cihl_len_slot = cihl_slot
-    let cihl_helper = cgs_helper_index(bytes, "sico.text.length")
+    let cihl_helper = cgs_helper_index_masked(fn_count, mask, "sico.text.length")
     if U64.equal(cihl_helper, U64.literal(0)):
       return "ERR:E-SH-CG-IR-EMIT"
     end if
@@ -4087,49 +4070,49 @@ function cgs_intrinsic_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
     return cgs_bytes_slice_hex(bytes, run, instr, data, result0, vindex)
   end if
   if cg_is_word(cih_name, "sico.bytes.equal"):
-    return cgs_bytes_equal_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_bytes_equal_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.text.starts_with"):
-    return cgs_starts_with_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_starts_with_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.u64.to_text"):
-    return cgs_u64_to_text_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_u64_to_text_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.list.empty[U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.map.empty[Text,U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.map.get[Text,U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.map.put[Text,U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.list.get[U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.list.length[U64]"):
-    return cgs_list_length_u64_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_list_length_u64_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.list.append"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.list.append[U64]"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.text.join"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.text.split_lines"):
-    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex)
+    return cgs_collection_call_hex(bytes, run, instr, data, result0, cih_name, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.bytes.is_utf8"):
-    return cgs_is_utf8_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_is_utf8_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   if cg_is_word(cih_name, "sico.text.trim"):
-    return cgs_text_trim_hex(bytes, run, instr, data, result0, vindex)
+    return cgs_text_trim_hex(bytes, run, instr, data, result0, vindex, fn_count, mask)
   end if
   return "ERR:E-SH-CG-IR-EMIT"
 end function
@@ -4145,7 +4128,7 @@ end function
 // This lives in its own function, not inline in `cgs_intrinsic_hex`, so the
 // dispatcher stays inside the guest frontend's self-hosting statement frontier
 // (the STEP-0560 `cgs_list_length_u64_hex` pattern).
-function cgs_is_utf8_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_is_utf8_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let ciuh_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(ciuh_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -4188,7 +4171,7 @@ function cgs_is_utf8_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0:
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let ciuh_helper = cgs_helper_index(bytes, "sico.bytes.utf8_decode")
+  let ciuh_helper = cgs_helper_index_masked(fn_count, mask, "sico.bytes.utf8_decode")
   if U64.equal(ciuh_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -4213,7 +4196,7 @@ end function
 // This lives in its own function, not inline in `cgs_intrinsic_hex`, so the
 // dispatcher stays inside the guest frontend's self-hosting statement frontier
 // (the STEP-0560 `cgs_list_length_u64_hex` pattern).
-function cgs_text_trim_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_text_trim_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let ctth_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(ctth_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -4256,7 +4239,7 @@ function cgs_text_trim_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let ctth_helper = cgs_helper_index(bytes, "sico.text.trim")
+  let ctth_helper = cgs_helper_index_masked(fn_count, mask, "sico.text.trim")
   if U64.equal(ctth_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -4300,7 +4283,7 @@ function cgs_write_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, vinde
   if U64.equal(cwlh_cell, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cwlh_cell_width = cgs_cell_width(bytes, fn, cwlh_local)
+  let cwlh_cell_width = cgs_cell_width(bytes, cgj_array_item(bytes, cgj_member(bytes, fn, "locals"), cwlh_local))
   if U64.equal(cwlh_cell_width, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -4336,7 +4319,7 @@ function cgs_read_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, result
   if U64.equal(ccrlh_cell, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let ccrlh_cell_width = cgs_cell_width(bytes, fn, ccrlh_local)
+  let ccrlh_cell_width = cgs_cell_width(bytes, cgj_array_item(bytes, cgj_member(bytes, fn, "locals"), ccrlh_local))
   let ccrlh_result_ty = cgj_member(bytes, instr, "ty")
   let ccrlh_result_width = cgs_type_slots(bytes, ccrlh_result_ty)
   if U64.equal(ccrlh_cell_width, U64.literal(0)):
@@ -4361,7 +4344,7 @@ end function
 
 // The instruction bytes of the IR instruction at `instr`; an `ERR:` identity
 // when the operation is outside the supported subset.
-function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64]) returns Text:
+function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let coph_operation = cgj_member(bytes, instr, "operation")
   if U64.equal(coph_operation, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -4413,7 +4396,7 @@ function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64]) retur
     return cgs_const_string_hex(bytes, run, instr, coph_data, coph_result0)
   end if
   if cg_is_word(coph_name, "intrinsic"):
-    return cgs_intrinsic_hex(bytes, run, instr, coph_data, coph_result0, vindex)
+    return cgs_intrinsic_hex(bytes, run, instr, coph_data, coph_result0, vindex, fn_count, mask)
   end if
   if cg_is_word(coph_name, "call"):
     return cgs_call_hex(bytes, run, instr, coph_data, coph_result0, vindex)
@@ -4472,7 +4455,9 @@ function cgs_run_instr_hex(bytes: Bytes) returns Text:
   if U64.equal(crih_run, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let crih_instr = cgs_function_instr_hex(bytes, crih_run, U64.literal(0))
+  let crih_count = cgs_function_count(bytes)
+  let crih_mask = cgs_intrinsic_mask(bytes)
+  let crih_instr = cgs_function_instr_hex(bytes, crih_run, U64.literal(0), crih_count, crih_mask)
   return crih_instr
 end function
 
@@ -4481,7 +4466,7 @@ end function
 //
 // The shell and the dispatch are the backend's own shape (STEP-0502); STEP-0507
 // applies them to every module function, not just to `run`.
-function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
+function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64, fn_count: U64, mask: U64) returns Text:
   let crih_run = fn
   let crih_ids = cgs_value_ids_refusal(bytes, crih_run)
   if sico.text.starts_with(crih_ids, "ERR:"):
@@ -4522,7 +4507,7 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64) returns Text:
     end if
     let crih_instruction = cgj_array_first(bytes, crih_instructions)
     while U64.less_than(U64.literal(0), crih_instruction):
-      let crih_op = cgs_op_hex(bytes, crih_run, crih_instruction, vindex)
+      let crih_op = cgs_op_hex(bytes, crih_run, crih_instruction, vindex, fn_count, mask)
       if sico.text.starts_with(crih_op, "ERR:"):
         return crih_op
       end if
@@ -4739,30 +4724,18 @@ function cgs_instruction_for_value(bytes: Bytes, run: U64, id: Text) returns U64
   if U64.equal(cifv_blocks, U64.literal(0)):
     return U64.literal(0)
   end if
-  let cifv_bindex = U64.literal(0)
-  let cifv_bmore = U64.literal(1)
-  while U64.less_than(U64.literal(0), cifv_bmore):
-    let cifv_block = cgj_array_item(bytes, cifv_blocks, cifv_bindex)
-    if U64.equal(cifv_block, U64.literal(0)):
-      set cifv_bmore = U64.literal(0)
-    else:
-      let cifv_instructions = cgj_member(bytes, cifv_block, "instructions")
-      let cifv_iindex = U64.literal(0)
-      let cifv_imore = U64.literal(1)
-      while U64.less_than(U64.literal(0), cifv_imore):
-        let cifv_instruction = cgj_array_item(bytes, cifv_instructions, cifv_iindex)
-        if U64.equal(cifv_instruction, U64.literal(0)):
-          set cifv_imore = U64.literal(0)
-        else:
-          let cifv_rid = cgj_value_text(bytes, cgj_member(bytes, cifv_instruction, "result"))
-          if cg_is_word(cifv_rid, id):
-            return cifv_instruction
-          end if
-        end if
-        set cifv_iindex = cg_next(cifv_iindex)
-      end while
-    end if
-    set cifv_bindex = cg_next(cifv_bindex)
+  let cifv_block = cgj_array_first(bytes, cifv_blocks)
+  while U64.less_than(U64.literal(0), cifv_block):
+    let cifv_instructions = cgj_member(bytes, cifv_block, "instructions")
+    let cifv_instruction = cgj_array_first(bytes, cifv_instructions)
+    while U64.less_than(U64.literal(0), cifv_instruction):
+      let cifv_rid = cgj_value_text(bytes, cgj_member(bytes, cifv_instruction, "result"))
+      if cg_is_word(cifv_rid, id):
+        return cifv_instruction
+      end if
+      set cifv_instruction = cgj_array_next(bytes, cifv_instruction)
+    end while
+    set cifv_block = cgj_array_next(bytes, cifv_block)
   end while
   return U64.literal(0)
 end function
@@ -5204,7 +5177,9 @@ function cgs_run_body_hex(bytes: Bytes) returns Text:
   if U64.equal(crbh_run, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let crbh_instr = cgs_function_instr_hex(bytes, crbh_run, U64.literal(1))
+  let crbh_count = cgs_function_count(bytes)
+  let crbh_mask = cgs_intrinsic_mask(bytes)
+  let crbh_instr = cgs_function_instr_hex(bytes, crbh_run, U64.literal(1), crbh_count, crbh_mask)
   if sico.text.starts_with(crbh_instr, "ERR:"):
     return crbh_instr
   end if
@@ -5446,8 +5421,7 @@ end function
 // The `run` function keeps the frozen Script ABI type (its result travels
 // through the return area, so the core signature carries one pointer); every
 // other function's type is derived from the flat parameter and result types.
-function cgs_core_type_hex(bytes: Bytes, index: U64) returns Text:
-  let ccth_fn = cgs_function_at_index(bytes, index)
+function cgs_core_type_hex(bytes: Bytes, ccth_fn: U64) returns Text:
   if U64.equal(ccth_fn, U64.literal(0)):
     return ""
   end if
@@ -5461,22 +5435,16 @@ function cgs_core_type_hex(bytes: Bytes, index: U64) returns Text:
   end if
   let ccth_params = ""
   let ccth_param_slots = U64.literal(0)
-  let ccth_pindex = U64.literal(0)
-  let ccth_pmore = U64.literal(1)
-  while U64.less_than(U64.literal(0), ccth_pmore):
-    let ccth_param = cgj_array_item(bytes, ccth_param_array, ccth_pindex)
-    if U64.equal(ccth_param, U64.literal(0)):
-      set ccth_pmore = U64.literal(0)
-    else:
-      let ccth_param_ty = cgj_member(bytes, ccth_param, "ty")
-      let ccth_flat = cgs_flat_hex(bytes, ccth_param_ty)
-      if U64.equal(sico.text.length(ccth_flat), U64.literal(0)):
-        return ""
-      end if
-      set ccth_params = sico.text.concat(ccth_params, ccth_flat)
-      set ccth_param_slots = cgs_add(ccth_param_slots, cgs_type_slots(bytes, ccth_param_ty))
-      set ccth_pindex = cg_next(ccth_pindex)
+  let ccth_param = cgj_array_first(bytes, ccth_param_array)
+  while U64.less_than(U64.literal(0), ccth_param):
+    let ccth_param_ty = cgj_member(bytes, ccth_param, "ty")
+    let ccth_flat = cgs_flat_hex(bytes, ccth_param_ty)
+    if U64.equal(sico.text.length(ccth_flat), U64.literal(0)):
+      return ""
     end if
+    set ccth_params = sico.text.concat(ccth_params, ccth_flat)
+    set ccth_param_slots = cgs_add(ccth_param_slots, cgs_type_slots(bytes, ccth_param_ty))
+    set ccth_param = cgj_array_next(bytes, ccth_param)
   end while
   let ccth_return_ty = cgj_member(bytes, ccth_fn, "return_type")
   if U64.equal(ccth_return_ty, U64.literal(0)):
@@ -5588,14 +5556,15 @@ function cgs_core_types_hex(bytes: Bytes) returns Text:
     set cctsh_total = cgs_add(cctsh_total, U64.literal(1))
   end if
   let cctsh_out = cg_leb_hex(cctsh_total)
-  let cctsh_index = U64.literal(0)
-  while U64.less_than(cctsh_index, cctsh_count):
-    let cctsh_type = cgs_core_type_hex(bytes, cctsh_index)
+  let cctsh_functions = cgj_member(bytes, U64.literal(0), "functions")
+  let cctsh_fn = cgj_array_first(bytes, cctsh_functions)
+  while U64.less_than(U64.literal(0), cctsh_fn):
+    let cctsh_type = cgs_core_type_hex(bytes, cctsh_fn)
     if U64.equal(sico.text.length(cctsh_type), U64.literal(0)):
       return ""
     end if
     set cctsh_out = sico.text.concat(cctsh_out, cctsh_type)
-    set cctsh_index = cg_next(cctsh_index)
+    set cctsh_fn = cgj_array_next(bytes, cctsh_fn)
   end while
   set cctsh_out = sico.text.concat(cctsh_out, "60017f017f")
   set cctsh_out = sico.text.concat(cctsh_out, "60047f7f7f7f017f")
@@ -6387,7 +6356,7 @@ end function
 // length) pairs, calls the `sico.bytes.equal` helper with the four slots and
 // writes the helper's answer into the single result slot; the guest writes the
 // same bytes in the same order.
-function cgs_bytes_equal_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_bytes_equal_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let cbeh_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(cbeh_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -6446,7 +6415,7 @@ function cgs_bytes_equal_hex(bytes: Bytes, run: U64, instr: U64, data: U64, resu
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cbeh_helper = cgs_helper_index(bytes, "sico.bytes.equal")
+  let cbeh_helper = cgs_helper_index_masked(fn_count, mask, "sico.bytes.equal")
   if U64.equal(cbeh_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -6468,7 +6437,7 @@ end function
 // The backend's `sico.text.starts_with` forwards the two texts' (pointer,
 // length) pairs into the helper and writes the helper's answer into the
 // single result slot; the guest writes the same bytes in the same order.
-function cgs_starts_with_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_starts_with_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let cstwh_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(cstwh_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -6527,7 +6496,7 @@ function cgs_starts_with_hex(bytes: Bytes, run: U64, instr: U64, data: U64, resu
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cstwh_helper = cgs_helper_index(bytes, "sico.text.starts_with")
+  let cstwh_helper = cgs_helper_index_masked(fn_count, mask, "sico.text.starts_with")
   if U64.equal(cstwh_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -6550,7 +6519,7 @@ end function
 // writes the helper's `(pointer, length)` pair into the two result slots --
 // the length first, then the pointer; the guest writes the same bytes in the
 // same order.
-function cgs_u64_to_text_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64]) returns Text:
+function cgs_u64_to_text_hex(bytes: Bytes, run: U64, instr: U64, data: U64, result0: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
   let cguth_arguments = cgj_member(bytes, data, "arguments")
   if U64.equal(cguth_arguments, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -6587,7 +6556,7 @@ function cgs_u64_to_text_hex(bytes: Bytes, run: U64, instr: U64, data: U64, resu
   else:
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cguth_helper = cgs_helper_index(bytes, "sico.u64.to_text")
+  let cguth_helper = cgs_helper_index_masked(fn_count, mask, "sico.u64.to_text")
   if U64.equal(cguth_helper, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -6855,27 +6824,22 @@ end function
 // are zipped, exactly as the backend zips them.
 function cgs_match_condition_hex(bytes: Bytes, fn: U64, values: U64, patterns: U64, vindex: List[U64]) returns Text:
   let cmch_out = cgs_i32_const_hex(U64.literal(1))
-  let cmch_index = U64.literal(0)
-  let cmch_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), cmch_more):
-    let cmch_value = cgj_array_item(bytes, values, cmch_index)
-    let cmch_pattern = cgj_array_item(bytes, patterns, cmch_index)
-    if U64.equal(cmch_value, U64.literal(0)):
-      set cmch_more = U64.literal(0)
+  let cmch_value = cgj_array_first(bytes, values)
+  let cmch_pattern = cgj_array_first(bytes, patterns)
+  while U64.less_than(U64.literal(0), cmch_value):
+    if U64.equal(cmch_pattern, U64.literal(0)):
+      set cmch_value = U64.literal(0)
     else:
-      if U64.equal(cmch_pattern, U64.literal(0)):
-        set cmch_more = U64.literal(0)
-      else:
-        let cmch_value_text = cgj_value_text(bytes, cmch_value)
-        let cmch_test = cgs_match_pattern_hex(bytes, fn, cmch_value_text, cmch_pattern, vindex)
-        if sico.text.starts_with(cmch_test, "ERR:"):
-          return cmch_test
-        end if
-        set cmch_out = sico.text.concat(cmch_out, cmch_test)
-        set cmch_out = sico.text.concat(cmch_out, "71")
+      let cmch_value_text = cgj_value_text(bytes, cmch_value)
+      let cmch_test = cgs_match_pattern_hex(bytes, fn, cmch_value_text, cmch_pattern, vindex)
+      if sico.text.starts_with(cmch_test, "ERR:"):
+        return cmch_test
       end if
+      set cmch_out = sico.text.concat(cmch_out, cmch_test)
+      set cmch_out = sico.text.concat(cmch_out, "71")
+      set cmch_value = cgj_array_next(bytes, cmch_value)
+      set cmch_pattern = cgj_array_next(bytes, cmch_pattern)
     end if
-    set cmch_index = cg_next(cmch_index)
   end while
   return cmch_out
 end function
@@ -6906,35 +6870,29 @@ function cgs_match_hex(bytes: Bytes, fn: U64, term: U64, dispatcher: U64, vindex
   end if
   let cgmh_out = cgs_i32_const_neg_one_hex()
   set cgmh_out = sico.text.concat(cgmh_out, cgs_local_set_hex(cgmh_dispatcher))
-  let cgmh_index = U64.literal(0)
-  let cgmh_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), cgmh_more):
-    let cgmh_arm = cgj_array_item(bytes, cgmh_arms, cgmh_index)
-    if U64.equal(cgmh_arm, U64.literal(0)):
-      set cgmh_more = U64.literal(0)
-    else:
-      let cgmh_patterns = cgj_member(bytes, cgmh_arm, "patterns")
-      if U64.equal(cgmh_patterns, U64.literal(0)):
-        return "ERR:E-SH-CG-IR-PLAN"
-      end if
-      let cgmh_target_text = cgj_value_text(bytes, cgj_member(bytes, cgmh_arm, "target"))
-      if cgs_decimal_bad(cgmh_target_text):
-        return "ERR:E-SH-CG-IR-EMIT"
-      end if
-      let cgmh_condition = cgs_match_condition_hex(bytes, fn, cgmh_values, cgmh_patterns, vindex)
-      if sico.text.starts_with(cgmh_condition, "ERR:"):
-        return cgmh_condition
-      end if
-      set cgmh_out = sico.text.concat(cgmh_out, cgs_local_get_hex(cgmh_dispatcher))
-      set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_neg_one_hex())
-      set cgmh_out = sico.text.concat(cgmh_out, "460440")
-      set cgmh_out = sico.text.concat(cgmh_out, cgmh_condition)
-      set cgmh_out = sico.text.concat(cgmh_out, "0440")
-      set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_hex(cgs_decimal_u64(cgmh_target_text)))
-      set cgmh_out = sico.text.concat(cgmh_out, cgs_local_set_hex(cgmh_dispatcher))
-      set cgmh_out = sico.text.concat(cgmh_out, "0b0b")
+  let cgmh_arm = cgj_array_first(bytes, cgmh_arms)
+  while U64.less_than(U64.literal(0), cgmh_arm):
+    let cgmh_patterns = cgj_member(bytes, cgmh_arm, "patterns")
+    if U64.equal(cgmh_patterns, U64.literal(0)):
+      return "ERR:E-SH-CG-IR-PLAN"
     end if
-    set cgmh_index = cg_next(cgmh_index)
+    let cgmh_target_text = cgj_value_text(bytes, cgj_member(bytes, cgmh_arm, "target"))
+    if cgs_decimal_bad(cgmh_target_text):
+      return "ERR:E-SH-CG-IR-EMIT"
+    end if
+    let cgmh_condition = cgs_match_condition_hex(bytes, fn, cgmh_values, cgmh_patterns, vindex)
+    if sico.text.starts_with(cgmh_condition, "ERR:"):
+      return cgmh_condition
+    end if
+    set cgmh_out = sico.text.concat(cgmh_out, cgs_local_get_hex(cgmh_dispatcher))
+    set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_neg_one_hex())
+    set cgmh_out = sico.text.concat(cgmh_out, "460440")
+    set cgmh_out = sico.text.concat(cgmh_out, cgmh_condition)
+    set cgmh_out = sico.text.concat(cgmh_out, "0440")
+    set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_hex(cgs_decimal_u64(cgmh_target_text)))
+    set cgmh_out = sico.text.concat(cgmh_out, cgs_local_set_hex(cgmh_dispatcher))
+    set cgmh_out = sico.text.concat(cgmh_out, "0b0b")
+    set cgmh_arm = cgj_array_next(bytes, cgmh_arm)
   end while
   set cgmh_out = sico.text.concat(cgmh_out, cgs_local_get_hex(cgmh_dispatcher))
   set cgmh_out = sico.text.concat(cgmh_out, cgs_i32_const_neg_one_hex())
@@ -6989,8 +6947,7 @@ end function
 //
 // The `run` function keeps its result-area return; every other function
 // returns its flat value directly.
-function cgs_function_body_hex(bytes: Bytes, index: U64) returns Text:
-  let cgfh_fn = cgs_function_at_index(bytes, index)
+function cgs_function_body_hex(bytes: Bytes, cgfh_fn: U64, fn_count: U64, mask: U64) returns Text:
   if U64.equal(cgfh_fn, U64.literal(0)):
     return ""
   end if
@@ -7003,7 +6960,7 @@ function cgs_function_body_hex(bytes: Bytes, index: U64) returns Text:
   if sico.text.starts_with(cgfh_locals, "ERR:"):
     return cgfh_locals
   end if
-  let cgfh_code = cgs_function_instr_hex(bytes, cgfh_fn, U64.literal(1))
+  let cgfh_code = cgs_function_instr_hex(bytes, cgfh_fn, U64.literal(1), fn_count, mask)
   if sico.text.starts_with(cgfh_code, "ERR:"):
     return cgfh_code
   end if
@@ -7103,9 +7060,10 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
   end if
   let cccsh_parts = sico.text.split_lines("")
   set cccsh_parts = sico.list.append(cccsh_parts, cg_leb_hex(cccsh_total))
-  let cccsh_index = U64.literal(0)
-  while U64.less_than(cccsh_index, cccsh_count):
-    let cccsh_body = cgs_function_body_hex(bytes, cccsh_index)
+  let cccsh_functions = cgj_member(bytes, U64.literal(0), "functions")
+  let cccsh_fn = cgj_array_first(bytes, cccsh_functions)
+  while U64.less_than(U64.literal(0), cccsh_fn):
+    let cccsh_body = cgs_function_body_hex(bytes, cccsh_fn, cccsh_count, cccsh_mask)
     if sico.text.starts_with(cccsh_body, "ERR:"):
       return cccsh_body
     end if
@@ -7117,7 +7075,7 @@ function cgs_core_code_hex(bytes: Bytes, arena_base: U64) returns Text:
     let cccsh_body_hex = cg_leb_hex(cccsh_body_size)
     set cccsh_parts = sico.list.append(cccsh_parts, cccsh_body_hex)
     set cccsh_parts = sico.list.append(cccsh_parts, cccsh_body)
-    set cccsh_index = cg_next(cccsh_index)
+    set cccsh_fn = cgj_array_next(bytes, cccsh_fn)
   end while
   let cccsh_alloc = cg_alloc_body_hex()
   let cccsh_alloc_len = sico.text.length(cccsh_alloc)

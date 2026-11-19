@@ -23,6 +23,7 @@
 
 pub mod events;
 pub mod layout;
+pub mod picker;
 pub mod shell;
 pub mod tokens;
 pub mod tree;

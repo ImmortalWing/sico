@@ -9,6 +9,15 @@
   "determinism": "same tree + same token set => identical BGRA8 pixels; verified in-process and across two separate processes",
   "evidence-class": "internal-fixture / runtime-verified renderer-frame (not a guest-level or pilot-level feature claim)",
   "digest": "sha256 over the BGRA8 pixel payload of the frame",
+  "re-freeze": {
+    "date": "2026-11-18",
+    "audit-item": "D2",
+    "reason": "the renderer now consumes crates/sico-ui-renderer-d2d/src/layout.rs::compute (the same deterministic token-proxy layout the runner hit-tests a click with) instead of its own DirectWrite-glyph-measured layout; control positions shifted to the token-proxy widths, so the controls and row scenes changed (empty and text are unchanged). Owner-authorized; per ADR-0018 §3 a digest change means a new renderer version.",
+    "old": {
+      "controls": "f407bcd035ae600ba65d0e0c9db37fb2777ba6745f176b5999aa1bbf8bbbed12",
+      "row": "9e28e6aa06d9995b46e87c57639fc128be3be04a57d7f65b2ba613402e6464b7"
+    }
+  },
   "cases": [
     {
       "name": "empty",
@@ -26,13 +35,13 @@
       "name": "controls",
       "width": 360,
       "height": 280,
-      "sha256": "f407bcd035ae600ba65d0e0c9db37fb2777ba6745f176b5999aa1bbf8bbbed12"
+      "sha256": "a797c72fa884bff8bee6ad53292eea84791c31597f130c20851bca60a4d0c8c0"
     },
     {
       "name": "row",
       "width": 320,
       "height": 120,
-      "sha256": "9e28e6aa06d9995b46e87c57639fc128be3be04a57d7f65b2ba613402e6464b7"
+      "sha256": "03a089b7726bd5c8c2f99d7c50fc208b31cf0a011da5cee7cf8ff3bce8224b45"
     }
   ],
   "refusals": [

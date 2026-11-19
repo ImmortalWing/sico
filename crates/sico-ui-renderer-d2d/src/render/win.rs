@@ -11,6 +11,19 @@
 //! function of the UI tree plus the frozen token table, and therefore
 //! hashable byte-stably (ADR-0018 §3).
 //!
+//! # Layout is the hit-testing layout (the D2 unification)
+//!
+//! The rectangles this renderer draws are **not** computed here. They come
+//! from [`crate::layout::compute`], the same deterministic layout the runner
+//! uses to hit-test a click (STEP-0592): node widths are the frozen token
+//! proxy (one `BODY_SIZE` em per UTF-16 code unit), not DirectWrite glyph
+//! metrics, and containers get their true content extent with the root
+//! covering the whole client area. DirectWrite glyph metrics are
+//! host-dependent, so a separate renderer-local measurement would diverge the
+//! drawn rectangles from the hit-tested rectangles (the D2 defect); the single
+//! shared pass makes the rectangles drawn exactly the rectangles hit-tested
+//! and keeps both cross-machine identical.
+//!
 //! Two facts were measured on the evidence host and are load-bearing:
 //!
 //! - the DIB must be a `BITMAPV5HEADER` with `BI_BITFIELDS` and explicit
@@ -24,8 +37,6 @@
 // so the pedantic cast lints are noise here. These allows are behaviour-
 // neutral and do not change the frozen frame corpus.
 #![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-
-use std::collections::BTreeMap;
 
 use windows::Win32::Foundation::{HANDLE, RECT};
 use windows::Win32::Graphics::Direct2D::{
@@ -54,6 +65,7 @@ use windows::core::{ComInterface, PCWSTR};
 
 use crate::error::UiBackendError;
 use crate::frame::Frame;
+use crate::layout::Layout;
 use crate::tokens::{self, TextRole};
 use crate::tree::{NodeKind, UiTree};
 
@@ -70,6 +82,15 @@ struct LayoutBox {
 }
 
 impl LayoutBox {
+    fn from_rect(rect: crate::layout::Rect) -> Self {
+        Self {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+        }
+    }
+
     fn to_rect(self) -> D2D_RECT_F {
         D2D_RECT_F {
             left: self.x,
@@ -81,8 +102,14 @@ impl LayoutBox {
 }
 
 /// The four DirectWrite text formats of the frozen type ramp.
+///
+/// The formats are used only to **draw** text; no glyph measurement from them
+/// feeds the layout. Layout widths come from the deterministic token-proxy in
+/// [`crate::layout`] (one `BODY_SIZE` em per UTF-16 code unit), which is the
+/// single source of truth shared with hit-testing — DirectWrite metrics are
+/// host-dependent and would diverge the drawn rectangles from the hit-tested
+/// ones (the D2 defect this module now no longer has).
 struct TextFormats {
-    dwrite: IDWriteFactory,
     caption: IDWriteTextFormat,
     body: IDWriteTextFormat,
     subtitle: IDWriteTextFormat,
@@ -101,7 +128,6 @@ impl TextFormats {
                 body: Self::format(&dwrite, TextRole::Body)?,
                 subtitle: Self::format(&dwrite, TextRole::Subtitle)?,
                 title: Self::format(&dwrite, TextRole::Title)?,
-                dwrite,
             })
         }
     }
@@ -147,33 +173,6 @@ impl TextFormats {
             TextRole::Body => &self.body,
             TextRole::Subtitle => &self.subtitle,
             TextRole::Title => &self.title,
-        }
-    }
-
-    /// Measures one text run in logical pixels.
-    fn measure(&self, role: TextRole, text: &str) -> (f32, f32) {
-        if text.is_empty() {
-            return (0.0, role.line_height());
-        }
-        let utf16: Vec<u16> = text.encode_utf16().collect();
-        // SAFETY: the layout is created from a live text format and a live
-        // UTF-16 buffer; the metrics are filled in place.
-        unsafe {
-            self.dwrite
-                .CreateTextLayout(
-                    &utf16,
-                    self.format_for(role),
-                    tokens::geometry::TEXT_MAX_WIDTH,
-                    tokens::geometry::TEXT_MAX_WIDTH,
-                )
-                .ok()
-                .and_then(|layout| {
-                    let mut metrics =
-                        windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
-                    layout.GetMetrics(&raw mut metrics).ok()?;
-                    Some((metrics.width, metrics.height))
-                })
-                .unwrap_or((0.0, role.line_height()))
         }
     }
 }
@@ -222,6 +221,35 @@ impl BitmapInfoV5 {
     }
 }
 
+/// RAII guard for the offscreen DIB's GDI handles.
+///
+/// The memory DC, the DIB section bitmap and the previously selected object
+/// are owned here; `Drop` restores the previous object, then deletes the
+/// bitmap, then the DC. Restoring first means the bitmap is no longer selected
+/// when it is deleted (the ordering `shell/win.rs` `Dib::drop` documents), and
+/// the DC is deleted last, after the bitmap is gone. The guard is created as
+/// soon as all three handles exist, so every early `?` return path, the
+/// `draw_tree` error branch and the success tail all release the handles
+/// instead of leaking them (Windows caps the process GDI-handle count).
+struct OffscreenDibGuard {
+    dc: HDC,
+    bitmap: HGDIOBJ,
+    previous: HGDIOBJ,
+}
+
+impl Drop for OffscreenDibGuard {
+    fn drop(&mut self) {
+        // SAFETY: the DC, the bitmap and the previously selected object are
+        // owned here. The previous object is restored first so the bitmap is
+        // no longer selected when it is deleted; the DC is deleted last.
+        unsafe {
+            SelectObject(self.dc, self.previous);
+            let _ = DeleteObject(self.bitmap);
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
 /// Renders one frame of the tree.
 pub(crate) fn render_frame(
     tree: &UiTree,
@@ -236,12 +264,29 @@ pub(crate) fn render_frame(
             .map_err(|error| render_error("D2D1CreateFactory", &error))?;
 
         let dc = CreateCompatibleDC(HDC(0));
+        if dc.0 == 0 {
+            return Err(UiBackendError::RenderFailed {
+                detail: "CreateCompatibleDC returned a null DC".to_owned(),
+            });
+        }
         let info = BitmapInfoV5::new(width.cast_signed(), height.cast_signed());
         let bmi: *const BITMAPINFO = (&raw const info.header).cast::<BITMAPINFO>();
         let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
-        let bitmap = CreateDIBSection(dc, bmi, DIB_USAGE(0), &raw mut bits, HANDLE(0), 0)
-            .map_err(|error| render_error("CreateDIBSection", &error))?;
+        let bitmap = match CreateDIBSection(dc, bmi, DIB_USAGE(0), &raw mut bits, HANDLE(0), 0) {
+            Ok(bitmap) => bitmap,
+            Err(error) => {
+                // SAFETY: the DC is owned here and is no longer needed once
+                // the DIB section failed to be created.
+                let _ = DeleteDC(dc);
+                return Err(render_error("CreateDIBSection", &error));
+            }
+        };
         let previous = SelectObject(dc, HGDIOBJ(bitmap.0));
+        let _guard = OffscreenDibGuard {
+            dc,
+            bitmap: HGDIOBJ(bitmap.0),
+            previous,
+        };
 
         let properties = D2D1_RENDER_TARGET_PROPERTIES {
             r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -274,12 +319,13 @@ pub(crate) fn render_frame(
         render_target.BeginDraw();
         render_target.Clear(Some(&color(tokens::color::BACKGROUND)));
 
-        let boxes = layout(tree, &formats, width as f32, height as f32);
+        // The rectangles drawn are exactly the rectangles the runner hit-tests:
+        // both come from `crate::layout::compute`, the single layout source of
+        // truth (the D2 unification). The client size is a validated 1..=16384
+        // and a window root exists, so `compute` cannot refuse here.
+        let boxes = crate::layout::compute(tree, width, height)?;
         if let Err(error) = draw_tree(tree, &render_target, &boxes, &formats) {
             let _ = render_target.EndDraw(None, None);
-            SelectObject(dc, previous);
-            let _ = DeleteObject(HGDIOBJ(bitmap.0));
-            let _ = DeleteDC(dc);
             return Err(error);
         }
         render_target
@@ -294,169 +340,7 @@ pub(crate) fn render_frame(
             })?;
         let pixels = std::slice::from_raw_parts(bits.cast::<u8>(), byte_len).to_vec();
 
-        SelectObject(dc, previous);
-        let _ = DeleteObject(HGDIOBJ(bitmap.0));
-        let _ = DeleteDC(dc);
-
         Frame::new(width, height, pixels).map_err(|detail| UiBackendError::RenderFailed { detail })
-    }
-}
-
-/// Lays the tree out with the frozen geometry rules.
-fn layout(
-    tree: &UiTree,
-    formats: &TextFormats,
-    width: f32,
-    height: f32,
-) -> BTreeMap<u64, LayoutBox> {
-    let mut boxes = BTreeMap::new();
-    if let Some(root) = tree.root() {
-        place(
-            tree, formats, root, 0.0, 0.0, width, height, false, &mut boxes,
-        );
-    }
-    boxes
-}
-
-/// Places one node and its subtree, returning the node's own box.
-///
-/// `stretch_width` is set for the children of a vertical container: text and
-/// progress nodes take the full width of their column while controls keep
-/// their intrinsic width. Children of a horizontal container never stretch.
-#[allow(clippy::too_many_arguments)]
-fn place(
-    tree: &UiTree,
-    formats: &TextFormats,
-    handle: u64,
-    x: f32,
-    y: f32,
-    available_width: f32,
-    available_height: f32,
-    stretch_width: bool,
-    boxes: &mut BTreeMap<u64, LayoutBox>,
-) -> LayoutBox {
-    let Some(node) = tree.node(handle) else {
-        return LayoutBox {
-            x,
-            y,
-            width: 0.0,
-            height: 0.0,
-        };
-    };
-    let (natural_width, natural_height) = natural_size(formats, node);
-    let stretches = stretch_width && matches!(node.kind, NodeKind::Text | NodeKind::Progress);
-    let own = LayoutBox {
-        x,
-        y,
-        width: if stretches {
-            available_width
-        } else {
-            natural_width
-        },
-        height: natural_height,
-    };
-    boxes.insert(handle, own);
-
-    match node.kind {
-        NodeKind::Root => {
-            let padding = tokens::geometry::WINDOW_PADDING;
-            let content_x = x + padding;
-            let content_y = y + padding;
-            let content_width = (available_width - padding * 2.0).max(0.0);
-            let content_height = (available_height - padding * 2.0).max(0.0);
-            let mut cursor = content_y;
-            for child in &node.children {
-                let child_box = place(
-                    tree,
-                    formats,
-                    *child,
-                    content_x,
-                    cursor,
-                    content_width,
-                    content_height,
-                    true,
-                    boxes,
-                );
-                cursor += child_box.height + tokens::geometry::SPACING;
-            }
-        }
-        NodeKind::Column => {
-            let mut cursor = y;
-            for child in &node.children {
-                let child_box = place(
-                    tree,
-                    formats,
-                    *child,
-                    x,
-                    cursor,
-                    available_width,
-                    available_height,
-                    true,
-                    boxes,
-                );
-                cursor += child_box.height + tokens::geometry::SPACING;
-            }
-        }
-        NodeKind::Row => {
-            let mut cursor = x;
-            for child in &node.children {
-                let child_box = place(
-                    tree,
-                    formats,
-                    *child,
-                    cursor,
-                    y,
-                    available_width,
-                    available_height,
-                    false,
-                    boxes,
-                );
-                cursor += child_box.width + tokens::geometry::SPACING;
-            }
-        }
-        NodeKind::Text
-        | NodeKind::Button
-        | NodeKind::Dropdown
-        | NodeKind::ImagePreview
-        | NodeKind::Progress => {}
-    }
-    own
-}
-
-/// The intrinsic size of a node before it is placed.
-fn natural_size(formats: &TextFormats, node: &crate::tree::UiNode) -> (f32, f32) {
-    match node.kind {
-        NodeKind::Root | NodeKind::Column | NodeKind::Row => (0.0, 0.0),
-        NodeKind::Text => {
-            let (width, _) = formats.measure(TextRole::Body, &node.text);
-            (width, tokens::typography::BODY_LINE_HEIGHT)
-        }
-        NodeKind::Button => {
-            let (width, _) = formats.measure(TextRole::Body, &node.text);
-            (
-                (width + tokens::geometry::CONTROL_PADDING_H * 2.0)
-                    .max(tokens::geometry::MIN_BUTTON_WIDTH),
-                tokens::geometry::CONTROL_HEIGHT,
-            )
-        }
-        NodeKind::Dropdown => {
-            let (width, _) = formats.measure(TextRole::Body, &node.text);
-            (
-                (width
-                    + tokens::geometry::DROPDOWN_CHEVRON_WIDTH
-                    + tokens::geometry::CONTROL_PADDING_H * 2.0)
-                    .max(tokens::geometry::MIN_BUTTON_WIDTH),
-                tokens::geometry::CONTROL_HEIGHT,
-            )
-        }
-        NodeKind::ImagePreview => {
-            let image = node.image.as_ref();
-            (
-                image.map_or(0.0, |image| image.width as f32),
-                image.map_or(0.0, |image| image.height as f32),
-            )
-        }
-        NodeKind::Progress => (0.0, tokens::geometry::PROGRESS_HEIGHT),
     }
 }
 
@@ -465,13 +349,14 @@ fn natural_size(formats: &TextFormats, node: &crate::tree::UiNode) -> (f32, f32)
 fn draw_tree(
     tree: &UiTree,
     render_target: &ID2D1RenderTarget,
-    boxes: &BTreeMap<u64, LayoutBox>,
+    boxes: &Layout,
     formats: &TextFormats,
 ) -> Result<(), UiBackendError> {
     for (handle, node) in tree.iter() {
-        let Some(box_) = boxes.get(&handle) else {
+        let Some(rect) = boxes.rect(handle) else {
             continue;
         };
+        let box_ = LayoutBox::from_rect(rect);
         match node.kind {
             NodeKind::Root | NodeKind::Column | NodeKind::Row => {}
             NodeKind::Text => {
@@ -481,7 +366,7 @@ fn draw_tree(
                     formats,
                     &node.text,
                     TextRole::Body,
-                    *box_,
+                    box_,
                     &brush,
                     false,
                 );
@@ -492,7 +377,7 @@ fn draw_tree(
                 // the duration of the call.
                 unsafe {
                     render_target.FillRoundedRectangle(
-                        &rounded(*box_, tokens::geometry::CORNER_RADIUS),
+                        &rounded(box_, tokens::geometry::CORNER_RADIUS),
                         &fill,
                     );
                 }
@@ -502,7 +387,7 @@ fn draw_tree(
                     formats,
                     &node.text,
                     TextRole::Body,
-                    *box_,
+                    box_,
                     &ink,
                     true,
                 );
@@ -513,11 +398,11 @@ fn draw_tree(
                 // SAFETY: as above.
                 unsafe {
                     render_target.FillRoundedRectangle(
-                        &rounded(*box_, tokens::geometry::CORNER_RADIUS),
+                        &rounded(box_, tokens::geometry::CORNER_RADIUS),
                         &fill,
                     );
                     render_target.DrawRoundedRectangle(
-                        &rounded(*box_, tokens::geometry::CORNER_RADIUS),
+                        &rounded(box_, tokens::geometry::CORNER_RADIUS),
                         &border,
                         tokens::geometry::BORDER_WIDTH,
                         None::<&ID2D1StrokeStyle>,
@@ -540,7 +425,7 @@ fn draw_tree(
                     false,
                 );
                 let chevron = solid_brush(render_target, tokens::color::TEXT_SECONDARY)?;
-                draw_chevron(render_target, *box_, &chevron);
+                draw_chevron(render_target, box_, &chevron);
             }
             NodeKind::ImagePreview => {
                 let fill = solid_brush(render_target, tokens::color::IMAGE_PLACEHOLDER)?;
@@ -558,7 +443,7 @@ fn draw_tree(
                 if let Some(image) = &node.image
                     && !image.pixels.is_empty()
                 {
-                    draw_image(render_target, *box_, image)?;
+                    draw_image(render_target, box_, image)?;
                 }
             }
             NodeKind::Progress => {
@@ -573,13 +458,13 @@ fn draw_tree(
                 // SAFETY: as above.
                 unsafe {
                     render_target.FillRoundedRectangle(
-                        &rounded(*box_, tokens::geometry::PROGRESS_RADIUS),
+                        &rounded(box_, tokens::geometry::PROGRESS_RADIUS),
                         &track,
                     );
                     if ratio > 0.0 {
                         let filled = LayoutBox {
                             width: box_.width * ratio,
-                            ..*box_
+                            ..box_
                         };
                         render_target.FillRoundedRectangle(
                             &rounded(filled, tokens::geometry::PROGRESS_RADIUS),

@@ -1995,9 +1995,12 @@ fn malformed_component() -> Vec<u8> {
         sico_codegen_wasm::StreamUse::default(),
         false,
         false,
+        false,
+        false,
         &[],
         0,
     )
+    .expect("hand-built minimal guest has no user imports to refuse")
 }
 
 // ---- STEP-0105: single-Store cooperative scheduler core (M11) ----

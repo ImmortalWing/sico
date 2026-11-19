@@ -110,7 +110,7 @@
       "sico.u64.to_text"
     ],
     "source": "crates/sico-codegen-wasm/src/lib.rs",
-    "source_sha256": "eaa65ae6467a89dd579e871189644543ec72ced295740a6bcb4081c86098a337"
+    "source_sha256": "519956ba57370e13535ffa7c79a7930772245c0408764193e8c48c89392f8faa"
   },
   "guest_emitter": {
     "helpers": [
@@ -177,7 +177,7 @@
       "write_local"
     ],
     "source": "selfhost/codegen.sico",
-    "source_sha256": "2586f504996eaabc3a0432dbcd047656442010313bf588bddb1f04d0d335d95b"
+    "source_sha256": "49a3a99011dd4307dfbc4261c93c9b26c3bd02ad91b31d4587ad6ca13c35be01"
   },
   "schema": "sico.m22.emitter-vocabulary.v1",
   "sites": [
@@ -20928,59 +20928,6 @@
     {
       "additions_needed": 0,
       "function": "straight_let_function_ir",
-      "id": "MS-399",
-      "intrinsics": [
-        "sico.bytes.at",
-        "sico.bytes.equal",
-        "sico.bytes.length",
-        "sico.list.get",
-        "sico.list.length",
-        "sico.text.concat",
-        "sico.text.encode",
-        "sico.text.length",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "missing_helpers": [],
-      "missing_intrinsics": [],
-      "missing_ops": [],
-      "ops": [
-        "call",
-        "checked_add",
-        "checked_sub",
-        "const_bool",
-        "const_i64",
-        "const_string",
-        "const_u64",
-        "construct",
-        "equal_fixed",
-        "intrinsic",
-        "less_fixed",
-        "project",
-        "read_local",
-        "variant",
-        "write_local"
-      ],
-      "parameter_count": 9,
-      "path": "parser.sico",
-      "required_helpers": [
-        "sico.bytes.equal",
-        "sico.text.concat",
-        "sico.text.length",
-        "sico.text.starts_with",
-        "sico.u64.to_text"
-      ],
-      "terminators": [
-        "branch",
-        "jump",
-        "match",
-        "return",
-        "unreachable"
-      ]
-    },
-    {
-      "additions_needed": 0,
-      "function": "straight_let_function_ir",
       "id": "MS-400",
       "intrinsics": [
         "sico.bytes.at",
@@ -21033,7 +20980,7 @@
     },
     {
       "additions_needed": 0,
-      "function": "chained_let_function_ir",
+      "function": "straight_let_function_ir",
       "id": "MS-401",
       "intrinsics": [
         "sico.bytes.at",
@@ -21139,15 +21086,19 @@
     },
     {
       "additions_needed": 0,
-      "function": "lex_words",
+      "function": "chained_let_function_ir",
       "id": "MS-403",
       "intrinsics": [
         "sico.bytes.at",
+        "sico.bytes.equal",
         "sico.bytes.length",
-        "sico.bytes.slice",
-        "sico.bytes.utf8_decode",
-        "sico.list.append",
-        "sico.text.split_lines"
+        "sico.list.get",
+        "sico.list.length",
+        "sico.text.concat",
+        "sico.text.encode",
+        "sico.text.length",
+        "sico.text.starts_with",
+        "sico.u64.to_text"
       ],
       "missing_helpers": [],
       "missing_intrinsics": [],
@@ -21155,6 +21106,7 @@
       "ops": [
         "call",
         "checked_add",
+        "checked_sub",
         "const_bool",
         "const_i64",
         "const_string",
@@ -21168,12 +21120,14 @@
         "variant",
         "write_local"
       ],
-      "parameter_count": 1,
+      "parameter_count": 9,
       "path": "parser.sico",
       "required_helpers": [
-        "sico.bytes.utf8_decode",
-        "sico.list.append",
-        "sico.text.split_lines"
+        "sico.bytes.equal",
+        "sico.text.concat",
+        "sico.text.length",
+        "sico.text.starts_with",
+        "sico.u64.to_text"
       ],
       "terminators": [
         "branch",
@@ -21233,6 +21187,52 @@
       "additions_needed": 0,
       "function": "lex_words",
       "id": "MS-405",
+      "intrinsics": [
+        "sico.bytes.at",
+        "sico.bytes.length",
+        "sico.bytes.slice",
+        "sico.bytes.utf8_decode",
+        "sico.list.append",
+        "sico.text.split_lines"
+      ],
+      "missing_helpers": [],
+      "missing_intrinsics": [],
+      "missing_ops": [],
+      "ops": [
+        "call",
+        "checked_add",
+        "const_bool",
+        "const_i64",
+        "const_string",
+        "const_u64",
+        "construct",
+        "equal_fixed",
+        "intrinsic",
+        "less_fixed",
+        "project",
+        "read_local",
+        "variant",
+        "write_local"
+      ],
+      "parameter_count": 1,
+      "path": "parser.sico",
+      "required_helpers": [
+        "sico.bytes.utf8_decode",
+        "sico.list.append",
+        "sico.text.split_lines"
+      ],
+      "terminators": [
+        "branch",
+        "jump",
+        "match",
+        "return",
+        "unreachable"
+      ]
+    },
+    {
+      "additions_needed": 0,
+      "function": "lex_words",
+      "id": "MS-406",
       "intrinsics": [
         "sico.bytes.at",
         "sico.bytes.length",

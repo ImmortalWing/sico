@@ -369,6 +369,14 @@
       "key": "UNRESOLVED_CALL_TARGET",
       "arguments": { "callee": "missing_helper" },
       "expected_message": "unresolved call target missing_helper"
+    },
+    {
+      "case": "EXP-005",
+      "source": "diagnostics/implementation-cases/expressions/invalid/host-enum-shape.sico",
+      "code": "E2028",
+      "key": "HOST_ENUM_SHAPE_MISMATCH",
+      "arguments": { "enum": "ui_event" },
+      "expected_message": "enum ui_event must be declared with the pinned host shape: case click(id: U64), case select(handle: U64, index: U64), case closed"
     }
   ]
 }

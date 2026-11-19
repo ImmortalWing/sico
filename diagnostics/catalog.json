@@ -216,6 +216,14 @@
       "required_arguments": []
     },
     {
+      "code": "E2028",
+      "key": "HOST_ENUM_SHAPE_MISMATCH",
+      "category": "call",
+      "severity": "error",
+      "message_template": "enum {enum} must be declared with the pinned host shape: case click(id: U64), case select(handle: U64, index: U64), case closed",
+      "required_arguments": ["enum"]
+    },
+    {
       "code": "E2031",
       "key": "UNRESOLVED_CALL_TARGET",
       "category": "call",

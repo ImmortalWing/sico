@@ -1,0 +1,12 @@
+// case: EXP-005
+// expect: reject(HOST_ENUM_SHAPE_MISMATCH)
+
+enum ui_event:
+  case click(id: U64)
+  case closed
+end enum
+
+function main() returns Int:
+  let e = sico.ui.poll_event()
+  return 0
+end function

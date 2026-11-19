@@ -75,6 +75,20 @@ pub struct HttpEngine {
     body_budget: u64,
 }
 
+/// RAII owner of one `execute()` in-flight slot. Releases the slot exactly
+/// once when dropped, so every terminal path through `execute_inner`
+/// (success, typed `Failed`, or an early `Err` propagated by `?`) is covered
+/// without each site having to remember `end_request()`.
+struct InFlightGuard {
+    counter: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        HttpEngine::release_in_flight(&self.counter);
+    }
+}
+
 impl HttpEngine {
     /// Builds an engine for one Store trusting exactly `trust_roots_pem`
     /// (system roots are flattened into this set by the caller on the
@@ -151,6 +165,13 @@ impl HttpEngine {
         if let Err(cap) = self.begin_request() {
             return HttpOutcome::Failed(cap);
         }
+        // RAII: every terminal path through `execute_inner` (success, typed
+        // `Failed`, or an early `Err` propagated by `?`) releases the in-flight
+        // slot exactly once here. `execute_inner` deliberately does NOT release
+        // on its own, so the guard is the single owner of this slot.
+        let _guard = InFlightGuard {
+            counter: Arc::clone(&self.in_flight),
+        };
         self.execute_inner(head, body, granted)
             .unwrap_or_else(HttpOutcome::Failed)
     }
@@ -243,7 +264,6 @@ impl HttpEngine {
             );
             match decision {
                 crate::redirect::RedirectDecision::Stop => {
-                    self.end_request();
                     return Ok(HttpOutcome::Response {
                         status,
                         headers,
@@ -251,7 +271,6 @@ impl HttpEngine {
                     });
                 }
                 crate::redirect::RedirectDecision::Refused(reason) => {
-                    self.end_request();
                     return Ok(HttpOutcome::Failed(format!("redirect: {reason}")));
                 }
                 crate::redirect::RedirectDecision::Follow {
@@ -884,7 +903,21 @@ impl UploadPipe {
             return Err("protocol: upload already terminal".to_owned());
         };
         let _ = sender.send(UploadMessage::Complete);
-        self.wait_for_response()
+        match self.wait_for_response() {
+            Ok(response) => {
+                // The in-flight slot's ownership moved into the returned
+                // response body (it holds `worker_in_flight`). Disarm the
+                // `Drop` release so the slot is released exactly once, when
+                // the body reaches its terminal state.
+                self.done.take();
+                Ok(response)
+            }
+            Err(error) => {
+                // No response body was produced, so nothing else owns the
+                // slot; leave `done` set and let `Drop` release it.
+                Err(error)
+            }
+        }
     }
 
     fn wait_for_response(&mut self) -> Result<StreamedResponse, String> {
@@ -1344,6 +1377,41 @@ mod tests {
             engine.begin_request().unwrap();
         }
         assert!(engine.begin_request().is_err());
+    }
+
+    #[test]
+    fn execute_error_path_releases_the_in_flight_slot_each_time() {
+        // A granted endpoint that deterministically fails at connect (nothing
+        // listens on port 1). Before the `InFlightGuard` fix, `execute()`
+        // leaked its slot on every `?`-propagated `Err`, so after
+        // `MAX_IN_FLIGHT` failures the next call wrongly reported the
+        // in-flight cap instead of the connect error.
+        let mut engine = engine_with(b"");
+        let granted = [Endpoint {
+            scheme: Scheme::Http,
+            host: "127.0.0.1".to_owned(),
+            port: 1,
+        }];
+        let head = RequestHead {
+            method: "GET".to_owned(),
+            url: "http://127.0.0.1:1/".to_owned(),
+            headers: vec![],
+            follow_redirects: false,
+            deadline: Duration::from_secs(2),
+        };
+        for attempt in 0..=MAX_IN_FLIGHT {
+            match engine.execute(&head, b"", &granted) {
+                HttpOutcome::Failed(message) => {
+                    assert!(
+                        !message.contains("in-flight"),
+                        "attempt {attempt}: slot leaked (hit the in-flight cap)"
+                    );
+                }
+                other @ HttpOutcome::Response { .. } => {
+                    panic!("expected a connect failure: {other:?}")
+                }
+            }
+        }
     }
 
     fn drain(body: &mut ResponseBody) -> Vec<u8> {

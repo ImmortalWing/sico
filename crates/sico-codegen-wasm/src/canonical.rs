@@ -84,6 +84,60 @@ pub(crate) const HTTP2_ERROR_TEXTS: &[&str] = &[
     "io",
 ];
 
+/// STEP-0627 source-visible `sico:script/path-picker@1.0.0` surface
+/// (RFC-0055). The WIT `result<option<string>, picker-error>` stays on the
+/// host-provider surface; the guest sees a flattened
+/// `result<string, picker-error>` (empty ok path = `cancelled`).
+pub(crate) const PICKER_INTERFACE: &str = "sico:script/path-picker@1.0.0";
+/// Canonical ABI result area for the guest-facing flattened
+/// `result<string, picker-error>` (RFC-0055): tag byte @0; on ok the string
+/// `(ptr, len)` at @4/@8; on error the picker-error discriminant byte @4
+/// (the union starts at @4 — both ok and err payloads have alignment 4).
+pub(crate) const PICKER_RESULT_SIZE: u32 = 12;
+/// `picker-error` case names in WIT declaration order (the wire discriminant
+/// order). The guest maps the tag to the case name through a data-segment
+/// table — no Host text ever crosses the boundary.
+pub(crate) const PICKER_ERROR_TEXTS: &[&str] =
+    &["cancelled", "no-window", "limit", "authority-denied"];
+
+/// STEP-0628 source-visible `sico:script/ui@1.0.0` surface (RFC-0052 §2 +
+/// Amendment A1, M24 #5). The WIT records/variants stay on the
+/// host-provider surface; the guest sees the `ui-handle` id as a U64 and
+/// the typed `ui-error` variant as its case-name Text (zero grammar growth).
+pub(crate) const UI_INTERFACE: &str = "sico:script/ui@1.0.0";
+/// Canonical ABI result area for the handle family (`window`/`column`/`row`/
+/// `text`/`button`/`dropdown`/`image-preview`/`progress`): the
+/// `result` tag byte @0, the payload union @8 (the `ui-handle` record
+/// aligns to 8) — the u64 id on ok, the `ui-error` discriminant byte on err.
+pub(crate) const UI_HANDLE_RESULT_SIZE: u32 = 16;
+/// Canonical ABI result area for the bool family (`set-text`/`set-progress`/
+/// `draw-image`/`run`): tag byte @0, the payload union @1 (a 1-byte bool
+/// and a 1-byte enum, so the union aligns to 1). Allocated 8 so the
+/// zeroing loop steps in whole words.
+pub(crate) const UI_BOOL_RESULT_SIZE: u32 = 8;
+/// Canonical ABI result area for `poll-event` (the STEP-0628 §1 residual):
+/// the host returns `option<ui-event>`, encoded as the `option` tag byte @0,
+/// the `ui-event` variant tag byte @8, and the payload union @16 (the
+/// `click` u64 id / the `select` (handle, index) u64 pair / `closed` empty),
+/// the union aligning to 8.
+pub(crate) const UI_EVENT_RESULT_SIZE: u32 = 32;
+/// `ui-error` case names in WIT declaration order (the wire discriminant
+/// order, pinned by `UiError::as u8` in `runner/sico-runner/src/ui.rs`). The
+/// guest maps the tag to the case name through a data-segment table — no
+/// Host text ever crosses the boundary.
+pub(crate) const UI_ERROR_TEXTS: &[&str] = &[
+    "unknown-handle",
+    "wrong-parent-kind",
+    "limit",
+    "no-window",
+    "event-overflow",
+    "authority-denied",
+];
+// Event-kind names the guest sees from `sico.ui.poll_event`: retired by
+// RFC-0056 D7 (STEP-0632) — the emitter binds the canonical ABI area into
+// the typed `Option[ui_event]` union directly, so there is no guest-visible
+// Text vocabulary (and no Host text ever crossed the boundary).
+
 /// Which `sico:script/fs-*@0.1.0` functions one program calls.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct FsUse {
@@ -303,6 +357,128 @@ pub(crate) const HTTP2_IMPORT: StreamImport = StreamImport {
     core_results: &[],
 };
 
+/// Frozen path-picker import table (STEP-0627, RFC-0055) in deterministic
+/// core-import order. Strings ride `(ptr, len)` pairs; `filters` is the
+/// flattened `list<string>` (one `"name|pattern"` pair per entry) and rides
+/// `(ptr, len)`; the caller-allocated return-area pointer is pushed last
+/// (mirroring the fs/stream/http lowering pattern).
+pub(crate) const PICKER_IMPORTS: &[StreamImport] = &[
+    StreamImport {
+        intrinsic: "sico.picker.open",
+        function: "open",
+        core_params: &[Flat::I32, Flat::I32, Flat::I32, Flat::I32, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.picker.save",
+        function: "save",
+        core_params: &[
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+        ],
+        core_results: &[],
+    },
+];
+
+/// STEP-0628 frozen `sico:script/ui@1.0.0` source-slice imports in
+/// deterministic core-import order (matching the `ui_indices` assignment in
+/// lib.rs and the `ui_instance()` export order). Strings ride `(ptr, len)`
+/// pairs; the `ui-handle` record rides its u64 id as one i64; the
+/// caller-allocated return-area pointer is pushed last (mirroring the
+/// picker/stream/http lowering pattern).
+pub(crate) const UI_IMPORTS: &[StreamImport] = &[
+    StreamImport {
+        intrinsic: "sico.ui.window",
+        function: "window",
+        core_params: &[Flat::I32, Flat::I32, Flat::I64, Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.column",
+        function: "column",
+        core_params: &[Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.row",
+        function: "row",
+        core_params: &[Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.text",
+        function: "text",
+        core_params: &[Flat::I64, Flat::I32, Flat::I32, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.button",
+        function: "button",
+        core_params: &[Flat::I64, Flat::I32, Flat::I32, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.dropdown",
+        function: "dropdown",
+        core_params: &[Flat::I64, Flat::I32, Flat::I32, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.image_preview",
+        function: "image-preview",
+        core_params: &[Flat::I64, Flat::I64, Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.progress",
+        function: "progress",
+        core_params: &[Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.set_text",
+        function: "set-text",
+        core_params: &[Flat::I64, Flat::I32, Flat::I32, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.set_progress",
+        function: "set-progress",
+        core_params: &[Flat::I64, Flat::I64, Flat::I64, Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.draw_image",
+        function: "draw-image",
+        core_params: &[
+            Flat::I64,
+            Flat::I64,
+            Flat::I64,
+            Flat::I32,
+            Flat::I32,
+            Flat::I32,
+        ],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.poll_event",
+        function: "poll-event",
+        core_params: &[Flat::I32],
+        core_results: &[],
+    },
+    StreamImport {
+        intrinsic: "sico.ui.run",
+        function: "run",
+        core_params: &[Flat::I32],
+        core_results: &[],
+    },
+];
+
 pub(crate) fn stream_used(usage: StreamUse, import: &StreamImport) -> bool {
     match import.intrinsic {
         "sico.stream.stdin" => usage.stdin,
@@ -426,11 +602,18 @@ pub fn user_interface_instance(import: &UserImport) -> Option<InstanceType> {
     let mut next_type = 0_u32;
     let mut cache = BTreeMap::new();
     for function in &import.functions {
-        let mut params = Vec::new();
+        let mut param_names: Vec<String> = Vec::new();
+        let mut param_values: Vec<ComponentValType> = Vec::new();
         for (index, parameter) in function.parameters.iter().enumerate() {
             let value = push_component_type(&mut types, &mut cache, &mut next_type, parameter)?;
-            params.push((format!("p{index}").leak() as &str, value));
+            param_names.push(format!("p{index}"));
+            param_values.push(value);
         }
+        let params: Vec<(&str, ComponentValType)> = param_names
+            .iter()
+            .map(String::as_str)
+            .zip(param_values)
+            .collect();
         let result = match &function.result {
             sico_ir::Type::Unit => None,
             other => Some(push_component_type(
@@ -497,6 +680,26 @@ pub(crate) struct ScriptAbi {
     /// ADR-0016 parallel-array representation, so guest runtime cost at
     /// the List boundary is unchanged.
     pub user_records: BTreeMap<String, RecordLayout>,
+    /// RFC-0056 D2/D3: user-declared enum types for INTERNAL Script layouts
+    /// only (local cells and match subjects). Boundary-facing
+    /// `flat_ir_types` never consults this table, so user enums stay
+    /// non-crossable at function signatures and package boundaries in v0.
+    pub user_enums: BTreeMap<String, EnumLayout>,
+}
+
+/// RFC-0056: one user enum's internal layout — a tag slot plus the widest
+/// case payload (every case's payload is left-aligned at slot 1; inactive
+/// tail slots are zero-filled at construction, mirroring the Variant
+/// emission).
+pub(crate) struct EnumLayout {
+    /// Per-case payload flats in declaration order; the union width is the
+    /// widest payload (tag slot is implicit at slot 0 everywhere).
+    pub cases: Vec<EnumCaseLayout>,
+}
+
+pub(crate) struct EnumCaseLayout {
+    pub name: String,
+    pub payload: Vec<Flat>,
 }
 
 impl ScriptAbi {
@@ -592,6 +795,46 @@ impl ScriptAbi {
             result_size,
             result_payload_offset,
             user_records: BTreeMap::new(),
+            user_enums: BTreeMap::new(),
+        }
+    }
+
+    /// RFC-0056 D2: register the module's declared enum types for internal
+    /// layouts. Mirrors `register_user_records`: a case whose payload type
+    /// does not flatten leaves the WHOLE enum unregistered, so every
+    /// consumer keeps the honest typed refusal instead of guessing a
+    /// layout. Payload-less cases flatten to an empty payload.
+    pub(crate) fn register_user_enums(
+        &mut self,
+        enums: &BTreeMap<String, Vec<sico_ir::EnumVariant>>,
+    ) {
+        for (name, variants) in enums {
+            if self.user_enums.contains_key(name) {
+                continue;
+            }
+            let mut flattenable = true;
+            let mut cases = Vec::new();
+            for variant in variants {
+                let mut payload = Vec::new();
+                for ty in &variant.payload {
+                    if let Some(flat) = self.flat_ir_types(ty) {
+                        payload.extend(flat.iter().copied());
+                    } else {
+                        flattenable = false;
+                        break;
+                    }
+                }
+                if !flattenable {
+                    break;
+                }
+                cases.push(EnumCaseLayout {
+                    name: variant.name.clone(),
+                    payload,
+                });
+            }
+            if flattenable {
+                self.user_enums.insert(name.clone(), EnumLayout { cases });
+            }
         }
     }
 
@@ -1178,6 +1421,226 @@ fn http2_instance() -> InstanceType {
     types
 }
 
+/// Instance type of `sico:script/path-picker@1.0.0` (STEP-0627, RFC-0055).
+/// The WIT `result<option<string>, picker-error>` is presented to the guest
+/// as the flattened `result<string, picker-error>` (empty ok string =
+/// `cancelled`); the host seam keeps the `option` in its own WIT surface.
+/// Filters are the flattened `list<string>` (one `"name|pattern"` pair per
+/// entry), mirroring the `poll_event` Option-A flattening: the source-visible
+/// surface grows no tuple type. Type indices are instance-local (each
+/// `ty()` and each `Eq` alias export consumes one): 0 enum picker-error,
+/// 1 alias picker-error, 2 list<string>, 3 alias filter-list,
+/// 4 result<string,picker-error>, then `Func` exports 5=open, 6=save.
+fn picker_instance() -> InstanceType {
+    let mut types = InstanceType::new();
+    types
+        .ty()
+        .defined_type()
+        .enum_type(PICKER_ERROR_TEXTS.iter().copied());
+    types.export("picker-error", ComponentTypeRef::Type(TypeBounds::Eq(0)));
+    types
+        .ty()
+        .defined_type()
+        .list(ComponentValType::Primitive(PrimitiveValType::String));
+    types.export("filter-list", ComponentTypeRef::Type(TypeBounds::Eq(2)));
+    types.ty().defined_type().result(
+        Some(ComponentValType::Primitive(PrimitiveValType::String)),
+        Some(ComponentValType::Type(1)),
+    );
+
+    let mut open = types.ty().function();
+    open.params(vec![
+        (
+            "title",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+        ("filters", ComponentValType::Type(2)),
+    ]);
+    open.result(Some(ComponentValType::Type(4)));
+    types.export("open", ComponentTypeRef::Func(5));
+
+    let mut save = types.ty().function();
+    save.params(vec![
+        (
+            "title",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+        (
+            "suggested-name",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+        ("filters", ComponentValType::Type(2)),
+    ]);
+    save.result(Some(ComponentValType::Type(4)));
+    types.export("save", ComponentTypeRef::Func(6));
+    types
+}
+
+/// Instance type of `sico:script/ui@1.0.0` (STEP-0628, RFC-0052 §2 +
+/// Amendment A1). Unlike the picker slice, this encodes the WIT *exactly*
+/// (the source-slice flattening happens on the guest side in codegen, not in
+/// the component type): `ui-handle`/`ui-selection` records, the `ui-event`
+/// variant, and `option<ui-event>` for `poll-event` all ride the real WIT
+/// shapes, because that is what `runner/sico-runner/src/ui.rs::link_ui`
+/// canonicalizes against.
+///
+/// Type indices are instance-local (each `ty()` consumes one, each `Eq` alias
+/// export consumes one, `Func` exports consume none):
+///   0 record ui-handle; 1 alias ui-handle;
+///   2 enum ui-error; 3 alias ui-error;
+///   4 record ui-selection; 5 alias ui-selection;
+///   6 variant ui-event; 7 alias ui-event;
+///   8 option<ui-event>;
+///   9 result<ui-handle, ui-error>; 10 list<string>; 11 list<u8>;
+///   12 result<bool, ui-error>;
+///   13 window; 14 column; 15 row; 16 text; 17 button; 18 dropdown;
+///   19 image-preview; 20 progress; 21 set-text; 22 set-progress;
+///   23 draw-image; 24 poll-event; 25 run.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+fn ui_instance() -> InstanceType {
+    let mut types = InstanceType::new();
+    types
+        .ty()
+        .defined_type()
+        .record([("id", ComponentValType::Primitive(PrimitiveValType::U64))]);
+    types.export("ui-handle", ComponentTypeRef::Type(TypeBounds::Eq(0)));
+    types
+        .ty()
+        .defined_type()
+        .enum_type(UI_ERROR_TEXTS.iter().copied());
+    types.export("ui-error", ComponentTypeRef::Type(TypeBounds::Eq(2)));
+    types.ty().defined_type().record([
+        ("handle", ComponentValType::Type(1)),
+        ("index", ComponentValType::Primitive(PrimitiveValType::U64)),
+    ]);
+    types.export("ui-selection", ComponentTypeRef::Type(TypeBounds::Eq(4)));
+    types.ty().defined_type().variant(vec![
+        ("click", Some(ComponentValType::Type(1))),
+        ("select", Some(ComponentValType::Type(5))),
+        ("closed", None),
+    ]);
+    types.export("ui-event", ComponentTypeRef::Type(TypeBounds::Eq(6)));
+    types.ty().defined_type().option(ComponentValType::Type(7));
+    types.ty().defined_type().result(
+        Some(ComponentValType::Type(1)),
+        Some(ComponentValType::Type(3)),
+    );
+    types.ty().defined_type().list(PrimitiveValType::String);
+    types.ty().defined_type().list(PrimitiveValType::U8);
+    types.ty().defined_type().result(
+        Some(ComponentValType::Primitive(PrimitiveValType::Bool)),
+        Some(ComponentValType::Type(3)),
+    );
+
+    let mut window = types.ty().function();
+    window.params(vec![
+        (
+            "title",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+        ("width", ComponentValType::Primitive(PrimitiveValType::S64)),
+        ("height", ComponentValType::Primitive(PrimitiveValType::S64)),
+    ]);
+    window.result(Some(ComponentValType::Type(9)));
+    types.export("window", ComponentTypeRef::Func(13));
+
+    let mut column = types.ty().function();
+    column.params(vec![("parent", ComponentValType::Type(1))]);
+    column.result(Some(ComponentValType::Type(9)));
+    types.export("column", ComponentTypeRef::Func(14));
+
+    let mut row = types.ty().function();
+    row.params(vec![("parent", ComponentValType::Type(1))]);
+    row.result(Some(ComponentValType::Type(9)));
+    types.export("row", ComponentTypeRef::Func(15));
+
+    let mut text = types.ty().function();
+    text.params(vec![
+        ("parent", ComponentValType::Type(1)),
+        (
+            "content",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+    ]);
+    text.result(Some(ComponentValType::Type(9)));
+    types.export("text", ComponentTypeRef::Func(16));
+
+    let mut button = types.ty().function();
+    button.params(vec![
+        ("parent", ComponentValType::Type(1)),
+        (
+            "label",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+    ]);
+    button.result(Some(ComponentValType::Type(9)));
+    types.export("button", ComponentTypeRef::Func(17));
+
+    let mut dropdown = types.ty().function();
+    dropdown.params(vec![
+        ("parent", ComponentValType::Type(1)),
+        ("options", ComponentValType::Type(10)),
+    ]);
+    dropdown.result(Some(ComponentValType::Type(9)));
+    types.export("dropdown", ComponentTypeRef::Func(18));
+
+    let mut image_preview = types.ty().function();
+    image_preview.params(vec![
+        ("parent", ComponentValType::Type(1)),
+        ("w", ComponentValType::Primitive(PrimitiveValType::U64)),
+        ("h", ComponentValType::Primitive(PrimitiveValType::U64)),
+    ]);
+    image_preview.result(Some(ComponentValType::Type(9)));
+    types.export("image-preview", ComponentTypeRef::Func(19));
+
+    let mut progress = types.ty().function();
+    progress.params(vec![("parent", ComponentValType::Type(1))]);
+    progress.result(Some(ComponentValType::Type(9)));
+    types.export("progress", ComponentTypeRef::Func(20));
+
+    let mut set_text = types.ty().function();
+    set_text.params(vec![
+        ("handle", ComponentValType::Type(1)),
+        (
+            "content",
+            ComponentValType::Primitive(PrimitiveValType::String),
+        ),
+    ]);
+    set_text.result(Some(ComponentValType::Type(12)));
+    types.export("set-text", ComponentTypeRef::Func(21));
+
+    let mut set_progress = types.ty().function();
+    set_progress.params(vec![
+        ("handle", ComponentValType::Type(1)),
+        ("done", ComponentValType::Primitive(PrimitiveValType::U64)),
+        ("of", ComponentValType::Primitive(PrimitiveValType::U64)),
+    ]);
+    set_progress.result(Some(ComponentValType::Type(12)));
+    types.export("set-progress", ComponentTypeRef::Func(22));
+
+    let mut draw_image = types.ty().function();
+    draw_image.params(vec![
+        ("handle", ComponentValType::Type(1)),
+        ("w", ComponentValType::Primitive(PrimitiveValType::U64)),
+        ("h", ComponentValType::Primitive(PrimitiveValType::U64)),
+        ("pixels", ComponentValType::Type(11)),
+    ]);
+    draw_image.result(Some(ComponentValType::Type(12)));
+    types.export("draw-image", ComponentTypeRef::Func(23));
+
+    let mut poll_event = types.ty().function();
+    poll_event.params(Vec::<(&str, ComponentValType)>::new());
+    poll_event.result(Some(ComponentValType::Type(8)));
+    types.export("poll-event", ComponentTypeRef::Func(24));
+
+    let mut ui_run = types.ty().function();
+    ui_run.params(Vec::<(&str, ComponentValType)>::new());
+    ui_run.result(Some(ComponentValType::Type(12)));
+    types.export("run", ComponentTypeRef::Func(25));
+    types
+}
+
 /// Instance type of `sico:script/http@0.1.0` (RFC-0031).
 fn http_instance() -> InstanceType {
     let mut types = InstanceType::new();
@@ -1305,21 +1768,34 @@ fn streams_instance() -> InstanceType {
 /// used `sico:script/fs-read/fs-write@0.1.0` interfaces, lowered through the
 /// shared transport memory module (`heap_base` sits above the static data).
 ///
+/// # Errors
+///
+/// Returns [`CodegenError::Unsupported`] when a user-WIT import interface
+/// cannot be represented as a Component instance type (a signature outside
+/// the A7 value set). This fails closed rather than emitting a world whose
+/// component-level import is missing while the core module still declares it.
+///
 /// # Panics
 ///
 /// Panics only if the frozen fs import table no longer matches the declared
 /// interface usage (a build-time inconsistency, pinned by tests).
-#[must_use]
-#[allow(clippy::too_many_lines, clippy::similar_names)]
+#[allow(
+    clippy::too_many_lines,
+    clippy::similar_names,
+    clippy::too_many_arguments,
+    clippy::fn_params_excessive_bools
+)]
 pub fn wrap_script_component(
     core: &[u8],
     fs: FsUse,
     streams: StreamUse,
     http: bool,
     http2: bool,
+    picker: bool,
+    ui: bool,
     user_imports: &[UserImport],
     heap_base: u32,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, crate::CodegenError> {
     let mut builder = ComponentBuilder::default();
     let types_ty = builder.type_instance(Some("script-types"), &script_types_instance());
     let types_instance = builder.import(TYPES_INSTANCE, ComponentTypeRef::Instance(types_ty));
@@ -1358,15 +1834,33 @@ pub fn wrap_script_component(
         http2_imported =
             Some(builder.import(HTTP2_INTERFACE, ComponentTypeRef::Instance(http2_ty)));
     }
+    let mut picker_imported = None;
+    if picker {
+        let picker_ty = builder.type_instance(Some("path-picker"), &picker_instance());
+        picker_imported =
+            Some(builder.import(PICKER_INTERFACE, ComponentTypeRef::Instance(picker_ty)));
+    }
+    // RFC-0052 A1 (STEP-0628): the `sico:script/ui@1.0.0` host-provider
+    // surface, imported only when the program calls a `sico.ui.*` intrinsic.
+    let mut ui_imported = None;
+    if ui {
+        let ui_ty = builder.type_instance(Some("ui"), &ui_instance());
+        ui_imported = Some(builder.import(UI_INTERFACE, ComponentTypeRef::Instance(ui_ty)));
+    }
     // RFC-0039 §2.4 (STEP-0147): one import instance per user-WIT package
     // interface, named by its full `sico:user/<interface>@<version>` identity.
     let mut user_instances: Vec<(String, u32)> = Vec::new();
     for import in user_imports {
-        let name: &'static str = Box::leak(import.name.clone().into_boxed_str());
+        let name = import.name.as_str();
         let Some(instance_ty) = user_interface_instance(import) else {
             // Unreachable for lowered programs: every signature passed the
-            // A7 value-set gate; refuse instead of emitting a wrong world.
-            continue;
+            // A7 value-set gate. Refuse rather than emit a world whose
+            // component-level import is missing while the core module still
+            // declares it (that mismatch fails instantiation downstream).
+            return Err(crate::CodegenError::Unsupported {
+                function: import.name.clone(),
+                feature: "user import interface value set".to_owned(),
+            });
         };
         let ty = builder.type_instance(Some(name), &instance_ty);
         let instance = builder.import(name, ComponentTypeRef::Instance(ty));
@@ -1374,7 +1868,7 @@ pub fn wrap_script_component(
     }
 
     let mut transport = None;
-    if fs.any() || streams.any() || http || http2 || !user_imports.is_empty() {
+    if fs.any() || streams.any() || http || http2 || picker || ui || !user_imports.is_empty() {
         let module = builder.core_module_raw(Some("fs-transport"), &fs_transport_module(heap_base));
         let instance = builder.core_instantiate(
             Some("fs-transport"),
@@ -1450,12 +1944,52 @@ pub fn wrap_script_component(
                 .or_default()
                 .push(("request", lowered_function));
         }
+        if picker {
+            let instance = picker_imported.expect("path-picker interface imported when used");
+            for import in PICKER_IMPORTS {
+                let function =
+                    builder.alias_export(instance, import.function, ComponentExportKind::Func);
+                let lowered_function = builder.lower_func(
+                    Some(import.function),
+                    function,
+                    [
+                        CanonicalOption::UTF8,
+                        CanonicalOption::Memory(memory),
+                        CanonicalOption::Realloc(realloc),
+                    ],
+                );
+                lowered
+                    .entry(PICKER_INTERFACE)
+                    .or_default()
+                    .push((import.function, lowered_function));
+            }
+        }
+        if ui {
+            let instance = ui_imported.expect("ui interface imported when used");
+            for import in UI_IMPORTS {
+                let function =
+                    builder.alias_export(instance, import.function, ComponentExportKind::Func);
+                let lowered_function = builder.lower_func(
+                    Some(import.function),
+                    function,
+                    [
+                        CanonicalOption::UTF8,
+                        CanonicalOption::Memory(memory),
+                        CanonicalOption::Realloc(realloc),
+                    ],
+                );
+                lowered
+                    .entry(UI_INTERFACE)
+                    .or_default()
+                    .push((import.function, lowered_function));
+            }
+        }
         for (name, instance) in &user_instances {
             let Some(import) = user_imports.iter().find(|import| &import.name == name) else {
                 continue;
             };
             for function in &import.functions {
-                let fname: &'static str = Box::leak(function.name.clone().into_boxed_str());
+                let fname = function.name.as_str();
                 let function_alias =
                     builder.alias_export(*instance, fname, ComponentExportKind::Func);
                 let lowered_function = builder.lower_func(
@@ -1468,7 +2002,7 @@ pub fn wrap_script_component(
                     ],
                 );
                 lowered
-                    .entry(Box::leak(name.clone().into_boxed_str()) as &str)
+                    .entry(name.as_str())
                     .or_default()
                     .push((fname, lowered_function));
             }
@@ -1566,7 +2100,7 @@ pub fn wrap_script_component(
         ],
     );
     builder.export("run", ComponentExportKind::Func, run, None);
-    builder.finish()
+    Ok(builder.finish())
 }
 
 #[cfg(test)]

@@ -15,3 +15,4 @@ case 由 `tools/validate-step-0489.ps1` 用 `sico check --json` 实跑，证明�
 | [`EXP-002`](./invalid/let-bind-arm-not-expression.sico) | `LET_BIND_ARM_NOT_EXPRESSION` | let-bound arm must be exactly one expression |
 | [`EXP-003`](./invalid/let-bind-missing-else.sico) | `LET_BIND_MISSING_ELSE` | let-bound if requires an else arm |
 | [`EXP-004`](./invalid/unresolved-call-target.sico) | `UNRESOLVED_CALL_TARGET` | unresolved call target missing_helper |
+| [`EXP-005`](./invalid/host-enum-shape.sico) | `HOST_ENUM_SHAPE_MISMATCH` | enum ui_event must be declared with the pinned host shape: case click(id: U64), case select(handle: U64, index: U64), case closed |

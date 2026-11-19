@@ -244,6 +244,15 @@
         "rfc": "RFC-0049",
         "semantics": "`let x = if cond: <expr> else: <expr> end if` and `let x = match subject: case p: <expr> … end match` desugar to the landed cell + branch writes + join read machinery (one unconditional write per arm, join read always defined); only the taken arm evaluates; single-expression arms (E2026), mandatory else (E2027), arm types unify (E2001); conditions use the statement grammar (RFC-0044/0048)",
         "notes": "no new IR operations; pattern variables scope to their arm; the binding becomes visible only after the region joins, so no arm can read the cell; annotated (`let x: T = if …`), nested-condition, and multi-statement-arm forms stay refused; e2e let-bind.sico byte-exact through the real runner"
+      },
+      "enum-payload-match-option-v0": {
+        "check": true,
+        "build": true,
+        "run": true,
+        "step": "STEP-0629..0632",
+        "rfc": "RFC-0056",
+        "semantics": "declared-enum payload-binding match arms (single- and multi-slot, `case Enum.case(x)` / `case Enum.case(a, b)`) + Option[T] with some/none constructors and `case some(x)`/`case none` arms; typed refusals: match payload binding arity (lower), E3001 family for unqualified/nested arms (semantics, unchanged), E2028 HOST_ENUM_SHAPE_MISMATCH for the pinned `ui_event` declaration, unconstrained some/none (lower); user enums and Option stay INTERNAL in v0: function signatures refuse non-scalar parameter/result (producer = sico.ui.poll_event typed Option[ui_event], ui.wit/runner bytes unchanged)",
+        "notes": "e2e enum-payload-match.sico runs through the real runner (x|7:9|hello); runner ui_source suite 6/6 with handle/index attribution (click:5/select:6:2); frozen frontier probe tools/probe-language-v1-batch4-frontier.ps1 13/13; nested (binding) patterns stay refused in v0 (sequential-match idiom), ui_event shape pinned snake_case source name"
       }
     },
     "refused": {
@@ -415,6 +424,13 @@
         "refusal": "if/match in operand, argument, or return position, annotated let-binds (parse refusal), and nested if-expression conditions stay out of v0 (RFC-0049 §9 non-goals); nested if-expression conditions keep the named build-channel expression refusal",
         "step": "STEP-0329",
         "rfc": "RFC-0049"
+      },
+      "user-enum-option-function-boundary": {
+        "check": true,
+        "build": true,
+        "refusal": "unsupported non-scalar parameter/result at build for user-enum- or Option-typed function signatures (internal-only values in v0; the WIT/package boundary keeps refusing the same shapes via flat_ir_types)",
+        "step": "STEP-0630..0631",
+        "rfc": "RFC-0056"
       }
     },
     "proposed": {
