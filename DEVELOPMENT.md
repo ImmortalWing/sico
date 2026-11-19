@@ -1261,7 +1261,7 @@ M10–M12 是在 production domain/identity/credentials、third-party pilots、l
 - 通用循环/迭代、受限递归、动态集合遍历、固定宽数值与位运算；
 - 模块、versioned package 和 compiler-facing WIT/Component binding；
 - 应用测试入口及 LSP/DAP/index/AI tooling 同步；
-- 俄罗斯方块离线求解器、流式数据应用和 capability-backed 状态机三类真实验收程序。
+- 流式数据应用和 capability-backed 状态机两类真实验收程序。
 
 进入条件：M12 完整 GO，M13 发出收口结论，M0–M13 regression 可重跑。
 
@@ -1293,7 +1293,7 @@ M10–M12 是在 production domain/identity/credentials、third-party pilots、l
 
 ### M18：Representative AI Applications and External Pilots
 
-交付：API agent、流式数据工具、Web/UI 应用、Sico 原生 GUI 格式转换器和独立 package/Component 消费者。俄罗斯方块案例保留 M14 纯 Sico 求解器 oracle；M16 capture/input 与 M17 vision 的既有证据各按本里程碑声明，M18/M24 不再以方块游戏为应用试点（STEP-0258）。
+交付：API agent、流式数据工具、Web/UI 应用、Sico 原生 GUI 格式转换器和独立 package/Component 消费者。M16 capture/input 与 M17 vision 的既有证据各按本里程碑声明。
 
 进入条件：M14 GO，且每个 pilot 所需的平台里程碑已 GO。退出条件：应用不修改 compiler/Runtime/Host core 即可开发、测试、打包、授权、运行和更新；内部 fixture、洁净室 consumer、外部 pilot 和 production evidence 严格分级。
 

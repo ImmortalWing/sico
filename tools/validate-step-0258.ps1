@@ -65,16 +65,9 @@ foreach ($pair in @(@('STATUS', $status), @('steps index', $stepsIndex))) {
 }
 if ($stepsIndex -notlike '*superseded*') { throw 'steps index missing STEP-0257 superseded marker' }
 
-# The case-project README path is non-ASCII; build it from Unicode code
-# points so this validator source stays ASCII-only (Windows PowerShell 5.1
-# reads BOM-less scripts in the legacy codepage).
-$codePoints = @(0x6848, 0x4F8B, 0x9879, 0x76EE, 0x005C, 0x4FC4, 0x7F57, 0x65AF, 0x65B9, 0x5757, 0x6D88, 0x9664)
-$caseRelative = (($codePoints | ForEach-Object { [string][char]$_ }) -join '') + '\README.md'
-$caseReadmePath = Join-Path $root $caseRelative
-if (-not (Test-Path -LiteralPath $caseReadmePath)) { throw "missing case README: $caseRelative" }
-$caseReadme = Get-Content -LiteralPath $caseReadmePath -Raw -Encoding UTF8
-if ($caseReadme -notlike '*GUI*') { throw 'case README missing the re-designated pilot section' }
-if ($caseReadme -notlike '*STEP-0138*') { throw 'case README lost the M14 solver-oracle record' }
+# The case-project README (案例项目/俄罗斯方块消除/README.md) was removed by
+# owner directive 2026-11-19; the 2026-09-22 re-designation record lives in
+# STEP-0258 (checked above) and is preserved as history.
 
 if (-not (Test-Path -LiteralPath (Join-Path $root 'docs\steps\STEP-0258-m24-pilot-redesignation-gui-format-converter.md'))) {
     throw 'missing STEP-0258 record document'

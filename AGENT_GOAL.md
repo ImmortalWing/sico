@@ -437,7 +437,7 @@ AI 实验必须记录：
 
 #### M18：代表性 AI 应用与外部试点
 
-使用 API agent、流式工具、Web/UI、Sico 原生 GUI 格式转换器和独立消费者检验公开接口。俄罗斯方块案例仅保留 M14 纯 Sico 离线求解器验收 oracle；M16 capture/input 与 M17 vision 的既有独立证据保留，但该案例不再作为 M18/M24 试点验收载体（2026-09-22 owner 指令，STEP-0258）。M16 证据停在 M16 GO 级别不再延伸；M18 组合项 4 重定为 GUI 格式转换器（见 M24）。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
+使用 API agent、流式工具、Web/UI、Sico 原生 GUI 格式转换器和独立消费者检验公开接口。M16 capture/input 与 M17 vision 的既有独立证据保留，M16 证据停在 M16 GO 级别不再延伸；M18 组合项 4 重定为 GUI 格式转换器（见 M24）。内部 fixture、洁净室、外部 pilot 和 production 证据不得互相冒充。
 
 #### M19–M22（当前状态登记）
 
@@ -453,7 +453,7 @@ M19 GO（部分）；M20 NO-GO（部分）；M21 GO。M22 编译器自举轨为�
 
 #### M24：视觉收口与 GUI 应用试点
 
-关闭 M17 剩余 gate（加速 provider ADR、model/provenance RFC、RFC-0043 roster 包）将 M17 翻 GO，随后关闭 M18 应用试点（组合项 4）NO-GO：以 Sico 语言原生界面库（编译器可见 UI 绑定 + 桌面 Host 的 WinUI3/Fluent 风格确定性渲染）编写的带 GUI 格式转换器应用，第一步实现图片格式互转（JPEG↔PNG）。2026-09-22 owner 指令删除 block-game 自动化试点目标——俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138）与其 Python 案例 oracle，M16 证据停在 M16 GO 级别不再延伸；格式错误语料全部 fail closed、无静默回退、无原生逃逸。
+关闭 M17 剩余 gate（加速 provider ADR、model/provenance RFC、RFC-0043 roster 包）将 M17 翻 GO，随后关闭 M18 应用试点（组合项 4）NO-GO：以 Sico 语言原生界面库（编译器可见 UI 绑定 + 桌面 Host 的 WinUI3/Fluent 风格确定性渲染）编写的带 GUI 格式转换器应用，第一步实现图片格式互转（JPEG↔PNG）。2026-09-22 owner 指令删除 block-game 自动化试点目标，M16 证据停在 M16 GO 级别不再延伸；格式错误语料全部 fail closed、无静默回退、无原生逃逸。
 
 #### M25：v1.0 发布——平台广度、完成审计与产品退出
 

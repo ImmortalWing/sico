@@ -72,7 +72,7 @@ foreach ($needle in @(
         'M14 application-ready language',
         'M16 Native Automation',
         'M17 Vision/Model packages',
-        '俄罗斯方块离线求解器',
+        '非玩具搜索算法',
         'M23 language v1 batch 3',
         'M24 vision/native GUI pilot',
         'M25 v1.0 release verdict',
@@ -101,7 +101,6 @@ foreach ($heading in 'M14：应用就绪语言基线', 'M16：Native Automation 
 }
 
 $routeTexts = @{
-    case = Get-Content (Join-Path $root '案例项目\俄罗斯方块消除\README.md') -Raw -Encoding UTF8
     m22 = $m22Plan
     route = Get-Content (Join-Path $root 'docs\plans\M22-M26-route-replan-v1.md') -Raw -Encoding UTF8
     m23 = Get-Content (Join-Path $root 'docs\plans\M23-language-v1-batch-3.md') -Raw -Encoding UTF8
@@ -110,11 +109,8 @@ $routeTexts = @{
     adr17 = Get-Content (Join-Path $root 'docs\adr\ADR-0017-selfhost-data-model-architecture-v0.md') -Raw -Encoding UTF8
 }
 function Assert-CurrentRoute([hashtable]$texts) {
-    if ($texts.case -notmatch 'M14 纯 Sico 离线求解器验收 oracle' -or
-        $texts.case -notmatch 'M18/M24.*方块游戏.*删除' -or
-        $texts.case -match 'M18 完整应用试点') {
-        throw 'current case README must retain the M14 oracle and retire the M18 block-game pilot'
-    }
+    # Case-project README (案例项目/俄罗斯方块消除) removed by owner directive 2026-11-19;
+    # the M14-oracle case-route check no longer applies.
     if ($texts.adr17 -notmatch '(?m)^> - status: accepted \(Option A') {
         throw 'ADR-0017 must record the accepted R0 Option A direction'
     }

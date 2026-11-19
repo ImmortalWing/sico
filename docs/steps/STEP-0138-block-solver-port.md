@@ -1,7 +1,7 @@
 # STEP-0138: offline block-game solver — the Sico acceptance oracle port
 
 > - status: complete
-> - phase: M14 (RFC-0038 §3.1 primary acceptance application)
+> - phase: M14 primary acceptance application
 > - started: 2026-09-06
 > - completed: 2026-09-06
 > - owners: autonomous-agent

@@ -45,11 +45,6 @@ Validate Sico through independently reproducible applications rather than infras
 The application must never widen file authority beyond user-selected
 paths, write partial outputs on failure, or fall back to a native escape.
 
-> Former block-game acceptance path (deleted by owner directive
-> 2026-09-22, STEP-0258): the 俄罗斯方块 case remains the M14 pure-Sico
-> solver acceptance oracle (STEP-0138) with its Python case oracle; it is
-> no longer the M18/M24 portfolio item.
-
 ## 5. Evidence classes
 
 - `internal-fixture`: maintained in this repository.

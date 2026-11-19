@@ -13,6 +13,8 @@ If documentation disagrees with executable evidence, keep the lower support clai
 
 ## 2. Current roadmap boundary
 
+> **治理政策（owner 指令 2026-11-19）：里程碑只记录和推进语言核心；应用/外部项目（GUI 格式转换器、M26 PDF 工具、Three.js 类似功能、vision 应用包等）使用独立编号（`sico案例程序/<name>/` + `PRJ-xxxx`，仓库外），不占 M/STEP 共享序列。** 核心 = M0–M13 语言基础、M14 语言接受 oracle、M15/M16 宿主能力机制、M22 编译器自举、M23 language v1 第三批、M24 原生 UI 库机制、M25 release v1.0；外部 = M17 vision 包、M18/M24 GUI 格式转换器、M26 PDF 工具 + GUI、Three.js 类似功能。本条取代 DIRECTION.md §2 的 2026-09-22（STEP-0258 GUI 转换器入里程碑）与 2026-09-24（STEP-0263 M26 PDF 入里程碑）中「应用层作为里程碑」部分；M25 发布门改为只依赖语言核心（M22 自举 + M23 语言批 + M24 原生 UI 库机制），不再依赖 GUI 转换器 GO。
+
 - M0–M13 全部 complete：M12 于 STEP-0127（2026-09-05）获得完整 GO（10/10 gates，Windows x64 与 Linux x64 原生运行时证据）；M13 已收口（STEP-0123 出口审计；STEP-0128 权威 live-model 评测 0.9095，DeepSeek deepseek-chat，2880 次真实调用、$0.78，达标 ADR-0012；既定缺口 B-repair 0.833 已登记跟踪）。
 - M14 GO（STEP-0141 出口审计）：应用 profile 无未声明 check/build/run 缺口；gate 7 记 blocked-external-evidence。
 - M15 GO（7/7，STEP-0158/0162）。
@@ -61,7 +63,7 @@ Sico's frontend accepts more constructs than every executable profile supports. 
 - do not implement a partial lowering that emits unverifiable or semantically different code;
 - prefer a typed refusal over a hidden fallback or native escape hatch.
 
-M14 的 defining gate 已达成并 GO（STEP-0141 出口审计）：其应用 profile 无未声明 check/build/run 缺口。离线 block-game solver 仍是 acceptance oracle（STEP-0258 未撤销其地位）：棋盘规则、放置枚举、消行、计分与搜索必须运行在 Sico 中；Python 仅作为固定对比 oracle。
+M14 的 defining gate 已达成并 GO（STEP-0141 出口审计）：其应用 profile 无未声明 check/build/run 缺口。
 
 ## 6. Repository locations
 
@@ -74,7 +76,6 @@ M14 的 defining gate 已达成并 GO（STEP-0141 出口审计）：其应用 pr
 - `examples/`: language-design history and regression examples; do not rewrite them as product pilots.
 - `pilots/`: clean-room workflows; they are not external adoption.
 - `docs/rfc/`, `docs/adr/`, `docs/steps/`, `docs/reports/`: contracts, decisions, execution records and evidence.
-- `案例项目/俄罗斯方块消除/`: M14 solver acceptance oracle only（STEP-0138；block-game 自动化试点已由 STEP-0258 删除，M16/M17/M18 不再以它为载体）。保留其 Python 实现作为固定对比 oracle。
 
 ## 7. Editing rules
 

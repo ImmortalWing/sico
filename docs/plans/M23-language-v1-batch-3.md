@@ -196,7 +196,7 @@ labels for planning, not allocated STEP identifiers.
 
 - **Measured consumer.** Count the mutable-cell + all-return match +
   join-read sites that exist only to bind one conditional value, in the
-  selfhost sources and the M14 solver corpus; freeze the count.
+  selfhost sources; freeze the count.
 - **RFC proof obligations.** Choose the smallest let-bound statement form
   only (`let x = if …` / `let x = match …`); general nested expression
   conditions stay out of v0; the desugar is the already-supported

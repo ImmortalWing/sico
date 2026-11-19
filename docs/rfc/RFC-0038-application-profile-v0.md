@@ -80,35 +80,6 @@ executable, restricted, or proposed — with no silent widening.
 
 ## 3. Exit corpus (frozen by this RFC)
 
-### 3.1 Primary oracle: offline block-game solver (unchanged, corpus strengthened)
-
-`案例项目/俄罗斯方块消除` remains the representative acceptance
-application. Evaluated alternatives (JSON parser/serializer, mini
-interpreter, A*/Dijkstra pathfinding, Huffman compression, regex engine)
-all cover a strict subset of the solver's algorithmic spread
-(bounded search, flood-fill graph traversal, candidate enumeration,
-weighted heuristic scoring, seeded rollout) or lack an existing byte-exact
-oracle; the solver already ships a Python oracle with tests
-(`gamebot/` + `tests/`), and M16/M17/M18 build on this same case, so
-replacing it would break the acceptance chain. "更全面" is achieved by
-strengthening the frozen corpus, not by switching projects:
-
-- **fixture boards**: a frozen set of JSON board configurations
-  (trivial / medium / hard) with expected best-plan scores byte-comparable
-  against the Python oracle (oracle corpus extracted from `tests/` and
-  committed under `案例项目/俄罗斯方块消除/oracle/`);
-- **typed boundary**: solver consumes JSON input and emits JSON plan
-  output through the Component boundary (plan §4 already allows this) —
-  exercises serialization plus algorithms;
-- **deterministic rollout**: the seeded future-sampling path
-  (`random_seed`/Laplace prior in `solver.py`) re-implemented in Sico
-  source with a source-level PRNG, proving reproducibility without
-  ambient randomness;
-- **limit+1**: `max_nodes` exhaustion must produce a typed limit outcome
-  (exit gate 4) rather than a trap;
-- **bitboard variant**: one fixture set solved with bit-packed boards to
-  exercise the bit-operation slice of the profile.
-
 ### 3.2 Companion applications (unchanged from M14 plan §4)
 
 - streaming transform (bounded memory independent of input size,

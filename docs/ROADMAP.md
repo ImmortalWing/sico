@@ -6,6 +6,7 @@
 > - previous update: 2026-09-22 (STEP-0258: M24 pilot target re-designated — block-game pilot deleted, GUI format converter (JPEG↔PNG first increment) becomes the M18 portfolio-4 application pilot; M24 plan renamed; STEP-0257 superseded)
 > - source of phase definitions: [`DEVELOPMENT.md`](../DEVELOPMENT.md)
 > - current phase: M14 GO; M15/M16 declared-scope GO; M17 NO-GO; M18 historical GO 4/5 with converter and external pilot open; M19 partial GO; M20 NO-GO; M21 historical GO with quality review open; M22 NO-GO with W1 and 22-C S1/S2 GO on separate isolated CI-tested commits; M23 item 1/2 landed (STEP-0328/0329, owner parallel directive; item 3 deferred-external, item 4 closed) with exit audit issued; M24–M26 planned.
+> - governance (owner 2026-11-19): 里程碑只记录语言核心；应用/外部项目（GUI 格式转换器、M26 PDF、Three.js 类似、vision 包）用独立编号 `sico案例程序/<name>/` + `PRJ-xxxx`（仓库外），不占 M/STEP 序列。核心 = M0–M13 语言基础、M14 oracle、M15/M16 宿主机制、M22 自举、M23 语言批、M24 原生 UI 库机制、M25 release；外部 = M17 vision 包、M18/M24 GUI 格式转换器、M26 PDF、Three.js 类似。取代 DIRECTION.md §2 2026-09-22/24 应用层部分；M25 发布门只依赖语言核心。
 > - phase context: M7 public rollout and M6 mobile remain externally blocked; live-model re-measurement, platform parity runners, public identity and device inputs are owner-gated and never implied by internal GO verdicts
 
 ## Status vocabulary
@@ -239,7 +240,8 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 进入条件：M12 完整 GO；M13 收口审计给出 AI 工作流 GO/blocked 结论；M0–M13 regression 保持可重跑。M6/M7 的外部平台、身份和公网输入不阻塞本里程碑，但其证据等级不得被 M14 内部工作提升。
 
-退出条件：已登记的 application-baseline 语义不存在未声明的“check 通过但 build/run 拒绝”；至少一个非玩具搜索算法（俄罗斯方块离线求解器）、一个流式数据应用和一个 capability-backed 状态机主要逻辑完全由 Sico 实现；模块/包/WIT 边界、资源限额、确定性、性能和 AI 生成/修复回归全部通过。语言未来仍可演进，但后续应用层不再需要原生逃生舱承载普通业务算法。
+退出条件：已登记的 application-baseline 语义不存在未声明的“check 通过但 build/run 拒绝”；至少一个非玩具搜索算法、一个流式数据应用和一个 capability-backed 状态机主要逻辑完全由 Sico 实现；模块/包/WIT 边界、资源限额、确定性、性能和 AI 生成/修复回归全部通过。语言未来仍可演进，但后续应用层不再需要原生逃生舱承载普通业务算法。
+
 
 执行计划：[`M14 application-ready language baseline`](./plans/M14-application-ready-language.md)。本里程碑只完成语言、编译器、Runtime 与通用 SDK 基线，不实现 DOM、桌面截图、输入注入、OpenCV 或模型推理。
 
@@ -283,7 +285,7 @@ M10–M12 之所以在此时推进内部基建，是因为 production domain/ide
 
 状态：`GO（部分，STEP-0165 出口审计：组合 4/5 项 GO；external pilot 与 application pilot（原 block-game 项）两项 NO-GO 诚实登记）——STEP-0164 交付 API agent / 流式工具 / Web/UI 应用 / 包消费者四类 pilot 证据；2026-09-22（STEP-0259）登记：试点重定不改已完成证据，M24 转换器试点过 gate 5 后执行 M18 出口审计增补翻转组合项 4，外部 pilot NO-GO 不变`
 
-以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。2026-09-13 新增：pilot 必须经 M19 release bundle 安装/升级，不得直接使用 target/ 工件。2026-09-22 owner 指令（STEP-0258）：删除 block-game 自动化试点目标——俄罗斯方块消除案例保持 M14 纯 Sico 离线求解器验收 oracle（STEP-0138）与其 Python 案例 oracle，不再作为 M18 组合项 4 验收载体；组合项 4 重定为带 GUI 界面的格式转换器应用（以 Sico 语言原生界面库编写，第一步 JPEG↔PNG 互转），在 M24 关闭。
+以真实应用而不是基础设施自证完成度。至少覆盖 API agent、流式数据工具、Web/UI 应用、原生视觉自动化和一个外部 package/Component 消费者。2026-09-13 新增：pilot 必须经 M19 release bundle 安装/升级，不得直接使用 target/ 工件。2026-09-22 owner 指令（STEP-0258）：删除 block-game 自动化试点目标；组合项 4 重定为带 GUI 界面的格式转换器应用（以 Sico 语言原生界面库编写，第一步 JPEG↔PNG 互转），在 M24 关闭。
 
 进入条件：M14 GO ✓（STEP-0141）；逐 pilot 平台前置——API（M12 GO）✓、流式（M9/M11 GO）✓、Web/UI（M15 7/7 GO）✓、原生视觉（M16 GO ✓ + M17 GO ✗ 为当前阻塞）；外部账号/设备/发布身份/凭据仅以 owner 明确授权进入。内部洁净室应用不能冒充第三方采用。
 
@@ -470,7 +472,7 @@ item 3 的 **AI 腿已实跑**（2026-10-21，owner 提供 DeepSeek 凭据）：
 
 2026-10-21 增补（[STEP-0338](./steps/STEP-0338-m24-native-ui-fluent-d2d-renderer.md)）：**#4 Direct2D 的「本机不可用」前提已被实测推翻**——`windows-sys` 0.52/0.61 根本不含 Direct2D/DirectWrite（须用完整 `windows` crate），且须钉在 **0.52**（0.62 走 `raw-dylib` → 需 `dlltool` → 本机无 binutils；0.52 走已缓存的预编译合并 import lib `libwindows.0.52.0.a`）⇒ 零新增工具链可编译链接并出真实像素。据此交付 `crates/sico-ui-renderer-d2d`：**冻结 Fluent token 表**（`fluent-subset-v0`）+ 离屏确定性帧语料（4 场景 SHA-256 钉死、跨进程一致、5/5 绿）。证据级别 = **internal-fixture / runtime-verified renderer-frame**；**不翻任何 §3 gate**：本片只是渲染器核心，**OS 窗口壳 + 事件泵 + runner 侧 `ui@1` 接线未做** ⇒ 此刻**无 guest 可见 UI 能力**；帧哈希为**证据主机局部**；**M24 overall 本机仍 NO-GO**（#3 JPEG 仍具名外部门、gate 1 加速器仍需具名硬件、gate 4 余「预算运行期强制+取消」、gate 5 转换器待收口）。
 
-本里程碑承载 M17 视觉收口与重定后的应用试点。俄罗斯方块案例保持 M14 纯 Sico 求解器验收 oracle（STEP-0138 ✓）与其 Python 案例 oracle，不再作为 M18/M24 验收载体（owner 指令 2026-09-22）。
+本里程碑承载 M17 视觉收口与重定后的应用试点。
 
 进入条件：M16 GO ✓；M17 gate 1 GO ✓；M18 组合 4/5 ✓（组合项 4 即登记的 NO-GO，目标已重定为 GUI 格式转换器）；逐包/逐 gate RFC 先接受再实现（含格式转换器 codec 合同 RFC）；试点作为本地应用在用户授权下运行，文件访问经既有文件能力 + 用户选定路径组合，不消费 capture/input 授权。
 
@@ -478,15 +480,17 @@ item 3 的 **AI 腿已实跑**（2026-10-21，owner 提供 DeepSeek 凭据）：
 
 执行计划：[`M24 Vision closure and GUI application pilot`](./plans/M24-vision-closure-gui-application-pilot.md)。本里程碑不提供验证码/认证/反作弊绕过、隐藏监控、全桌面捕获或凭据/进程控制；macOS/Linux/Android 不产生无原生证据的声明。
 
+> 治理重分类（owner 2026-11-19）：本里程碑的 **GUI 格式转换器试点** 与 **M17 视觉收口** 属**外部项目**（`sico案例程序/` + `PRJ-xxxx`，仓库外），不进里程碑门；里程碑核心部分 = 原生 UI 库机制（ADR-0018/RFC-0052）与验证。M17 vision 包同归外部。
+
 ## M25: Release v1.0 — platform breadth, completion audit and product exit（planned; 2026-09-17）
 
 状态：`planned / owner session directive（2026-09-17）；no step numbers reserved yet`
 
 以 AGENT_GOAL §13 为准发布版本化 v1.0 产品结论：语言 v1 freeze（batch 1–3 纳入版本化发布：规范/语料/诊断/格式化互洽 + 迁移说明）；§13 逐项审计以 M21–M24 全证据链重发（每项 GO 或显式 deferred + 外部门名称）；M19 残余 gate 在输入允许处收口（全范围签名安装演练、registry 对 v1.0 bundle 的发布演练——公网 rollout 仍 owner 门控，不作声明）；平台广度按 owner 实际提供的 runner 声明（无 runner 处 contract-verified；Android 按 M20 两路出口记录）；v1.0 release bundle 经 M19 管线可复现（两次独立构建字节相同）。
 
-进入条件：M23/M24/M22 裁决均显式，可据此启动审计；v1.0 发布 GO 另要求 M23 第三批 GO、M24 Sico 原生 GUI 转换器 GO、M19 release-candidate CI/签名演练绿。M22 止损仅作 NO-GO 登记，不能冒充自举 GO；外部输入缺失逐项命名。
+进入条件：M23/M24/M22 裁决均显式，可据此启动审计；v1.0 发布 GO 另要求 M23 第三批 GO、M24 原生 UI 库机制 GO、M19 release-candidate CI/签名演练绿（GUI 格式转换器已外移为外部项目，非发布门）。M22 止损仅作 NO-GO 登记，不能冒充自举 GO；外部输入缺失逐项命名。
 
-退出条件：分别发布 v1.0 release GO/NO-GO 与 project §13 completion GO/NO-GO。M23 或 M24 转换器未通过则发布 NO-GO；语言 v1 freeze、可复现签名 bundle、干净 Windows install/run/upgrade/uninstall、平台矩阵、M0–M24 一命令回归和文档审计均须有证据。§13 任一项未达时项目完成 NO-GO，外部延期不转换为 complete。
+退出条件：分别发布 v1.0 release GO/NO-GO 与 project §13 completion GO/NO-GO。M23 或 M24 原生 UI 库机制未通过则发布 NO-GO（GUI 格式转换器已外移为外部项目，非发布门）；语言 v1 freeze、可复现签名 bundle、干净 Windows install/run/upgrade/uninstall、平台矩阵、M0–M24 一命令回归和文档审计均须有证据。§13 任一项未达时项目完成 NO-GO，外部延期不转换为 complete。
 
 执行计划：[`M25 Release v1.0 — platform breadth, completion audit and product exit`](./plans/M25-release-v1-completion.md)。
 
@@ -501,6 +505,8 @@ item 3 的 **AI 腿已实跑**（2026-10-21，owner 提供 DeepSeek 凭据）：
 退出条件：完整阅读/合并/旋转子集的冻结语料 byte-exact/byte-stable 与恶意输入 typed 拒绝；Windows 原生 GUI 构建运行且帧语料确定性；经 M7 安装的消费者不改 compiler/Runtime；M0–M25 回归绿 + 显式审计。各阶段局部 GO 不等于 M26 整体 GO。
 
 执行计划：[`M26 PDF document processing`](./plans/M26-pdf-document-processing.md)。
+
+> 治理重分类（owner 2026-11-19）：M26 为**外部项目**（`sico案例程序/` + `PRJ-xxxx`，仓库外），不进里程碑序列；其进入仍以 M25 v1.0 release GO 为前提。
 
 ### M14–M26 dependency shape
 

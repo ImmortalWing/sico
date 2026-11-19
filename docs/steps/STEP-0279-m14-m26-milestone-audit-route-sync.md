@@ -20,8 +20,8 @@ future route and release verdicts decidable. The frozen audit register is
 1. Historical M14–M21 STEP verdicts are retained. Current indexes and
    owner-facing guidance distinguish those verdicts from later quality
    findings. M18's active pilot target is the M24 Sico-native GUI JPEG↔PNG
-   converter; the block-game case remains only M14 solver oracle. STEP-0278
-   local checks are separated from the still-pending runner/CI differential.
+   converter; STEP-0278 local checks are separated from the still-pending
+   runner/CI differential.
 2. ADR-0017's Option A status is aligned with the owner acceptance recorded
    by STEP-0269; RFC-0047 remains separately accepted by STEP-0270. The
    ADR index and next available ADR number are synchronized. ADR/RFC and

@@ -23,10 +23,7 @@ dependency order:
    is deleted from this milestone (§8.6.2).
 
 This milestone carries the M17 vision closure and the re-designated
-application pilot. The 俄罗斯方块 case remains the M14 pure-Sico solver
-acceptance oracle (STEP-0138 ✓) with its Python implementation as the
-case oracle; it is no longer the M18/M24 acceptance vehicle (owner
-directive, 2026-09-22).
+application pilot.
 
 ## 2. Entry gate
 
@@ -96,8 +93,7 @@ its actual exit gates have evidence; a converter GO does not imply M17 GO.
   layer passes its own gate (AGENTS.md §6).
 - Reviving the block-game automation pilot or the former
   capture→vision→solver→input chain inside this milestone (deleted by
-  owner directive, 2026-09-22); the 俄罗斯方块 case remains the M14
-  solver acceptance oracle only.
+  owner directive, 2026-09-22).
 
 ## 5. Risks
 
@@ -416,6 +412,3 @@ AGENT_GOAL desktop-host item 「最小 UI WIT/SDK」:
   §8.4 loop mapping and the former §8.5 automation error-injection
   corpus are deleted (owner directive, 2026-09-22). M16 real-loop
   evidence stands at its M16 GO level (STEP-0159) and is not extended.
-  The 俄罗斯方块 case remains the M14 solver acceptance oracle
-  (STEP-0138) with the Python gamebot as the case oracle — not part of
-  M24 evidence.

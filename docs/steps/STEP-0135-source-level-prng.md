@@ -31,7 +31,7 @@ silently rot.
 
 - No ambient randomness is added to any surface; the runner and Host stay
   deterministic. The same helper shape is what the M14 solver port will
-  embed for its seeded rollout (RFC-0038 §3.1).
+  embed for its seeded rollout.
 - Matrix: `tests/language-matrix/application-profile-v0.json` gained the
   `source-prng-xorshift64` executable row.
 

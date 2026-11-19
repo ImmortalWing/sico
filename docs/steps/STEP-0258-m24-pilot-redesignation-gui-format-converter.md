@@ -54,10 +54,6 @@ prerequisite workstream.
   gate.
 - **AGENT_GOAL / DIRECTION**: the M24 milestone text and the closing-pace
   paragraph record the deletion and the converter pilot.
-- **Case README**: the M24 pilot-target section added by STEP-0257 is
-  replaced — the case remains the M14 solver acceptance oracle (STEP-0138)
-  with its Python oracle, and is no longer the M18/M24 acceptance
-  vehicle; the converter pilot is not part of the case project.
 - **STEP-0257**: marked superseded by this record (its §8.6.1 workstream
   carries over); its validator is re-pointed at the superseded state.
 - Cross-reference: `docs/steps/README.md` rows updated (STEP-0257 marked
@@ -73,9 +69,6 @@ prerequisite workstream.
   nor the codec contract nor the converter app has an RFC accepted or a
   line of code; every §8.4–8.6 statement is planned. No STEP number is
   reserved for them.
-- The 俄罗斯方块 case is not deleted from the repository or retired as
-  the M14 solver oracle (STEP-0138, AGENTS.md §6); only its M18/M24
-  pilot role is removed. M14/M17 vision closure work is untouched.
 - No M15 scope change: the Sico-language native UI library is native
   desktop surface, distinct from M15's Web-scoped UI binding.
 

@@ -49,13 +49,6 @@ Probes live in the session temp directory (not committed); the refusal
 classes above are durable compiler behavior, re-verified in the STEP-0130
 fixtures that will land with the first gap-closing STEP.
 
-## 4. Acceptance-project decision (recorded)
-
-`案例项目/俄罗斯方块消除` stays the primary M14 oracle; RFC-0038 §3.1
-freezes the strengthened corpus (JSON-boundary fixtures against the Python
-oracle, source-level seeded PRNG, typed max-nodes exhaustion, bitboard
-variant). Alternatives evaluated and rejected with reasons in RFC-0038.
-
 ## 5. Validation
 
 Document-only step: inventory evidence gathered from compiler sources and
