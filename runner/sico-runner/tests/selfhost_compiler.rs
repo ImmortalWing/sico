@@ -10249,10 +10249,18 @@ fn every_match_site_is_measured_on_the_component_axis() {
     // at all -- it was skipped, not failed -- and the frozen ledger used to
     // carry 219 of those, every one of them in `parser.sico`.
     //
-    // The bound is now large enough to cover the largest real closure of the
-    // frozen S (164 functions / 1,027,015 bytes), so every one of the 396
-    // sites must carry a **measured** verdict, and whatever residue is left
-    // must be a named reason rather than a fixture skip.
+    // STEP-0639 (option-B narrowing, owner-adjudicated 2026-11-19): the bound
+    // covered the largest real closure until `parser.sico:scalar_ir` grew past
+    // it (165 functions / 1,049,726 bytes) AND its canonical IR (9.1 MB) grew
+    // past the guest stdin injection channel, so its component axis is not
+    // merely unfixed but **unmeasurable** -- raising the closure bound yields
+    // an injection panic, not a component.  The component axis therefore
+    // honestly covers every site EXCEPT a named not-comparable residue: a
+    // `closure-too-large` site is accepted only when its file carries a
+    // whole-file IR pin (so the IR is still witnessed byte-exact) and its note
+    // names that pin.  A `closure-too-large` site without a pin is a silent
+    // fixture skip and fails.  Measured sites (component emitted or a typed
+    // refusal / fuel exhaustion) are unaffected.
     let ledger: MatchCoverageLedger =
         serde_json::from_str(MATCH_COVERAGE_LEDGER).expect("the match site ledger is valid JSON");
     assert_eq!(
@@ -10260,26 +10268,38 @@ fn every_match_site_is_measured_on_the_component_axis() {
         406,
         "the ledger registers the 406 candidate sites"
     );
-    let skipped: Vec<&str> = ledger
+    // A `closure-too-large` residue is honest (a named not-comparable, IR
+    // witnessed by the whole-file pin) only when its file is pinned AND its
+    // note names that pin.  Anything else is a silent fixture skip.
+    fn pin_backed(site: &MatchCoverageSite) -> bool {
+        MATCH_WHOLE_FILE_PINNED.iter().any(|(file, pin)| {
+            *file == site.path && site.note.contains(*pin)
+        })
+    }
+    let silent_skips: Vec<&str> = ledger
         .sites
         .iter()
-        .filter(|site| site.verdict.starts_with("closure-too-large"))
+        .filter(|site| site.verdict.starts_with("closure-too-large") && !pin_backed(site))
         .map(|site| site.id.as_str())
         .collect();
     assert!(
-        skipped.is_empty(),
-        "{} of the 396 sites are still skipped by the closure bound instead of measured: {skipped:?}",
-        skipped.len()
+        silent_skips.is_empty(),
+        "{} of the 406 sites are skipped by the closure bound without a whole-file IR pin to witness the IR: {silent_skips:?}",
+        silent_skips.len()
     );
+    // A site with no compared-source digest was never compiled -- unless it is
+    // a pin-backed `closure-too-large` residue, whose IR the whole-file pin
+    // witnesses instead of a per-site digest.
     let unmeasured: Vec<&str> = ledger
         .sites
         .iter()
         .filter(|site| site.source_sha256.is_empty())
+        .filter(|site| !(site.verdict.starts_with("closure-too-large") && pin_backed(site)))
         .map(|site| site.id.as_str())
         .collect();
     assert!(
         unmeasured.is_empty(),
-        "{} of the 396 sites carry no compared-source digest, so they were never compiled: {unmeasured:?}",
+        "{} of the 406 sites carry no compared-source digest, so they were never compiled: {unmeasured:?}",
         unmeasured.len()
     );
     let unnamed: Vec<&str> = ledger
@@ -10403,6 +10423,14 @@ enum GuestEmission {
     Refusal(String),
 }
 
+fn component_fuel() -> u64 {
+    const DEFAULT: u64 = 800_000_000_000;
+    match std::env::var("SICO_M22_COMPONENT_FUEL") {
+        Ok(raw) => raw.trim().parse::<u64>().unwrap_or(DEFAULT),
+        Err(_) => DEFAULT,
+    }
+}
+
 fn guest_emission(ir: &str) -> GuestEmission {
     static POOL: std::sync::OnceLock<PreparedPool> = std::sync::OnceLock::new();
     let pool = POOL.get_or_init(|| {
@@ -10416,7 +10444,7 @@ fn guest_emission(ir: &str) -> GuestEmission {
             stdin: ir.as_bytes().to_vec(),
         },
         &RunnerLimits {
-            fuel: 800_000_000_000,
+            fuel: component_fuel(),
             timeout: std::time::Duration::from_secs(120),
             memory_bytes: 2560 * 1024 * 1024,
             hostcall_fuel: 8 << 30,
@@ -12422,6 +12450,80 @@ fn the_emitter_fuel_scaling_in_read_local_count_is_measured() {
             ir.len()
         );
     }
+}
+
+#[test]
+#[ignore = "a raised-fuel flip-fraction probe over real exhausted sites; run it explicitly"]
+fn the_raised_fuel_flip_fraction_of_exhausted_sites_is_measured() {
+    // Decision probe (not exit evidence): of the ledger's FuelExhausted sites,
+    // how many flip to a real component emission when the emitter budget is
+    // raised?  One single-run per site at an explicit fuel (default 4x the
+    // 800e9 standard budget), on the exact ledger component-axis path
+    // (`guest_emission_with_fuel`: IR injection -> emitter).  A site "flips"
+    // when it emits a component within the budget and the timeout.
+    let raw = std::env::var("SICO_M22_FLIP_GROUPS").unwrap_or_default();
+    let groups: Vec<(String, String)> = raw
+        .split(',')
+        .filter_map(|part| {
+            let mut fields = part.trim().split(':');
+            let path = fields.next()?;
+            let function = fields.next()?;
+            Some((path.to_owned(), function.to_owned()))
+        })
+        .collect();
+    assert!(
+        !groups.is_empty(),
+        "set SICO_M22_FLIP_GROUPS=path:function,..."
+    );
+    let fuel = std::env::var("SICO_M22_FLIP_FUEL")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(4 * 800_000_000_000);
+    println!("FLIP fuel={fuel}");
+    let mut flipped = 0usize;
+    let mut measured = 0usize;
+    for (path, function) in groups {
+        let Some(text) = match_frozen_source(&path) else {
+            println!("FLIP {path}:{function} no-frozen-source");
+            continue;
+        };
+        let (function_limit, byte_limit) = match_probe_closure_limits();
+        let closure = match match_sico_closure(text, &function, function_limit, byte_limit) {
+            Ok(closure) => closure,
+            Err(reason) => {
+                println!("FLIP {path}:{function} closure {reason}");
+                continue;
+            }
+        };
+        let source = format!("{HOST_CALL_SHAPE_PRELUDE}{closure}\n{HOST_CALL_SHAPE_RUN}");
+        let ir = rust_ir(&source);
+        let started = std::time::Instant::now();
+        let verdict = match guest_emission_with_fuel(&ir, fuel) {
+            GuestFuelEmission::Component(hex) => {
+                flipped += 1;
+                measured += 1;
+                format!("FLIPPED bytes={}", hex.len() / 2)
+            }
+            GuestFuelEmission::FuelExhausted => {
+                measured += 1;
+                "exhausted".to_owned()
+            }
+            GuestFuelEmission::Refusal(identity) => {
+                measured += 1;
+                format!("refused:{identity}")
+            }
+            GuestFuelEmission::Trap { reason } => {
+                measured += 1;
+                format!("trap:{reason}")
+            }
+        };
+        println!(
+            "FLIP {path}:{function} ir_bytes={} {verdict} ms={}",
+            ir.len(),
+            started.elapsed().as_millis()
+        );
+    }
+    println!("FLIP SUMMARY flipped={flipped}/{measured}");
 }
 
 #[test]
