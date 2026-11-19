@@ -2328,6 +2328,40 @@ end function
 // The backend's own layout puts the cells after the parameters and the
 // instruction results and before the dispatcher slot, so the first cell sits
 // right below the dispatcher slot minus the cells' own width.
+// STEP-0628 (A4-cindex): the body of `cgs_cell_slot` with the dispatcher slot
+// supplied by the caller.  `cgs_dispatcher_slot` is a linear scan of the whole
+// `run` body, so recomputing it per `read_local`/`write_local` made the
+// instruction segment O(N^2); the caller already holds the dispatcher slot, so
+// it threads it down here.  The layout arithmetic is byte-for-byte the same as
+// the wrapper below, so the emitted component is unchanged.
+function cgs_cell_slot_with_dispatcher(bytes: Bytes, fn: U64, index: U64, dispatcher: U64) returns U64:
+  if U64.equal(dispatcher, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccslwd_cells = cgs_cell_slots(bytes, fn)
+  let ccslwd_base = cgs_sub(dispatcher, ccslwd_cells)
+  let ccslwd_locals = cgj_member(bytes, fn, "locals")
+  if U64.equal(ccslwd_locals, U64.literal(0)):
+    return U64.literal(0)
+  end if
+  let ccslwd_offset = ccslwd_base
+  let ccslwd_index = U64.literal(0)
+  let ccslwd_cell = cgj_array_first(bytes, ccslwd_locals)
+  while U64.less_than(U64.literal(0), ccslwd_cell):
+    if U64.equal(ccslwd_index, index):
+      return ccslwd_offset
+    end if
+    let ccslwd_width = cgs_cell_width(bytes, ccslwd_cell)
+    if U64.equal(ccslwd_width, U64.literal(0)):
+      return U64.literal(0)
+    end if
+    set ccslwd_offset = cgs_add(ccslwd_offset, ccslwd_width)
+    set ccslwd_index = cg_next(ccslwd_index)
+    set ccslwd_cell = cgj_array_next(bytes, ccslwd_cell)
+  end while
+  return U64.literal(0)
+end function
+
 function cgs_cell_slot(bytes: Bytes, fn: U64, index: U64) returns U64:
   let ccsl_dispatcher = cgs_dispatcher_slot(bytes, fn)
   if U64.equal(ccsl_dispatcher, U64.literal(0)):
@@ -4259,7 +4293,7 @@ end function
 //
 // The backend copies slot by slot -- `local.get` the source, `local.set` the
 // cell -- and it refuses a source whose flat width differs from the cell's.
-function cgs_write_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, vindex: List[U64]) returns Text:
+function cgs_write_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, vindex: List[U64], dispatcher: U64) returns Text:
   let cwlh_local_text = cgj_value_text(bytes, cgj_member(bytes, data, "local"))
   if cgs_decimal_bad(cwlh_local_text):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -4279,7 +4313,7 @@ function cgs_write_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, vinde
     return "ERR:E-SH-CG-IR-EMIT"
   end if
   let cwlh_source_width = cgs_type_slots(bytes, cwlh_source_ty)
-  let cwlh_cell = cgs_cell_slot(bytes, fn, cwlh_local)
+  let cwlh_cell = cgs_cell_slot_with_dispatcher(bytes, fn, cwlh_local, dispatcher)
   if U64.equal(cwlh_cell, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -4309,13 +4343,13 @@ end function
 //
 // The backend copies slot by slot -- `local.get` the cell, `local.set` the
 // result -- and it refuses a result whose flat width differs from the cell's.
-function cgs_read_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, result0: U64) returns Text:
+function cgs_read_local_hex(bytes: Bytes, fn: U64, instr: U64, data: U64, result0: U64, dispatcher: U64) returns Text:
   let ccrlh_local_text = cgj_value_text(bytes, cgj_member(bytes, data, "local"))
   if cgs_decimal_bad(ccrlh_local_text):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
   let ccrlh_local = cgs_decimal_u64(ccrlh_local_text)
-  let ccrlh_cell = cgs_cell_slot(bytes, fn, ccrlh_local)
+  let ccrlh_cell = cgs_cell_slot_with_dispatcher(bytes, fn, ccrlh_local, dispatcher)
   if U64.equal(ccrlh_cell, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -4344,7 +4378,7 @@ end function
 
 // The instruction bytes of the IR instruction at `instr`; an `ERR:` identity
 // when the operation is outside the supported subset.
-function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64], fn_count: U64, mask: U64) returns Text:
+function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64], fn_count: U64, mask: U64, dispatcher: U64) returns Text:
   let coph_operation = cgj_member(bytes, instr, "operation")
   if U64.equal(coph_operation, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
@@ -4359,7 +4393,7 @@ function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64], fn_co
   end if
   let coph_name = cgj_ident_text(bytes, coph_kind)
   if cg_is_word(coph_name, "write_local"):
-    return cgs_write_local_hex(bytes, run, instr, coph_data, vindex)
+    return cgs_write_local_hex(bytes, run, instr, coph_data, vindex, dispatcher)
   end if
   let coph_result = cgj_value_text(bytes, cgj_member(bytes, instr, "result"))
   let coph_result_slot = cgs_value_slot(vindex, coph_result)
@@ -4368,7 +4402,7 @@ function cgs_op_hex(bytes: Bytes, run: U64, instr: U64, vindex: List[U64], fn_co
   end if
   let coph_result0 = cgs_sub(coph_result_slot, U64.literal(1))
   if cg_is_word(coph_name, "read_local"):
-    return cgs_read_local_hex(bytes, run, instr, coph_data, coph_result0)
+    return cgs_read_local_hex(bytes, run, instr, coph_data, coph_result0, dispatcher)
   end if
   if cg_is_word(coph_name, "project"):
     return cgs_project_hex(bytes, run, instr, coph_data, coph_result0, vindex)
@@ -4507,7 +4541,7 @@ function cgs_function_instr_hex(bytes: Bytes, fn: U64, terms: U64, fn_count: U64
     end if
     let crih_instruction = cgj_array_first(bytes, crih_instructions)
     while U64.less_than(U64.literal(0), crih_instruction):
-      let crih_op = cgs_op_hex(bytes, crih_run, crih_instruction, vindex, fn_count, mask)
+      let crih_op = cgs_op_hex(bytes, crih_run, crih_instruction, vindex, fn_count, mask, crih_dispatcher)
       if sico.text.starts_with(crih_op, "ERR:"):
         return crih_op
       end if
@@ -5075,7 +5109,7 @@ end function
 // returned area pointer. Called once per `return` terminator (STEP-0613 G1),
 // so a multi-block `run` emits one result-area per return point, exactly like
 // the backend's `emit_script_return`.
-function cgs_result_return_hex(bytes: Bytes, run: U64, crrh_value: Text, vindex: List[U64]) returns Text:
+function cgs_result_return_hex(bytes: Bytes, run: U64, crrh_value: Text, vindex: List[U64], dispatcher: U64) returns Text:
   let crrh_out = ""
   let crrh_alloc = cgs_alloc_index(bytes)
   if U64.equal(sico.text.length(crrh_value), U64.literal(0)):
@@ -5103,7 +5137,7 @@ function cgs_result_return_hex(bytes: Bytes, run: U64, crrh_value: Text, vindex:
         if U64.equal(crrh_slot1, U64.literal(0)):
           return "ERR:E-SH-CG-IR-EMIT"
         end if
-        let crrh_dispatcher = cgs_dispatcher_slot(bytes, run)
+        let crrh_dispatcher = dispatcher
         if U64.equal(crrh_dispatcher, U64.literal(0)):
           return "ERR:E-SH-CG-IR-EMIT"
         end if
@@ -5138,7 +5172,7 @@ function cgs_result_return_hex(bytes: Bytes, run: U64, crrh_value: Text, vindex:
         if U64.equal(crrhe_slot1, U64.literal(0)):
           return "ERR:E-SH-CG-IR-EMIT"
         end if
-        let crrhe_dispatcher = cgs_dispatcher_slot(bytes, run)
+        let crrhe_dispatcher = dispatcher
         if U64.equal(crrhe_dispatcher, U64.literal(0)):
           return "ERR:E-SH-CG-IR-EMIT"
         end if
@@ -5776,7 +5810,7 @@ end function
 // The backend's `compile_terminator` writes the condition, an `if`, the two
 // dispatch stores, an `else` and a `br 1`, so the guest writes the same
 // bytes in the same order.
-function cgs_branch_hex(bytes: Bytes, fn: U64, term: U64, vindex: List[U64]) returns Text:
+function cgs_branch_hex(bytes: Bytes, fn: U64, term: U64, vindex: List[U64], dispatcher: U64) returns Text:
   let cgbh_data = cgj_member(bytes, term, "data")
   if U64.equal(cgbh_data, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
@@ -5797,7 +5831,7 @@ function cgs_branch_hex(bytes: Bytes, fn: U64, term: U64, vindex: List[U64]) ret
   if U64.equal(cgbh_slot, U64.literal(0)):
     return "ERR:E-SH-CG-IR-PLAN"
   end if
-  let cgbh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  let cgbh_dispatcher = dispatcher
   if U64.equal(cgbh_dispatcher, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -5818,12 +5852,12 @@ end function
 //
 // The backend's `compile_terminator` writes the target store and a `br 1`,
 // so the guest writes the same bytes in the same order.
-function cgs_jump_hex(bytes: Bytes, fn: U64, term: U64) returns Text:
+function cgs_jump_hex(bytes: Bytes, fn: U64, term: U64, dispatcher: U64) returns Text:
   let cgjh_target = cgj_value_text(bytes, cgj_member(bytes, term, "data"))
   if cgs_decimal_bad(cgjh_target):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
-  let cgjh_dispatcher = cgs_dispatcher_slot(bytes, fn)
+  let cgjh_dispatcher = dispatcher
   if U64.equal(cgjh_dispatcher, U64.literal(0)):
     return "ERR:E-SH-CG-IR-EMIT"
   end if
@@ -6715,22 +6749,16 @@ end function
 // payload needs no inspection at all: the arm block reads the payload
 // through a project instruction.
 function cgs_match_payload_ok(bytes: Bytes, payload: U64) returns Bool:
-  let cmpo_index = U64.literal(0)
-  let cmpo_more = U64.literal(1)
-  while U64.less_than(U64.literal(0), cmpo_more):
-    let cmpo_item = cgj_array_item(bytes, payload, cmpo_index)
-    if U64.equal(cmpo_item, U64.literal(0)):
-      set cmpo_more = U64.literal(0)
-    else:
-      let cmpo_kind = cgj_ident_text(bytes, cgj_member(bytes, cmpo_item, "kind"))
-      if cg_is_word(cmpo_kind, "bool"):
-        return false
-      end if
-      if cg_is_word(cmpo_kind, "variant"):
-        return false
-      end if
+  let cmpo_item = cgj_array_first(bytes, payload)
+  while U64.less_than(U64.literal(0), cmpo_item):
+    let cmpo_kind = cgj_ident_text(bytes, cgj_member(bytes, cmpo_item, "kind"))
+    if cg_is_word(cmpo_kind, "bool"):
+      return false
     end if
-    set cmpo_index = cg_next(cmpo_index)
+    if cg_is_word(cmpo_kind, "variant"):
+      return false
+    end if
+    set cmpo_item = cgj_array_next(bytes, cmpo_item)
   end while
   return true
 end function
@@ -6922,15 +6950,15 @@ function cgs_block_terminator_hex(bytes: Bytes, fn: U64, block: U64, dispatcher:
   if cg_is_word(cbth_kind, "return"):
     let cbth_value = cgj_value_text(bytes, cgj_member(bytes, cbth_term, "data"))
     if cgs_is_entry_name(cbth_name):
-      return cgs_result_return_hex(bytes, fn, cbth_value, vindex)
+      return cgs_result_return_hex(bytes, fn, cbth_value, vindex, dispatcher)
     end if
     return cgs_flat_return_hex(bytes, fn, cbth_value, vindex)
   end if
   if cg_is_word(cbth_kind, "branch"):
-    return cgs_branch_hex(bytes, fn, cbth_term, vindex)
+    return cgs_branch_hex(bytes, fn, cbth_term, vindex, dispatcher)
   end if
   if cg_is_word(cbth_kind, "jump"):
-    return cgs_jump_hex(bytes, fn, cbth_term)
+    return cgs_jump_hex(bytes, fn, cbth_term, dispatcher)
   end if
   if cg_is_word(cbth_kind, "match"):
     return cgs_match_hex(bytes, fn, cbth_term, dispatcher, vindex)
