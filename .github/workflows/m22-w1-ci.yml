@@ -18,7 +18,12 @@
 # M22 evidence; adding it would spend ~1-2 h of windows-2025 runner minutes per
 # unrelated `dev` push and would attribute `dev`-tree failures (unrelated WIP,
 # other milestones' in-flight work) to the M22 track.
-name: M22 independent CI (W2 line)
+# Display name is milestone-neutral on purpose: this workflow runs the
+# full-repo CI (`tools/run-ci.ps1`) against whatever ref it is dispatched or
+# pushed on, so the name must not attribute the run to any single milestone
+# (M22, M24, ...). The historical filename `m22-w1-ci.yml` is retained for
+# traceability (see the naming note at the top of this file).
+name: Sico full-repo CI (Windows GNU)
 
 on:
   push:
