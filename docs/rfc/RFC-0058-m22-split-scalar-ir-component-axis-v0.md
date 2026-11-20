@@ -97,6 +97,21 @@
 
 **阻塞结论**：本 RFC 的轨道 A（站点迁移）**当前不可落地**——它要求 helper 返回 Result，而 oracle codegen 在该形状上 panic。落地轨道 A 的前置 = **先修 oracle codegen 的 `Operation::Project` 越界 bug**（改动永久参照、影响全部既有 pin、回归风险高）。这超出「小改动、低风险」的原估算，**须 owner 裁决**：(a) 立项修 oracle codegen bug 再做轨道 A；或 (b) 轨道 A 暂缓，25 站继续由 option-B（STEP-0639）整文件 IR pin 间接背书。**本片未遗留任何 parser.sico 改动**（三种形状均已 revert，parser.sico 恢复 HEAD `01d21ed2`）。
 
+### R.7 套件基线真根因（2026-11-20 顺序实测）——guest 不发射 batch4 `"enums"` IR 段
+
+Track A 验证需要绿色 `selfhost_compiler` 基线。顺序重跑（`--test-threads=1 --exact --nocapture`）全部 55 个 FAILED 测试，得到干净配对，**根因单一**：
+
+- **18 个 size-pin 失败**：oracle `expected.len()` 涨 **恰好 +54**（offset 集合 = {54}，无例外）。
+- **37 个 byte-mismatch 失败**（36 个 panic 在共享比较器 `assert_bytes_equal` `selfhost_compiler.rs:51`）。
+
+**同一根因（实测证实）**：oracle canonical IR 现在多一段 `,"enums":{...}`，**guest 不发射**。两条铁证：
+1. `oracle_host_call_in_a_straight_line_body_truth_is_pinned`：actual(guest) 缺 `,"enums":{"ScriptErrorCode":[{"name":"InvalidInput"}]}`（**54 字节**，= +54 offset）。
+2. `sico_compiler_lowers_the_scan_ident_region_byte_exactly`（**lexer 测试、本不该涉 enum**）：actual 缺 `,"enums":{"ScriptErrorCode":[{"name":"InvalidInput"},{"name":"ResourceLimit"},{"name":"DomainError"},{"name":"Cancelled"}]}`（**123 字节** = 51919−51796，精确吻合）。
+
+即：**batch4（STEP-0630 user enums）给 oracle 加了 canonical IR 的 `"enums"` 声明表段，但 guest `parser.sico`/`codegen.sico` 从未实现 enum→IR 发射** ⇒ 任何触发 `ScriptErrorCode` enums 的 fixture，guest IR 都缺这段。size-pin 过时（oracle 涨长）与 byte-mismatch（guest 缺段）是**同一缺口的两种表现**。
+
+**含义**：这 37 个 byte-mismatch **不是刷 pin 能修**——须 guest 前端真正实现 enum 声明发射（识别 enum 声明 → IR `enums` 表 → canonical JSON `,"enums":{...}` 段、逐字节匹配 oracle）。这是**独立的 M22 自举轨道前端实现任务**（batch4 给 oracle 加了 enum 发射、guest 未跟），工程量可观、**独立于轨道 A**（轨道 A 卡在 R.6 的 oracle codegen panic）。两者都需 owner 裁决优先级：guest enum 发射（补自举缺口）vs oracle codegen bug（解锁轨道 A）vs 轨道 A 暂缓。**本片零源码改动**（只读诊断 + 本 RFC 登记）。
+
 ## Syntax candidates
 
 不涉及表层语法。此节记录**站点迁移轴**的两个候选（原「按机器族/阶段拆 `scalar_ir`」的候选已被 §R.2 传递闭包守恒否决——抽成 `scalar_ir` 仍调用的函数只会增大闭包、25 站仍卡 too-large）：
