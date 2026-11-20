@@ -83,6 +83,20 @@
 - 迁移后 25 站的实际 verdict（`component-equal` 还是落回 `FuelExhausted`）取决于小 helper 的发射成本，**需实跑**组件轴套件。
 - ledger 快照（165/1,049,726）已过期（`source_sha256` 不符），**任何结论以 HEAD 实测为准**；本 RFC 数字为当前 HEAD 实测，开工前须重测。
 
+### R.6 开工阻塞发现（2026-11-20，会失败-先行实测）——oracle codegen 对「非 main 的 Result-returning 函数 + match」崩溃
+
+按会失败-先行纪律实现 slice 1（helper + 20 个 end-offset 站点迁移）时，发现**站点迁移要求 helper 返回 `Result`，而工具链对「非 `main` 的 Result-returning 函数 + `match`」有缺口/bug**。三种 helper 形状系统排查（每种跑整文件 IR pin `sico_guest_arena_accommodates_full_parser_selfhost_input` 实测）：
+
+| helper 形状 | 实测结果 |
+|---|---|
+| ① `returns Result[U64, Text]` + match-case 内 `return ok(sum)` / `return error("ERR:...")` | 前端 typed 拒 **`ERR:E-SH-IR-TYPE-MISMATCH`** —— `U64.checked_add` 实际返回 `Result[U64, NumericError]`（`sico-semantics/src/lib.rs:3826-3828`），error 载荷类型 Text≠NumericError |
+| ② `returns Result[U64, NumericError]` + 直返 `return U64.checked_add(a, b)` | 前端 typed 拒 **`ERR:E-SH-IR-EXPRESSION`** —— return 位的宿主内建路由只认 `sico.bytes.length`（STEP-0609 窄路由），不认返回 Result 的内建 |
+| ③ `returns Result[U64, NumericError]` + match-case 内 `return ok(sum)` / `return error(e)` | **前端通过**（scalar_ir 降级成功），但 **oracle codegen panic**：`sico-codegen-wasm/src/lib.rs:2258` `index out of bounds: len is 2 but index is 2`，位于 `Operation::Project` 的 `base.types[*index]`（`case ok(sum):` 从 Result 提取 ok 载荷触发的 Project 指令，其 local layout 的 `fields`/`types` 不自洽） |
+
+**判定**：形状 ③ 证明 **guest 前端（scalar_ir）能降级 Result-returning helper**（这是新前沿能力的正面证据），但 **Rust oracle codegen 在该形状上 panic**——oracle 是永久参照，此 panic 是真缺陷（`Operation::Project` 对非 `main` 的 Result-returning 函数 + match 的 local layout 计算越界）。原 parser.sico **从未用过 Result 返回**（0 处），故此形状是 parser.sico 新前沿，恰好踩中 oracle 此 bug。
+
+**阻塞结论**：本 RFC 的轨道 A（站点迁移）**当前不可落地**——它要求 helper 返回 Result，而 oracle codegen 在该形状上 panic。落地轨道 A 的前置 = **先修 oracle codegen 的 `Operation::Project` 越界 bug**（改动永久参照、影响全部既有 pin、回归风险高）。这超出「小改动、低风险」的原估算，**须 owner 裁决**：(a) 立项修 oracle codegen bug 再做轨道 A；或 (b) 轨道 A 暂缓，25 站继续由 option-B（STEP-0639）整文件 IR pin 间接背书。**本片未遗留任何 parser.sico 改动**（三种形状均已 revert，parser.sico 恢复 HEAD `01d21ed2`）。
+
 ## Syntax candidates
 
 不涉及表层语法。此节记录**站点迁移轴**的两个候选（原「按机器族/阶段拆 `scalar_ir`」的候选已被 §R.2 传递闭包守恒否决——抽成 `scalar_ir` 仍调用的函数只会增大闭包、25 站仍卡 too-large）：
