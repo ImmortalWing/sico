@@ -608,7 +608,11 @@ pub fn verify(bytes: &[u8]) -> Result<VerifiedPackage, PackageError> {
     // manifest/payload binding (A1.2) disagrees or the asset budget exceeds
     // the package limit ceiling (A1.3). Provenance is opt-in: a package
     // without a `.provenance.json` resource passes unchanged.
-    provenance::verify_provenance_in_package(&resources, &manifest.limits)?;
+    provenance::verify_provenance_in_package(
+        &resources,
+        &manifest.limits,
+        manifest.script.is_some(),
+    )?;
     Ok(VerifiedPackage {
         manifest,
         component: component_entry.bytes.clone(),

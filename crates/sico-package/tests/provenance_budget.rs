@@ -15,14 +15,18 @@
 use sico_codegen_wasm::compile_component;
 use sico_ir::lower_core;
 use sico_package::{
-    BuildInput, PackageError, ResourceInput, RuntimeLimits, build_unsigned, verify,
+    BuildInput, PackageError, ResourceInput, RuntimeLimits, SCRIPT_MEMORY_BYTES, build_unsigned,
+    verify,
 };
 use sico_source::{SourceFile, SourceId};
 
 /// The frozen 256-byte fixture model (bytes `0x00..=0xFF`).
 const MODEL_BYTES: &[u8] = include_bytes!("fixtures/provenance/model-fixture.bin");
 /// Its provenance manifest, carrying the genuine SHA-256 and size as committed
-/// constants (budget 1 MiB / 5000 ms / 100000 hostcalls).
+/// constants (budget at the Script memory floor, 2,214,592,512 B / 5000 ms /
+/// 100000 per-hostcall fuel; re-baselined from 1 MiB by RFC-0051 Amendment
+/// A2 C2-a, which makes a below-floor budget unsatisfiable for Script
+/// packages).
 const MODEL_MANIFEST: &[u8] = include_bytes!("fixtures/provenance/model-fixture.provenance.json");
 
 /// A trivial, valid v0 command Component so the `.sapp` carries a runnable
@@ -46,7 +50,14 @@ fn package_with(resources: Vec<ResourceInput>) -> Vec<u8> {
         resources,
         source_effects: Vec::new(),
         capabilities: Vec::new(),
-        limits: RuntimeLimits::default(),
+        // A2 C2-a re-baseline: the frozen budget's memory ceiling is now the
+        // Script floor, so the package ceiling must cover it for the subset
+        // check to hold (this is a non-Script package, so the floor itself
+        // does not bind — but the ceiling must still admit the budget).
+        limits: RuntimeLimits {
+            memory_bytes: SCRIPT_MEMORY_BYTES,
+            ..RuntimeLimits::default()
+        },
     })
     .expect("the fixture package builds")
 }
@@ -72,7 +83,7 @@ fn a_verified_package_exposes_its_frozen_budget() {
     let verified = verify(&package).expect("fixture package installs");
     let budgets = verified.provenance_budgets().expect("budget extraction");
     let budgets = budgets.expect("the package carries a provenance budget");
-    assert_eq!(budgets.max_memory_bytes, 1_048_576);
+    assert_eq!(budgets.max_memory_bytes, SCRIPT_MEMORY_BYTES);
     assert_eq!(budgets.max_wall_ms, 5_000);
     assert_eq!(budgets.max_hostcalls, 100_000);
 }

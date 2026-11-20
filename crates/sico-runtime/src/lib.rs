@@ -14,8 +14,8 @@ use std::{
 };
 
 use sico_package::{
-    AuthorizedPackage, SCRIPT_ARGS_CAPABILITY, SCRIPT_MEMORY_BYTES, SCRIPT_STDIO_CAPABILITY,
-    TrustStatus, sha256_hex,
+    AuthorizedPackage, PackageError, SCRIPT_ARGS_CAPABILITY, SCRIPT_MEMORY_BYTES,
+    SCRIPT_STDIO_CAPABILITY, TrustStatus, provenance::Budgets, sha256_hex,
 };
 
 static TEMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -123,6 +123,12 @@ pub enum PackageRuntimeError {
         effective_bytes: u64,
         declared_bytes: u64,
     },
+    /// RFC-0051 Amendment A2 (I3, STEP-0578): the package's provenance budget
+    /// could not be resolved at run time (more than one provenance manifest,
+    /// or a manifest that does not re-parse — both unreachable after a
+    /// successful `verify`; kept fail-closed). The run is refused before any
+    /// guest execution.
+    Provenance(PackageError),
 }
 
 impl std::fmt::Display for PackageRuntimeError {
@@ -140,6 +146,7 @@ impl std::fmt::Display for PackageRuntimeError {
                 formatter,
                 "Runtime memory ceiling {effective_bytes} is below the declared guest memory {declared_bytes}"
             ),
+            Self::Provenance(error) => write!(formatter, "Runtime provenance budget: {error}"),
         }
     }
 }
@@ -388,15 +395,29 @@ pub fn effective_limits(package: &AuthorizedPackage, host: &HostLimits) -> Effec
 /// trap. Refusing here keeps the failure typed and reproducible on every
 /// machine, without a runtime binary.
 ///
+/// RFC-0051 Amendment A2 (I3, STEP-0578): a package carrying a provenance
+/// asset budget applies it as a pure narrowing of the effective limits
+/// (memory / wall / per-hostcall fuel) before the Script check, so the
+/// Script memory refusal runs on the *operative* (budget-narrowed) ceiling.
+///
 /// # Errors
 ///
 /// Returns [`PackageRuntimeError::MemoryCeilingBelowDeclared`] when the
-/// effective memory ceiling is below the declared guest memory.
+/// effective memory ceiling is below the declared guest memory;
+/// [`PackageRuntimeError::Provenance`] when the package's provenance budget
+/// cannot be resolved.
 pub fn effective_memory_limits(
     package: &AuthorizedPackage,
     host: &HostLimits,
 ) -> Result<EffectiveLimits, PackageRuntimeError> {
     let limits = effective_limits(package, host);
+    // A2 I3: narrow by the asset budget, never widen, never a second ceiling
+    // path (AGENTS.md §helpers narrow, never widen).
+    let limits = match package.trusted.package.provenance_budgets() {
+        Ok(Some(budgets)) => narrow_by_budget(&limits, &budgets),
+        Ok(None) => limits,
+        Err(error) => return Err(PackageRuntimeError::Provenance(error)),
+    };
     if package.trusted.package.manifest.script.is_some()
         && limits.memory_bytes < SCRIPT_MEMORY_BYTES
     {
@@ -406,6 +427,21 @@ pub fn effective_memory_limits(
         });
     }
     Ok(limits)
+}
+
+/// Applies a provenance asset budget as a pure narrowing of the effective
+/// limits (RFC-0051 A1.3 mapping, A2 I3): the three mapped fields take the
+/// minimum, so the result can only narrow, never widen, and never opens a
+/// second ceiling path. The deterministic `fuel` bound is untouched (the
+/// budget carries no fuel field).
+#[must_use]
+fn narrow_by_budget(limits: &EffectiveLimits, budgets: &Budgets) -> EffectiveLimits {
+    EffectiveLimits {
+        memory_bytes: limits.memory_bytes.min(budgets.max_memory_bytes),
+        timeout_ms: limits.timeout_ms.min(budgets.max_wall_ms),
+        hostcall_fuel: limits.hostcall_fuel.min(budgets.max_hostcalls),
+        ..limits.clone()
+    }
 }
 
 /// Executes an authorized package under explicit Wasmtime/WASI ceilings.

@@ -1,0 +1,6 @@
+{
+  "schema": "sico:source-lock:v0",
+  "packages": [
+    {"name":"image_codec","version":1,"path":"pkgs/image_codec.sapp","sha256":"9ba7c2f0e25e3f5e56e040f0c20dc0a35c25913c71e520820dc921eb7093156c"}
+  ]
+}

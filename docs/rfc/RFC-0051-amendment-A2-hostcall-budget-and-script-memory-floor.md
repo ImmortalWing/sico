@@ -1,6 +1,13 @@
-# RFC-0051 Amendment A2: hostcall budget semantics + Script memory floor (PROPOSED)
+# RFC-0051 Amendment A2: hostcall budget semantics + Script memory floor (ACCEPTED)
 
-> - status: **PROPOSED — draft for owner adjudication** (raised 2026-11-07, STEP-0583).
+> - status: **ACCEPTED — owner adjudication 2026-11-19「授权都按你推荐的来」**（raised 2026-11-07, STEP-0583）。
+>   **Owner picks（按本修正案推荐）**：**C1 = (a)**（`max_hostcalls` 重释为 per-hostcall fuel cost）、
+>   **C2 = (a)**（Script 包 `max_memory_bytes ≥ SCRIPT_MEMORY_BYTES` 否则安装期 typed 拒绝）、
+>   **不变式 = 硬**（"不新增第二条上限路径"为硬约束，故 C1/C2 均 (a)）、
+>   **问题4 = I3 在两裁决之后接**、**问题5 = 冻结样例 + 3 测试由 agent 重基线**。
+>   本修正案此前只起草、不改行为；**accepted 后**另开实现 STEP 落地 C1/C2 + I3。
+>   实现前 gate 2/gate 4 保持 STEP-0578 留下的状态（hostcall 运行期强制 + 真实 Script 组件内存路径 **未达**）。
+> - date: 2026-11-07（accepted 2026-11-19）
 >   **This amendment drafts two contract fixes but does NOT implement anything and does
 >   NOT change behavior.** No option below is "decided" or "recommended-as-accepted";
 >   the owner picks, and only then is a separate implementation STEP opened.

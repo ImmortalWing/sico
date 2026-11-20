@@ -76,3 +76,30 @@ fn generate_tetris_vision_package() {
     fs::write(repository.join("pilots/tetris-vision/sico-lock.json"), lock).unwrap();
     println!("image_vision: {} bytes sha256={digest}", signed.len());
 }
+
+#[test]
+#[ignore = "explicit fixture generator: refreshes 案例项目/gui-converter artifacts"]
+fn generate_image_codec_package() {
+    let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let packages_dir = repository.join("案例项目/gui-converter/pkgs");
+    fs::create_dir_all(&packages_dir).unwrap();
+    let component = sico_codegen_wasm::package_builder::image_codec_package();
+    let unsigned = build_unsigned(BuildInput {
+        app_id: "pkg.image-codec".to_owned(),
+        app_version: "1.0.0".to_owned(),
+        component,
+        resources: Vec::new(),
+        source_effects: Vec::new(),
+        capabilities: Vec::new(),
+        limits: RuntimeLimits::default(),
+    })
+    .expect("image-codec package builds");
+    let signed = sign_development(&unsigned, &[7_u8; 32]).expect("signs");
+    let digest = format!("{:x}", Sha256::digest(signed.as_slice()));
+    fs::write(packages_dir.join("image_codec.sapp"), &signed).unwrap();
+    let lock = format!(
+        "{{\n  \"schema\": \"sico:source-lock:v0\",\n  \"packages\": [\n    {{\"name\":\"image_codec\",\"version\":1,\"path\":\"pkgs/image_codec.sapp\",\"sha256\":\"{digest}\"}}\n  ]\n}}\n"
+    );
+    fs::write(repository.join("案例项目/gui-converter/sico-lock.json"), lock).unwrap();
+    println!("image_codec: {} bytes sha256={digest}", signed.len());
+}

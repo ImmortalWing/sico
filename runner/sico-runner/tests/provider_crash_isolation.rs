@@ -367,10 +367,18 @@ fn assert_typed_failure(outcome: &RunOutcome) {
 #[test]
 fn resource_exhaustion_is_typed_and_host_stays_reusable() {
     let grow = grow_past_one_mib();
-    let budgets = fixture_budgets();
+    // A2 C2-a re-baseline: the frozen fixture's memory budget now sits at the
+    // Script floor (non-narrowing), so the resource-exhaustion probe narrows
+    // with an explicit sub-ceiling budget (1 MiB) — the property the floor
+    // makes unreachable on a real Script package but which still holds for a
+    // non-Script / sub-ceiling budget.
+    let budgets = Budgets {
+        max_memory_bytes: 1_048_576,
+        ..fixture_budgets()
+    };
     let host = runner();
 
-    // Under the frozen 1 MiB budget the grow past 1 MiB is denied → typed
+    // Under the 1 MiB budget the grow past 1 MiB is denied → typed
     // MemoryLimit (the resource-exhaustion class, consistent with the
     // narrowed limits of `run_program_with_budgets`).
     let outcome = host

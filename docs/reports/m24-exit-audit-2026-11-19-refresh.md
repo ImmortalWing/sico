@@ -17,17 +17,20 @@
 >
 > **EDR 阻塞已解除（复测确认）**：本刷新实跑时，GNU 工具链下 `windows-sys` 构建不再报
 > `os error 1006`（奇安信天擎 EDR 使 raw-dylib `kernel32.dll_imports.lib` 句柄失效的错误
-> 已消失）⇒ **EDR 不再是阻塞因**。但 GNU 构建**仍失败**，失败点变为
+> 已消失）⇒ **EDR 不再是阻塞因**。但 GNU 构建**仍失败**，失败点为
 > `error calling dlltool 'dlltool.exe': program not found`——本 host 的 GNU 工具链环境
 > **缺 `dlltool.exe`**（MSYS2/UCRT64 bin 未在 PATH），这是**环境缺件、与 EDR 无关**。
+> **进一步实测（根因下沉）**：rustup GNU 工具链的 `self-contained` 目录虽自带 `dlltool.exe`/`ld.exe`，
+> 但**全系统无 `as.exe`**（dlltool 生成 import lib 必需调用的 GNU 汇编器）——把 dlltool 加入 PATH 后，
+> 错误变为 dlltool 内部 `CreateProcess` 失败（找不到 `as.exe`）。补齐须**安装 MinGW binutils**（系统级安装 ⇒ owner-gated）。
 > MSVC 目标不生成 raw-dylib 导入库（直接链 Windows SDK `kernel32.lib`），故不受影响。
 >
 > 因此：**MSVC 证据是真实的本 host 执行证据**（测试真跑、窗口真建），足以支撑子项进展与残余登记，
-> 但**权威 GO 判定若严格要求 Windows GNU 独立证据，则须在补齐 GNU `dlltool.exe` 后于 GNU 复跑**。
+> 但**权威 GO 判定若严格要求 Windows GNU 独立证据，则须在安装 MinGW binutils（`as.exe`）后于 GNU 复跑**。
 > 本刷新**不据 MSVC 证据单独翻转任何 gate 到 GO**（与 §1「不以文档单独翻门」一致）。
 >
 > 证据等级：`internal-fixture`（本机 Windows x64 真实 runner/Wasmtime/窗口执行，语料为仓库内冻结集）；
-> **无 `clean-room-consumer` 证据**（gate-5 G6 转换器 pilot 应用**尚未编写**）；
+> **G6 转换器 pilot 已标 `clean-room-consumer`**（STEP-0635，PNG-only 切片，`docs/evidence/m24/g6-converter-pilot.json`）；
 > 无 `external-pilot`/`production` 声称。
 
 ## 1. 本审计与 v2 的关系
@@ -39,7 +42,7 @@
 | gate 2 provenance | NO-GO（C1/C2 + I3） | **NO-GO（C1/C2 owner + I3 依赖 C1/C2 语义，未单独推进）**；运行期五件套获 MSVC 新鲜证据 |
 | gate 3 roster | GO | **GO（再确认）**；registry 消费半部 11/11 MSVC 新鲜证据 |
 | gate 4 M17 审计 | NO-GO（E1 + gate2 残余） | **NO-GO（E1 + gate2 残余不变）** |
-| gate 5 转换器 pilot | NO-GO（E2 决定性 + G4/G5 在途 + G6 未达） | **NO-GO（E2 前提推翻但核心未重冻结；G6 应用未编写；§8.5 corpora 未绿）**；UI G1–G5 已证据 |
+| gate 5 转换器 pilot | NO-GO（E2 决定性 + G4/G5 在途 + G6 未达） | **NO-GO（PNG↔PNG 转换已通、§8.5 九组 corpus 全绿〔internal-fixture〕；仍差 JPEG↔PNG 双向 = E2 核心 re-pin owner 外部门**；UI G1–G5 已证据；G6 应用已编写并跑绿）** |
 | gate 6 证据标签 | GO | **GO（再确认）** |
 | gate 7 回归 | NO-GO（E4/E5 + I7） | **NO-GO（E4 CI + 干净候选 SHA + GNU；broad 回归 MSVC 绿）** |
 
@@ -94,15 +97,15 @@
 | 门文本要点 | 转换器应用以 Sico 编写、基于 Sico 原生 UI 库，在 Windows evidence host 运行；第一步增量 JPEG↔PNG 双向在冻结语料上字节稳定；§8.5 fail-closed corpora 全绿；无静默 fallback/无 native escape/无核心 compiler·Runtime 补丁 |
 | **裁决** | **NO-GO** |
 | 本刷新执行证据（MSVC，internal-fixture） | **UI 库积木 G1–G5 全部有执行证据**：`ui_authority` **7/7**（G1 真实窗口 + 授权边界）；`ui_guest_visible` **3/3**（G2 guest `run()` 呈现帧逐字节 = offscreen oracle、G3 guest 观测 `closed`、G5 客户级帧确定性）；`ui_source` **6/6**（**G4a** `poll=click:5` / `poll=select:6:2` typed 事件归因，STEP-0632）；renderer crate `frame_corpus` **5/5** + `layout_corpus` **6/6** + `event_corpus` **5/5** + lib **21**（G5 offscreen 帧确定性）。**G4b `select`**：按 owner 2026-11-07 裁决 RFC-0052-A3=A1 **收窄为 declared-but-not-produced**（合同缺口，非实现缺口，诚实收窄非翻门）。**E2 JPEG codec**：`jpeg-decoder 0.3.2`/`jpeg-encoder 0.7.1` 离线可得，`image-codec` 原生往返测试 `tiny_420_jpeg_round_trip_is_not_oversized` **1/1 绿** ⇒ **E2「离线不可得」前提推翻，门可合法关闭** |
-| 具名残余 | ① **G6 转换器 pilot 应用本体未编写**（clean-room-consumer 级；`sico.ui.*` host 调用 + 消费 `image-codec` M7 包 + JPEG↔PNG 双向）；② **image-codec 核心 `.wasm` 未重冻结**——committed `image-codec-core.wasm`（sha `28917071…`，PNG-only）≠ 含 JPEG 源码重建（sha `cc47a3ea…`），`validate-package-core.ps1` 判 `NOT-reproducible`；须**刻意 re-pin**（更新 `.wasm` + `.sha256`，ADR-0019 digest-pinned，owner 协调，因系冻结工件）；③ **§8.5 转换器级 fail-closed corpora 未整体绿**（cancellation-mid-conversion / save-path-failure / batch 采样）；④ 文件对话框后端已落地（RFC-0055 picker，`picker_source` 测试在树）但与转换器应用的端到端接线未做 |
-| 关闭条件 | ② re-freeze（owner 协调）→ ① 编写 G6 应用 + ④ 端到端接线 + ③ §8.5 corpora 全绿 → 在 Windows host 运行 + 字节稳定。**G6 与 re-freeze 未达前 gate 5 不能翻 GO** |
+| 具名残余 | ① **GUI 转换器应用已编写并跑绿 PNG↔PNG 转换**（**PRJ-0001** `案例项目/gui-converter/`〔原 `pilots/g6-converter/`，依 owner 2026-11-19 治理政策迁为外部应用项目、不占 M/STEP 序列〕，`clean-room-consumer`，`converter.sico` + `runner/sico-runner/tests/g6_converter_pilot.rs` **16/16 绿**；Convert = `picker.open → fs.read → decode_png → sico.bytes.le_u64(取宽高) → image_codec.encode_png → fs.write`，真实写出字节稳定 PNG；**RFC-0057 已 accepted（owner 2026-11-19）并落地**——`sico.bytes.le_u64`/`sico.conv.u64_from_i64` 经 Rust-oracle 路径实现〔`sico-semantics`/`sico-ir`/`sico-codegen-wasm`，guard 数据段使既有 `*_byte_exactly` pin 字节不变；未触碰 `selfhost/*`〕）；② **image-codec 核心 `.wasm` 未重冻结**——committed `image-codec-core.wasm`（sha `28917071…`，PNG-only）≠ 含 JPEG 源码重建（sha `cc47a3ea…`），`validate-package-core.ps1` 判 `NOT-reproducible`；须**刻意 re-pin**（更新 `.wasm` + `.sha256`，ADR-0019 digest-pinned，owner 协调）⇒ **JPEG↔PNG 双向仍外部门 E2**；③ **§8.5 转换器级 fail-closed corpora 九组全绿**（bad-signature/truncated/trailing-data/oversized/unsupported-profile×3/cancellation/save-path-failure/byte-stable repeat/batch 采样；RFC-0057 落地后 save-path/byte-stable/batch 三组由 blocked 转绿——唯 unsupported-profile 的 **JPEG-profile 半边**仍待 E2）；④ 文件对话框后端已落地（RFC-0055 picker）且已与转换器应用端到端接线（STEP-0635） |
+| 关闭条件 | gate 5 翻 GO 唯一残余 = **E2：image-codec 核心 re-pin 含 JPEG（owner 协调 ADR-0019）+ JPEG↔PNG 双向跑通 + unsupported-profile 的 JPEG-profile 半边 corpus**。PNG↔PNG 半边（RFC-0057 + G6 应用 + §8.5 PNG corpora）已全部执行证据绿。**E2 未关前 gate 5 不能翻 GO**（PNG-only 不计 gate-5 GO，符合判据） |
 
 ### gate 6 — 证据标签分离（§3 行 71–74）——**GO（纪律保持，再确认）**
 
 | 项 | 内容 |
 |---|---|
 | **裁决** | **GO（纪律保持）** |
-| 支撑 | 全部 M17/provenance/roster/UI 证据均标 `internal-fixture`（各 STEP header + `docs/evidence/m24/*.json` 的 `class`/`evidence-class` 字段）；**无 clean-room-consumer 证据可标**（G6 pilot 未编写，无混标风险）；无 external-pilot/production 声称 |
+| 支撑 | 全部 M17/provenance/roster/UI 证据均标 `internal-fixture`（各 STEP header + `docs/evidence/m24/*.json` 的 `class`/`evidence-class` 字段）；**G6 pilot 已标 `clean-room-consumer`**（STEP-0635 `docs/evidence/m24/g6-converter-pilot.json` `class: clean-room-consumer`，与 internal-fixture 不混标）；无 external-pilot/production 声称 |
 | 关闭条件 | G6 pilot 落地时须以 `clean-room-consumer` 标 pilot 应用，不得与 internal-fixture 混标 |
 
 ### gate 7 — 回归绿 + 显式分项裁决（§3 行 75–79）——**NO-GO（E4 + 干净候选 SHA + GNU）**
@@ -111,9 +114,9 @@
 |---|---|
 | 门文本要点 | M0–M22 + 已落地 M23 变更在 M24 审计 revision 回归绿；对 M17 gate 2、gate 4/roster、原生 UI 库、转换器 pilot、M18 组合项增补给出显式分项裁决 |
 | **裁决** | **NO-GO** |
-| 本刷新执行证据（MSVC） | **broad 回归绿**：runner `--lib` **48/48**；`sico-package` **51/51**；M24 聚焦套件（§3）。**selfhost_compiler（M22 自举回归）= 红**：本刷新实跑完成，**多个测试 FAILED**（含 `every_match_site_is_measured_on_the_component_axis`、`sico_codegen_guest_*_byte_exactly` 系、`sico_codegen_guest_pins_the_t1_family_truth_table`、`sico_codegen_guest_refuses_*`、`oracle_host_call_in_a_straight_line_body_truth_is_pinned`）——**非本审计引入**（本审计零源码改动，未触碰 `selfhost/*.sico`/`codegen-wasm`；红源于并发 M22 codegen/emitter-vocabulary 改动 + STEP-0627 已登记的 HEAD 预存红 `every_match_site...`）⇒ **M22 自举回归在本 host 当前为红，gate 7「M0–M22 回归绿」不满足**（reinforce NO-GO）。**显式分项裁决（本审计交付）**：M17 gate 2 = NO-GO（E1）；M17 gate 4/roster = gate 2 NO-GO / gate 3 GO；原生 UI 库 = G1–G5 证据（G6 未达）；转换器 pilot = NO-GO（G6 未编写）；M18 组合项 = 按 STEP-0258 重定为 GUI 格式转换器，随 gate 5 |
-| 具名残余 | ① **E4** 独立 CI 未取得（`dev`/`m24` 触发面 + owner 手动 dispatch 绑定精确 SHA）；② **干净候选 SHA**：本刷新证据基于 `m24` 分支 checkpoint commit `94ea1fa`（已 push origin），但全量回归未在该 SHA 上于 GNU 复跑；③ **GNU 工具链**：见 §0 工具链诚实声明，EDR 阻塞 GNU，权威 GO 需 GNU 复跑 |
-| 关闭条件 | 补齐 GNU `dlltool.exe`（EDR 已解除）→ 在干净候选 SHA 上于 GNU 跑 M0–M22 全量 + selfhost（并先收口 M22 match-site ledger `sites.len()==406` 断言与 `corpus-parity-v0.json` 的计数不一致，见下）→ owner dispatch 独立 CI success → 新七门复审 |
+| 本刷新执行证据（MSVC） | **broad 回归绿**：runner `--lib` **48/48**；`sico-package` **51/51**；renderer-d2d **37/37**（lib21+frame5+layout6+event5）；M24 聚焦套件全绿（§3）。**selfhost_compiler（M22 自举回归）= 红，精确计数 56 FAILED / 136 passed / 6 ignored（共 198）**：**经根因诊断，全部 56 个失败均为 HEAD（`1ba452d`）预存红，与并发 M22 未提交改动无关**（那些改动字节中性或不被套件读取）。**真因 = `94ea1fa` M24 checkpoint 使 Rust oracle 相对冻结 pin 漂移**：①~50 个 `sico_compiler_lowers_*`/`sico_codegen_*_byte_exactly` 差分失败（pinned oracle IR/组件尺寸过期，实测 left/right 差恒为 +54，如 `3807/3753`、`2349/2295`）＋②5 个 refusal-identity 漂移（guest 现报前端 `ERR:E-SH-IR-*` 而非期望的 codegen-subset identity）＋③1 个 `every_match_site_is_measured_on_the_component_axis`（25 个 `closure-too-large` 站点，STEP-0627 B2 面，HEAD 预存）。**订正本审计早前归因**：红非「并发 codegen/emitter-vocabulary 改动」所致，而是 checkpoint 的 guest↔oracle 漂移；收口须重钉 oracle 期望尺寸/identity（触碰 Rust oracle，AGENTS §10.2 禁代理自改 ⇒ owner-gated）。⇒ **M22 自举回归红，gate 7「M0–M22 回归绿」不满足**（reinforce NO-GO）。**显式分项裁决（本审计交付）**：M17 gate 2 = NO-GO（E1）；M17 gate 4/roster = gate 2 NO-GO / gate 3 GO；原生 UI 库 = G1–G5 证据 + G6 应用已写 PNG-only（STEP-0635）；转换器 pilot = NO-GO（G6 应用已写但 PNG↔PNG 转换因 v0 语言缺口未通，JPEG↔PNG 未达）；M18 组合项 = 按 STEP-0258 重定为 GUI 格式转换器，随 gate 5 |
+| 具名残余 | ① **E4** 独立 CI 未取得（`dev`/`m24` 触发面 + owner 手动 dispatch 绑定精确 SHA）；② **干净候选 SHA**：本刷新证据基于 `dev` HEAD `1ba452d`（STEP-0634 审计提交），全量回归未于 GNU 复跑；③ **GNU 工具链缺 binutils**：见 §0 工具链诚实声明——EDR 已解除，但 GNU 现卡在**系统无 `as.exe`**（dlltool 生成 import lib 必需的 GNU 汇编器，rustup GNU 工具链 self-contained 只带 dlltool/ld、不带 as，全系统不存在；补齐须安装 MinGW binutils，**系统级安装 ⇒ owner-gated**）；④ **M22 selfhost 56 红**：HEAD 预存（oracle 漂移 + closure-too-large），收口须重钉 oracle 期望值（触碰 Rust oracle ⇒ owner-gated） |
+| 关闭条件 | ③补齐 MinGW binutils（`as.exe`）→ 在干净候选 SHA 上于 GNU 跑 M0–M22 全量 + selfhost；④重钉 oracle 期望尺寸/identity 收口 56 红（owner 授权触 oracle）；①owner dispatch 独立 CI success → 新七门复审。**订正**：早前「`sites.len()==406` 断言与 corpus-parity 计数不一致」系误记——406 断言本身通过（406==406），失败在 25 个 `closure-too-large` 站点；406(match-sites)/162(corpus-parity-checked)/342(emitter-vocab) 是三个不同轴、本不应相等 |
 
 ## 3. 本刷新执行证据表（2026-11-19，本机 MSVC 实跑）
 

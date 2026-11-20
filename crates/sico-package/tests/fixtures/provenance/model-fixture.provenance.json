@@ -12,7 +12,7 @@
       "generator": "hand-authored fixture"
     },
     "budgets": {
-      "max_memory_bytes": 1048576,
+      "max_memory_bytes": 2214592512,
       "max_wall_ms": 5000,
       "max_hostcalls": 100000
     },

@@ -1,0 +1,67 @@
+{
+  "schema": "sico.m24.g6-converter-pilot.v0",
+  "class": "clean-room-consumer",
+  "step": "STEP-0635 (pilot authored) + STEP-0637 (RFC-0057 landed, re-encode unlocked)",
+  "case-project": {
+    "id": "PRJ-0001",
+    "path": "案例项目/gui-converter/",
+    "governance": "owner 2026-11-19 policy: GUI converter is an external application; uses 案例项目/<name>/ + PRJ-xxxx, not the M/STEP shared sequence",
+    "migrated-from": "pilots/g6-converter/ (2026-11-19, owner directive)"
+  },
+  "pilot": {
+    "name": "Sico GUI PNG converter",
+    "source": "案例项目/gui-converter/converter.sico",
+    "compiler-profile": "script-v0",
+    "runner-test": "runner/sico-runner/tests/g6_converter_pilot.rs",
+    "package": {
+      "name": "image_codec",
+      "identity": "sico:user/image-codec@1.0.0",
+      "lock": "案例项目/gui-converter/sico-lock.json",
+      "sapp": "案例项目/gui-converter/pkgs/image_codec.sapp",
+      "sha256": "9ba7c2f0e25e3f5e56e040f0c20dc0a35c25913c71e520820dc921eb7093156c"
+    },
+    "ui-surface": "sico:script/ui@1.0.0 (13-func host provider, RFC-0052 A1)",
+    "picker-surface": "sico:script/path-picker@1.0.0 (RFC-0055)",
+    "fs-surface": "sico:script/fs-read@0.1.0 / fs-write@0.1.0"
+  },
+  "convert-flow": {
+    "action": "click(Convert) -> picker.open -> fs.read -> image_codec.decode_png",
+    "on-decode-ok": "sico.bytes.le_u64 reads the width/height from the 16-byte LE u64 header -> image_codec.encode_png -> fs.write (write only after successful encode)",
+    "on-decode-error": "typed status Text (decode: <case-name>)",
+    "on-cancel": "typed status 'cancelled' (empty ok picker path, STEP-0557 flattening)",
+    "writes": "a real, byte-stable PNG file on the success path; no partial file on any failure/cancel path"
+  },
+  "fail-closed-corpora": {
+    "definition": "docs/plans/M24-vision-closure-gui-application-pilot.md §8.5",
+    "green": [
+      "bad signature (decode: bad-signature)",
+      "truncated file (decode: truncated)",
+      "trailing data (decode: trailing-data)",
+      "oversized dimensions limit+1 (decode: oversized)",
+      "unsupported color type / depth-16 / interlaced (decode: unsupported-profile x3, PNG color-type half)",
+      "cancellation mid-conversion (typed, no partial output)",
+      "save-path failure (root escape / unwritable -> typed status, no partial file)",
+      "byte-stable repeat conversion (two runs -> byte-identical PNG)",
+      "long-run batch sampling at declared intervals (terminates typed every case)"
+    ],
+    "blocked": [
+      "unsupported-profile: JPEG-profile half (needs the JPEG codec, E2)"
+    ],
+    "blocked-reason": "the JPEG-profile half of unsupported-profile needs the JPEG codec, which is not in the committed image-codec core (E2 external door)"
+  },
+  "honest-scope": {
+    "evidence-class": "clean-room-consumer (real Sico source compiled + run end to end; no internal-fixture mixing)",
+    "covered-here": "PNG->PNG convert flow driven from a sico.ui click, typed statuses end to end, real byte-stable PNG output, no trap, no hang, no silent fallback",
+    "re-encode-unlocked-by": "RFC-0057 (accepted owner 2026-11-19) landed in STEP-0637: sico.bytes.le_u64 + sico.conv.u64_from_i64 close the measured v0 gap (no bytes->U64 reader / no I64->U64 cast)",
+    "ui-residuals": [
+      "window is created hidden; clicks are host-injected coordinates, not real mouse (docs/user-guide/NATIVE-UI.md)",
+      "select events are declared-but-not-produced on the real host surface (RFC-0052-A3=A1 narrowing)"
+    ],
+    "picker-residual": "native Win32 dialog is a named residual (RFC-0055 §7); the deterministic ScriptedPicker exercises the same guest logic",
+    "deferred": [
+      "JPEG decode/encode + JPEG<->PNG both directions (M24 #3 / E2, named external deferral)",
+      "image-codec core .wasm re-freeze to the JPEG-inclusive build (sha 28917071... -> cc47a3ea..., ADR-0019 digest-pinned, owner-coordinated)"
+    ],
+    "not-claimed": "no M24 §3 gate flip from this project alone; gate 5 stays NO-GO pending E2 (JPEG<->PNG both directions + codec core re-pin + unsupported-profile JPEG-profile half)"
+  }
+}

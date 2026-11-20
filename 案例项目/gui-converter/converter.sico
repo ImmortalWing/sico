@@ -1,0 +1,246 @@
+record ScriptInput:
+  field arguments: List[Text]
+  field stdin: Bytes
+end record
+
+record ScriptOutput:
+  field stdout: Bytes
+  field stderr: Bytes
+  field exit_code: I64
+end record
+
+enum ScriptErrorCode:
+  case InvalidInput
+  case ResourceLimit
+  case DomainError
+  case Cancelled
+end enum
+
+record ScriptError:
+  field code: ScriptErrorCode
+  field message: Text
+end record
+
+/// RFC-0056 D5: the host-surface event enum, pinned shape (name/order/
+/// payload types). Referenced by `sico.ui.poll_event`'s typed signature;
+/// semantics validates it against the pin (E2028 on mismatch).
+enum ui_event:
+  case click(id: U64)
+  case select(handle: U64, index: U64)
+  case closed
+end enum
+
+/// M24 #5 `sico:user/image-codec@1` consumer face (RFC-0050 as amended by A1).
+/// The pilot imports the same package interface the digest-pinned core
+/// exposes: `decode-png(Bytes) -> Result[Bytes, Text]` (16-byte little-endian
+/// u64 width/height header + RFC-0041 BGRA8 pixels) and
+/// `encode-png(Bytes, U64, U64) -> Result[Bytes, Text]`.
+interface ImageCodec version 1:
+  function decode_png(data: Bytes) returns Result[Bytes, Text]
+  function encode_png(data: Bytes, width: U64, height: U64) returns Result[Bytes, Text]
+end interface
+
+use pkg image_codec version 1 expose ImageCodec
+
+/// The node handles the pilot keeps to drive the running window. `status` is
+/// the single-line status text, `convert` the Convert button, `progress` the
+/// indeterminate progress bar and `preview` the (unused in this slice) image
+/// preview surface.
+record UiHandles:
+  field status: U64
+  field convert: U64
+  field progress: U64
+  field preview: U64
+end record
+
+/// M24 G6: the clean-room-consumer GUI PNG converter pilot (PNG-only slice).
+///
+/// This is the §8.5 fail-closed consumer: every step of the Convert action
+/// (`picker.open` -> `fs.read` -> `image_codec.decode_png` ->
+/// `sico.bytes.le_u64` header -> `sico.bytes.slice` pixels ->
+/// `image_codec.encode_png` -> `fs.write`) surfaces a typed status Text,
+/// never a trap, a hang, a partial write or a silent fallback.
+///
+/// RFC-0057 (batch 5) closed the v0 gap: the 16-byte LE u64 width/height
+/// header is read by `sico.bytes.le_u64` (Result[U64, Text]) and re-fed to
+/// `encode-png` (which demands U64) directly — no hand-rolled byte assembly,
+/// no I64 view, no hidden fallback. The re-encode now writes a real file.
+///
+/// The event loop is bounded (`POLL_BOUND` empty polls) so an automated run
+/// terminates; a real interactive session would loop until the window closes.
+function main(input: ScriptInput) returns Result[ScriptOutput, ScriptError]:
+  match build_tree():
+    case ok(handles):
+      let status = "ready"
+      set status = report_status(handles, status)
+      let polls = U64.literal(0)
+      while U64.less_than(polls, POLL_BOUND()):
+        match sico.ui.poll_event():
+          case some(ev):
+            match ev:
+              case ui_event.click(id):
+                if U64.equal(id, handles.convert):
+                  let result = do_convert(handles)
+                  set status = report_status(handles, result)
+                end if
+              case ui_event.select(h, i):
+                set status = report_status(handles, "select unsupported in this pilot")
+              case ui_event.closed:
+                break
+            end match
+          case none:
+        end match
+        set polls = next_poll(polls)
+      end while
+      return ok(ScriptOutput(stdout: sico.text.encode(status), stderr: sico.text.encode(""), exit_code: I64.literal(0)))
+    case error(name):
+      return fail(sico.text.concat("build_tree: ", name))
+  end match
+end function
+
+/// The bounded poll count: an automated run terminates after this many empty
+/// polls even when no window ever closes (the real-backend evidence path).
+function POLL_BOUND() returns U64:
+  return U64.literal(8)
+end function
+
+/// One Convert action, fully typed. Reads the decode payload's 16-byte LE
+/// u64 width/height header via `sico.bytes.le_u64` (RFC-0057) and hands the
+/// U64 dimensions to the re-encode step.
+function do_convert(handles: UiHandles) returns Text:
+  match sico.picker.open("Open PNG image", sico.text.split_words("*.png")):
+    case ok(path):
+      if U64.equal(sico.text.length(path), U64.literal(0)):
+        return "cancelled"
+      end if
+      match sico.fs.read(path):
+        case ok(bytes):
+          match image_codec.decode_png(bytes):
+            case ok(decoded):
+              match sico.bytes.le_u64(decoded, U64.literal(0)):
+                case ok(w):
+                  match sico.bytes.le_u64(decoded, U64.literal(8)):
+                    case ok(h):
+                      return re_encode(handles, decoded, w, h)
+                    case error(name):
+                      return sico.text.concat("header: ", name)
+                  end match
+                case error(name):
+                  return sico.text.concat("header: ", name)
+              end match
+            case error(name):
+              return sico.text.concat("decode: ", name)
+          end match
+        case error(name):
+          return sico.text.concat("read: ", name)
+      end match
+    case error(name):
+      return sico.text.concat("open: ", name)
+  end match
+end function
+
+/// After a successful decode: offer the save path, slice the pixel payload
+/// off the 16-byte LE header, re-encode and write the file. Every step is a
+/// typed `Result`; no path traps, hangs or silently falls back.
+function re_encode(handles: UiHandles, decoded: Bytes, w: U64, h: U64) returns Text:
+  match sico.picker.save("Save re-encoded PNG", "re-encoded.png", sico.text.split_words("*.png")):
+    case ok(save_path):
+      if U64.equal(sico.text.length(save_path), U64.literal(0)):
+        return "cancelled"
+      end if
+      match sico.bytes.slice(decoded, U64.literal(16), pixel_length(decoded)):
+        case ok(pixels):
+          match image_codec.encode_png(pixels, w, h):
+            case ok(encoded):
+              match sico.fs.write(save_path, encoded):
+                case ok(_):
+                  return sico.text.concat("re-encoded ", sico.text.concat(sico.u64.to_text(w), sico.text.concat("x", sico.u64.to_text(h))))
+                case error(name):
+                  return sico.text.concat("write: ", name)
+              end match
+            case error(name):
+              return sico.text.concat("encode: ", name)
+          end match
+        case error(_):
+          return "pixels: out-of-range"
+      end match
+    case error(name):
+      return sico.text.concat("save: ", name)
+  end match
+end function
+
+/// The pixel payload length: total decoded bytes minus the 16-byte LE header.
+/// Fail-closed: an underflow (decode returned fewer than 16 bytes) is 0.
+function pixel_length(decoded: Bytes) returns U64:
+  let total = sico.bytes.length(decoded)
+  match U64.checked_sub(total, U64.literal(16)):
+    case ok(len):
+      return len
+    case error(_):
+      return U64.literal(0)
+  end match
+end function
+
+/// Builds the window tree. Every step is a typed `Result[U64, Text]`; the
+/// first refusal surfaces as the function's error Text.
+function build_tree() returns Result[UiHandles, Text]:
+  match sico.ui.window("Sico PNG Converter", I64.literal(640), I64.literal(480)):
+    case ok(window):
+      match sico.ui.column(window):
+        case ok(column):
+          match sico.ui.text(column, "ready"):
+            case ok(status):
+              match sico.ui.button(column, "Convert"):
+                case ok(convert):
+                  match sico.ui.progress(column):
+                    case ok(progress):
+                      match sico.ui.image_preview(column, U64.literal(256), U64.literal(256)):
+                        case ok(preview):
+                          return ok(UiHandles(status: status, convert: convert, progress: progress, preview: preview))
+                        case error(name):
+                          return error(name)
+                      end match
+                    case error(name):
+                      return error(name)
+                  end match
+                case error(name):
+                  return error(name)
+              end match
+            case error(name):
+              return error(name)
+          end match
+        case error(name):
+          return error(name)
+      end match
+    case error(name):
+      return error(name)
+  end match
+end function
+
+/// Sets the single-line status text and returns the (possibly replaced)
+/// status. A `set_text` failure is itself typed and replaces the message.
+function report_status(handles: UiHandles, message: Text) returns Text:
+  match sico.ui.set_text(handles.status, message):
+    case ok(_):
+      return message
+    case error(name):
+      return sico.text.concat("set_text: ", name)
+  end match
+end function
+
+/// The next poll counter (bounded; overflow clamps to the bound).
+function next_poll(polls: U64) returns U64:
+  match U64.checked_add(polls, U64.literal(1)):
+    case ok(next):
+      return next
+    case error(_):
+      return U64.literal(8)
+  end match
+end function
+
+function fail(message: Text) returns Result[ScriptOutput, ScriptError]:
+  // The pilot convention (board-reader.sico): a typed failure surfaces as an
+  // ok script-output with a non-zero exit code, never as a guest error result
+  // (which the runner treats as a launch/compatibility failure).
+  return ok(ScriptOutput(stdout: sico.text.encode(message), stderr: sico.text.encode(""), exit_code: I64.literal(1)))
+end function

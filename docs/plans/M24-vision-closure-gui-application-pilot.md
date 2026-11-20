@@ -45,10 +45,18 @@ application pilot.
 
 ## 3. Exit gates
 
-1. M17 gate 2: accelerator provider ADR accepted; on at least one
-   Windows host, accelerated and reference implementations agree within
-   the declared tolerance on the frozen corpus; provider crash/resource
-   exhaustion isolated and fail-closed.
+1. **Scope-out (owner 2026-11-19)**: M17 gate 2, the accelerator
+   provider path, is OUT OF SCOPE for this milestone. The owner
+   adjudicated (2026-11-19) that this M17/M24 cycle does NOT commit to a
+   hardware-accelerated model-inference capability; the accelerator is
+   deferred to the native-UI add-on external project (`案例项目/` +
+   `PRJ`, outside the repo) and is NOT an M24 exit gate. Measured fact:
+   the host does have an NVIDIA RTX 2060, but Sico ships no accelerator
+   provider (no ADR, no tolerance table, no crash injection); building
+   one is a separate multi-STEP feature owned by the add-on project.
+   No accelerated-parity or M17-gate-2 GO is claimed. M17's
+   deterministic-vision core (gate 3 roster) does not require an
+   accelerator and is unaffected.
 2. M17 gate 4: model RFC accepted; a model-consuming path (may be a
    fixture model) demonstrates digest-verified load, budget enforcement
    (limit+1 typed), cancellation mid-inference, malicious-asset
@@ -58,13 +66,20 @@ application pilot.
    registry path without compiler/Runtime changes.
 4. Explicit M17 audit: GO only if all required gates have executed evidence;
    otherwise retain overall NO-GO with a named residual register.
-5. GUI format-converter pilot (portfolio item 4, re-designated
-   2026-09-22): the converter application authored in Sico over the
-   Sico-language native UI library runs on the Windows evidence host;
-   the first increment converts images between JPEG and PNG in both
-   directions on a frozen corpus with byte-stable outputs; the §8.5
-   fail-closed corpora are green; no silent fallback, no native escape,
-   no core compiler/Runtime patches.
+5. Native UI library mechanism (re-designated 2026-11-19; was the GUI
+   format-converter pilot): the Sico-language native UI library
+   (`sico:script/ui@1`) mechanism itself — OS window shell + event pump +
+   runner wiring — demonstrated at guest level: a guest creates a real OS
+   window (G1), presents a frame it observes byte-identically (G2),
+   receives the `closed` event (G3), receives a click routed to a node
+   handle (G4), renders the same tree to N byte-identical frames across
+   processes (G5), and a clean-room-consumer guest UI capability builds and
+   runs against a real window (G6). No silent fallback, no native escape,
+   no core compiler/Runtime patches. The GUI format converter is governed
+   as an external project (`案例项目/gui-converter/`, PRJ-0001) per the
+   2026-11-19 owner governance directive and is NOT an M24 exit gate; the
+   former converter JPEG↔PNG requirement (and its #3 JPEG external door
+   E2) is withdrawn from this milestone.
 6. Evidence labels stay distinct: `internal-fixture` for M17 corpora
    and refusal fixtures, `clean-room-consumer` for the pilot
    application; any external observation stays owner-gated and is not
@@ -185,6 +200,17 @@ capability contract.
 
 ### 8.4 Format-converter pilot — work package (re-designated 2026-09-22)
 
+> **Governance note (owner 2026-11-19):** the GUI format converter is now an
+> **external project** (`案例项目/gui-converter/`, PRJ-0001, outside the repo),
+> per the 2026-11-19 owner governance directive. It is **no longer an M24 §3
+> exit gate** and does not gate M25. §3 gate 5 was re-designated to the
+> **native UI library mechanism** (see §3 gate 5). The converter JPEG↔PNG
+> requirement and its #3 JPEG external door (E2) are **withdrawn from M24**.
+> The `image-codec@1` PNG half (STEP-0331) remains valid language-core/package
+> work; the JPEG half is an external-project concern, not an M24 residual.
+> This §8.4 work package is retained below as historical contract record for
+> the external project.
+
 Supersedes the deleted block-game loop mapping (former §8.4, deleted by
 owner directive). The pilot is a first-party GUI format converter; the
 work package maps each concern to its contract home:
@@ -218,6 +244,15 @@ work package maps each concern to its contract home:
   settings frozen by the corpus).
 
 ### 8.5 Format-converter evidence contract (fail-closed corpora, enumerated once)
+
+> **Governance note (owner 2026-11-19):** this corpora contract now belongs to
+> the **external project** (`案例项目/gui-converter/`, PRJ-0001), not to an M24
+> exit gate. It is retained as the external project's evidence contract; it is
+> **not** an M24 §3 gate-5 criterion. The nine enumerated cases below were
+> exercised by `runner/sico-runner/tests/g6_converter_pilot.rs` (16/16 green,
+> PNG↔PNG) as `clean-room-consumer` evidence for the external project; the
+> JPEG-profile half and JPEG↔PNG both-directions are external-project concerns
+> (former E2), **withdrawn from M24**.
 
 Supersedes the deleted block-game error-injection corpus (former §8.5).
 Enumerated once so the exit audit can check it line by line, all typed:

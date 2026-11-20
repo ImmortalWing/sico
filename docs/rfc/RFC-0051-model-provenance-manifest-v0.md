@@ -29,9 +29,14 @@ asset:
     created: Text                 // ISO-8601 date
     generator: Text               // tool/family that produced it ("hand-authored fixture" for v0)
   budgets:                        // all enforced by typed refusal, all required
-    max_memory_bytes: U64
+    max_memory_bytes: U64        // byte ceiling; for a Script package the
+                                 // admissible range is [SCRIPT_MEMORY_BYTES,
+                                 // package.memory_bytes] (A2 C2-a floor: a
+                                 // budget below the declared Script component
+                                 // memory is unsatisfiable, not tighter)
     max_wall_ms: U64
-    max_hostcalls: U64
+    max_hostcalls: U64           // per-hostcall fuel cost in Wasm fuel units
+                                 // (A2 C1-a: a per-call rate, not a call count)
   interface: Text                 // the package function names that may load this asset
 ```
 
@@ -50,7 +55,8 @@ On the frozen fixture corpus, through the real runner:
 2. bad digest / truncated payload / oversized payload (+1 over `size`)
    each produce their single typed refusal, no partial load;
 3. budget enforcement: a run exceeding any declared budget gets the
-   typed limit refusal (hostcall-count and wall-time brackets included);
+   typed limit refusal (per-hostcall fuel-cost and wall-time brackets
+   included);
 4. cancellation mid-inference: typed outcome, no orphaned work (no
    partial writes, no leaked Host-side state);
 5. malicious-asset probes: signature-confused bytes, manifest/payload

@@ -20,10 +20,11 @@
 //!    `run_program_with_budgets` → the narrowed ceiling is enforced.
 //!
 //! Guests are hand-built minimal core modules (wasm-encoder) wrapped in the
-//! frozen Program Component shell — the runner accepts a small declared
-//! memory, which is what makes the 1 MiB fixture budget enforceable (a real
-//! Sico Script component declares ~2 GiB and is a separate, documented
-//! contract note; see STEP-0578 §Contract-gaps).
+//! frozen Program Component shell. The frozen fixture budget's memory ceiling
+//! was re-baselined to the Script memory floor (2,214,592,512 B) by RFC-0051
+//! Amendment A2 C2-a, so the memory-narrowing outcome is exercised with an
+//! explicit sub-ceiling budget (a Script package's budget can never narrow
+//! below the floor; the floor is the admissible lower edge).
 //!
 //! Evidence level: `internal-fixture` (frozen fixture + hand-built guests, no
 //! clean-room consumer, no external pilot).
@@ -33,8 +34,9 @@ use std::time::Duration;
 use sico_package::provenance::{Budgets, ProvenanceManifest};
 use sico_runner::{CancelToken, FsGrants, RunOutcome, Runner, RunnerLimits, ScriptInput};
 
-/// The frozen provenance manifest of the 256-byte fixture model (budget
-/// 1 MiB / 5000 ms / 100000 hostcalls), committed in `sico-package`.
+/// The frozen provenance manifest of the 256-byte fixture model (budget at the
+/// Script memory floor, 2,214,592,512 B / 5000 ms / 100000 per-hostcall fuel),
+/// committed in `sico-package`.
 const MODEL_MANIFEST: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../crates/sico-package/tests/fixtures/provenance/model-fixture.provenance.json"
@@ -183,7 +185,7 @@ fn narrowed_by_maps_the_frozen_budget_and_never_widens() {
     // the existing limit kinds and the result can only be ≤ the base limits.
     let budgets = fixture_budgets();
     let narrowed = limits().narrowed_by(&budgets);
-    assert_eq!(narrowed.memory_bytes, 1_048_576);
+    assert_eq!(narrowed.memory_bytes, 2_214_592_512);
     assert_eq!(narrowed.timeout, Duration::from_millis(5_000));
     assert_eq!(narrowed.hostcall_fuel, 100_000);
     // The deterministic wasm fuel bound is deliberately untouched (the budget
@@ -205,10 +207,18 @@ fn narrowed_by_maps_the_frozen_budget_and_never_widens() {
 #[test]
 fn memory_budget_is_enforced_and_host_stays_reusable() {
     let guest = minimal_guest(GuestMode::GrowPastOneMiB);
-    let budgets = fixture_budgets();
+    // A2 C2-a re-baseline: the frozen fixture's memory budget now sits at the
+    // Script floor (non-narrowing), so this test exercises memory narrowing
+    // with an explicit sub-ceiling budget (1 MiB) — the property the floor
+    // makes unreachable on a real Script package but which still holds for a
+    // non-Script / sub-ceiling budget.
+    let budgets = Budgets {
+        max_memory_bytes: 1_048_576,
+        ..fixture_budgets()
+    };
     let host = runner();
 
-    // Under the frozen 1 MiB budget the grow past 1 MiB is denied → typed
+    // Under the 1 MiB budget the grow past 1 MiB is denied → typed
     // MemoryLimit (a launch-failure would be an opaque leak; a clean typed
     // outcome is the property under test).
     let outcome = host
@@ -323,9 +333,17 @@ fn explicit_mid_flight_cancel_is_a_typed_cancellation() {
 #[test]
 fn package_budget_reaches_the_runner_end_to_end() {
     // The full chain: a Script package carrying the frozen fixture + manifest
-    // installs, its provenance budget is extracted via the mount point, and
-    // the runner enforces the narrowed memory ceiling on the package's own
-    // component.
+    // installs (A2 C2-a: the re-baselined budget sits exactly at the Script
+    // memory floor, so both the floor and the subset check hold at equality),
+    // its provenance budget is extracted via the mount point, and the runner
+    // applies it to the package's own component.
+    //
+    // The memory budget is now non-narrowing (== the Script floor == the
+    // package ceiling), so the grow past 1 MiB the guest performs succeeds and
+    // the guest's own `unreachable` traps — the honest outcome under a
+    // non-narrowing budget. The *narrowing* property is covered separately by
+    // `memory_budget_is_enforced_and_host_stays_reusable`, which uses a
+    // sub-ceiling budget the floor makes unreachable on a real Script package.
     use sico_package::{
         BuildScriptInput, ResourceInput, build_script_v1, script_profile_limits, verify,
     };
@@ -355,7 +373,7 @@ fn package_budget_reaches_the_runner_end_to_end() {
     })
     .expect("the fixture Script package builds");
 
-    let verified = verify(&package).expect("the package installs (budget ⊆ ceiling)");
+    let verified = verify(&package).expect("the package installs (budget ⊆ ceiling, at the floor)");
     let budgets = verified
         .provenance_budgets()
         .expect("mount point resolves")
@@ -371,5 +389,8 @@ fn package_budget_reaches_the_runner_end_to_end() {
             &FsGrants::default(),
         )
         .expect("input bounds are valid");
-    assert_eq!(outcome, RunOutcome::MemoryLimit, "{outcome:?}");
+    // Non-narrowing memory budget (== Script floor == package ceiling): the
+    // guest's grow succeeds and its own `unreachable` traps. The chain is
+    // proven (install → budget extraction → budget applied to the run).
+    assert!(matches!(outcome, RunOutcome::Trap(_)), "{outcome:?}");
 }

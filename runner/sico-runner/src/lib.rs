@@ -239,7 +239,9 @@ pub struct RunnerLimits {
     pub timeout: Duration,
     /// Guest linear-memory ceiling in bytes.
     pub memory_bytes: usize,
-    /// Canonical-ABI transport budget (elements are charged per value).
+    /// Per-hostcall fuel cost in Wasm fuel units charged on each host call
+    /// (RFC-0051 Amendment A2 C1-a: a per-call *rate*, not a call count).
+    /// Wasmtime charges this rate through [`wasmtime::Store::set_hostcall_fuel`].
     pub hostcall_fuel: usize,
 }
 
@@ -262,13 +264,13 @@ impl RunnerLimits {
     /// ```text
     /// max_memory_bytes → memory_bytes
     /// max_wall_ms      → timeout (as a Duration)
-    /// max_hostcalls    → hostcall_fuel
+    /// max_hostcalls    → hostcall_fuel (per-hostcall fuel cost, A2 C1-a)
     /// ```
     ///
     /// Each mapped field takes the minimum, so the result can only **narrow**,
     /// never widen (AGENTS.md §helpers narrow, never widen). The deterministic
     /// wasm `fuel` bound is deliberately untouched: the budget carries no
-    /// fuel field — `max_hostcalls` is the transport/hostcall budget, and the
+    /// fuel field — `max_hostcalls` is the per-hostcall fuel *rate*, and the
     /// non-termination bound stays at the caller's own ceiling.
     ///
     /// The caller must have already enforced the A1.3 install-time subset

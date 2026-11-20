@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PackageError, RuntimeLimits, sha256_hex, validate_digest};
+use crate::{PackageError, RuntimeLimits, SCRIPT_MEMORY_BYTES, sha256_hex, validate_digest};
 
 /// RFC-0051 §2 closed asset-kind set (v0: fixture models and lookup tables).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -63,7 +63,10 @@ pub struct Budgets {
     pub max_memory_bytes: u64,
     /// Wall-clock ceiling in milliseconds.
     pub max_wall_ms: u64,
-    /// Host-call count ceiling.
+    /// Per-hostcall fuel cost in Wasm fuel units charged on each host call
+    /// (RFC-0051 Amendment A2 C1-a: this is a per-call *rate*, not a call
+    /// count — the budget does not bound the number of host calls, the
+    /// caller's own `fuel` bound does).
     pub max_hostcalls: u64,
 }
 
@@ -248,12 +251,31 @@ impl ProvenanceManifest {
     /// never widen) — the operative run ceiling for the asset is the asset
     /// budget, which is by construction `≤` the package ceiling.
     ///
+    /// RFC-0051 Amendment A2 C2-a: for a package carrying a Script identity
+    /// (`is_script`), the budget's admissible memory range gains a **floor**:
+    /// `max_memory_bytes < SCRIPT_MEMORY_BYTES` is not a tighter budget, it is
+    /// an **unsatisfiable** one (every Script component declares its linear
+    /// memory with minimum == maximum == [`SCRIPT_MEMORY_BYTES`], STEP-0497),
+    /// so it is a distinct fail-closed install refusal before any guest
+    /// execution. The floor is a lower bound, never a second upper-limit path.
+    ///
     /// # Errors
     ///
-    /// [`PackageError::Manifest`] naming the first over-ceiling budget;
-    /// `Ok(())` when all three budgets are within the package limits.
-    pub fn check_budgets_within(&self, package: &RuntimeLimits) -> Result<(), PackageError> {
+    /// [`PackageError::Manifest`] naming the first violated budget (over
+    /// ceiling, or below the Script memory floor); `Ok(())` when all three
+    /// budgets are within the package limits (and above the Script floor).
+    pub fn check_budgets_within(
+        &self,
+        package: &RuntimeLimits,
+        is_script: bool,
+    ) -> Result<(), PackageError> {
         let budgets = &self.asset.budgets;
+        if is_script && budgets.max_memory_bytes < SCRIPT_MEMORY_BYTES {
+            return Err(PackageError::Manifest(format!(
+                "asset budget max_memory_bytes {} is below the Script component declared memory {}",
+                budgets.max_memory_bytes, SCRIPT_MEMORY_BYTES
+            )));
+        }
         if budgets.max_memory_bytes > package.memory_bytes {
             return Err(PackageError::Manifest(format!(
                 "asset budget max_memory_bytes {} exceeds package ceiling {}",
@@ -284,12 +306,14 @@ impl ProvenanceManifest {
 /// 2. cross-checks the name→payload binding (A1.2): the sibling resource's
 ///    actual digest/size must equal the manifest's declaration;
 /// 3. checks the asset budget is a subset of the package limits (A1.3) via
-///    [`ProvenanceManifest::check_budgets_within`].
+///    [`ProvenanceManifest::check_budgets_within`], including the A2 C2-a
+///    Script memory floor when the package carries a Script identity.
 ///
 /// A package without any provenance manifest passes trivially — provenance is
 /// opt-in per A1.1. A provenance resource that does not parse, whose sibling
 /// payload disagrees with its declaration, or whose budget exceeds the package
-/// ceiling is a distinct typed refusal (never a silent skip).
+/// ceiling (or, for a Script package, falls below the Script memory floor) is
+/// a distinct typed refusal (never a silent skip).
 ///
 /// # Errors
 ///
@@ -298,6 +322,7 @@ impl ProvenanceManifest {
 pub fn verify_provenance_in_package(
     resources: &BTreeMap<String, Vec<u8>>,
     package_limits: &RuntimeLimits,
+    is_script: bool,
 ) -> Result<(), PackageError> {
     for (path, bytes) in resources {
         if !path.ends_with(".provenance.json") {
@@ -322,7 +347,7 @@ pub fn verify_provenance_in_package(
         let stored_bytes = u64::try_from(payload.len())
             .map_err(|_| PackageError::LengthMismatch("asset size overflows u64".to_owned()))?;
         manifest.verify_binding(&sha256_hex(payload), stored_bytes)?;
-        manifest.check_budgets_within(package_limits)?;
+        manifest.check_budgets_within(package_limits, is_script)?;
     }
     Ok(())
 }
@@ -538,7 +563,7 @@ mod tests {
         let (manifest, _) = valid_fixture();
         let parsed = ProvenanceManifest::parse(manifest.as_bytes()).unwrap();
         parsed
-            .check_budgets_within(&RuntimeLimits::default())
+            .check_budgets_within(&RuntimeLimits::default(), false)
             .expect("budgets are a subset of the package ceiling");
     }
 
@@ -555,7 +580,7 @@ mod tests {
         );
         let parsed = ProvenanceManifest::parse(over_memory.as_bytes()).unwrap();
         assert!(matches!(
-            parsed.check_budgets_within(&package),
+            parsed.check_budgets_within(&package, false),
             Err(PackageError::Manifest(_))
         ));
 
@@ -565,7 +590,7 @@ mod tests {
         );
         let parsed = ProvenanceManifest::parse(over_wall.as_bytes()).unwrap();
         assert!(matches!(
-            parsed.check_budgets_within(&package),
+            parsed.check_budgets_within(&package, false),
             Err(PackageError::Manifest(_))
         ));
 
@@ -575,8 +600,49 @@ mod tests {
         );
         let parsed = ProvenanceManifest::parse(over_hostcalls.as_bytes()).unwrap();
         assert!(matches!(
-            parsed.check_budgets_within(&package),
+            parsed.check_budgets_within(&package, false),
             Err(PackageError::Manifest(_))
         ));
+    }
+
+    #[test]
+    fn a2_c2a_script_package_budget_below_the_memory_floor_is_refused() {
+        // A2 C2-a: a Script-identity package whose budget falls below the
+        // declared Script component memory is not a tighter budget, it is
+        // unsatisfiable — a distinct fail-closed Manifest refusal.
+        let (manifest, _) = valid_fixture(); // max_memory_bytes = 1048576 (< floor)
+        let parsed = ProvenanceManifest::parse(manifest.as_bytes()).unwrap();
+        assert!(matches!(
+            parsed.check_budgets_within(&crate::script_profile_limits(), true),
+            Err(PackageError::Manifest(message))
+                if message.contains("below the Script component declared memory")
+        ));
+    }
+
+    #[test]
+    fn a2_c2a_non_script_package_budget_below_the_floor_is_not_refused() {
+        // The floor is Script-specific: the same budget on a non-Script package
+        // stays a valid (narrowing) subset, so provenance remains opt-in for
+        // non-Script packages.
+        let (manifest, _) = valid_fixture();
+        let parsed = ProvenanceManifest::parse(manifest.as_bytes()).unwrap();
+        parsed
+            .check_budgets_within(&RuntimeLimits::default(), false)
+            .expect("a non-Script package is not subject to the Script memory floor");
+    }
+
+    #[test]
+    fn a2_c2a_script_package_budget_at_the_memory_floor_is_accepted() {
+        // The floor is inclusive: a budget exactly at SCRIPT_MEMORY_BYTES is
+        // the admissible lower edge of the Script range and installs.
+        let (manifest, _) = valid_fixture();
+        let at_floor = manifest.replace(
+            "\"max_memory_bytes\": 1048576",
+            &format!("\"max_memory_bytes\": {SCRIPT_MEMORY_BYTES}"),
+        );
+        let parsed = ProvenanceManifest::parse(at_floor.as_bytes()).unwrap();
+        parsed
+            .check_budgets_within(&crate::script_profile_limits(), true)
+            .expect("budget at the Script memory floor is admissible");
     }
 }
