@@ -9,34 +9,38 @@
 
 ## Summary
 
-把 `selfhost/parser.sico` 的 `scalar_ir` 从单个巨型路由函数拆成一组内聚子函数，使其 closure 脱离 1 MiB closure fixture bound、各子函数 canonical IR 可注入 8 MiB 通道，从而让 `parser.sico:scalar_ir` 的 match 站点组件轴从「不可测/`closure-too-large`」转为可逐站点实测——**不抬高任何限额、不收窄任何语义、不改动 `A == B == C` 合同**。
+把 `selfhost/parser.sico` 的 `scalar_ir`（单个 1,166 行巨型路由函数）的 **25 个 `match U64.checked_add` 站点物理迁移**到小 helper 函数，使其**包围函数闭包**脱离 1 MiB closure fixture bound，从而让这 25 个 `parser.sico:scalar_ir` 站点（MS-375..399）的组件轴从 `closure-too-large` 转为可逐站点实测——**不抬高任何限额、不收窄任何语义、不改动 `A == B == C` 合同**。
+
+> **2026-11-20 规模侦察订正（决定性，见 §Reconnaissance）**：原立项草案把「闭包」与「燃料」两个目标捆在「拆 `scalar_ir` 成一组内聚小函数」这一个动作上。实测证明该机制**不可达**：函数抽取受**传递闭包守恒**约束，无法缩小 `scalar_ir` 的闭包；且燃料墙 311 站全在**另外 51 个函数**、无一在 `scalar_ir`。本 RFC 已据此订正为**站点迁移**机制，并把燃料目标移出本 RFC 范围（归独立轨道 B）。
 
 ## Problem
 
-`scalar_ir` 是 M22 燃料墙与组件轴不可测的单一咽喉点（见 [`M22-option-c-split-scalar-ir-proposal`](../plans/M22-option-c-split-scalar-ir-proposal.md)）：
+`scalar_ir` 是 M22 组件轴不可测的单一咽喉点（见 [`M22-option-c-split-scalar-ir-proposal`](../plans/M22-option-c-split-scalar-ir-proposal.md) 与 §Reconnaissance）：
 
-- **closure 轴**：`scalar_ir` 无界可达闭包 = 165 fn / 1,049,726 B 源，超 1 MiB closure fixture bound ⇒ 冻结 match-site ledger 中 25 个 `parser.sico:scalar_ir` 站点（MS-375..399）恒判 `closure-too-large`、组件轴不可比。
-- **传输轴**：该闭包经 Rust oracle 降为 canonical IR = 9,102,533 B（8.68 MiB）> `MAX_CHANNEL_BYTES` 8 MiB ⇒ 即便抬 closure bound，单独编译 `scalar_ir` 的 IR 也无法注入 guest stdin 通道。
-- **燃料轴**：发射成本 ~ O(单函数指令数²)（STEP-0606/0611/0618：`cgs_dispatcher_slot` 逐指令全 body 重扫，已由优化刀砍到 O(I²)，剩余二次项集中在**最大函数的指令数**）⇒ 单个巨型 `scalar_ir` 是燃料墙热点函数。
+- **closure 轴**：`scalar_ir` 的无界可达闭包 = 174 fn / 1,066,401 B 源（当前 HEAD 实测；冻结 ledger 快照 165 fn / 1,049,726 B 已过期），超 1 MiB closure fixture bound ⇒ 冻结 match-site ledger 中 25 个 `parser.sico:scalar_ir` 站点（MS-375..399）恒判 `closure-too-large`、组件轴不可比。
+- **传输轴**：该闭包经 Rust oracle 降为 canonical IR = 9,102,533 B（8.68 MiB）> `MAX_CHANNEL_BYTES` 8 MiB ⇒ 单独编译 `scalar_ir` 的 IR 无法注入 guest stdin 通道。
+- **关键结构事实（§Reconnaissance 实测）**：全模块 **只有 `scalar_ir` 一个函数闭包 > 1 MiB**；次大 `general_while_function_ir` 仅 542,749 B（0.518 MiB，约 bound 一半），其余 187 个函数闭包全部 ≤ 542 KB。`closure-too-large` 判定的测量根是**站点所在包围函数**，故只要把站点物理迁移到任一小函数，其闭包立即 < 1 MiB。
 
-[`STEP-0639`](../steps/STEP-0639-m22-gate7-component-axis-option-b-narrowing.md) 的 option-B 已诚实收窄组件轴判据（25 站由整文件 IR pin 间接背书），但**不闭合**这 25 个站点（更不闭合 311 个 fuel-exhausted 站点）。唯一既**不抬预算**（owner D-B 已裁不上调）又**不收窄语义**的真闭合路径 = **降低单函数指令数 / 单闭包尺寸** = 拆小 `scalar_ir`。
+[`STEP-0639`](../steps/STEP-0639-m22-gate7-component-axis-option-b-narrowing.md) 的 option-B 已诚实收窄组件轴判据（25 站由整文件 IR pin 间接背书），但**不闭合**这 25 个站点。唯一既**不抬预算**（owner D-B 已裁不上调）又**不收窄语义**的真闭合路径 = **站点迁移**（见 §Reconnaissance 为何「抽函数缩小闭包」不可达）。
 
 ## Goals and non-goals
 
 ### Goals
 
-1. `scalar_ir` 自身 closure **< 1 MiB closure fixture bound**，使 25 个 `scalar_ir` 站点脱离 `closure-too-large`、进入可测组件轴。
-2. 拆分后每个子函数的 canonical IR 均可注入（逐函数 < 8 MiB 通道）。
-3. 燃料墙实质下降：原先 `FuelExhausted` 的站点中，一个**实测定**（不预设）的比例转为 `component-equal`。
-4. **逐字节恒等守卫全绿**：整份 `parser.sico` 的 whole-file IR pin `sico_guest_arena_accommodates_full_parser_selfhost_input` 不变；全部既有 `*_byte_exactly` 组件 pin 不变。
-5. **路由定律不变**：`scalar_ir` 的语句计数路由（STEP-0430：按 `if_count`/`match_count`/`while_count` 路由到 general_while / control_while / 单 match 等机器）逐站点保持同一机器选择。
+1. **组件轴闭合（本 RFC 唯一目标，= 轨道 A）**：把 `scalar_ir` 体内 25 个 `match U64.checked_add` 站点物理迁移到小 helper 函数，使**每个迁移后站点的包围函数闭包 < 1 MiB closure fixture bound**，从而 25 站脱离 `closure-too-large`、进入可测组件轴。
+   > **订正**：原表述「`scalar_ir` 自身 closure < 1 MiB」**不可达**（§Reconnaissance 传递闭包守恒）。可达的是「每个**站点**的包围函数闭包 < 1 MiB」，靠**站点迁移**而非缩小 `scalar_ir` 闭包实现。
+2. **逐字节恒等守卫全绿**：整份 `parser.sico` 的 whole-file IR pin `sico_guest_arena_accommodates_full_parser_selfhost_input` 不变；全部既有 `*_byte_exactly` 组件 pin 不变；`formatter.sico` 组件 28,459 B 逐字节不变。
+3. **路由定律不变**：`scalar_ir` 的语句计数路由（STEP-0430：按 `if_count`/`match_count`/`while_count` 路由到 general_while / control_while / 单 match 等机器）逐站点保持同一机器选择——所有路由判定（计数、`general_route_count` 三级判定、general_while SKIP→control_while 级联、两个内联形状探针）必须留在 `scalar_ir` 入口或原子迁移，不得拆散/换序（§Reconnaissance 风险点清单）。
+4. 燃料曲线：迁移后记录 25 站的实际 verdict（`component-equal` / `FuelExhausted` / 其它非 too-large），**实测定、不预设**（小 helper 发射成本低，但站点是否转 `component-equal` 取决于发射成本，需实跑）。
 
 ### Non-goals
 
-- 不改动 canonical IR 格式、不引入紧凑 IR 传输编码（那是被否决的备选，见 Alternatives）。
+- **燃料墙（311 站）不在本 RFC 范围**（= 轨道 B，独立立项）：实测 311 个 `FuelExhausted` 站点分布在 **51 个不同函数**，**没有一个在 `scalar_ir`**（前几名：`control_while_function_ir` 23 站、`straight_cell_function_ir` 18、`straight_text_concat_packed` 16、`while_call_rhs_packed` 13、`gw_compare_packed` 13）。O(单函数指令数²) 发射成本是逐函数的，降燃料 = 拆那 51 个大路由/下沉函数，**与 `scalar_ir` 站点迁移无关**。
+- **不**把 `scalar_ir` 的内联机器族逻辑「抽成它仍调用的顶层函数」——传递闭包守恒 ⇒ 闭包只增不减、25 站仍卡 `closure-too-large`、燃料不降（311 站在别处），**此路径净收益为零**（§Reconnaissance）。
+- 不改动 canonical IR 格式、不引入紧凑 IR 传输编码。
 - 不抬高 fuel / 内存 / stdout / closure / 8 MiB 通道任何限额。
 - 不改 `A == B == C` bootstrap 合同、不改 Rust oracle、不改任何出口门判据（含 STEP-0639 option-B 判据）。
-- 不追求一步到位把全部 336 站点转 `component-equal`；本 RFC 只承诺 `scalar_ir` 闭包面（25 站）转可测 + 燃料曲线实质下降，其余站点归后续片。
+- 不追求一步闭合全部 336 站点；本 RFC 只闭合 `scalar_ir` 的 25 站。
 
 ## Semantics
 
@@ -46,14 +50,47 @@
 - 拆分后：`scalar_ir` 保留为唯一入口与路由判定点，把各机器族的**下沉发射逻辑**抽成独立子函数（如 `scalar_ir_gw_*` / `scalar_ir_control_*` / `scalar_ir_straight_*` / `scalar_ir_construct_*` / `scalar_ir_checked_*`），`scalar_ir` 按原路由定律委派。
 - **可观测契约（必须逐字节保持）**：对任意合法输入，拆分前后 `scalar_ir` 产出的 canonical IR **逐指令/逐字节等同**；对任意畸形输入，typed refusal 身份与 span **不变**。
 
+## Reconnaissance（2026-11-20 规模侦察，决定性）
+
+本节固化立项后、开工前的一次**只读规模侦察**结论（复用固件镜像探针 `tools/probe-m22-closure-bounds.py` 的 `sico_functions`/`sico_callees`/`sico_closure` 精确算法，对当前 HEAD `selfhost/parser.sico` 全 188 函数逐一实测）。** coordinator 已独立复跑核验本节数字。**
+
+### R.1 只有 `scalar_ir` 闭包超界
+
+| 函数 | 闭包 | 占 1 MiB bound |
+|---|---|---|
+| **`scalar_ir`** | **174 fn / 1,066,401 B** | **1.017 MiB（超 +17,825 B）** |
+| `general_while_function_ir`（次大） | 107 fn / 542,749 B | 0.518 MiB |
+| `fixed_guard_chain_ir` | 94 fn / 410,610 B | 0.392 MiB |
+| `gw_match_open_pack` | 91 fn / 408,163 B | 0.389 MiB |
+| `control_while_function_ir` | 92 fn / 402,636 B | 0.384 MiB |
+
+全模块 **只有 `scalar_ir` 一个函数闭包 > 1 MiB**；其余 187 个全部 ≤ 542,749 B。
+
+### R.2 传递闭包守恒 ⇒ 抽函数不能缩小 `scalar_ir` 闭包
+
+`closure(scalar_ir) = {scalar_ir} ∪ ⋃_{g ∈ D} closure(g)`（`D` = `scalar_ir` 直接调用集）。把 `scalar_ir` 体内一段内联代码（含对 helper 集 `H` 的调用）抽成新顶层函数 `f` 且 `scalar_ir` 仍调 `f`：新闭包 = 旧闭包 ∪ {f} ∪ closure(f)，而 `closure(f) ⊆` 旧闭包（那段代码本在 `scalar_ir` 体内）。**故新闭包 = 旧闭包 ∪ {f}，严格增大。** ⇒ 原草案「抽内联机器族逻辑成顶层函数以缩小 `scalar_ir` 闭包」**数学上不可达**。
+
+### R.3 25 站脱困靠「站点迁移」，非闭包缩小
+
+`closure-too-large` 的测量根 = **站点所在包围函数**（`probe-m22-closure-bounds.py`：`sico_closure(sources[path], site.function)`；`census-m22-match-sites.py` 按 `current_function` 归属 `match`）。25 站（MS-375..399）是 `scalar_ir` 体内的 `match U64.checked_add(...)`，因其包围函数是 `scalar_ir`（闭包超界）而判 too-large。**只要把站点物理迁移到任一小函数，其包围函数闭包立即 < 1 MiB ⇒ 可测。** 最干净做法：引入包裹 helper（含 `match U64.checked_add`），`scalar_ir` 改调它——例如 21 个「end offset」样板（`scalar_ir` 体内重复 21 次、合计 437 行 / 26,901 B、占 `scalar_ir` 43%）可收进一个 `checked_add_end(...)` helper（其闭包 ≈ 4 fn / ~4 KB）；余 4–5 站各用同型小 helper 包裹。**可行性 100%，改动小、风险低。**
+
+### R.4 燃料墙与 `scalar_ir` 脱钩
+
+311 个 `FuelExhausted` 站点分布在 **51 个不同函数**，**无一在 `scalar_ir`**（前 15：`control_while_function_ir` 23、`straight_cell_function_ir` 18、`straight_text_concat_packed` 16、`while_call_rhs_packed` 13、`gw_compare_packed` 13、`checked_arithmetic_set_match_ir` 13、`gw_ok_wrap_rhs_packed` 12、`gw_text_concat_packed` 12、`control_if_function_ir` 12、`gw_condition_packed` 11、`gw_slice_sub_length_subject_packed` 8、`gw_slice_subject_packed` 8、`gw_rhs_multi_pack` 7、`fixed_guard_chain_ir` 7、`general_while_function_ir` 7）。降燃料 = 拆这 51 个（尤其最大的）路由/下沉函数 = **轨道 B**，独立于本 RFC。
+
+### R.5 需实跑项
+
+- 迁移后 25 站的实际 verdict（`component-equal` 还是落回 `FuelExhausted`）取决于小 helper 的发射成本，**需实跑**组件轴套件。
+- ledger 快照（165/1,049,726）已过期（`source_sha256` 不符），**任何结论以 HEAD 实测为准**；本 RFC 数字为当前 HEAD 实测，开工前须重测。
+
 ## Syntax candidates
 
-不涉及表层语法。此节记录**拆分轴**的两个候选：
+不涉及表层语法。此节记录**站点迁移轴**的两个候选（原「按机器族/阶段拆 `scalar_ir`」的候选已被 §R.2 传递闭包守恒否决——抽成 `scalar_ir` 仍调用的函数只会增大闭包、25 站仍卡 too-large）：
 
-- **候选 A（推荐）— 按机器族拆**：把 `gw_*`（general_while 族）、`control_*`（if/while 族）、`straight_*`（直通族）、`construct_*`/`record_*`（构造族）、`checked_*`（算术族）各自的下沉发射逻辑抽成独立函数。内聚性最高、与既有命名对齐。
-- **候选 B — 按阶段拆**：语句扫描 / 路由判定 / 各机器发射三段。边界更清晰但跨机器耦合、路由定律回归风险更高。
+- **候选 A（推荐）— 按样板簇迁移**：把 `scalar_ir` 体内重复的「end offset」样板（21 处、437 行 / 26,901 B、占 `scalar_ir` 43%，逻辑近乎逐字相同、仅变量名不同）收进单一包裹 helper `checked_add_end(...)`（含 `match U64.checked_add`），`scalar_ir` 改调它 ⇒ 21 站物理落入小 helper；余 4–5 站各用同型小 helper 包裹。改动最小、helper 闭包最小、最内聚。
+- **候选 B — 按站点逐个包裹**：为每个 `match U64.checked_add` 站点单独引入一个最小 helper。粒度最细、每 helper 闭包最小，但 helper 数量多、`scalar_ir` 调用点改写分散。
 
-开工时用 ddmin / 调用图实测确认最终拆分粒度；可 A/B 混用，但每一片须过 §Validation 守卫。
+开工时用调用图实测确认每个 helper 的闭包确 < 1 MiB；可 A/B 混用，但每一片须过 §Validation 守卫（whole-file IR pin + 既有组件 pin 逐字节不变）。**关键约束**：迁移只动 `match U64.checked_add` 站点的**包围函数**，**不得触碰 §R 风险点清单里的路由判定块**（计数、`general_route_count` 三级判定、general_while SKIP→control_while 级联、两个内联形状探针）——否则触发 STEP-0430 换机回归。
 
 ## Positive and negative cases
 
@@ -99,12 +136,12 @@
 
 正式接受门槛（逐条可复现）：
 
-1. 会失败-先行：先落一个「`scalar_ir` closure 仍超 1 MiB bound」的失败断言/探针，再拆。
-2. 每拆一片：whole-file IR pin `sico_guest_arena_accommodates_full_parser_selfhost_input` + 全部既有 `*_byte_exactly` 组件 pin **逐字节不变**，方可推进。
-3. 终态：`scalar_ir` closure < 1 MiB bound；ledger 重测 `scalar_ir` 25 站脱离 `closure-too-large`（转 `component-equal` 或具名非 too-large verdict）；`--check` 无 unexpected pending。
-4. 燃料曲线实测记录（拆分前后对比，方向性）；不预设单调、不预设比例。
-5. 冻结工件协调重冻结（`emitter-vocabulary` source_sha256 + match-site ledger parser digest），循既有纪律。
-6. 全程未上调任何限额；未改 `A == B == C` 合同、Rust oracle、出口门判据。
+1. 会失败-先行：先落一个「25 个 `scalar_ir` 站点包围函数闭包仍超 1 MiB bound / 仍判 `closure-too-large`」的失败断言/探针，再做迁移。
+2. 每迁一片：whole-file IR pin `sico_guest_arena_accommodates_full_parser_selfhost_input` + 全部既有 `*_byte_exactly` 组件 pin + `formatter.sico` 28,459 B 组件 pin **逐字节不变**，方可推进。
+3. 终态：ledger 重测 `scalar_ir` 25 站（MS-375..399）的**包围函数**全部变为小 helper、闭包 < 1 MiB bound ⇒ 脱离 `closure-too-large`（转 `component-equal` 或具名非 too-large verdict）；`--check` 无 unexpected pending。**注**：`scalar_ir` 自身闭包仍 > 1 MiB（它仍调用 helper）——这是预期的、非失败；判据是**每站点包围函数闭包**，非 `scalar_ir` 自身闭包。
+4. 25 站迁移后实际 verdict 实测记录（`component-equal` / `FuelExhausted` / 其它）；不预设。
+5. 冻结工件协调重冻结（`emitter-vocabulary` source_sha256 + match-site ledger parser digest + 站点归属函数变化），循既有纪律。
+6. 全程未上调任何限额；未改 `A == B == C` 合同、Rust oracle、出口门判据；未触碰 §R 风险点的路由判定块。
 
 满足上述方可登记 option-C 收口 STEP；不满足则诚实收窄并归后续片。**本 RFC 被接受不等于 M22 任何门翻转；M22 overall 仍 NO-GO。**
 
